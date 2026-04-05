@@ -1,4 +1,5 @@
 __external_*/
+.codex/
 .DS_Store
 node_modules/
 .next/
