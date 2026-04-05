@@ -1,5 +1,5 @@
-import { OpenShockShell } from "@/components/open-shock-shell";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <OpenShockShell />;
+  redirect("/chat/all");
 }

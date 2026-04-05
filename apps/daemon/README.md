@@ -1,6 +1,12 @@
 # OpenShock Daemon
 
-This directory is reserved for the future local Go daemon.
+This directory now contains the first Go skeleton for the future local daemon.
+
+Current shape:
+
+- `cmd/openshock-daemon/main.go` emits heartbeat logs
+- detects local CLI binaries like `codex` and `claude-code`
+- supports a `-once` mode for one-shot inspection output
 
 Planned responsibilities:
 
@@ -9,3 +15,9 @@ Planned responsibilities:
 - worktree lifecycle management
 - sandbox policy enforcement
 - run execution, stdout capture, and approval handoff
+
+Run target once Go is installed:
+
+```bash
+go run ./cmd/openshock-daemon --once
+```
