@@ -209,4 +209,43 @@ func TestRuntimePairingPersistsWorkspaceBinding(t *testing.T) {
 	if runtimeResp.StatusCode != http.StatusOK {
 		t.Fatalf("restarted runtime status = %d, want %d", runtimeResp.StatusCode, http.StatusOK)
 	}
+
+	deleteReq, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/runtime/pairing", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(DELETE) error = %v", err)
+	}
+	deleteResp, err := http.DefaultClient.Do(deleteReq)
+	if err != nil {
+		t.Fatalf("DELETE pairing error = %v", err)
+	}
+	defer deleteResp.Body.Close()
+	if deleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("delete pairing status = %d, want %d", deleteResp.StatusCode, http.StatusOK)
+	}
+
+	workspaceAfterDelete := s.Snapshot().Workspace
+	if workspaceAfterDelete.PairingStatus != "unpaired" {
+		t.Fatalf("pairing status after delete = %q, want unpaired", workspaceAfterDelete.PairingStatus)
+	}
+	if workspaceAfterDelete.DeviceAuth != "revoked" {
+		t.Fatalf("device auth after delete = %q, want revoked", workspaceAfterDelete.DeviceAuth)
+	}
+
+	restartedAfterDelete := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer restartedAfterDelete.Close()
+	offlineResp, err := http.Get(restartedAfterDelete.URL + "/v1/runtime")
+	if err != nil {
+		t.Fatalf("GET runtime after delete error = %v", err)
+	}
+	defer offlineResp.Body.Close()
+	var offlinePayload RuntimeSnapshotResponse
+	if err := json.NewDecoder(offlineResp.Body).Decode(&offlinePayload); err != nil {
+		t.Fatalf("Decode offline runtime payload error = %v", err)
+	}
+	if offlinePayload.State != "offline" {
+		t.Fatalf("offline runtime state = %q, want offline", offlinePayload.State)
+	}
 }

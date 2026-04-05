@@ -145,6 +145,25 @@ func TestPhaseZeroLoopThroughDaemon(t *testing.T) {
 	if !strings.Contains(roomContent, "Pull Request Created") || !strings.Contains(roomContent, "Pull Request Status Updated") {
 		t.Fatalf("room note missing PR lifecycle entries:\n%s", roomContent)
 	}
+
+	deleteReq, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, serverURL+"/v1/runtime/pairing", nil)
+	if err != nil {
+		t.Fatalf("new delete pairing request: %v", err)
+	}
+	deleteResp, err := http.DefaultClient.Do(deleteReq)
+	if err != nil {
+		t.Fatalf("delete pairing: %v", err)
+	}
+	defer deleteResp.Body.Close()
+	if deleteResp.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(deleteResp.Body)
+		t.Fatalf("delete pairing status = %d, want %d, body=%s", deleteResp.StatusCode, http.StatusOK, string(payload))
+	}
+
+	runtimeAfterDelete := getJSON(t, serverURL+"/v1/runtime")
+	if stringField(t, runtimeAfterDelete, "state") != "offline" {
+		t.Fatalf("runtime state after delete = %q, want offline", stringField(t, runtimeAfterDelete, "state"))
+	}
 }
 
 type streamResponse struct {

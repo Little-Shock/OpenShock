@@ -20,11 +20,12 @@ type Config struct {
 }
 
 type Server struct {
-	store         *store.Store
-	httpClient    *http.Client
-	daemonURL     string
-	daemonMu      sync.RWMutex
-	workspaceRoot string
+	store            *store.Store
+	httpClient       *http.Client
+	defaultDaemonURL string
+	daemonURL        string
+	daemonMu         sync.RWMutex
+	workspaceRoot    string
 }
 
 type ExecRequest struct {
@@ -116,10 +117,11 @@ func New(s *store.Store, httpClient *http.Client, cfg Config) *Server {
 		daemonURL = strings.TrimRight(workspace.PairedRuntimeURL, "/")
 	}
 	return &Server{
-		store:         s,
-		httpClient:    httpClient,
-		daemonURL:     daemonURL,
-		workspaceRoot: cfg.WorkspaceRoot,
+		store:            s,
+		httpClient:       httpClient,
+		defaultDaemonURL: strings.TrimRight(cfg.DaemonURL, "/"),
+		daemonURL:        daemonURL,
+		workspaceRoot:    cfg.WorkspaceRoot,
 	}
 }
 
@@ -402,6 +404,11 @@ func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleRuntime(w http.ResponseWriter, _ *http.Request) {
+	workspace := s.store.Snapshot().Workspace
+	if workspace.PairingStatus != "paired" || strings.TrimSpace(s.daemonURLValue()) == "" {
+		writeJSON(w, http.StatusOK, offlineRuntimeSnapshot(workspace))
+		return
+	}
 	s.forwardGetJSON(w, s.daemonURLValue()+"/v1/runtime")
 }
 
@@ -446,6 +453,18 @@ func (s *Server) handleRuntimePairing(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"daemonUrl": daemonURL,
 			"runtime":   runtimeSnapshot,
+			"state":     nextState,
+		})
+	case http.MethodDelete:
+		nextState, err := s.store.ClearRuntimePairing()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.setDaemonURL("")
+		writeJSON(w, http.StatusOK, map[string]any{
+			"daemonUrl": "",
+			"runtime":   offlineRuntimeSnapshot(nextState.Workspace),
 			"state":     nextState,
 		})
 	default:
@@ -699,6 +718,21 @@ func (s *Server) setDaemonURL(url string) {
 	s.daemonMu.Lock()
 	defer s.daemonMu.Unlock()
 	s.daemonURL = strings.TrimRight(url, "/")
+}
+
+func offlineRuntimeSnapshot(workspace store.WorkspaceSnapshot) RuntimeSnapshotResponse {
+	machine := workspace.PairedRuntime
+	if strings.TrimSpace(machine) == "" {
+		machine = "未配对"
+	}
+	return RuntimeSnapshotResponse{
+		Machine:       machine,
+		DetectedCLI:   []string{},
+		Providers:     nil,
+		State:         "offline",
+		WorkspaceRoot: "",
+		ReportedAt:    workspace.LastPairedAt,
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

@@ -293,6 +293,54 @@ func (s *Store) UpdateRuntimePairing(req RuntimePairingInput) (State, error) {
 	return cloneState(s.state), nil
 }
 
+func (s *Store) ClearRuntimePairing() (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := shortClock()
+	previousRuntime := s.state.Workspace.PairedRuntime
+	if previousRuntime == "" {
+		previousRuntime = "未命名 runtime"
+	}
+
+	s.state.Workspace.PairedRuntime = ""
+	s.state.Workspace.PairedRuntimeURL = ""
+	s.state.Workspace.PairingStatus = "unpaired"
+	s.state.Workspace.DeviceAuth = "revoked"
+	s.state.Workspace.LastPairedAt = time.Now().UTC().Format(time.RFC3339)
+
+	for index := range s.state.Machines {
+		if s.state.Machines[index].Name == previousRuntime || s.state.Machines[index].ID == previousRuntime {
+			s.state.Machines[index].State = "offline"
+			s.state.Machines[index].LastHeartbeat = "已撤销"
+		}
+	}
+
+	s.appendChannelMessageLocked("announcements", Message{
+		ID:      fmt.Sprintf("ann-unpairing-%d", time.Now().UnixNano()),
+		Speaker: "System",
+		Role:    "system",
+		Tone:    "system",
+		Message: fmt.Sprintf("浏览器已撤销本地 runtime 配对：%s。", previousRuntime),
+		Time:    now,
+	})
+	s.state.Inbox = append([]InboxItem{{
+		ID:      fmt.Sprintf("inbox-runtime-revoked-%d", time.Now().UnixNano()),
+		Title:   "本地 Runtime 已撤销",
+		Kind:    "status",
+		Room:    "Setup",
+		Time:    "刚刚",
+		Summary: "浏览器设备授权已撤销，需要重新配对后才能继续使用本地 CLI。",
+		Action:  "重新配对",
+		Href:    "/setup",
+	}}, s.state.Inbox...)
+
+	if err := s.persistLocked(); err != nil {
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
 func (s *Store) CreatePullRequest(roomID string) (State, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

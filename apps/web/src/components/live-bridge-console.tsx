@@ -11,7 +11,7 @@ type RuntimeSnapshot = {
     mode: string;
     capabilities: string[];
     transport: string;
-  }>;
+  }> | null;
   state: string;
   workspaceRoot: string;
   reportedAt: string;
@@ -53,25 +53,32 @@ export function LiveBridgeConsole() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      fetch(`${API_BASE}/v1/runtime/pairing`).then(async (response) => {
+    fetch(`${API_BASE}/v1/runtime/pairing`)
+      .then(async (response) => {
         if (!response.ok) throw new Error(`pairing request failed: ${response.status}`);
         return response.json() as Promise<PairingStatus>;
-      }),
-      fetch(`${API_BASE}/v1/runtime`).then(async (response) => {
-        if (!response.ok) throw new Error(`runtime request failed: ${response.status}`);
-        return response.json() as Promise<RuntimeSnapshot>;
-      }),
-    ])
-      .then(([pairingData, runtimeData]) => {
+      })
+      .then(async (pairingData) => {
         if (cancelled) return;
         setPairing(pairingData);
         if (pairingData.daemonUrl) setDaemonURL(pairingData.daemonUrl);
-        setRuntime(runtimeData);
-        const preferredProvider =
-          runtimeData.providers.find((item) => item.id === "claude")?.id ?? runtimeData.providers[0]?.id;
-        if (preferredProvider) {
-          setProvider(preferredProvider);
+        try {
+          const runtimeResponse = await fetch(`${API_BASE}/v1/runtime`);
+          if (!runtimeResponse.ok) throw new Error(`runtime request failed: ${runtimeResponse.status}`);
+          const runtimeData = (await runtimeResponse.json()) as RuntimeSnapshot;
+          if (cancelled) return;
+          setRuntime(runtimeData);
+          const providers = runtimeData.providers ?? [];
+          const preferredProvider =
+            providers.find((item) => item.id === "claude")?.id ?? providers[0]?.id;
+          if (preferredProvider) {
+            setProvider(preferredProvider);
+          }
+        } catch (runtimeError) {
+          if (!cancelled) {
+            setRuntime(null);
+            setError(runtimeError instanceof Error ? runtimeError.message : "runtime fetch failed");
+          }
         }
       })
       .catch((err: Error) => {
@@ -105,8 +112,9 @@ export function LiveBridgeConsole() {
       }
       if (payload.runtime) {
         setRuntime(payload.runtime);
+        const providers = payload.runtime.providers ?? [];
         const preferredProvider =
-          payload.runtime.providers.find((item) => item.id === "claude")?.id ?? payload.runtime.providers[0]?.id;
+          providers.find((item) => item.id === "claude")?.id ?? providers[0]?.id;
         if (preferredProvider) {
           setProvider(preferredProvider);
         }
@@ -118,6 +126,34 @@ export function LiveBridgeConsole() {
       setResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "runtime pairing failed");
+    } finally {
+      setPairingLoading(false);
+    }
+  }
+
+  async function handleUnpairRuntime() {
+    setPairingLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/v1/runtime/pairing`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        runtime?: RuntimeSnapshot;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || `unpair failed: ${response.status}`);
+      }
+      setRuntime(payload.runtime ?? null);
+      const pairingResponse = await fetch(`${API_BASE}/v1/runtime/pairing`);
+      if (pairingResponse.ok) {
+        setPairing((await pairingResponse.json()) as PairingStatus);
+      }
+      setResult(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "runtime unpair failed");
     } finally {
       setPairingLoading(false);
     }
@@ -189,7 +225,7 @@ export function LiveBridgeConsole() {
           <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">传输方式</p>
             <p className="mt-2 font-display text-xl font-semibold">
-              {runtime.providers.map((item) => item.transport).join(" / ")}
+              {(runtime.providers ?? []).map((item) => item.transport).join(" / ") || "等待配对"}
             </p>
           </div>
         </div>
@@ -217,6 +253,17 @@ export function LiveBridgeConsole() {
             {pairingLoading ? "配对中..." : "配对 Runtime"}
           </button>
         </div>
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          onClick={handleUnpairRuntime}
+          disabled={pairingLoading || pairing?.pairingStatus !== "paired"}
+          className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-white transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          撤销设备授权
+        </button>
       </div>
 
       {pairing ? (
