@@ -29,7 +29,36 @@ Phase 0 的目标只有一个：
 
 ---
 
-## 二、Phase 0 一句话定义
+## 二、强制参考栈
+
+Phase 0 后续所有实现都必须持续参考以下资料，而不是只参考当前代码：
+
+- [docs/research/Reference-Stack.md](../research/Reference-Stack.md)
+- [docs/research/Slock-Local-Notes.md](../research/Slock-Local-Notes.md)
+- [DESIGN.md](../../DESIGN.md)
+- [PRD.md](./PRD.md)
+
+当前已接入的外部 / 本地参考包括：
+
+- `Multica`
+  - 本地 clone: `E:\00.Lark_Projects\00_OpenShock\__external_multica`
+- `Slock`
+  - 公开站点与前端 bundle / CSS
+  - 本地 `slock` 参考：`\\wsl.localhost\Ubuntu-24.04\home\lark\.slock`
+  - 本地 `codex` 会话痕迹：`\\wsl.localhost\Ubuntu-24.04\home\lark\.codex\sessions\2026\04\04`
+- `Lody`
+  - 官方 workflow / worktree / quota 文档
+
+这意味着：
+
+- 前端默认抄 `Slock` 的壳和 Stitch 设计稿
+- 后台对象、daemon、runtime、Inbox、session continuity 默认参考 `Multica`
+- worktree / branch / PR 的隔离执行默认参考 `Lody`
+- 记忆、频道规则、团队规则默认参考本地 `slock` 的 `MEMORY.md + notes/*`
+
+---
+
+## 三、Phase 0 一句话定义
 
 Phase 0 是 OpenShock 的第一个可用骨架版本：
 
@@ -39,7 +68,7 @@ Phase 0 是 OpenShock 的第一个可用骨架版本：
 
 ---
 
-## 三、Phase 0 成功标准
+## 四、Phase 0 成功标准
 
 只要下面这条链路跑通，Phase 0 就算成功：
 
@@ -56,7 +85,7 @@ Phase 0 是 OpenShock 的第一个可用骨架版本：
 
 ---
 
-## 四、Phase 0 范围
+## 五、Phase 0 范围
 
 ### 1. 必须真实工作的部分
 
@@ -83,7 +112,7 @@ Phase 0 是 OpenShock 的第一个可用骨架版本：
 
 ---
 
-## 五、用户与场景
+## 六、用户与场景
 
 ### 核心用户
 
@@ -100,7 +129,7 @@ Phase 0 是 OpenShock 的第一个可用骨架版本：
 
 ---
 
-## 六、功能骨架要求
+## 七、功能骨架要求
 
 ### 1. 账号、Workspace 与仓库接入
 
@@ -231,6 +260,16 @@ Phase 0 默认只做文件级记忆。
 - 图谱记忆
 - 跨应用长期记忆
 
+补充约束：
+
+- 每个 Agent 后续默认应该有 `SOUL.md + MEMORY.md + notes/*`
+- `notes/*` 至少预留：
+  - `channels.md`
+  - `operating-rules.md`
+  - `skills.md`
+  - `work-log.md`
+- 这些文件既是运行时上下文，也应该逐步成为产品里可见的 Memory / Policy 表面
+
 ### 9. Inbox 与通知
 
 必须支持：
@@ -256,7 +295,7 @@ Phase 0 默认只做文件级记忆。
 
 ---
 
-## 七、前端实现要求
+## 八、前端实现要求
 
 ### 1. 视觉参考顺序
 
@@ -264,9 +303,12 @@ Phase 0 默认只做文件级记忆。
 
 1. **Slock**
    - 主参考，负责气质、信息密度、Agent / Machine 主角感
-2. **awesome-design-md**
+   - 公开 app + bundle + CSS，以及本地 `slock` 目录结构
+2. **Stitch 设计稿**
+   - 当前 OpenShock 的页面布局和视觉定稿源
+3. **awesome-design-md**
    - 作为可复制的 `DESIGN.md` 参考库
-3. **现有 PRD 的前端体验原则**
+4. **现有 PRD 的前端体验原则**
 
 ### 2. awesome-design-md 的使用方式
 
@@ -290,7 +332,28 @@ Phase 0 前端建议优先参考这几套：
 - `linear.app`
   - 太容易把 OpenShock 做回传统任务工具
 
-### 3. 视觉约束
+### 3. 结构参考顺序
+
+除了视觉，页面结构和对象模型也有默认参考顺序：
+
+1. `Slock`
+   - `频道 / 房间 / agent / machine / thread` 的协作壳
+2. `Multica`
+   - `Issue / Runtime / Inbox / daemon / session continuity`
+3. `Lody`
+   - `topic / worktree / branch / PR` 的隔离执行
+
+### 4. 本地参考痕迹的使用原则
+
+来自本地 `slock` 的会话日志和 agent 目录，不直接原样搬运进仓库，但可以提炼为：
+
+- 产品对象模型
+- 页面信息架构
+- agent 文件记忆结构
+- 频道规则 / 团队规则 / 技能规则
+- daemon / MCP / 协作协议设计
+
+### 5. 视觉约束
 
 必须遵守：
 
@@ -302,7 +365,7 @@ Phase 0 前端建议优先参考这几套：
 
 ---
 
-## 八、前端开发流程建议
+## 九、前端开发流程建议
 
 ### 1. 推荐流程
 
@@ -337,7 +400,7 @@ Phase 0 前端开发建议采用浏览器在环的快速迭代方式：
 
 ---
 
-## 九、明确不做
+## 十、明确不做
 
 Phase 0 不做：
 
@@ -351,7 +414,7 @@ Phase 0 不做：
 
 ---
 
-## 十、页面清单
+## 十一、页面清单
 
 Phase 0 至少需要这些页面或主视图：
 
@@ -370,7 +433,7 @@ Phase 0 至少需要这些页面或主视图：
 
 ---
 
-## 十一、验收要求
+## 十二、验收要求
 
 ### 功能验收
 
@@ -389,7 +452,7 @@ Phase 0 至少需要这些页面或主视图：
 
 ---
 
-## 十二、Phase 0 之后
+## 十三、Phase 0 之后
 
 Phase 0 完成后，下一阶段优先顺序建议为：
 
