@@ -1,4 +1,5 @@
 import { OpenShockShell } from "@/components/open-shock-shell";
+import { LiveBridgeConsole } from "@/components/live-bridge-console";
 import { DetailRail, SetupOverview } from "@/components/phase-zero-views";
 
 export default function SetupPage() {
@@ -22,7 +23,10 @@ export default function SetupPage() {
         />
       }
     >
-      <SetupOverview />
+      <div className="space-y-4">
+        <SetupOverview />
+        <LiveBridgeConsole />
+      </div>
     </OpenShockShell>
   );
 }
