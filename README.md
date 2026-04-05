@@ -113,21 +113,36 @@ OpenShock 想把这几段断掉的链路重新接起来：
 │  ├─ server/       # Go API + Realtime + 状态机
 │  └─ daemon/       # Go 本地 runtime daemon
 ├─ docs/
+│  ├─ product/      # PRD / MVP / 产品文档
+│  ├─ engineering/  # 运行手册 / 工程说明
 │  └─ assets/       # 海报、截图、品牌素材
 ├─ DESIGN.md        # Stitch / 前端设计方向
 ├─ SOUL.md          # 每个 Agent 继承的根宣言
-├─ OpenShockPRD.md
-└─ OpenShockPhase0MVP.md
+└─ README.md
 ```
 
 ### 快速开始
 
-```bash
+```powershell
 pnpm install
 pnpm dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)。
+然后另外开两个终端：
+
+```powershell
+cd E:\00.Lark_Projects\00_OpenShock\apps\server
+go run ./cmd/openshock-server
+```
+
+```powershell
+cd E:\00.Lark_Projects\00_OpenShock\apps\daemon
+go run ./cmd/openshock-daemon --workspace-root E:\00.Lark_Projects\00_OpenShock
+```
+
+打开 [http://127.0.0.1:3000/setup](http://127.0.0.1:3000/setup)。
+
+更完整的启动说明见 [Runbook](./docs/engineering/Runbook.md)。
 
 ### 产品模型
 
@@ -156,6 +171,8 @@ pnpm dev
 - playful、high-signal、anti-corporate
 - chat-first，board-second
 
+完整文档入口见 [docs/README.md](./docs/README.md)。
+
 ### Star Trend
 
 [![Stargazers over time](https://starchart.cc/Larkspur-Wang/OpenShock.svg?variant=adaptive)](https://starchart.cc/Larkspur-Wang/OpenShock)
@@ -173,10 +190,10 @@ pnpm dev
 ### 接下来做什么
 
 1. 用真实 API 替换 mock 数据
-2. 开始实现 Go 的 `apps/server`
-3. 接 Go 的 `apps/daemon`，打通 runtime heartbeat 和 CLI discovery
+2. 把 GitHub / PR / review 状态真正接上
+3. 把 worktree 生命周期和 run 状态机接成真服务
 4. 把 run 输出实时流回 Room
-5. 把 GitHub / PR / review 状态真正接上
+5. 接持久化存储
 6. 把 `SOUL.md` 接入 Agent 创建与 prompt 装配链路
 
 ---
@@ -224,16 +241,34 @@ It currently validates:
 
 ### Quickstart
 
-```bash
+```powershell
 pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Then run the Go server and daemon in separate terminals:
+
+```powershell
+cd E:\00.Lark_Projects\00_OpenShock\apps\server
+go run ./cmd/openshock-server
+```
+
+```powershell
+cd E:\00.Lark_Projects\00_OpenShock\apps\daemon
+go run ./cmd/openshock-daemon --workspace-root E:\00.Lark_Projects\00_OpenShock
+```
+
+Open [http://127.0.0.1:3000/setup](http://127.0.0.1:3000/setup).
 
 ### Soul
 
 Every agent should inherit the root directive in [SOUL.md](./SOUL.md).
+
+### Docs
+
+- [Product PRD](./docs/product/PRD.md)
+- [Phase 0 MVP](./docs/product/Phase0-MVP.md)
+- [Runbook](./docs/engineering/Runbook.md)
 
 ### Repository
 

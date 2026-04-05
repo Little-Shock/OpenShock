@@ -2,7 +2,7 @@
 
 **版本:** 0.2  
 **版本日期:** 2026 年 4 月 5 日  
-**关联文档:** [OpenShockPRD.md](./OpenShockPRD.md)
+**关联文档:** [PRD.md](./PRD.md)
 
 ---
 
