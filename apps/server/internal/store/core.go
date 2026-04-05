@@ -1,0 +1,310 @@
+package store
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func New(path, workspaceRoot string) (*Store, error) {
+	s := &Store{path: path, workspaceRoot: workspaceRoot}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+
+	body, err := os.ReadFile(path)
+	if err == nil && len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, &s.state); err != nil {
+			return nil, err
+		}
+		s.hydrateMissingDefaults()
+		if err := s.ensureFilesystemArtifacts(); err != nil {
+			return nil, err
+		}
+		return s, nil
+	}
+
+	s.state = seedState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureFilesystemArtifactsLocked(); err != nil {
+		return nil, err
+	}
+	return s, s.persistLocked()
+}
+
+func (s *Store) Snapshot() State {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneState(s.state)
+}
+
+func (s *Store) RoomDetail(roomID string) (RoomDetail, bool) {
+	snapshot := s.Snapshot()
+	for _, item := range snapshot.Rooms {
+		if item.ID == roomID {
+			return RoomDetail{Room: item, Messages: snapshot.RoomMessages[roomID]}, true
+		}
+	}
+	return RoomDetail{}, false
+}
+
+func (s *Store) hydrateMissingDefaults() {
+	defaults := seedState()
+	if len(s.state.PullRequests) == 0 {
+		s.state.PullRequests = defaults.PullRequests
+	}
+	if len(s.state.Sessions) == 0 {
+		s.state.Sessions = defaults.Sessions
+	}
+	if len(s.state.Memory) == 0 {
+		s.state.Memory = defaults.Memory
+	}
+	if s.state.ChannelMessages == nil {
+		s.state.ChannelMessages = defaults.ChannelMessages
+	}
+	if s.state.RoomMessages == nil {
+		s.state.RoomMessages = defaults.RoomMessages
+	}
+	s.ensureSessionConsistency()
+}
+
+func (s *Store) ensureFilesystemArtifacts() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureFilesystemArtifactsLocked(); err != nil {
+		return err
+	}
+	return s.persistLocked()
+}
+
+func (s *Store) ensureFilesystemArtifactsLocked() error {
+	artifacts, err := ensureWorkspaceScaffold(s.workspaceRoot, s.state.Agents, s.state.Memory)
+	if err != nil {
+		return err
+	}
+	s.state.Memory = artifacts
+	return nil
+}
+
+func (s *Store) nextIssueNumberLocked() int {
+	max := 0
+	for _, item := range s.state.Issues {
+		number, err := strconv.Atoi(strings.TrimPrefix(strings.ToUpper(item.Key), "OPS-"))
+		if err == nil && number > max {
+			max = number
+		}
+	}
+	return max + 1
+}
+
+func (s *Store) appendChannelMessageLocked(channelID string, msg Message) {
+	if s.state.ChannelMessages == nil {
+		s.state.ChannelMessages = map[string][]Message{}
+	}
+	s.state.ChannelMessages[channelID] = append(s.state.ChannelMessages[channelID], msg)
+	for index := range s.state.Channels {
+		if s.state.Channels[index].ID == channelID {
+			s.state.Channels[index].Unread++
+			return
+		}
+	}
+}
+
+func (s *Store) appendRoomMessageLocked(roomID string, msg Message) {
+	if s.state.RoomMessages == nil {
+		s.state.RoomMessages = map[string][]Message{}
+	}
+	s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], msg)
+	for index := range s.state.Rooms {
+		if s.state.Rooms[index].ID == roomID {
+			s.state.Rooms[index].MessageIDs = append(s.state.Rooms[index].MessageIDs, msg.ID)
+			return
+		}
+	}
+}
+
+func (s *Store) findPullRequestLocked(pullRequestID string) int {
+	for index, item := range s.state.PullRequests {
+		if item.ID == pullRequestID {
+			return index
+		}
+	}
+	return -1
+}
+
+func (s *Store) findPullRequestByRoomLocked(roomID string) int {
+	for index, item := range s.state.PullRequests {
+		if item.RoomID == roomID {
+			return index
+		}
+	}
+	return -1
+}
+
+func (s *Store) nextPullRequestNumberLocked() int {
+	max := 0
+	for _, item := range s.state.PullRequests {
+		if item.Number > max {
+			max = item.Number
+		}
+	}
+	return max + 1
+}
+
+func (s *Store) findRoomRunIssueLocked(roomID string) (int, int, int, bool) {
+	roomIndex := -1
+	runIndex := -1
+	issueIndex := -1
+	roomRunID := ""
+	roomIssueKey := ""
+
+	for index, item := range s.state.Rooms {
+		if item.ID == roomID {
+			roomIndex = index
+			roomRunID = item.RunID
+			roomIssueKey = item.IssueKey
+			break
+		}
+	}
+	if roomIndex == -1 {
+		return 0, 0, 0, false
+	}
+	for index, item := range s.state.Runs {
+		if item.ID == roomRunID {
+			runIndex = index
+			break
+		}
+	}
+	for index, item := range s.state.Issues {
+		if item.Key == roomIssueKey {
+			issueIndex = index
+			break
+		}
+	}
+	return roomIndex, runIndex, issueIndex, runIndex != -1 && issueIndex != -1
+}
+
+func (s *Store) updateAgentStateLocked(owner, state, mood string) {
+	for index := range s.state.Agents {
+		if s.state.Agents[index].Name == owner {
+			s.state.Agents[index].State = state
+			s.state.Agents[index].Mood = mood
+			return
+		}
+	}
+}
+
+func (s *Store) updateSessionLocked(runID string, mutate func(*Session)) {
+	for index := range s.state.Sessions {
+		if s.state.Sessions[index].ActiveRunID == runID {
+			mutate(&s.state.Sessions[index])
+			return
+		}
+	}
+}
+
+func (s *Store) updateSessionByIDLocked(sessionID string, mutate func(*Session)) {
+	for index := range s.state.Sessions {
+		if s.state.Sessions[index].ID == sessionID {
+			mutate(&s.state.Sessions[index])
+			return
+		}
+	}
+}
+
+func (s *Store) persistLocked() error {
+	body, err := json.MarshalIndent(s.state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.path, body, 0o644)
+}
+
+func cloneState(state State) State {
+	body, err := json.Marshal(state)
+	if err != nil {
+		return state
+	}
+	var clone State
+	if err := json.Unmarshal(body, &clone); err != nil {
+		return state
+	}
+	return clone
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func shortClock() string {
+	return time.Now().Format("15:04")
+}
+
+func slugify(input string) string {
+	var builder strings.Builder
+	lastDash := false
+	for _, char := range strings.ToLower(input) {
+		switch {
+		case char >= 'a' && char <= 'z':
+			builder.WriteRune(char)
+			lastDash = false
+		case char >= '0' && char <= '9':
+			builder.WriteRune(char)
+			lastDash = false
+		default:
+			if !lastDash && builder.Len() > 0 {
+				builder.WriteRune('-')
+				lastDash = true
+			}
+		}
+	}
+	return strings.Trim(builder.String(), "-")
+}
+
+func (s *Store) ensureSessionConsistency() {
+	seen := make(map[string]bool, len(s.state.Sessions))
+	for index := range s.state.Sessions {
+		if len(s.state.Sessions[index].MemoryPaths) == 0 {
+			s.state.Sessions[index].MemoryPaths = defaultSessionMemoryPaths(s.state.Sessions[index].RoomID, s.state.Sessions[index].IssueKey)
+		}
+		if strings.TrimSpace(s.state.Sessions[index].UpdatedAt) == "" {
+			s.state.Sessions[index].UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		if strings.TrimSpace(s.state.Sessions[index].ID) == "" {
+			s.state.Sessions[index].ID = fmt.Sprintf("session-%s", slugify(s.state.Sessions[index].ActiveRunID))
+		}
+		seen[s.state.Sessions[index].ActiveRunID] = true
+	}
+
+	for _, run := range s.state.Runs {
+		if seen[run.ID] {
+			continue
+		}
+		s.state.Sessions = append(s.state.Sessions, Session{
+			ID:           fmt.Sprintf("session-%s", slugify(run.ID)),
+			IssueKey:     run.IssueKey,
+			RoomID:       run.RoomID,
+			TopicID:      run.TopicID,
+			ActiveRunID:  run.ID,
+			Status:       defaultString(run.Status, "queued"),
+			Runtime:      run.Runtime,
+			Machine:      run.Machine,
+			Provider:     run.Provider,
+			Branch:       run.Branch,
+			Worktree:     run.Worktree,
+			WorktreePath: run.WorktreePath,
+			Summary:      defaultString(run.Summary, "补建的 Session 上下文。"),
+			UpdatedAt:    time.Now().UTC().Format(time.RFC3339),
+			MemoryPaths:  defaultSessionMemoryPaths(run.RoomID, run.IssueKey),
+		})
+	}
+}

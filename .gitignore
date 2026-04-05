@@ -11,3 +11,8 @@ coverage/
 !.env.example
 data/
 docs/stitch-ref/
+.openshock/
+notes/
+decisions/
+MEMORY.md
+logs/
