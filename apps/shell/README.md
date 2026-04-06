@@ -1,22 +1,20 @@
-# 0A Thin Shell Skeleton
+# Stage 1 Collaboration Shell
 
-This directory contains the `0A` thin shell baseline for OpenShock.
+This directory contains the Stage 1 collaboration shell for OpenShock.
 
-Scope is intentionally narrow and matches the contract:
+Scope in this stage:
 
-- `Topic overview`
-- `Agent status`
-- `Delivery state`
-- `Approval / intervention points`
-- `Three fixed human intervention points` (lead plan, worker dispatch, merge closeout)
-- `Coarse observability`
+- Room workspace (`1 Room = 1 Topic`)
+- Topic and run workspace views
+- Inbox for pending approvals, interventions, and closeout gates
+- Approval, intervention, follow-up, and closeout actions
+- Coarse observability
 
-Out of scope in this skeleton:
+Out of scope in this stage:
 
-- Full chat UX
-- Issue authoring flows
-- Rich historical analytics
-- Persistent backend storage
+- New backend truth sources or new backend nouns
+- Re-introducing old `/topics/*` shell-local patterns
+- Phase 2/3/4 capabilities (workspace/account/runtime-governance expansion)
 
 ## Local run
 
@@ -34,8 +32,7 @@ Open:
 
 ## Integrated runtime contract
 
-The shell no longer owns local mock state. `dev-server.mjs` serves shell assets and keeps one adapter
-surface (`/api/v0a/*`) that is composed from stable `/v1` endpoints:
+The shell does not own local mock truth. `dev-server.mjs` serves shell assets and keeps one adapter surface (`/api/v0a/*`) composed from stable `/v1` endpoints only:
 
 - `GET /v1/topics?limit=1`
 - `GET /v1/topics/:topicId`
@@ -46,19 +43,20 @@ surface (`/api/v0a/*`) that is composed from stable `/v1` endpoints:
 - `GET /v1/topics/:topicId/approval-holds?status=pending`
 - `GET /v1/topics/:topicId/messages`
 - `GET /v1/topics/:topicId/run-history`
+- `PUT /v1/topics/:topicId/actors/:actorId`
 - `POST /v1/topics/:topicId/approval-holds/:holdId/decisions`
 - `POST /v1/topics/:topicId/messages`
 
-So the shell no longer requires upstream `/api/v0a/*` routes to exist.
+Adapter routes:
 
 - `GET /api/v0a/shell-state`
-  - Returns topic/agent/approval/intervention/observability data synthesized from real `/topics/*` + `/runtime/*`.
+  - Returns collaboration shell view model data synthesized from stable `/v1`.
 - `POST /api/v0a/approvals/:approvalId/decision`
   - Body: `{ "decision": "approve" | "reject", "operator": "<string>", "note": "<string>" }`
-  - Writes to `POST /v1/topics/:topicId/approval-holds/:holdId/decisions`.
 - `POST /api/v0a/interventions/:interventionId/action`
   - Body: `{ "action": "pause" | "resume" | "reroute" | "request_report", "operator": "<string>", "note": "<string>" }`
-  - Writes to `POST /v1/topics/:topicId/messages` as runtime status events.
+- `POST /api/v0a/runs/:runId/follow-up`
+  - Body: `{ "operator": "<string>", "note": "<string>" }`
+  - Writes a `shell_follow_up_request` status event to `/v1/topics/:topicId/messages`.
 - `POST /api/v0a/intervention-points/:pointId/action`
   - Body: `{ "action": "approve" | "hold" | "escalate", "operator": "<string>", "note": "<string>" }`
-  - Writes to `POST /v1/topics/:topicId/messages` as runtime status events.

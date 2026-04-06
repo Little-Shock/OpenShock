@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OpenShock 0A Shell</title>
+    <title>OpenShock Collaboration Shell</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="shell-header">
       <div>
-        <h1>OpenShock 0A Thin Shell</h1>
-        <p>Topic overview, agent status, approval/intervention points, coarse observability.</p>
+        <h1>OpenShock Stage 1 Collaboration Shell</h1>
+        <p>Room workspace for Topic, Run, Inbox, approval, intervention, follow-up, and closeout workflows.</p>
       </div>
       <div class="header-actions">
         <button id="refresh-button" type="button">Refresh</button>
@@ -19,20 +19,27 @@
     </header>
 
     <main class="shell-grid">
+      <section class="panel" id="room-panel">
+        <h2>Rooms</h2>
+        <p class="panel-subtitle">Default mapping is <strong>1 Room = 1 Topic</strong>.</p>
+        <div id="room-list" class="list-cards"></div>
+      </section>
+
       <section class="panel" id="metrics-panel">
         <h2>Coarse Metrics</h2>
         <div id="metric-cards" class="metric-cards"></div>
       </section>
 
       <section class="panel" id="topic-panel">
-        <h2>Topic Overview</h2>
+        <h2>Topic Workspace</h2>
         <table>
           <thead>
             <tr>
+              <th>Room</th>
               <th>Topic</th>
               <th>Revision</th>
-              <th>Lead</th>
               <th>Status</th>
+              <th>Lead</th>
               <th>Pending Gates</th>
               <th>Delivery</th>
               <th>Risk</th>
@@ -42,37 +49,15 @@
         </table>
       </section>
 
-      <section class="panel" id="agent-panel">
-        <h2>Agent Status</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Agent</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Lane</th>
-              <th>Heartbeat</th>
-              <th>Blocker</th>
-            </tr>
-          </thead>
-          <tbody id="agent-table-body"></tbody>
-        </table>
+      <section class="panel" id="run-panel">
+        <h2>Run Workspace</h2>
+        <div id="run-list" class="list-cards"></div>
       </section>
 
-      <section class="panel" id="delivery-panel">
-        <h2>Delivery State</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Topic</th>
-              <th>Stage</th>
-              <th>PR State</th>
-              <th>Next Gate</th>
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody id="delivery-table-body"></tbody>
-        </table>
+      <section class="panel" id="inbox-panel">
+        <h2>Inbox</h2>
+        <p class="panel-subtitle">Pending approvals, interventions, and closeout actions.</p>
+        <div id="inbox-list" class="list-cards"></div>
       </section>
 
       <section class="panel" id="approval-panel">
@@ -80,15 +65,15 @@
         <div id="approval-list" class="list-cards"></div>
       </section>
 
-      <section class="panel" id="intervention-points-panel">
-        <h2>Human Intervention Points</h2>
-        <p class="panel-subtitle">Three fixed intervention points in 0A: lead plan, worker dispatch, merge closeout.</p>
-        <div id="intervention-points-list" class="list-cards"></div>
-      </section>
-
       <section class="panel" id="intervention-panel">
         <h2>Intervention Queue</h2>
         <div id="intervention-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="closeout-panel">
+        <h2>Closeout & Human Gates</h2>
+        <p class="panel-subtitle">Gate actions stay on stable `/v1` through shell adapters.</p>
+        <div id="intervention-points-list" class="list-cards"></div>
       </section>
 
       <section class="panel" id="event-panel">

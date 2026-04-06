@@ -44,6 +44,10 @@ const server = http.createServer(async (req, res) => {
       return handleInterventionAction(req, res, route.interventionId);
     }
 
+    if (route.kind === "run-follow-up") {
+      return handleRunFollowUp(req, res, route.runId);
+    }
+
     if (route.kind === "intervention-point-action") {
       return handleInterventionPointAction(req, res, route.pointId);
     }
@@ -87,6 +91,11 @@ function matchRoute(rawUrl) {
   const interventionActionMatch = pathname.match(/^\/api\/v0a\/interventions\/([^/]+)\/action$/);
   if (interventionActionMatch) {
     return { kind: "intervention-action", interventionId: decodeURIComponent(interventionActionMatch[1]) };
+  }
+
+  const runFollowUpMatch = pathname.match(/^\/api\/v0a\/runs\/([^/]+)\/follow-up$/);
+  if (runFollowUpMatch) {
+    return { kind: "run-follow-up", runId: decodeURIComponent(runFollowUpMatch[1]) };
   }
 
   const interventionPointActionMatch = pathname.match(/^\/api\/v0a\/intervention-points\/([^/]+)\/action$/);
@@ -235,6 +244,47 @@ async function handleInterventionAction(req, res, interventionId) {
           event: "shell_intervention_action",
           interventionId,
           action,
+          note: normalizeNote(input.note),
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleRunFollowUp(req, res, runId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const normalizedRunId = normalizeText(runId);
+    if (!normalizedRunId) {
+      return writeJson(res, 400, { error: "invalid_run_id", message: "runId is required" });
+    }
+
+    const input = await readJsonBody(req);
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const operator = normalizeOperator(input.operator);
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
+      body: {
+        role: "human",
+        status: "active",
+      },
+    });
+    const result = await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages`, {
+      method: "POST",
+      body: {
+        type: "status_report",
+        sourceAgentId: operator,
+        sourceRole: "human",
+        targetScope: "topic",
+        payload: {
+          event: "shell_follow_up_request",
+          runId: normalizedRunId,
           note: normalizeNote(input.note),
         },
       },
@@ -551,6 +601,7 @@ function buildShellStatePayload({
       note: `gate ${hold.gate}`,
       status: hold.status,
     })),
+    runs: normalizedRunHistory,
     interventionPoints: buildInterventionPoints(topicId, normalizedMessages, coarseModel, normalizedApprovals.length),
     interventions: buildInterventions(topicId, blockers, openConflicts),
     observability: {

@@ -8,6 +8,7 @@ const ENDPOINTS = {
     toApiUrl(runtimeConfig.apiBaseUrl, `/api/v0a/interventions/${encodeURIComponent(interventionId)}/action`),
   interventionPointAction: (pointId) =>
     toApiUrl(runtimeConfig.apiBaseUrl, `/api/v0a/intervention-points/${encodeURIComponent(pointId)}/action`),
+  runFollowUp: (runId) => toApiUrl(runtimeConfig.apiBaseUrl, `/api/v0a/runs/${encodeURIComponent(runId)}/follow-up`),
 };
 
 const POLL_MS = 5000;
@@ -16,17 +17,20 @@ const dom = {
   refreshButton: document.getElementById("refresh-button"),
   lastUpdated: document.getElementById("last-updated"),
   metricCards: document.getElementById("metric-cards"),
+  roomList: document.getElementById("room-list"),
   topicBody: document.getElementById("topic-table-body"),
-  agentBody: document.getElementById("agent-table-body"),
-  deliveryBody: document.getElementById("delivery-table-body"),
+  runList: document.getElementById("run-list"),
+  inboxList: document.getElementById("inbox-list"),
   approvalList: document.getElementById("approval-list"),
-  interventionPointsList: document.getElementById("intervention-points-list"),
   interventionList: document.getElementById("intervention-list"),
+  interventionPointsList: document.getElementById("intervention-points-list"),
   eventFeed: document.getElementById("event-feed"),
   actionTemplate: document.getElementById("queue-action-template"),
 };
 
 let loading = false;
+let latestPayload = null;
+let selectedTopicId = null;
 
 dom.refreshButton.addEventListener("click", () => {
   void loadAndRender();
@@ -53,19 +57,35 @@ async function loadAndRender() {
 }
 
 function render(payload) {
+  latestPayload = payload;
+  const topics = Array.isArray(payload.topics) ? payload.topics : [];
+  ensureSelectedTopic(topics);
+
   dom.lastUpdated.textContent = `Last updated: ${new Date(payload.generatedAt).toLocaleString()}`;
   renderMetrics(payload.observability?.metrics || []);
-  renderTopics(payload.topics || []);
-  renderAgents(payload.agents || []);
-  renderDeliveryState(payload.delivery || []);
+  renderRooms(topics);
+  renderTopicWorkspace(topics);
+  renderRuns(payload.runs || []);
+  renderInbox(payload);
   renderApprovalQueue(payload.approvals || []);
-  renderInterventionPoints(payload.interventionPoints || []);
   renderInterventionQueue(payload.interventions || []);
+  renderCloseoutPoints(payload.interventionPoints || []);
   renderEvents(payload.observability?.events || []);
 }
 
 function renderError(error) {
   dom.lastUpdated.textContent = `Last updated: failed (${String(error)}) [api=${runtimeConfig.apiBaseUrl}]`;
+}
+
+function ensureSelectedTopic(topics) {
+  if (!Array.isArray(topics) || topics.length === 0) {
+    selectedTopicId = null;
+    return;
+  }
+  if (selectedTopicId && topics.some((topic) => topic.id === selectedTopicId)) {
+    return;
+  }
+  selectedTopicId = topics[0].id;
 }
 
 function renderMetrics(metrics) {
@@ -92,51 +112,134 @@ function renderMetrics(metrics) {
   }
 }
 
-function renderTopics(topics) {
-  dom.topicBody.replaceChildren();
+function renderRooms(topics) {
+  dom.roomList.replaceChildren();
+  if (!Array.isArray(topics) || topics.length === 0) {
+    dom.roomList.textContent = "No room available.";
+    return;
+  }
+
   for (const topic of topics) {
-    const row = document.createElement("tr");
-    row.append(
-      cell(`${topic.id} · ${topic.title}`),
-      cell(String(topic.revision)),
-      cell(topic.leadAgent),
-      statusCell(topic.status),
-      cell(String(topic.pendingApprovals)),
-      cell(topic.deliveryState),
-      cell(topic.riskLevel),
-    );
-    dom.topicBody.append(row);
+    const card = queueCard({
+      title: `Room ${topic.id}`,
+      subtitle: `${topic.title} · lead ${topic.leadAgent}`,
+      note: `status=${topic.status} · delivery=${topic.deliveryState} · pending=${topic.pendingApprovals}`,
+      status: topic.id === selectedTopicId ? "active" : topic.status,
+    });
+    card.classList.add("room-card");
+    card.addEventListener("click", () => {
+      selectedTopicId = topic.id;
+      if (latestPayload) {
+        render(latestPayload);
+      }
+    });
+    dom.roomList.append(card);
   }
 }
 
-function renderAgents(agents) {
-  dom.agentBody.replaceChildren();
-  for (const agent of agents) {
-    const row = document.createElement("tr");
-    row.append(
-      cell(agent.displayName),
-      cell(agent.role),
-      statusCell(agent.status),
-      cell(agent.currentLane),
-      cell(`${agent.lastHeartbeatSec}s ago`),
-      cell(agent.blockedOn || "none"),
+function renderTopicWorkspace(topics) {
+  dom.topicBody.replaceChildren();
+  const topic = Array.isArray(topics) ? topics.find((item) => item.id === selectedTopicId) : null;
+  if (!topic) {
+    return;
+  }
+
+  const row = document.createElement("tr");
+  row.append(
+    cell(`Room ${topic.id}`),
+    cell(`${topic.id} · ${topic.title}`),
+    cell(String(topic.revision)),
+    statusCell(topic.status),
+    cell(topic.leadAgent),
+    cell(String(topic.pendingApprovals)),
+    cell(topic.deliveryState),
+    cell(topic.riskLevel),
+  );
+  dom.topicBody.append(row);
+}
+
+function renderRuns(runs) {
+  dom.runList.replaceChildren();
+  const normalizedRuns = Array.isArray(runs) ? runs : [];
+  if (normalizedRuns.length === 0) {
+    dom.runList.textContent = "No runs in workspace.";
+    return;
+  }
+
+  for (const run of normalizedRuns) {
+    const runId = normalizeText(run.runId) || "unknown_run";
+    const card = queueCard({
+      title: `Run ${runId}`,
+      subtitle: `${run.state || "unknown"} · ${formatTime(run.updatedAt)}`,
+      note: run.summary || "run summary unavailable",
+      status: run.state || "pending",
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "queue-actions";
+    actions.append(
+      queueAction("Request follow-up", async () => {
+        await requestJson(ENDPOINTS.runFollowUp(runId), {
+          method: "POST",
+          body: {
+            operator: "shell-operator",
+            note: `follow-up requested from room ${selectedTopicId || "n/a"}`,
+          },
+        });
+        await loadAndRender();
+      }),
     );
-    dom.agentBody.append(row);
+
+    card.append(actions);
+    dom.runList.append(card);
   }
 }
 
-function renderDeliveryState(deliveryItems) {
-  dom.deliveryBody.replaceChildren();
-  for (const item of deliveryItems) {
-    const row = document.createElement("tr");
-    row.append(
-      cell(item.topicId),
-      cell(item.stage),
-      statusCell(item.prState),
-      cell(item.nextGate),
-      cell(formatTime(item.updatedAt)),
+function renderInbox(payload) {
+  dom.inboxList.replaceChildren();
+
+  const approvals = (payload.approvals || []).filter((item) => item.status === "pending");
+  const interventions = (payload.interventions || []).filter((item) => item.status === "pending");
+  const closeoutPoints = (payload.interventionPoints || []).filter(
+    (item) => item.id === "merge_closeout" && (item.status === "pending" || item.status === "hold" || item.status === "blocked"),
+  );
+
+  if (approvals.length === 0 && interventions.length === 0 && closeoutPoints.length === 0) {
+    dom.inboxList.textContent = "Inbox is clear.";
+    return;
+  }
+
+  for (const approval of approvals) {
+    dom.inboxList.append(
+      queueCard({
+        title: `Approval · ${approval.id}`,
+        subtitle: `${approval.topicId} · ${approval.gateType}`,
+        note: approval.note,
+        status: approval.status,
+      }),
     );
-    dom.deliveryBody.append(row);
+  }
+
+  for (const intervention of interventions) {
+    dom.inboxList.append(
+      queueCard({
+        title: `Intervention · ${intervention.id}`,
+        subtitle: `${intervention.type} · run ${intervention.runId}`,
+        note: intervention.note,
+        status: intervention.status,
+      }),
+    );
+  }
+
+  for (const point of closeoutPoints) {
+    dom.inboxList.append(
+      queueCard({
+        title: `Closeout gate · ${point.name}`,
+        subtitle: `${point.topicId} · owner ${point.owner}`,
+        note: point.note,
+        status: point.status,
+      }),
+    );
   }
 }
 
@@ -159,14 +262,14 @@ function renderApprovalQueue(approvals) {
       queueAction("Approve", async () => {
         await requestJson(ENDPOINTS.approvalDecision(approval.id), {
           method: "POST",
-          body: { decision: "approve", operator: "shell-operator", note: "approved from thin shell" },
+          body: { decision: "approve", operator: "shell-operator", note: "approved from collaboration shell" },
         });
         await loadAndRender();
       }),
       queueAction("Reject", async () => {
         await requestJson(ENDPOINTS.approvalDecision(approval.id), {
           method: "POST",
-          body: { decision: "reject", operator: "shell-operator", note: "rejected from thin shell" },
+          body: { decision: "reject", operator: "shell-operator", note: "rejected from collaboration shell" },
         });
         await loadAndRender();
       }),
@@ -198,7 +301,7 @@ function renderInterventionQueue(interventions) {
         queueAction(actionLabel(action), async () => {
           await requestJson(ENDPOINTS.interventionAction(intervention.id), {
             method: "POST",
-            body: { action, operator: "shell-operator", note: "action from thin shell" },
+            body: { action, operator: "shell-operator", note: "action from collaboration shell" },
           });
           await loadAndRender();
         }),
@@ -209,12 +312,21 @@ function renderInterventionQueue(interventions) {
   }
 }
 
-function renderInterventionPoints(points) {
+function renderCloseoutPoints(points) {
   dom.interventionPointsList.replaceChildren();
-  for (const point of points) {
+  const closeoutAndGates = points.filter((point) =>
+    ["lead_plan", "worker_dispatch", "merge_closeout"].includes(point.id),
+  );
+
+  if (closeoutAndGates.length === 0) {
+    dom.interventionPointsList.textContent = "No closeout gate actions.";
+    return;
+  }
+
+  for (const point of closeoutAndGates) {
     const card = queueCard({
       title: `${point.name} · ${point.topicId}`,
-      subtitle: `Owner ${point.owner} · current state ${point.status}`,
+      subtitle: `Owner ${point.owner} · state ${point.status}`,
       note: point.note,
       status: point.status,
     });
@@ -225,7 +337,7 @@ function renderInterventionPoints(points) {
         queueAction(interventionPointActionLabel(action), async () => {
           await requestJson(ENDPOINTS.interventionPointAction(point.id), {
             method: "POST",
-            body: { action, operator: "shell-operator", note: "action from thin shell" },
+            body: { action, operator: "shell-operator", note: "gate action from collaboration shell" },
           });
           await loadAndRender();
         }),
@@ -301,7 +413,7 @@ function statusCell(status) {
 }
 
 function statusBadgeClass(status) {
-  if (status === "running" || status === "active") {
+  if (status === "running" || status === "active" || status === "approved") {
     return "badge-running";
   }
   if (status === "blocked" || status === "approval_required" || status === "hold" || status === "rejected") {
@@ -309,9 +421,6 @@ function statusBadgeClass(status) {
   }
   if (status === "pending" || status === "open" || status === "waiting") {
     return "badge-pending";
-  }
-  if (status === "approved" || status === "resolved") {
-    return "badge-running";
   }
   return "badge-idle";
 }
@@ -335,7 +444,7 @@ function actionLabel(action) {
     case "reroute":
       return "Reroute plan";
     case "request_report":
-      return "Request report";
+      return "Request follow-up";
     default:
       return action;
   }
@@ -344,9 +453,9 @@ function actionLabel(action) {
 function interventionPointActionLabel(action) {
   switch (action) {
     case "approve":
-      return "Approve point";
+      return "Approve gate";
     case "hold":
-      return "Hold point";
+      return "Hold gate";
     case "escalate":
       return "Escalate";
     default:
@@ -381,4 +490,11 @@ function resolveRuntimeConfig() {
 function toApiUrl(baseUrl, pathname) {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
   return `${normalizedBase}${pathname}`;
+}
+
+function normalizeText(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim();
 }

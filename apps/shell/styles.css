@@ -76,24 +76,31 @@ button:hover {
   padding: 14px;
 }
 
-#metrics-panel,
-#event-panel {
-  grid-column: span 12;
+#room-panel {
+  grid-column: span 4;
 }
 
-#topic-panel,
-#agent-panel {
-  grid-column: span 6;
+#metrics-panel {
+  grid-column: span 8;
 }
 
-#delivery-panel {
-  grid-column: span 12;
+#topic-panel {
+  grid-column: span 8;
+}
+
+#run-panel,
+#inbox-panel {
+  grid-column: span 4;
 }
 
 #approval-panel,
-#intervention-points-panel,
-#intervention-panel {
-  grid-column: span 6;
+#intervention-panel,
+#closeout-panel {
+  grid-column: span 4;
+}
+
+#event-panel {
+  grid-column: span 12;
 }
 
 table {
@@ -164,6 +171,14 @@ td {
   border: 1px solid #e2e6f0;
   border-radius: 10px;
   padding: 11px;
+}
+
+.room-card {
+  cursor: pointer;
+}
+
+.room-card:hover {
+  border-color: #c8d5f5;
 }
 
 .queue-card header {
@@ -252,12 +267,15 @@ td {
 }
 
 @media (max-width: 980px) {
+  #room-panel,
+  #metrics-panel,
   #topic-panel,
-  #agent-panel,
-  #delivery-panel,
+  #run-panel,
+  #inbox-panel,
   #approval-panel,
-  #intervention-points-panel,
-  #intervention-panel {
+  #intervention-panel,
+  #closeout-panel,
+  #event-panel {
     grid-column: span 12;
   }
 
