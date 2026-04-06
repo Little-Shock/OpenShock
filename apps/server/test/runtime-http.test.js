@@ -1549,6 +1549,74 @@ test("batch6 control-plane closeout/debug truth exposes server-owned evidence an
       });
       assert.equal(upsertHuman.statusCode, 200);
 
+      const dispatchCreated = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/topics/topic_batch6_control_truth/dispatches",
+        headers: {
+          "idempotency-key": "batch8-control-dispatch-01"
+        },
+        body: {
+          source_actor_id: "lead_sample_01",
+          worker_actor_id: "worker_sample_01",
+          payload: {
+            summary: "batch8 control status surface dispatch"
+          }
+        }
+      });
+      assert.equal(dispatchCreated.statusCode, 202);
+      const dispatchId = dispatchCreated.body.dispatch.dispatch_id;
+      assert.ok(typeof dispatchId === "string" && dispatchId.length > 0);
+      assert.equal(dispatchCreated.body.dispatch.status, "pending_accept");
+
+      const dispatchListPending = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth/dispatches?status=pending_accept&limit=20"
+      });
+      assert.equal(dispatchListPending.statusCode, 200);
+      assert.ok(dispatchListPending.body.items.some((item) => item.dispatch_id === dispatchId));
+
+      const dispatchPending = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/topics/topic_batch6_control_truth/dispatches/${encodeURIComponent(dispatchId)}`
+      });
+      assert.equal(dispatchPending.statusCode, 200);
+      assert.equal(dispatchPending.body.dispatch.status, "pending_accept");
+
+      const dispatchAccepted = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "status_report",
+          sourceAgentId: "worker_sample_01",
+          sourceRole: "worker",
+          payload: {
+            event: "dispatch_accepted",
+            dispatchId
+          }
+        }
+      });
+      assert.equal(dispatchAccepted.statusCode, 200);
+      assert.equal(dispatchAccepted.body.result.status, "active");
+
+      const dispatchActive = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/topics/topic_batch6_control_truth/dispatches/${encodeURIComponent(dispatchId)}`
+      });
+      assert.equal(dispatchActive.statusCode, 200);
+      assert.equal(dispatchActive.body.dispatch.status, "active");
+
+      const topicBeforeTruthPatch = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth"
+      });
+      assert.equal(topicBeforeTruthPatch.statusCode, 200);
+
       const truthOnlyPatch = await requestJson({
         port,
         method: "POST",
@@ -1557,7 +1625,7 @@ test("batch6 control-plane closeout/debug truth exposes server-owned evidence an
           type: "shared_truth_proposal",
           sourceAgentId: "lead_sample_01",
           sourceRole: "lead",
-          truthRevision: 1,
+          truthRevision: topicBeforeTruthPatch.body.topic.revision,
           payload: {
             patch: {
               deliveryState: {
@@ -1605,6 +1673,17 @@ test("batch6 control-plane closeout/debug truth exposes server-owned evidence an
       assert.equal(overviewWithConflict.body.topic.open_conflicts[0].evidence_anchor.source, "server_owned");
       assert.equal(overviewWithConflict.body.topic.merge_lifecycle.closeout_explanation.status, "waiting_gate");
       assert.equal(overviewWithConflict.body.topic.merge_lifecycle.closeout_explanation.reason_code, "unresolved_conflict");
+
+      const statusWithConflict = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth/status"
+      });
+      assert.equal(statusWithConflict.statusCode, 200);
+      assert.equal(statusWithConflict.body.status.topic_id, "topic_batch6_control_truth");
+      assert.equal(statusWithConflict.body.status.open_conflict_count, 1);
+      assert.equal(statusWithConflict.body.status.pending_approval_count, 0);
+      assert.equal(statusWithConflict.body.status.evidence_anchor.source, "server_owned");
 
       const resolveConflict = await requestJson({
         port,
@@ -1693,6 +1772,23 @@ test("batch6 control-plane closeout/debug truth exposes server-owned evidence an
         overviewWithPendingGate.body.topic.merge_lifecycle.evidence_anchor.pending_approval_ids.includes(holdId)
       );
 
+      const pendingApprovalHolds = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth/approval-holds?status=pending&limit=20"
+      });
+      assert.equal(pendingApprovalHolds.statusCode, 200);
+      assert.ok(pendingApprovalHolds.body.items.some((item) => item.hold_id === holdId));
+
+      const holdDetail = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/topics/topic_batch6_control_truth/approval-holds/${holdId}`
+      });
+      assert.equal(holdDetail.statusCode, 200);
+      assert.equal(holdDetail.body.hold.hold_id, holdId);
+      assert.equal(holdDetail.body.hold.evidence_anchor.source, "server_owned");
+
       const rejectDecision = await requestJson({
         port,
         method: "POST",
@@ -1749,6 +1845,90 @@ test("batch6 control-plane closeout/debug truth exposes server-owned evidence an
       assert.equal(repoBinding.body.delivery_projection.evidence_anchor.source, "server_owned");
       assert.equal(repoBinding.body.delivery_projection.closeout_explanation.reason_code, "truth_failure_reason");
 
+      const invalidDeliveryWrite = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/topics/topic_batch6_control_truth/delivery",
+        headers: {
+          "idempotency-key": "batch8-control-delivery-invalid"
+        },
+        body: {
+          source_actor_id: "lead_sample_01",
+          state: "pr_ready",
+          run_id: "run_should_be_rejected"
+        }
+      });
+      assert.equal(invalidDeliveryWrite.statusCode, 400);
+      assert.equal(invalidDeliveryWrite.body.error.code, "invalid_delivery_server_owned_field");
+
+      const deliveryWrite = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/topics/topic_batch6_control_truth/delivery",
+        headers: {
+          "idempotency-key": "batch8-control-delivery-valid"
+        },
+        body: {
+          source_actor_id: "lead_sample_01",
+          state: "pr_ready",
+          pr_url: "https://github.com/little-shock/openshockswarm/pull/508"
+        }
+      });
+      assert.equal(deliveryWrite.statusCode, 200);
+      assert.equal(deliveryWrite.body.delivery.state, "pr_ready");
+      assert.equal(deliveryWrite.body.delivery.evidence_anchor.source, "server_owned");
+
+      const deliveryRead = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth/delivery"
+      });
+      assert.equal(deliveryRead.statusCode, 200);
+      assert.equal(deliveryRead.body.delivery.state, "pr_ready");
+      assert.equal(deliveryRead.body.delivery.evidence_anchor.source, "server_owned");
+
+      const invalidPrWritebackWrite = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/topics/topic_batch6_control_truth/pr-writeback",
+        headers: {
+          "idempotency-key": "batch8-control-pr-writeback-invalid"
+        },
+        body: {
+          source_actor_id: "lead_sample_01",
+          pr_url: "https://github.com/little-shock/openshockswarm/pull/508",
+          run_id: "run_should_be_rejected"
+        }
+      });
+      assert.equal(invalidPrWritebackWrite.statusCode, 400);
+      assert.equal(invalidPrWritebackWrite.body.error.code, "invalid_pr_writeback_server_owned_field");
+
+      const prWritebackWrite = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/topics/topic_batch6_control_truth/pr-writeback",
+        headers: {
+          "idempotency-key": "batch8-control-pr-writeback-valid"
+        },
+        body: {
+          source_actor_id: "lead_sample_01",
+          state: "written",
+          pr_url: "https://github.com/little-shock/openshockswarm/pull/508"
+        }
+      });
+      assert.equal(prWritebackWrite.statusCode, 200);
+      assert.equal(prWritebackWrite.body.pr_writeback.state, "written");
+      assert.equal(prWritebackWrite.body.pr_writeback.evidence_anchor.source, "server_owned");
+
+      const prWritebackRead = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth/pr-writeback"
+      });
+      assert.equal(prWritebackRead.statusCode, 200);
+      assert.equal(prWritebackRead.body.pr_writeback.pr_url, "https://github.com/little-shock/openshockswarm/pull/508");
+      assert.equal(prWritebackRead.body.pr_writeback.evidence_anchor.source, "server_owned");
+
       const blockLead = await requestJson({
         port,
         method: "PUT",
@@ -1792,6 +1972,42 @@ test("batch6 control-plane closeout/debug truth exposes server-owned evidence an
       });
       assert.equal(blockedResolution.statusCode, 422);
       assert.equal(blockedResolution.body.error.code, "source_actor_inactive");
+
+      const blockedResolutionV1 = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/topics/topic_batch6_control_truth/conflicts/conflict_batch6_control_blocked/resolutions",
+        headers: {
+          "idempotency-key": "batch8-control-blocked-resolution-v1"
+        },
+        body: {
+          source_actor_id: "lead_sample_01",
+          outcome: "accept_side"
+        }
+      });
+      assert.equal(blockedResolutionV1.statusCode, 422);
+      assert.equal(blockedResolutionV1.body.error.code, "write_actor_inactive");
+
+      const debugRejections = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth/debug/rejections?limit=20"
+      });
+      assert.equal(debugRejections.statusCode, 200);
+      assert.ok(
+        debugRejections.body.items.some((item) =>
+          ["source_actor_inactive", "write_actor_inactive"].includes(item.reason_code)
+        )
+      );
+
+      const debugSnapshots = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_batch6_control_truth/debug/history?view=snapshot&limit=5"
+      });
+      assert.equal(debugSnapshots.statusCode, 200);
+      assert.ok(Array.isArray(debugSnapshots.body.items));
+      assert.ok(debugSnapshots.body.items.length >= 1);
     }
   );
 });

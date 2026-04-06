@@ -234,6 +234,10 @@ function matchRoute(method, pathName) {
   if (method === "GET" && v1TopicCoarseMatch) {
     return { route: "V1_GET_TOPIC_COARSE", topicId: v1TopicCoarseMatch[1] };
   }
+  const v1TopicStatusMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/status$/);
+  if (method === "GET" && v1TopicStatusMatch) {
+    return { route: "V1_GET_TOPIC_STATUS", topicId: v1TopicStatusMatch[1] };
+  }
 
   const v1TopicDeliveryMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/delivery$/);
   if (method === "GET" && v1TopicDeliveryMatch) {
@@ -845,6 +849,25 @@ function serializeCoarseReadModel(model) {
     risk_flags: deepClone(model.riskFlags),
     delivery_state: serializeDeliveryState(model.deliveryState),
     updated_at: model.updatedAt
+  };
+}
+
+function serializeTopicStatusReadModel(overview, coarseModel) {
+  const mergeLifecycle = serializeMergeLifecycle(overview);
+  return {
+    topic_id: overview.topicId,
+    revision: overview.revision,
+    topic_state: serializeTopicState(overview),
+    merge_lifecycle: mergeLifecycle,
+    delivery_state: serializeDeliveryState(overview.truth.deliveryState),
+    active_actor_count: Array.isArray(coarseModel.activeAgents) ? coarseModel.activeAgents.length : 0,
+    blocked_actor_count: Array.isArray(coarseModel.blockedAgents) ? coarseModel.blockedAgents.length : 0,
+    pending_approval_count: coarseModel.pendingApprovalCount,
+    open_conflict_count: coarseModel.openConflictCount,
+    blocker_count: coarseModel.blockerCount,
+    risk_flags: deepClone(coarseModel.riskFlags),
+    evidence_anchor: deepClone(mergeLifecycle.evidence_anchor),
+    updated_at: overview.updatedAt
   };
 }
 
@@ -2063,6 +2086,16 @@ export function createHttpServer(coordinator, options = {}) {
         const coarse = coordinator.getCoarseObservability(route.topicId);
         sendJson(response, 200, {
           coarse: serializeCoarseReadModel(coarse),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_TOPIC_STATUS") {
+        const overview = coordinator.getTopicOverview(route.topicId);
+        const coarse = coordinator.getCoarseObservability(route.topicId);
+        sendJson(response, 200, {
+          status: serializeTopicStatusReadModel(overview, coarse),
           request_id: requestId
         });
         return;

@@ -1570,6 +1570,33 @@ export class ServerCoordinator {
     return deepClone(actor);
   }
 
+  listDispatches(topicId, input = {}) {
+    const topic = this.requireTopic(topicId);
+    const statusFilter = typeof input.status === "string" && input.status.trim().length > 0 ? input.status.trim() : null;
+    return Array.from(topic.dispatches.values())
+      .filter((dispatch) => (statusFilter ? dispatch.status === statusFilter : true))
+      .sort((left, right) => String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")))
+      .map((dispatch) => deepClone(dispatch));
+  }
+
+  listConflicts(topicId, input = {}) {
+    const topic = this.requireTopic(topicId);
+    const statusFilter = typeof input.status === "string" && input.status.trim().length > 0 ? input.status.trim() : null;
+    return Array.from(topic.conflicts.values())
+      .filter((conflict) => (statusFilter ? conflict.status === statusFilter : true))
+      .sort((left, right) => String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")))
+      .map((conflict) => deepClone(conflict));
+  }
+
+  listApprovalHolds(topicId, input = {}) {
+    const topic = this.requireTopic(topicId);
+    const statusFilter = typeof input.status === "string" && input.status.trim().length > 0 ? input.status.trim() : null;
+    return Array.from(topic.approvals.values())
+      .filter((hold) => (statusFilter ? hold.status === statusFilter : true))
+      .sort((left, right) => String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")))
+      .map((hold) => deepClone(hold));
+  }
+
   resolveWriteActor(topicId, input = {}) {
     const topic = this.requireTopic(topicId);
     assertOrThrow(input && typeof input === "object", "invalid_write_actor", "write actor payload is required");
