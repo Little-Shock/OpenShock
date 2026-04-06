@@ -2440,6 +2440,21 @@ test("v1 batch7 integration projection closure keeps projection meta and backend
         path: "/v1/execution/runs/run_batch7_01/debug?topic_id=topic_v1_batch7_projection"
       });
       assert.equal(runDebug.statusCode, 200);
+      assert.equal(runDebug.body.projection_meta.resource, "execution_run_debug_evidence_projection");
+      assert.equal(runDebug.body.projection_meta.source_plane, "execution_plane_projection");
+      assert.equal(runDebug.body.projection_meta.topic_id, "topic_v1_batch7_projection");
+      assert.equal(runDebug.body.projection_meta.run_id, "run_batch7_01");
+
+      const runEvents = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/execution/runs/run_batch7_01/events?topic_id=topic_v1_batch7_projection&after_sequence=0&limit=20"
+      });
+      assert.equal(runEvents.statusCode, 200);
+      assert.equal(runEvents.body.projection_meta.resource, "execution_run_event_projection");
+      assert.equal(runEvents.body.projection_meta.source_plane, "execution_plane_projection");
+      assert.equal(runEvents.body.projection_meta.topic_id, "topic_v1_batch7_projection");
+      assert.equal(runEvents.body.projection_meta.run_id, "run_batch7_01");
 
       const shellCompatibility = await requestJson({
         port,
@@ -2473,9 +2488,18 @@ test("v1 batch7 integration projection closure keeps projection meta and backend
           "/v1/execution/runs/:runId/debug?topic_id=:topicId"
         )
       );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/execution/runs/:runId/events?topic_id=:topicId"
+        )
+      );
       assert.equal(
         shellCompatibility.body.backend_derived_projection.lineage_anchors.execution_debug,
         "/v1/execution/runs/:runId/debug?topic_id=:topicId"
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.execution_events,
+        "/v1/execution/runs/:runId/events?topic_id=:topicId"
       );
     }
   );

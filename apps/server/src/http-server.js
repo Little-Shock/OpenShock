@@ -2540,7 +2540,15 @@ export function createHttpServer(coordinator, options = {}) {
         const result = coordinator.getExecutionRunDebugEvidenceProjection(route.runId, {
           topicId: parsedUrl.searchParams.get("topic_id")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "execution_run_debug_evidence_projection",
+            sourcePlane: "execution_plane_projection",
+            topicId: result.topic_id ?? null,
+            runId: route.runId
+          })
+        });
         return;
       }
 
@@ -2550,7 +2558,15 @@ export function createHttpServer(coordinator, options = {}) {
           afterSequence: parsedUrl.searchParams.get("after_sequence"),
           limit: parsedUrl.searchParams.get("limit")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "execution_run_event_projection",
+            sourcePlane: "execution_plane_projection",
+            topicId: result.topic_id ?? null,
+            runId: route.runId
+          })
+        });
         return;
       }
 

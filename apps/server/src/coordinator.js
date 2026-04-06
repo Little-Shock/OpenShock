@@ -971,6 +971,12 @@ function buildRunExplanationProjection(topic, runId = null) {
       contract: "/v1/compatibility/shell-adapter",
       run_history: `/v1/topics/${encodeURIComponent(topic.topicId)}/run-history`,
       replay: resolvedRunId ? `/v1/runs/${encodeURIComponent(resolvedRunId)}/replay?topic_id=${encodeURIComponent(topic.topicId)}` : null,
+      execution_events: resolvedRunId
+        ? `/v1/execution/runs/${encodeURIComponent(resolvedRunId)}/events?topic_id=${encodeURIComponent(topic.topicId)}`
+        : null,
+      execution_debug: resolvedRunId
+        ? `/v1/execution/runs/${encodeURIComponent(resolvedRunId)}/debug?topic_id=${encodeURIComponent(topic.topicId)}`
+        : null,
       debug_events: `/v1/debug/events?topic_id=${encodeURIComponent(topic.topicId)}`,
       debug_history: `/v1/debug/history?topic_id=${encodeURIComponent(topic.topicId)}`
     }
@@ -1982,6 +1988,8 @@ export class ServerCoordinator {
       links: {
         timeline: `/v1/runs/${encodeURIComponent(runId)}/timeline`,
         replay: `/v1/runs/${encodeURIComponent(runId)}/replay`,
+        execution_events: `/v1/execution/runs/${encodeURIComponent(runId)}/events`,
+        execution_debug: `/v1/execution/runs/${encodeURIComponent(runId)}/debug`,
         feedback: `/v1/runs/${encodeURIComponent(runId)}/feedback`,
         holds: `/v1/runs/${encodeURIComponent(runId)}/holds`
       }
@@ -2283,6 +2291,7 @@ export class ServerCoordinator {
         "/v1/topics/:topicId/notifications",
         "/v1/topics/:topicId/run-history",
         "/v1/runs/:runId/replay?topic_id=:topicId",
+        "/v1/execution/runs/:runId/events?topic_id=:topicId",
         "/v1/debug/events?topic_id=:topicId&run_id=:runId",
         "/v1/debug/history?topic_id=:topicId&run_id=:runId",
         "/v1/execution/runs/:runId/debug?topic_id=:topicId",
@@ -2291,6 +2300,7 @@ export class ServerCoordinator {
       lineage_anchors: {
         run_history: "/v1/topics/:topicId/run-history",
         run_replay: "/v1/runs/:runId/replay?topic_id=:topicId",
+        execution_events: "/v1/execution/runs/:runId/events?topic_id=:topicId",
         debug_events: "/v1/debug/events?topic_id=:topicId",
         debug_history: "/v1/debug/history?topic_id=:topicId&run_id=:runId",
         execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId"
