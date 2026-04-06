@@ -76,6 +76,12 @@ async function withRuntimeServer(options, run) {
   }
 }
 
+function renderContractPath(template, { topicId, runId }) {
+  return template
+    .replaceAll(":topicId", encodeURIComponent(topicId))
+    .replaceAll(":runId", encodeURIComponent(runId));
+}
+
 test("runtime config + fixture seed expose integrated sample topic", async () => {
   await withRuntimeServer(
     {
@@ -2983,6 +2989,331 @@ test("v1 batch9 control-plane truth read surfaces expose topic-state/merge-lifec
       assert.equal(mergeLifecycleAfterReject.statusCode, 200);
       assert.equal(mergeLifecycleAfterReject.body.merge_lifecycle.stage, "awaiting_merge_gate");
       assert.equal(mergeLifecycleAfterReject.body.merge_lifecycle.delivery.state, "awaiting_merge_gate");
+    }
+  );
+});
+
+test("v1 phase3 batch1 execution/compatibility consumer verification keeps stable read surfaces", async () => {
+  const topicId = "topic_v1_phase3_execution_consumer";
+  const runId = "run_phase3_execution_01";
+
+  await withRuntimeServer(
+    {
+      fixture: {
+        topicId
+      }
+    },
+    async ({ port }) => {
+      const seeded = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/fixtures/seed",
+        body: {}
+      });
+      assert.equal(seeded.statusCode, 200);
+
+      const overview = await requestJson({
+        port,
+        method: "GET",
+        path: `/topics/${encodeURIComponent(topicId)}/overview`
+      });
+      assert.equal(overview.statusCode, 200);
+
+      const truthPatch = await requestJson({
+        port,
+        method: "POST",
+        path: `/topics/${encodeURIComponent(topicId)}/messages`,
+        body: {
+          type: "shared_truth_proposal",
+          sourceAgentId: "lead_sample_01",
+          sourceRole: "lead",
+          truthRevision: overview.body.revision,
+          payload: {
+            patch: {
+              deliveryState: {
+                state: "awaiting_merge_gate",
+                run_id: runId
+              },
+              delivery_closeout: {
+                run_id: runId,
+                checkpoint_refs: ["checkpoint://phase3-execution"],
+                artifact_refs: ["artifact://phase3-execution"]
+              },
+              replay_debug_evidence: {
+                run_id: runId,
+                failure_reason: "consumer_side_verification",
+                checkpoint_refs: ["checkpoint://phase3-execution"],
+                artifact_refs: ["artifact://phase3-execution"]
+              }
+            }
+          }
+        }
+      });
+      assert.equal(truthPatch.statusCode, 200);
+
+      const feedbackEvent = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/daemon/events",
+        body: {
+          topicId,
+          type: "feedback_ingest",
+          runId,
+          laneId: "lane_phase3_execution_01",
+          payload: {
+            feedbackId: "feedback_phase3_execution_01",
+            summary: "phase3 execution consumer contract verification",
+            trace_id: "trace_phase3_execution_01"
+          }
+        }
+      });
+      assert.equal(feedbackEvent.statusCode, 200);
+
+      const blockerEvent = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/daemon/events",
+        body: {
+          topicId,
+          type: "blocker_escalation",
+          runId,
+          laneId: "lane_phase3_execution_01",
+          payload: {
+            reason: "phase3 gate pending"
+          }
+        }
+      });
+      assert.equal(blockerEvent.statusCode, 200);
+
+      const runHistory = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/topics/${encodeURIComponent(topicId)}/run-history?limit=20`
+      });
+      assert.equal(runHistory.statusCode, 200);
+      const runItem = runHistory.body.items.find((item) => item.run_id === runId);
+      assert.ok(runItem);
+      assert.equal(runItem.explanation_projection.run_id, runId);
+      assert.equal(runItem.explanation_projection.compatibility_anchor.run, `/v1/runs/${runId}?topic_id=${topicId}`);
+      assert.equal(
+        runItem.explanation_projection.compatibility_anchor.timeline,
+        `/v1/runs/${runId}/timeline?topic_id=${topicId}`
+      );
+      assert.equal(
+        runItem.explanation_projection.compatibility_anchor.feedback,
+        `/v1/runs/${runId}/feedback?topic_id=${topicId}`
+      );
+      assert.equal(
+        runItem.explanation_projection.compatibility_anchor.holds,
+        `/v1/runs/${runId}/holds?topic_id=${topicId}`
+      );
+      assert.equal(
+        runItem.explanation_projection.compatibility_anchor.execution_events,
+        `/v1/execution/runs/${runId}/events?topic_id=${topicId}`
+      );
+      assert.equal(
+        runItem.explanation_projection.compatibility_anchor.execution_debug,
+        `/v1/execution/runs/${runId}/debug?topic_id=${topicId}`
+      );
+
+      const runDetail = await requestJson({
+        port,
+        method: "GET",
+        path: runItem.explanation_projection.compatibility_anchor.run
+      });
+      assert.equal(runDetail.statusCode, 200);
+      assert.equal(runDetail.body.projection_meta.resource, "run_projection");
+      assert.equal(runDetail.body.projection_meta.topic_id, topicId);
+      assert.equal(runDetail.body.projection_meta.run_id, runId);
+      assert.equal(runDetail.body.topic_id, topicId);
+      assert.equal(runDetail.body.run_id, runId);
+
+      const runTimeline = await requestJson({
+        port,
+        method: "GET",
+        path: runItem.explanation_projection.compatibility_anchor.timeline
+      });
+      assert.equal(runTimeline.statusCode, 200);
+      assert.equal(runTimeline.body.projection_meta.resource, "run_timeline_projection");
+      assert.equal(runTimeline.body.projection_meta.topic_id, topicId);
+      assert.equal(runTimeline.body.projection_meta.run_id, runId);
+
+      const runFeedback = await requestJson({
+        port,
+        method: "GET",
+        path: runItem.explanation_projection.compatibility_anchor.feedback
+      });
+      assert.equal(runFeedback.statusCode, 200);
+      assert.equal(runFeedback.body.projection_meta.resource, "run_feedback_projection");
+      assert.equal(runFeedback.body.projection_meta.topic_id, topicId);
+      assert.equal(runFeedback.body.projection_meta.run_id, runId);
+
+      const runHolds = await requestJson({
+        port,
+        method: "GET",
+        path: runItem.explanation_projection.compatibility_anchor.holds
+      });
+      assert.equal(runHolds.statusCode, 200);
+      assert.equal(runHolds.body.projection_meta.resource, "run_hold_projection");
+      assert.equal(runHolds.body.projection_meta.topic_id, topicId);
+      assert.equal(runHolds.body.projection_meta.run_id, runId);
+
+      const runDebug = await requestJson({
+        port,
+        method: "GET",
+        path: runItem.explanation_projection.compatibility_anchor.execution_debug
+      });
+      assert.equal(runDebug.statusCode, 200);
+      assert.equal(runDebug.body.projection_meta.resource, "execution_run_debug_evidence_projection");
+      assert.equal(runDebug.body.projection_meta.topic_id, topicId);
+      assert.equal(runDebug.body.projection_meta.run_id, runId);
+
+      const runEvents = await requestJson({
+        port,
+        method: "GET",
+        path: `${runItem.explanation_projection.compatibility_anchor.execution_events}&after_sequence=0&limit=20`
+      });
+      assert.equal(runEvents.statusCode, 200);
+      assert.equal(runEvents.body.projection_meta.resource, "execution_run_event_projection");
+      assert.equal(runEvents.body.projection_meta.topic_id, topicId);
+      assert.equal(runEvents.body.projection_meta.run_id, runId);
+
+      const shellCompatibility = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/compatibility/shell-adapter?topic_id=${encodeURIComponent(topicId)}`
+      });
+      assert.equal(shellCompatibility.statusCode, 200);
+      assert.equal(shellCompatibility.body.projection_meta.resource, "shell_adapter_compatibility_projection");
+      assert.equal(shellCompatibility.body.projection_meta.topic_id, topicId);
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId/timeline?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId/feedback?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId/holds?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/execution/runs/:runId/debug?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/execution/runs/:runId/events?topic_id=:topicId"
+        )
+      );
+
+      const runDetailViaTemplate = await requestJson({
+        port,
+        method: "GET",
+        path: renderContractPath(
+          shellCompatibility.body.backend_derived_projection.lineage_anchors.run_detail,
+          { topicId, runId }
+        )
+      });
+      assert.equal(runDetailViaTemplate.statusCode, 200);
+      assert.equal(runDetailViaTemplate.body.projection_meta.topic_id, topicId);
+      assert.equal(runDetailViaTemplate.body.projection_meta.run_id, runId);
+
+      const runTimelineViaTemplate = await requestJson({
+        port,
+        method: "GET",
+        path: renderContractPath(
+          shellCompatibility.body.backend_derived_projection.lineage_anchors.run_timeline,
+          { topicId, runId }
+        )
+      });
+      assert.equal(runTimelineViaTemplate.statusCode, 200);
+      assert.equal(runTimelineViaTemplate.body.projection_meta.topic_id, topicId);
+      assert.equal(runTimelineViaTemplate.body.projection_meta.run_id, runId);
+
+      const runFeedbackViaTemplate = await requestJson({
+        port,
+        method: "GET",
+        path: renderContractPath(
+          shellCompatibility.body.backend_derived_projection.lineage_anchors.run_feedback,
+          { topicId, runId }
+        )
+      });
+      assert.equal(runFeedbackViaTemplate.statusCode, 200);
+      assert.equal(runFeedbackViaTemplate.body.projection_meta.topic_id, topicId);
+      assert.equal(runFeedbackViaTemplate.body.projection_meta.run_id, runId);
+
+      const runHoldsViaTemplate = await requestJson({
+        port,
+        method: "GET",
+        path: renderContractPath(
+          shellCompatibility.body.backend_derived_projection.lineage_anchors.run_holds,
+          { topicId, runId }
+        )
+      });
+      assert.equal(runHoldsViaTemplate.statusCode, 200);
+      assert.equal(runHoldsViaTemplate.body.projection_meta.topic_id, topicId);
+      assert.equal(runHoldsViaTemplate.body.projection_meta.run_id, runId);
+
+      const runDebugViaTemplate = await requestJson({
+        port,
+        method: "GET",
+        path: renderContractPath(
+          shellCompatibility.body.backend_derived_projection.lineage_anchors.execution_debug,
+          { topicId, runId }
+        )
+      });
+      assert.equal(runDebugViaTemplate.statusCode, 200);
+      assert.equal(runDebugViaTemplate.body.projection_meta.topic_id, topicId);
+      assert.equal(runDebugViaTemplate.body.projection_meta.run_id, runId);
+
+      const runEventsViaTemplate = await requestJson({
+        port,
+        method: "GET",
+        path: `${renderContractPath(
+          shellCompatibility.body.backend_derived_projection.lineage_anchors.execution_events,
+          { topicId, runId }
+        )}&after_sequence=0&limit=20`
+      });
+      assert.equal(runEventsViaTemplate.statusCode, 200);
+      assert.equal(runEventsViaTemplate.body.projection_meta.topic_id, topicId);
+      assert.equal(runEventsViaTemplate.body.projection_meta.run_id, runId);
+
+      const payload = JSON.stringify({
+        runDebug: runDebug.body,
+        runEvents: runEvents.body,
+        shellAdapter: shellCompatibility.body
+      });
+      assert.equal(payload.includes("worktree_path"), false);
+      assert.equal(payload.includes("lane_root_path"), false);
+      assert.equal(payload.includes("lane_worktree_path"), false);
+      assert.equal(payload.includes("run_path"), false);
+
+      const invalidEventsCursor = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/execution/runs/${encodeURIComponent(runId)}/events?topic_id=${encodeURIComponent(topicId)}&after_sequence=-1`
+      });
+      assert.equal(invalidEventsCursor.statusCode, 422);
+      assert.equal(invalidEventsCursor.body.error.code ?? invalidEventsCursor.body.error, "run_events_after_sequence_invalid");
+
+      const wrongTopicBinding = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/runs/${encodeURIComponent(runId)}?topic_id=topic_missing_phase3_execution_consumer`
+      });
+      assert.equal(wrongTopicBinding.statusCode, 404);
+      assert.equal(wrongTopicBinding.body.error.code ?? wrongTopicBinding.body.error, "topic_not_found");
     }
   );
 });
