@@ -38,7 +38,7 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
 当前仓库已经不是纯静态设计稿。它已经具备一条可跑通的 Phase 0 基线：
 
 - web 壳可以展示 `Chat / Board / Inbox / Issues / Rooms / Agents / Setup / Settings`
-- server 有文件持久化状态、Issue 创建、Room/Run/Session 读取、PR 状态回写、runtime pairing、repo binding、GitHub readiness probe
+- server 有文件持久化状态、Issue 创建、Room/Run/Session 读取、PR 状态回写、runtime pairing、repo binding、GitHub readiness probe，以及 `gh CLI / GitHub App` 双 auth path 的 PR contract
 - daemon 可以探测本地 `codex` / `claude`，支持同步执行、流式执行，以及 `git worktree` lane 创建
 
 ## 当前仓库真值
@@ -57,6 +57,7 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
 - Setup 脊柱：
   - repo binding
   - GitHub connection probe
+  - effective auth path / installation state
   - runtime pairing
   - live bridge console
 - Server 控制面：
@@ -80,6 +81,7 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
   - `GET/POST /v1/repo/binding`
   - `GET /v1/github/connection`
   - `POST /v1/exec`
+  - 配置完 GitHub App 后走 app-backed PR create / sync / merge contract
 - Daemon 本地能力：
   - `GET /healthz`
   - `GET /v1/runtime`
@@ -90,15 +92,16 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
   - server 默认把 Phase 0 状态落到 `data/phase0/state.json`
   - issue 创建时会生成 room、run、session，并尝试创建对应 worktree lane
   - 工作区会生成 `MEMORY.md`、`notes/`、`decisions/`、`.openshock/agents/...`
+  - memory artifact 已有 version / governance / detail contract
 
 ### 还没有做成“真服务”的部分
 
 - 邮箱登录 / 多用户 workspace / 完整权限中心
-- GitHub App 安装流
-- 真实远端 PR 创建与状态同步
+- GitHub App onboarding 和浏览器级真实回放
 - 完整的审批系统与通知系统
 - 多 Agent 调度 loop 与长期自治
 - 生产级 realtime 基础设施
+- runtime pairing 冷启动一致性修复
 
 换句话说：现在已经是“可运行基线”，但还不是“完整产品闭环”。
 

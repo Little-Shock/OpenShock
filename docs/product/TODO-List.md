@@ -9,7 +9,7 @@
 ## 一、这份文档现在只做什么
 
 - 不再把“完整产品范围”和“当前已完成实现”混在一起
-- 不再提前把 GitHub App、远端 PR、通知、成员权限等写成已完成
+- 不再把“contract 已落地”和“浏览器级 / 线上级闭环已验证”混写
 - 只维护当前最需要推进的 GAP、优先级和推荐顺序
 
 如果 live board 和文档冲突：
@@ -25,7 +25,7 @@
 - chat-first 主壳与主要路由可在浏览器打开
 - issue -> room -> run -> session -> worktree lane 主链已存在
 - daemon bridge 可执行本地 prompt
-- memory 列表/详情和文件写回 scaffold 已存在
+- memory 列表/详情、version/governance contract 和文件写回已存在
 - auth session / workspace members 基础读取面已存在
 - state SSE 初始快照已存在
 
@@ -53,8 +53,8 @@
 ### GAP-02 GitHub App / Webhook / 真实远端 PR 闭环
 
 - 现状:
-  - 当前只有 readiness probe、本地 PR 状态对象和局部 mutation
-  - 不能宣称已有真实远端 PR create/sync/merge 闭环
+  - 当前已经有 effective auth path、app-backed PR create/sync/merge contract 和相关 tests
+  - 但 onboarding、浏览器级真实回放、live repo/webhook 实机验证还没收口
 - 相关合同:
   - `CHK-07`
   - `CHK-13`
@@ -92,7 +92,7 @@
 ### GAP-06 Stop / Resume / Skill Promotion
 
 - 现状:
-  - 当前只有 run 可见性和 memory 写回 scaffold
+  - 当前已有 run 可见性和 memory contract
   - stop/resume/follow-thread、skill/policy 提升闭环未完成
 - 相关合同:
   - `CHK-09`

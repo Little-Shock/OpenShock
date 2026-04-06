@@ -33,13 +33,13 @@
 - room message 同步 / 流式执行桥
 - repo binding / GitHub readiness / runtime pairing 控制面
 - PR 状态对象和 Inbox 卡片
-- 文件级记忆 scaffold
+- `gh CLI / GitHub App` 双 auth path 的 PR contract
+- 文件级记忆与 version/governance contract
 
 ### 2. 当前还不是 Phase 0 真值的部分
 
 - 真实登录 / 注册 / 完整 workspace 成员管理
-- 真实 GitHub PR 创建
-- GitHub App 安装流
+- GitHub App onboarding 的浏览器级真实闭环
 - 生产级通知
 - 完整审批中心
 - 多 Agent 自治编排

@@ -135,11 +135,11 @@ func (s *Store) applyApprovalInboxDecisionLocked(index int, item InboxItem, deci
 	if err := appendRunArtifacts(s.workspaceRoot, roomID, issueItem.Key, runItem.Owner, "Inbox Decision", fmt.Sprintf("- kind: approval\n- decision: %s\n- summary: %s", decision, summary)); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWritesLocked(runArtifactPaths(roomID, runItem.Owner), "Inbox Decision")
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, runItem.Owner), "Inbox Decision", "inbox-decision", runItem.Owner)
 	if err := updateDecisionRecord(s.workspaceRoot, issueItem.Key, decisionState, summary); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionState))
+	s.recordMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionState), "inbox-decision", runItem.Owner)
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
 	}
@@ -240,11 +240,11 @@ func (s *Store) applyBlockedInboxDecisionLocked(index int, item InboxItem, decis
 	if err := appendRunArtifacts(s.workspaceRoot, roomID, issueItem.Key, runItem.Owner, "Inbox Decision", fmt.Sprintf("- kind: blocked\n- decision: %s\n- summary: %s", decision, summary)); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWritesLocked(runArtifactPaths(roomID, runItem.Owner), "Inbox Decision")
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, runItem.Owner), "Inbox Decision", "inbox-decision", runItem.Owner)
 	if err := updateDecisionRecord(s.workspaceRoot, issueItem.Key, decisionState, summary); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionState))
+	s.recordMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionState), "inbox-decision", runItem.Owner)
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
 	}

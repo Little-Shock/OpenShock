@@ -357,7 +357,7 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
 - server / daemon 的健康检查可打
 - runtime pairing / repo binding / GitHub readiness 有真实接口
 - issue / room / run / session / worktree lane 主链已站住
-- memory 读取面与文件级写回 scaffold 已站住
+- memory 读取面与 version/governance 基线已站住
 - auth session / workspace members 基础读取面已站住
 - state SSE 初始快照已站住
 - issue 创建会推进到 room / run / session / worktree lane

@@ -190,6 +190,42 @@ func appendMarkdown(path, entry string) error {
 func upsertMemoryArtifact(items []MemoryArtifact, artifact MemoryArtifact) []MemoryArtifact {
 	for index := range items {
 		if items[index].Path == artifact.Path {
+			if strings.TrimSpace(artifact.ID) == "" {
+				artifact.ID = items[index].ID
+			}
+			if strings.TrimSpace(artifact.Scope) == "" {
+				artifact.Scope = items[index].Scope
+			}
+			if strings.TrimSpace(artifact.Kind) == "" {
+				artifact.Kind = items[index].Kind
+			}
+			if strings.TrimSpace(artifact.Summary) == "" {
+				artifact.Summary = items[index].Summary
+			}
+			if strings.TrimSpace(artifact.UpdatedAt) == "" {
+				artifact.UpdatedAt = items[index].UpdatedAt
+			}
+			if artifact.Version == 0 {
+				artifact.Version = items[index].Version
+			}
+			if strings.TrimSpace(artifact.LatestWrite) == "" {
+				artifact.LatestWrite = items[index].LatestWrite
+			}
+			if strings.TrimSpace(artifact.LatestSource) == "" {
+				artifact.LatestSource = items[index].LatestSource
+			}
+			if strings.TrimSpace(artifact.LatestActor) == "" {
+				artifact.LatestActor = items[index].LatestActor
+			}
+			if strings.TrimSpace(artifact.Digest) == "" {
+				artifact.Digest = items[index].Digest
+			}
+			if artifact.SizeBytes == 0 {
+				artifact.SizeBytes = items[index].SizeBytes
+			}
+			if strings.TrimSpace(artifact.Governance.Mode) == "" {
+				artifact.Governance = items[index].Governance
+			}
 			items[index] = artifact
 			return items
 		}
@@ -202,13 +238,25 @@ func newArtifact(root, scope, kind, absolutePath, summary string) MemoryArtifact
 	if err != nil {
 		rel = absolutePath
 	}
+	rel = filepath.ToSlash(rel)
+	derivedScope, derivedKind, _, governance := describeMemoryArtifact(rel)
+	if strings.TrimSpace(scope) == "" {
+		scope = derivedScope
+	}
+	if strings.TrimSpace(kind) == "" {
+		kind = derivedKind
+	}
 	return MemoryArtifact{
-		ID:        slugify(scope + "-" + kind + "-" + rel),
-		Scope:     scope,
-		Kind:      kind,
-		Path:      filepath.ToSlash(rel),
-		Summary:   summary,
-		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		ID:           slugify(scope + "-" + kind + "-" + rel),
+		Scope:        scope,
+		Kind:         kind,
+		Path:         rel,
+		Summary:      summary,
+		UpdatedAt:    time.Now().UTC().Format(time.RFC3339),
+		Version:      1,
+		LatestSource: "scaffold",
+		LatestActor:  "System",
+		Governance:   governance,
 	}
 }
 

@@ -13,10 +13,11 @@ Current shape:
 - `GET/POST/DELETE /v1/runtime/pairing` manages server <-> daemon pairing state
 - `GET/POST /v1/repo/binding` and `GET /v1/github/connection` expose setup readiness
 - `POST /v1/exec` and room message streaming proxy prompt execution to the local daemon
+- GitHub PR create / sync / merge can use `gh CLI` or GitHub App effective auth, depending on probe truth
 
 Still not complete:
 
-- GitHub App install/webhook/real remote PR sync
+- GitHub App onboarding and browser-level live verification
 - full auth/member/role management
 - production notification delivery
 - full multi-runtime scheduler/failover

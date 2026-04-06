@@ -9,7 +9,7 @@ Next.js frontend for the OpenShock Phase 0 shell.
 - Stitch-inspired visual direction
 - Setup page live bridge for local `claude` and `codex`
 - Live control-surface routes for `Setup / Issues / Rooms / Runs / Agents / Memory / Access`
-- Phase 0 shell for repo binding, GitHub readiness, runtime pairing, and bridge verification
+- Phase 0 shell for repo binding, GitHub readiness, effective auth path / installation state, runtime pairing, and bridge verification
 
 ## Run
 

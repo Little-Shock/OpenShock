@@ -283,3 +283,29 @@
   2. 对比 pairing URL 与 runtime registry/实际 bridge 结果。
 - 预期结果: smoke 失败并指出 pairing 漂移。
 - 业务结论: 当前 smoke 只检查字段存在，不检查 URL 真值，属于 false-green。
+
+## TC-022 GitHub App Effective Auth PR Contract
+
+- 业务目标: 确认配置 GitHub App 后，PR create / sync / merge 会切到 app-backed 路径，而不是硬依赖 `gh`。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-07`
+- 前置条件: 配置 `OPENSHOCK_GITHUB_APP_*` 环境变量，并准备可控的 GitHub API 假服务。
+- 测试步骤:
+  1. 以 contract test 方式触发 PR create。
+  2. 再触发 PR sync / merge。
+  3. 验证请求使用 installation token，并在 review-decision GraphQL 失败时返回 blocked escalation。
+- 预期结果: effective auth path 为 `github-app` 时，PR create / sync / merge 走 app-backed 逻辑，失败路径可被显式捕获。
+- 业务结论: 服务器端 GitHub App PR contract 已落地，但浏览器级 onboarding 和实机回放还没补。
+
+## TC-023 Memory Version / Governance Contract
+
+- 业务目标: 确认 memory 不只是文件落盘，还具备版本、治理和详情读取合同。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-10`
+- 前置条件: store 在测试工作区初始化成功。
+- 测试步骤:
+  1. 读取 `MEMORY.md` 的 memory detail。
+  2. 触发 issue / conversation 写回。
+  3. 重启 store 并模拟外部文件修改。
+- 预期结果: memory artifact 版本递增，带 governance 元数据，并能把外部编辑同步成新版本。
+- 业务结论: memory version / governance contract 已有后端基线。

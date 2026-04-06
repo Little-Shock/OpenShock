@@ -97,10 +97,11 @@
 - 当前状态: 部分完成
 - 已落地:
   - [x] Setup 页展示 repo binding、GitHub readiness、runtime pairing、live bridge
+  - [x] Setup 页可展示 effective auth path、GitHub App install state 与 installation URL
   - [x] 手动配对 runtime 后可以成功执行 bridge prompt
 - 当前 GAP:
   - [ ] 冷启动时 pairing URL 与当前活跃 daemon 可能漂移，导致桥接失败
-  - [ ] repo binding / GitHub readiness 缺少一轮新的自动化回放证据
+  - [ ] repo binding / GitHub readiness 缺少一轮新的浏览器自动化回放证据
 - 对应 Test Cases: `TC-001` `TC-002` `TC-003` `TC-004`
 
 ### CHK-05 工作流 B: 创建 Issue 并派发给 Agent
@@ -138,9 +139,11 @@
 - 已落地:
   - [x] pull request 对象、详情和状态写回接口已存在
   - [x] room / inbox 可承接 review 语义的本地状态
+  - [x] server 已支持按 effective auth path 在 `gh CLI / GitHub App` 间切换 PR create / sync / merge
+  - [x] GitHub App-backed create / sync / merge 与 review-decision failure path 已有 contract tests
 - 当前 GAP:
-  - [ ] GitHub App 安装、webhook ingest、真实远端 PR create/sync/merge 仍未站住
-  - [ ] 审批与 review decision 不能宣称已与 GitHub 真闭环
+  - [ ] GitHub App onboarding 与浏览器级真实回放仍未补齐
+  - [ ] webhook / live repo 环境下的持续同步仍缺少本轮实机验证
 - 对应 Test Cases: `TC-010` `TC-015` `TC-016`
 
 ### CHK-08 工作流 E: Blocked 与人工纠偏
@@ -175,6 +178,7 @@
 - 已落地:
   - [x] `MEMORY.md`、`notes/`、`decisions/` 与 `.openshock/agents` 已进入写回路径
   - [x] memory 列表与详情接口可读
+  - [x] memory artifact 已有 version / governance / detail contract，并有 store/api tests
 - 当前 GAP:
   - [ ] 记忆注入策略、整理策略、skill/policy 提升流程未完成
   - [ ] 长期记忆引擎仍停留在设计层
@@ -239,6 +243,7 @@
 - 已落地:
   - [x] `pnpm verify:release` 与 `pnpm ops:smoke` 提供基础回归门
   - [x] 浏览器走查、API 检查、SSE 验证已经有一轮实际结果
+  - [x] 2026 年 4 月 7 日针对 GitHub App effective auth path 和 memory contract 的 go tests / release verify 已通过
 - 当前 GAP:
   - [ ] `ops:smoke` 对 runtime pairing 存在 false-green
   - [ ] 产品指标、体验指标、设计指标尚未形成持续观测

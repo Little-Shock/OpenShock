@@ -1,9 +1,9 @@
 # OpenShock Test Report
 
-**报告日期:** 2026 年 4 月 6 日
+**报告日期:** 2026 年 4 月 7 日
 **基线分支:** `main`
-**基线提交:** `a61ce45`
-**工作区:** `/tmp/openshock-main-audit`
+**基线提交:** `main` 文档与 selective merge 后续更新已纳入本报告
+**工作区:** `/home/lark/OpenShock`
 **关联文档:** [Test Cases](./Test-Cases.md) · [Product Checklist](../product/Checklist.md)
 
 ---
@@ -25,13 +25,14 @@
 
 ## 二、总览
 
-- 已执行并通过: `10`
+- 已执行并通过: `12`
 - 已执行但失败: `2`
 - 未执行或被能力 GAP 阻塞: 见 [Test Cases](./Test-Cases.md) 中 `Not Run / Blocked` 项
 
 本轮结论：
 
 - Phase 0 主链已经可跑通，包括主要路由、Issue lane、Run detail、SSE、基础 authz guard、memory 读取面。
+- GitHub App effective auth path 与 memory version/governance contract 已在 2026 年 4 月 7 日补齐代码并通过 repo 级验证。
 - 当前最严重的线上级缺口不是“页面打不开”，而是 `runtime pairing` 的冷启动一致性。
 - `ops:smoke` 当前对这个缺口给出假绿，需要修 gate。
 
@@ -183,6 +184,41 @@
 - 实际结果: `pnpm ops:smoke` 通过，但只检查 `pairingStatus` 字段存在，未校验 daemon URL 真值。
 - 业务结论: 当前 release gate 存在假绿，不能单独作为 Setup 主链放行依据。
 
+## TC-022 GitHub App Effective Auth PR Contract
+
+- 业务目标: 验证 GitHub App 配置就绪后，PR create / sync / merge 会走 app-backed 路径。
+- 当前执行状态: Pass
+- 前置条件: 使用 httptest GitHub API 和 `OPENSHOCK_GITHUB_APP_*` 环境变量。
+- 测试步骤:
+  1. 运行 `go test ./internal/github ./internal/store ./internal/api`。
+  2. 观察 GitHub App-backed create / sync / merge 以及 review decision failure tests。
+- 预期结果: `gh` 缺失时仍可通过 installation token 完成 PR create / sync / merge，review decision GraphQL 失败时返回 blocked escalation。
+- 实际结果: `apps/server/internal/github`、`apps/server/internal/api` 相关新测例全部通过。
+- 业务结论: 服务器端 GitHub App effective auth contract 已落地。
+
+## TC-023 Memory Version / Governance Contract
+
+- 业务目标: 验证 memory artifact 的版本、治理与详情合同。
+- 当前执行状态: Pass
+- 前置条件: store 测试工作区可初始化。
+- 测试步骤:
+  1. 运行 `go test ./internal/store ./internal/api`。
+  2. 观察 memory detail、version、governance、external-file-edit 相关测试。
+- 预期结果: memory artifact 具备 version / governance / detail，并能同步外部修改。
+- 实际结果: `store` 和 `api` 中新增的 memory contract tests 全部通过。
+- 业务结论: memory subsystem 至少已有后端合同级能力，不再只是 scaffold。
+
+## Repo Verify 2026-04-07
+
+- 业务目标: 验证这轮 selective merge 没把主仓库 gate 带坏。
+- 当前执行状态: Pass
+- 前置条件: 当前 `main` 已合入 GitHub App PR path、Setup UI 与 memory metadata 变更。
+- 测试步骤:
+  1. 运行 `pnpm verify:release`。
+- 预期结果: web lint / typecheck / build、server tests、daemon tests 全部通过。
+- 实际结果: `pnpm verify:release` 全绿。
+- 业务结论: 这轮 selective merge 可以入主线。
+
 ---
 
 ## 四、未在本轮执行的重点项
@@ -200,5 +236,5 @@
 1. `runtime pairing` 冷启动一致性必须先修，否则 Setup 主链首跳就可能失败。
 2. `ops:smoke` 需要从“字段存在”升级为“pairing URL 与真实 bridge 一致”。
 3. 文档口径必须继续坚持:
-   - GitHub App / webhook / 真实远端 PR sync 还不能写成已完成
+   - GitHub App effective auth PR contract 已经落地，但 onboarding / live repo 回放还不能写成已完成
    - 完整成员权限 / 邮件通知 / 多 runtime scheduler 也不能提前宣称完成

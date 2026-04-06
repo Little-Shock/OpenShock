@@ -192,6 +192,13 @@ func (s *Service) CreatePullRequest(workspaceRoot string, input CreatePullReques
 	if strings.TrimSpace(input.Title) == "" {
 		return PullRequest{}, fmt.Errorf("title is required")
 	}
+	if status, err := s.Probe(workspaceRoot); err == nil && strings.EqualFold(strings.TrimSpace(status.AuthMode), "github-app") {
+		return s.createPullRequestWithGitHubApp(workspaceRoot, input)
+	}
+	return s.createPullRequestWithGHCLI(workspaceRoot, input)
+}
+
+func (s *Service) createPullRequestWithGHCLI(workspaceRoot string, input CreatePullRequestInput) (PullRequest, error) {
 	if _, err := s.runner.LookPath("gh"); err != nil {
 		return PullRequest{}, fmt.Errorf("gh CLI not found")
 	}
@@ -221,13 +228,20 @@ func (s *Service) CreatePullRequest(workspaceRoot string, input CreatePullReques
 	return s.viewPullRequest(input.Repo, identifier)
 }
 
-func (s *Service) SyncPullRequest(_ string, input SyncPullRequestInput) (PullRequest, error) {
+func (s *Service) SyncPullRequest(workspaceRoot string, input SyncPullRequestInput) (PullRequest, error) {
 	if strings.TrimSpace(input.Repo) == "" {
 		return PullRequest{}, fmt.Errorf("repo is required")
 	}
 	if input.Number <= 0 {
 		return PullRequest{}, fmt.Errorf("pull request number is required")
 	}
+	if status, err := s.Probe(workspaceRoot); err == nil && strings.EqualFold(strings.TrimSpace(status.AuthMode), "github-app") {
+		return s.viewPullRequestWithGitHubApp(input.Repo, input.Number, true)
+	}
+	return s.syncPullRequestWithGHCLI(input)
+}
+
+func (s *Service) syncPullRequestWithGHCLI(input SyncPullRequestInput) (PullRequest, error) {
 	if _, err := s.runner.LookPath("gh"); err != nil {
 		return PullRequest{}, fmt.Errorf("gh CLI not found")
 	}
@@ -241,6 +255,13 @@ func (s *Service) MergePullRequest(workspaceRoot string, input MergePullRequestI
 	if input.Number <= 0 {
 		return PullRequest{}, fmt.Errorf("pull request number is required")
 	}
+	if status, err := s.Probe(workspaceRoot); err == nil && strings.EqualFold(strings.TrimSpace(status.AuthMode), "github-app") {
+		return s.mergePullRequestWithGitHubApp(input)
+	}
+	return s.mergePullRequestWithGHCLI(workspaceRoot, input)
+}
+
+func (s *Service) mergePullRequestWithGHCLI(workspaceRoot string, input MergePullRequestInput) (PullRequest, error) {
 	if _, err := s.runner.LookPath("gh"); err != nil {
 		return PullRequest{}, fmt.Errorf("gh CLI not found")
 	}

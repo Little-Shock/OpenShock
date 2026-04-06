@@ -2,7 +2,11 @@ package api
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +61,25 @@ func (f *fakeGitHubClient) MergePullRequest(_ string, input githubsvc.MergePullR
 		return githubsvc.PullRequest{}, f.mergeErr
 	}
 	return f.merged, nil
+}
+
+type fakeGitHubExecRunner struct {
+	outputs map[string]string
+}
+
+func (f fakeGitHubExecRunner) LookPath(file string) (string, error) {
+	return "", errors.New(file + " not found")
+}
+
+func (f fakeGitHubExecRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
+	key := name
+	if len(args) > 0 {
+		key += " " + strings.Join(args, " ")
+	}
+	if value, ok := f.outputs[key]; ok {
+		return []byte(value), nil
+	}
+	return nil, errors.New("missing fake output for " + key)
 }
 
 func TestReadOnlySurfaceEndpointsServeSnapshotAndRejectMutations(t *testing.T) {
@@ -184,7 +207,7 @@ func TestReadOnlySurfaceEndpointsServeSnapshotAndRejectMutations(t *testing.T) {
 				t.Helper()
 				var payload []store.MemoryArtifact
 				decodeJSON(t, response, &payload)
-				if len(payload) == 0 || payload[0].Path == "" {
+				if len(payload) == 0 || payload[0].Path == "" || payload[0].Version < 1 || payload[0].Governance.Mode == "" {
 					t.Fatalf("memory payload malformed: %#v", payload)
 				}
 			},
@@ -254,6 +277,47 @@ func TestReadOnlySurfaceEndpointsServeSnapshotAndRejectMutations(t *testing.T) {
 				t.Fatalf("POST %s status = %d, want %d", path, resp.StatusCode, http.StatusMethodNotAllowed)
 			}
 		})
+	}
+}
+
+func TestMemoryDetailRouteExposesContentAndVersions(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/memory")
+	if err != nil {
+		t.Fatalf("GET /v1/memory error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/memory status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var artifacts []store.MemoryArtifact
+	decodeJSON(t, resp, &artifacts)
+	workspaceArtifact := findMemoryArtifactByPath(artifacts, "MEMORY.md")
+	if workspaceArtifact == nil {
+		t.Fatalf("workspace memory artifact missing from list: %#v", artifacts)
+	}
+
+	detailResp, err := http.Get(server.URL + "/v1/memory/" + workspaceArtifact.ID)
+	if err != nil {
+		t.Fatalf("GET /v1/memory/%s error = %v", workspaceArtifact.ID, err)
+	}
+	if detailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/memory/%s status = %d, want %d", workspaceArtifact.ID, detailResp.StatusCode, http.StatusOK)
+	}
+
+	var detail store.MemoryArtifactDetail
+	decodeJSON(t, detailResp, &detail)
+	if detail.Artifact.ID != workspaceArtifact.ID || len(detail.Versions) == 0 {
+		t.Fatalf("memory detail malformed: %#v", detail)
+	}
+	if !strings.Contains(detail.Content, "# OpenShock Workspace Memory") {
+		t.Fatalf("memory detail content missing workspace scaffold:\n%s", detail.Content)
+	}
+	if detail.Versions[len(detail.Versions)-1].Version < 1 || detail.Versions[len(detail.Versions)-1].Source == "" {
+		t.Fatalf("memory detail versions malformed: %#v", detail.Versions)
 	}
 }
 
@@ -337,17 +401,17 @@ func TestCreateIssueEndpointCreatesLinkedLaneState(t *testing.T) {
 	}))
 	defer daemon.Close()
 
-		s, server := newContractTestServer(t, root, daemon.URL)
-		defer server.Close()
-		if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
-			DaemonURL:   daemon.URL,
-			Machine:     "shock-main",
-			DetectedCLI: []string{"codex"},
-			State:       "online",
-			ReportedAt:  time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
-			t.Fatalf("UpdateRuntimePairing() error = %v", err)
-		}
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+	if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
+		DaemonURL:   daemon.URL,
+		Machine:     "shock-main",
+		DetectedCLI: []string{"codex"},
+		State:       "online",
+		ReportedAt:  time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
 
 	body, err := json.Marshal(map[string]any{
 		"title":    "Ship Phase Zero Server Shell",
@@ -554,6 +618,125 @@ func TestCreatePullRequestRouteCreatesGitHubBackedPullRequest(t *testing.T) {
 	}
 	if pr.Status != "in_review" || pr.ReviewSummary == "" {
 		t.Fatalf("pull request status = %#v, want github-backed review state", pr)
+	}
+}
+
+func TestCreatePullRequestRouteUsesGitHubAppEffectiveAuthWhenGHCLIIsMissing(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	created, err := s.CreateIssue(store.CreateIssueInput{
+		Title:    "App Auth PR Create",
+		Summary:  "verify github app create path",
+		Owner:    "Codex Dockmaster",
+		Priority: "critical",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssue() error = %v", err)
+	}
+	if _, err := s.AttachLane(created.RunID, created.SessionID, store.LaneBinding{
+		Branch:       created.Branch,
+		WorktreeName: created.WorktreeName,
+		Path:         filepath.Join(root, ".openshock-worktrees", created.WorktreeName),
+	}); err != nil {
+		t.Fatalf("AttachLane() error = %v", err)
+	}
+
+	var createPayload struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Head  string `json:"head"`
+		Base  string `json:"base"`
+	}
+	githubAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/app/installations/67890/access_tokens":
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": "app-install-token"})
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/Larkspur-Wang/OpenShock/pulls":
+			if got := r.Header.Get("Authorization"); got != "Bearer app-install-token" {
+				t.Fatalf("create auth header = %q, want installation token", got)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&createPayload); err != nil {
+				t.Fatalf("decode create payload: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"number": 52})
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/Larkspur-Wang/OpenShock/pulls/52":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"number":     52,
+				"html_url":   "https://github.com/Larkspur-Wang/OpenShock/pull/52",
+				"title":      "App Auth PR Create",
+				"state":      "open",
+				"draft":      false,
+				"merged":     false,
+				"updated_at": "2026-04-06T11:20:00Z",
+				"head":       map[string]any{"ref": created.Branch},
+				"base":       map[string]any{"ref": "main"},
+				"user":       map[string]any{"login": "CodexDockmaster"},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"repository": map[string]any{
+						"pullRequest": map[string]any{
+							"reviewDecision": "REVIEW_REQUIRED",
+						},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer githubAPI.Close()
+
+	t.Setenv("OPENSHOCK_GITHUB_APP_ID", "12345")
+	t.Setenv("OPENSHOCK_GITHUB_APP_INSTALLATION_ID", "67890")
+	t.Setenv("OPENSHOCK_GITHUB_APP_PRIVATE_KEY", testGitHubAppPrivateKeyPEM(t))
+	t.Setenv("OPENSHOCK_GITHUB_API_BASE_URL", githubAPI.URL)
+	t.Setenv("OPENSHOCK_GITHUB_GRAPHQL_URL", githubAPI.URL+"/graphql")
+
+	github := githubsvc.NewService(fakeGitHubExecRunner{
+		outputs: map[string]string{
+			"git -C " + root + " remote get-url origin":            "https://github.com/Larkspur-Wang/OpenShock.git",
+			"git -C " + root + " rev-parse --abbrev-ref HEAD":      "main",
+			"git -C " + root + " push -u origin " + created.Branch: "branch pushed",
+		},
+	})
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+		GitHub:        github,
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/pull-request", "application/json", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatalf("POST create pull request error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create pull request status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		PullRequestID string      `json:"pullRequestId"`
+		State         store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &payload)
+
+	if createPayload.Head != created.Branch || createPayload.Base != "main" {
+		t.Fatalf("create payload branches = %#v, want branch %q -> main", createPayload, created.Branch)
+	}
+	if payload.PullRequestID != "pr-52" {
+		t.Fatalf("pullRequestId = %q, want pr-52", payload.PullRequestID)
+	}
+	pr, ok := findPullRequestByID(payload.State, payload.PullRequestID)
+	if !ok || pr.Status != "in_review" || pr.ReviewDecision != "REVIEW_REQUIRED" {
+		t.Fatalf("pull request payload = %#v, want github-app backed review state", pr)
 	}
 }
 
@@ -852,6 +1035,132 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubSyncFailure(t *testing.T) {
 	}
 }
 
+func TestPullRequestRouteEscalatesBlockedOnGitHubAppReviewDecisionSyncFailure(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	created, err := s.CreateIssue(store.CreateIssueInput{
+		Title:    "App Review Decision Sync Failure",
+		Summary:  "verify github app review decision failure escalates blocked sync",
+		Owner:    "Codex Dockmaster",
+		Priority: "high",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssue() error = %v", err)
+	}
+	if _, err := s.AttachLane(created.RunID, created.SessionID, store.LaneBinding{
+		Branch:       created.Branch,
+		WorktreeName: created.WorktreeName,
+		Path:         filepath.Join(root, ".openshock-worktrees", created.WorktreeName),
+	}); err != nil {
+		t.Fatalf("AttachLane() error = %v", err)
+	}
+	_, pullRequestID, err := s.CreatePullRequestFromRemote(created.RoomID, store.PullRequestRemoteSnapshot{
+		Number:         188,
+		Title:          "App Review Decision Sync Failure",
+		Status:         "changes_requested",
+		Branch:         created.Branch,
+		BaseBranch:     "main",
+		Author:         "CodexDockmaster",
+		Provider:       "github",
+		URL:            "https://github.com/Larkspur-Wang/OpenShock/pull/188",
+		ReviewDecision: "CHANGES_REQUESTED",
+	})
+	if err != nil {
+		t.Fatalf("CreatePullRequestFromRemote() error = %v", err)
+	}
+
+	githubAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/app/installations/67890/access_tokens":
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": "app-install-token"})
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/Larkspur-Wang/OpenShock/pulls/188":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"number":     188,
+				"html_url":   "https://github.com/Larkspur-Wang/OpenShock/pull/188",
+				"title":      "App Review Decision Sync Failure",
+				"state":      "open",
+				"draft":      false,
+				"merged":     false,
+				"updated_at": "2026-04-06T14:12:00Z",
+				"head":       map[string]any{"ref": created.Branch},
+				"base":       map[string]any{"ref": "main"},
+				"user":       map[string]any{"login": "CodexDockmaster"},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "graphql review decision timeout"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer githubAPI.Close()
+
+	t.Setenv("OPENSHOCK_GITHUB_APP_ID", "12345")
+	t.Setenv("OPENSHOCK_GITHUB_APP_INSTALLATION_ID", "67890")
+	t.Setenv("OPENSHOCK_GITHUB_APP_PRIVATE_KEY", testGitHubAppPrivateKeyPEM(t))
+	t.Setenv("OPENSHOCK_GITHUB_API_BASE_URL", githubAPI.URL)
+	t.Setenv("OPENSHOCK_GITHUB_GRAPHQL_URL", githubAPI.URL+"/graphql")
+
+	github := githubsvc.NewService(fakeGitHubExecRunner{
+		outputs: map[string]string{
+			"git -C " + root + " remote get-url origin":       "https://github.com/Larkspur-Wang/OpenShock.git",
+			"git -C " + root + " rev-parse --abbrev-ref HEAD": "main",
+		},
+	})
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+		GitHub:        github,
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/pull-requests/" + pullRequestID)
+	if err != nil {
+		t.Fatalf("GET pull request error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("GET pull request status = %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+
+	var payload struct {
+		Error         string      `json:"error"`
+		Operation     string      `json:"operation"`
+		RoomID        string      `json:"roomId"`
+		PullRequestID string      `json:"pullRequestId"`
+		State         store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &payload)
+
+	if payload.Error != "graphql review decision timeout" || payload.Operation != "sync" || payload.RoomID != created.RoomID || payload.PullRequestID != pullRequestID {
+		t.Fatalf("sync failure payload = %#v, want graphql sync error with ids populated", payload)
+	}
+
+	room := findRoomByID(payload.State, created.RoomID)
+	run := findRunByID(payload.State, created.RunID)
+	if room == nil || run == nil {
+		t.Fatalf("expected room/run after app review decision sync escalation")
+	}
+	pr, ok := findPullRequestByID(payload.State, pullRequestID)
+	if !ok {
+		t.Fatalf("pull request %q missing from sync failure payload", pullRequestID)
+	}
+	if room.Topic.Status != "blocked" || run.Status != "blocked" {
+		t.Fatalf("sync escalation did not block room/run: room=%#v run=%#v", room, run)
+	}
+	if pr.Status != "changes_requested" || pr.ReviewDecision != "" || !strings.Contains(pr.ReviewSummary, "PR #188 同步失败：graphql review decision timeout") {
+		t.Fatalf("sync failure pull request = %#v, want blocked GitHub failure semantics preserved", pr)
+	}
+	if !roomMessagesContain(payload.State, created.RoomID, "PR #188 同步失败：graphql review decision timeout") {
+		t.Fatalf("room messages missing GitHub app review decision sync failure escalation: %#v", payload.State.RoomMessages[created.RoomID])
+	}
+}
+
 func TestPullRequestRouteSyncFailureIsIdempotentAcrossRepeatedReads(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -1086,6 +1395,20 @@ func decodeJSON(t *testing.T, response *http.Response, target any) {
 	}
 }
 
+func testGitHubAppPrivateKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	}))
+}
+
 func assertMemoryArtifactSummary(t *testing.T, items []store.MemoryArtifact, path, want string) {
 	t.Helper()
 	for _, item := range items {
@@ -1098,6 +1421,15 @@ func assertMemoryArtifactSummary(t *testing.T, items []store.MemoryArtifact, pat
 		return
 	}
 	t.Fatalf("memory artifact %q missing", path)
+}
+
+func findMemoryArtifactByPath(items []store.MemoryArtifact, path string) *store.MemoryArtifact {
+	for index := range items {
+		if items[index].Path == path {
+			return &items[index]
+		}
+	}
+	return nil
 }
 
 func findPullRequestByID(state store.State, pullRequestID string) (store.PullRequest, bool) {

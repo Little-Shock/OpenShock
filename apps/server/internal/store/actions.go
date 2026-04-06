@@ -162,11 +162,11 @@ func (s *Store) CreateIssue(req CreateIssueInput) (IssueCreationResult, error) {
 	if err := appendRunArtifacts(s.workspaceRoot, roomID, issueKey, owner, "Issue Created", fmt.Sprintf("- title: %s\n- summary: %s\n- branch: %s\n- worktree: %s", title, summary, newRun.Branch, newRun.Worktree)); err != nil {
 		return IssueCreationResult{}, err
 	}
-	s.markMemoryArtifactWritesLocked(runArtifactPaths(roomID, owner), "Issue Created")
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, owner), "Issue Created", "issue-create", owner)
 	if err := updateDecisionRecord(s.workspaceRoot, issueKey, "queued", "Issue 已创建，等待 worktree lane 与第一次指令。"); err != nil {
 		return IssueCreationResult{}, err
 	}
-	s.markMemoryArtifactWriteLocked(decisionArtifactPath(issueKey), "Decision status queued")
+	s.recordMemoryArtifactWriteLocked(decisionArtifactPath(issueKey), "Decision status queued", "issue-create", owner)
 	if err := s.persistLocked(); err != nil {
 		return IssueCreationResult{}, err
 	}
@@ -236,7 +236,7 @@ func (s *Store) AttachLane(runID, sessionID string, payload LaneBinding) (State,
 	if err := appendRunArtifacts(s.workspaceRoot, s.state.Runs[runIndex].RoomID, s.state.Issues[issueIndex].Key, s.state.Runs[runIndex].Owner, "Worktree Ready", fmt.Sprintf("- branch: %s\n- worktree: %s\n- path: %s", payload.Branch, payload.WorktreeName, payload.Path)); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWritesLocked(runArtifactPaths(s.state.Runs[runIndex].RoomID, s.state.Runs[runIndex].Owner), "Worktree Ready")
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(s.state.Runs[runIndex].RoomID, s.state.Runs[runIndex].Owner), "Worktree Ready", "lane-attach", s.state.Runs[runIndex].Owner)
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
 	}
@@ -349,26 +349,7 @@ func (s *Store) UpdateRepoBinding(req RepoBindingInput) (State, error) {
 		Action:  "打开配置",
 		Href:    "/setup",
 	}}, s.state.Inbox...)
-	repoArtifact := MemoryArtifact{
-		ID:        fmt.Sprintf("repo-binding-%d", time.Now().UnixNano()),
-		Scope:     "workspace",
-		Kind:      "integration",
-		Path:      "repo-binding",
-		Summary:   fmt.Sprintf("%s @ %s (%s)", repo, branch, detectedAt),
-		UpdatedAt: detectedAt,
-	}
-	replaced := false
-	for index := range s.state.Memory {
-		if s.state.Memory[index].Path == "repo-binding" {
-			repoArtifact.ID = s.state.Memory[index].ID
-			s.state.Memory[index] = repoArtifact
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
-		s.state.Memory = append([]MemoryArtifact{repoArtifact}, s.state.Memory...)
-	}
+	s.recordMemoryArtifactWriteLocked("repo-binding", fmt.Sprintf("%s @ %s (%s)", repo, branch, detectedAt), "repo-binding-sync", "System")
 
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
@@ -626,11 +607,11 @@ func (s *Store) CreatePullRequestFromRemote(roomID string, remote PullRequestRem
 	if err := appendRunArtifacts(s.workspaceRoot, roomID, issueItem.Key, runItem.Owner, "Pull Request Created", fmt.Sprintf("- pr: %s\n- url: %s\n- head: %s\n- base: %s\n- run: %s", s.state.PullRequests[0].Label, defaultString(s.state.PullRequests[0].URL, "n/a"), s.state.PullRequests[0].Branch, defaultString(s.state.PullRequests[0].BaseBranch, "n/a"), runItem.ID)); err != nil {
 		return State{}, "", err
 	}
-	s.markMemoryArtifactWritesLocked(runArtifactPaths(roomID, runItem.Owner), "Pull Request Created")
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, runItem.Owner), "Pull Request Created", "pull-request-create", runItem.Owner)
 	if err := updateDecisionRecord(s.workspaceRoot, issueItem.Key, decisionStateForPullRequestStatus(s.state.PullRequests[0].Status), s.state.PullRequests[0].ReviewSummary); err != nil {
 		return State{}, "", err
 	}
-	s.markMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionStateForPullRequestStatus(s.state.PullRequests[0].Status)))
+	s.recordMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionStateForPullRequestStatus(s.state.PullRequests[0].Status)), "pull-request-create", runItem.Owner)
 	if err := s.persistLocked(); err != nil {
 		return State{}, "", err
 	}
@@ -715,11 +696,11 @@ func (s *Store) SyncPullRequestFromRemote(pullRequestID string, remote PullReque
 		if err := appendRunArtifacts(s.workspaceRoot, pr.RoomID, issueItem.Key, runItem.Owner, "Pull Request Status Updated", fmt.Sprintf("- pr: %s\n- status: %s\n- url: %s\n- summary: %s", pr.Label, pr.Status, defaultString(pr.URL, "n/a"), pr.ReviewSummary)); err != nil {
 			return State{}, err
 		}
-		s.markMemoryArtifactWritesLocked(runArtifactPaths(pr.RoomID, runItem.Owner), "Pull Request Status Updated")
+		s.recordMemoryArtifactWritesLocked(runArtifactPaths(pr.RoomID, runItem.Owner), "Pull Request Status Updated", "pull-request-sync", runItem.Owner)
 		if err := updateDecisionRecord(s.workspaceRoot, issueItem.Key, decisionStateForPullRequestStatus(pr.Status), pr.ReviewSummary); err != nil {
 			return State{}, err
 		}
-		s.markMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionStateForPullRequestStatus(pr.Status)))
+		s.recordMemoryArtifactWriteLocked(decisionArtifactPath(issueItem.Key), fmt.Sprintf("Decision status %s", decisionStateForPullRequestStatus(pr.Status)), "pull-request-sync", runItem.Owner)
 	}
 
 	if err := s.persistLocked(); err != nil {
@@ -879,7 +860,7 @@ func (s *Store) AppendConversation(roomID, prompt, output string) (State, error)
 	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, s.state.Issues[issueIndex].Owner, "Room Conversation", fmt.Sprintf("- prompt: %s\n- output: %s", prompt, agentText)); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "Room Conversation")
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "Room Conversation", "room-conversation", s.state.Issues[issueIndex].Owner)
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
 	}
@@ -920,11 +901,11 @@ func (s *Store) AppendSystemRoomMessage(roomID, speaker, text, tone string) (Sta
 	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, s.state.Issues[issueIndex].Owner, "System Escalation", fmt.Sprintf("- tone: %s\n- message: %s", tone, text)); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "System Escalation")
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "System Escalation", "system-escalation", speaker)
 	if err := updateDecisionRecord(s.workspaceRoot, s.state.Issues[issueIndex].Key, "blocked", text); err != nil {
 		return State{}, err
 	}
-	s.markMemoryArtifactWriteLocked(decisionArtifactPath(s.state.Issues[issueIndex].Key), "Decision status blocked")
+	s.recordMemoryArtifactWriteLocked(decisionArtifactPath(s.state.Issues[issueIndex].Key), "Decision status blocked", "system-escalation", speaker)
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
 	}
@@ -997,11 +978,11 @@ func (s *Store) AppendGitHubPullRequestFailure(roomID, operation, pullRequestLab
 		if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, s.state.Runs[runIndex].Owner, "System Escalation", fmt.Sprintf("- tone: blocked\n- message: %s", message)); err != nil {
 			return State{}, err
 		}
-		s.markMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "System Escalation")
+		s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "System Escalation", "system-escalation", "System")
 		if err := updateDecisionRecord(s.workspaceRoot, s.state.Issues[issueIndex].Key, "blocked", message); err != nil {
 			return State{}, err
 		}
-		s.markMemoryArtifactWriteLocked(decisionArtifactPath(s.state.Issues[issueIndex].Key), "Decision status blocked")
+		s.recordMemoryArtifactWriteLocked(decisionArtifactPath(s.state.Issues[issueIndex].Key), "Decision status blocked", "system-escalation", "System")
 	}
 	if err := s.persistLocked(); err != nil {
 		return State{}, err

@@ -54,13 +54,15 @@
 
 - web 壳：Next.js 16 / React 19，路由和控制面已接到当前 Phase 0 shell
 - server：Go API + 文件状态存储，支持 workspace / issue / room / run / agent / inbox / session / PR / runtime pairing / repo binding / GitHub probe
+- server：GitHub PR 路径已支持按 effective auth path 在 `gh CLI / GitHub App` 间切换，并带 contract tests
 - daemon：Go 本地 runtime bridge，支持 CLI 探测、prompt 执行、流式执行、worktree ensure
+- memory：artifact detail / version / governance contract 已有后端与测试基线
 
 ### 还不能在文档里写成“已完成”的能力
 
-- 真实 GitHub PR 创建
-- GitHub App 安装流
 - 邮箱登录与完整 workspace 权限系统
+- GitHub App onboarding 的浏览器级真实闭环
+- runtime pairing 冷启动一致性
 - 生产级 realtime
 - 真正的多 Agent 自治编排
 

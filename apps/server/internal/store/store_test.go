@@ -436,6 +436,147 @@ func TestAppendConversationWritesWorkspaceMemoryArtifacts(t *testing.T) {
 	}
 }
 
+func TestMemorySubsystemTracksVersionsAndGovernance(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	baseline := s.Snapshot()
+	workspaceArtifact := findMemoryArtifactByPath(baseline, "MEMORY.md")
+	if workspaceArtifact == nil {
+		t.Fatalf("workspace memory artifact missing")
+	}
+	if workspaceArtifact.Version < 1 {
+		t.Fatalf("workspace artifact version = %d, want >= 1", workspaceArtifact.Version)
+	}
+	if workspaceArtifact.Governance.Mode != "append-only" || !workspaceArtifact.Governance.RequiresReview || workspaceArtifact.Governance.Escalation != "inbox" {
+		t.Fatalf("workspace governance = %#v, want append-only + inbox review", workspaceArtifact.Governance)
+	}
+
+	workspaceDetail, ok := s.MemoryDetail(workspaceArtifact.ID)
+	if !ok {
+		t.Fatalf("MemoryDetail(%q) not found", workspaceArtifact.ID)
+	}
+	if len(workspaceDetail.Versions) == 0 || !strings.Contains(workspaceDetail.Content, "# OpenShock Workspace Memory") {
+		t.Fatalf("workspace detail = %#v, want baseline content and versions", workspaceDetail)
+	}
+
+	result, err := s.CreateIssue(CreateIssueInput{
+		Title:    "Memory Versioning Ready",
+		Summary:  "verify versioned memory contract",
+		Owner:    "Memory Clerk",
+		Priority: "high",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssue() error = %v", err)
+	}
+	if _, err := s.AttachLane(result.RunID, result.SessionID, LaneBinding{
+		Branch:       result.Branch,
+		WorktreeName: result.WorktreeName,
+		Path:         filepath.Join(root, ".openshock-worktrees", result.WorktreeName),
+	}); err != nil {
+		t.Fatalf("AttachLane() error = %v", err)
+	}
+	if _, err := s.AppendConversation(result.RoomID, "Need versioned audit", "Conversation synced into governed file memory."); err != nil {
+		t.Fatalf("AppendConversation() error = %v", err)
+	}
+
+	updated := s.Snapshot()
+	workspaceArtifact = findMemoryArtifactByPath(updated, "MEMORY.md")
+	if workspaceArtifact == nil || workspaceArtifact.Version <= 1 {
+		t.Fatalf("workspace artifact = %#v, want version > 1 after writeback", workspaceArtifact)
+	}
+	workspaceDetail, ok = s.MemoryDetail(workspaceArtifact.ID)
+	if !ok {
+		t.Fatalf("MemoryDetail(%q) not found after writeback", workspaceArtifact.ID)
+	}
+	lastVersion := workspaceDetail.Versions[len(workspaceDetail.Versions)-1]
+	if lastVersion.Source != "room-conversation" || lastVersion.Actor != "Memory Clerk" {
+		t.Fatalf("latest workspace version = %#v, want room-conversation by Memory Clerk", lastVersion)
+	}
+	if !strings.Contains(lastVersion.Content, "Conversation synced into governed file memory.") {
+		t.Fatalf("latest workspace content missing conversation writeback:\n%s", lastVersion.Content)
+	}
+
+	decisionArtifact := findMemoryArtifactByPath(updated, filepath.ToSlash(filepath.Join("decisions", "ops-28.md")))
+	if decisionArtifact == nil {
+		t.Fatalf("decision artifact missing")
+	}
+	if decisionArtifact.Governance.Mode != "decision-ledger" || !decisionArtifact.Governance.RequiresReview || decisionArtifact.Governance.Escalation != "inbox" {
+		t.Fatalf("decision governance = %#v, want decision-ledger + inbox review", decisionArtifact.Governance)
+	}
+}
+
+func TestMemorySubsystemHydratesExternalFileEditsOnRestart(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	baseline := s.Snapshot()
+	workspaceArtifact := findMemoryArtifactByPath(baseline, "MEMORY.md")
+	if workspaceArtifact == nil {
+		t.Fatalf("workspace memory artifact missing")
+	}
+	baselineDetail, ok := s.MemoryDetail(workspaceArtifact.ID)
+	if !ok || len(baselineDetail.Versions) == 0 {
+		t.Fatalf("baseline memory detail missing versions: %#v", baselineDetail)
+	}
+
+	externalContent := "# OpenShock Workspace Memory\n\n- external edit landed before restart\n"
+	if err := os.WriteFile(filepath.Join(root, "MEMORY.md"), []byte(externalContent), 0o644); err != nil {
+		t.Fatalf("write MEMORY.md: %v", err)
+	}
+
+	reloaded, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New(restart) error = %v", err)
+	}
+
+	updated := reloaded.Snapshot()
+	workspaceArtifact = findMemoryArtifactByPath(updated, "MEMORY.md")
+	if workspaceArtifact == nil {
+		t.Fatalf("workspace memory artifact missing after restart")
+	}
+	if workspaceArtifact.Version != baselineDetail.Versions[len(baselineDetail.Versions)-1].Version+1 {
+		t.Fatalf("workspace artifact version = %d, want %d", workspaceArtifact.Version, baselineDetail.Versions[len(baselineDetail.Versions)-1].Version+1)
+	}
+	if workspaceArtifact.LatestSource != "external-file-edit" || workspaceArtifact.LatestActor != "Filesystem" {
+		t.Fatalf("workspace latest source/actor = %q/%q, want external-file-edit/Filesystem", workspaceArtifact.LatestSource, workspaceArtifact.LatestActor)
+	}
+	if !strings.Contains(workspaceArtifact.Summary, "External File Edit") {
+		t.Fatalf("workspace artifact summary = %q, want External File Edit", workspaceArtifact.Summary)
+	}
+
+	detail, ok := reloaded.MemoryDetail(workspaceArtifact.ID)
+	if !ok {
+		t.Fatalf("MemoryDetail(%q) missing after restart", workspaceArtifact.ID)
+	}
+	if len(detail.Versions) != len(baselineDetail.Versions)+1 {
+		t.Fatalf("detail versions len = %d, want %d", len(detail.Versions), len(baselineDetail.Versions)+1)
+	}
+	if !strings.Contains(detail.Content, "external edit landed before restart") {
+		t.Fatalf("detail content missing external edit:\n%s", detail.Content)
+	}
+	last := detail.Versions[len(detail.Versions)-1]
+	if last.Source != "external-file-edit" || last.Actor != "Filesystem" {
+		t.Fatalf("latest version = %#v, want external-file-edit by Filesystem", last)
+	}
+	if !strings.Contains(last.Content, "external edit landed before restart") {
+		t.Fatalf("latest version content missing external edit:\n%s", last.Content)
+	}
+	if workspaceArtifact.Digest != last.Digest || workspaceArtifact.SizeBytes != last.SizeBytes {
+		t.Fatalf("artifact digest/size = %q/%d, want latest snapshot %q/%d", workspaceArtifact.Digest, workspaceArtifact.SizeBytes, last.Digest, last.SizeBytes)
+	}
+}
+
 func contains(items []string, want string) bool {
 	for _, item := range items {
 		if item == want {
