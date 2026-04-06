@@ -1480,3 +1480,270 @@ test("v1 batch6 integration replay/debug/run-history/compatibility surfaces expo
     }
   );
 });
+
+test("batch6 control-plane closeout/debug truth exposes server-owned evidence anchors and failure/closeout explanation", async () => {
+  await withRuntimeServer(
+    {
+      fixture: {
+        topicId: "topic_batch6_control_truth"
+      }
+    },
+    async ({ port }) => {
+      const seeded = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/fixtures/seed",
+        body: {}
+      });
+      assert.equal(seeded.statusCode, 200);
+
+      const upsertHuman = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/agents",
+        body: {
+          agentId: "human_sample_01",
+          role: "human",
+          status: "active"
+        }
+      });
+      assert.equal(upsertHuman.statusCode, 200);
+
+      const truthOnlyPatch = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "shared_truth_proposal",
+          sourceAgentId: "lead_sample_01",
+          sourceRole: "lead",
+          truthRevision: 1,
+          payload: {
+            patch: {
+              deliveryState: {
+                state: "awaiting_merge_gate",
+                run_id: "run_batch6_control_01"
+              },
+              replay_debug_evidence: {
+                run_id: "run_batch6_control_01",
+                failure_reason: "approval_waiting",
+                checkpoint_refs: ["checkpoint://batch6-control"],
+                artifact_refs: ["artifact://batch6-control"]
+              }
+            }
+          }
+        }
+      });
+      assert.equal(truthOnlyPatch.statusCode, 200);
+      assert.equal(truthOnlyPatch.body.state, "accepted");
+
+      const conflictOpen = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "challenge",
+          sourceAgentId: "worker_sample_01",
+          sourceRole: "worker",
+          payload: {
+            conflictId: "conflict_batch6_control_01",
+            scopes: ["delivery"]
+          }
+        }
+      });
+      assert.equal(conflictOpen.statusCode, 200);
+      assert.equal(conflictOpen.body.result.status, "unresolved");
+
+      const overviewWithConflict = await requestJson({
+        port,
+        method: "GET",
+        path: "/topics/topic_batch6_control_truth/overview"
+      });
+      assert.equal(overviewWithConflict.statusCode, 200);
+      assert.equal(overviewWithConflict.body.openConflicts.length, 1);
+      assert.equal(overviewWithConflict.body.openConflicts[0].failure_reason, "unresolved_conflict");
+      assert.equal(overviewWithConflict.body.openConflicts[0].evidence_anchor.source, "server_owned");
+      assert.equal(overviewWithConflict.body.mergeLifecycle.closeout_explanation.status, "failed");
+      assert.equal(overviewWithConflict.body.mergeLifecycle.closeout_explanation.reason_code, "truth_failure_reason");
+      assert.equal(overviewWithConflict.body.deliveryProjection.closeout_explanation.reason_code, "truth_failure_reason");
+
+      const resolveConflict = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "conflict_resolution",
+          sourceAgentId: "lead_sample_01",
+          sourceRole: "lead",
+          payload: {
+            conflictId: "conflict_batch6_control_01",
+            outcome: "accept_side",
+            notes: "resolve batch6 control conflict"
+          }
+        }
+      });
+      assert.equal(resolveConflict.statusCode, 200);
+      assert.equal(resolveConflict.body.result.status, "resolved");
+
+      const handoff = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "handoff_package",
+          sourceAgentId: "worker_sample_01",
+          sourceRole: "worker",
+          targetScope: "lead",
+          runId: "run_batch6_control_01",
+          laneId: "lane_batch6_control_01",
+          referencedArtifacts: ["artifact://batch6-control-handoff"],
+          payload: {
+            summary: "batch6 control handoff"
+          }
+        }
+      });
+      assert.equal(handoff.statusCode, 200);
+
+      const handoffAck = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "status_report",
+          sourceAgentId: "lead_sample_01",
+          sourceRole: "lead",
+          runId: "run_batch6_control_01",
+          payload: {
+            event: "handoff_ack",
+            handoffId: handoff.body.messageId,
+            resolvedArtifacts: ["artifact://batch6-control-handoff"]
+          }
+        }
+      });
+      assert.equal(handoffAck.statusCode, 200);
+
+      const mergeRequest = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "merge_request",
+          sourceAgentId: "worker_sample_01",
+          sourceRole: "worker",
+          runId: "run_batch6_control_01",
+          laneId: "lane_batch6_control_01",
+          payload: {
+            handoffId: handoff.body.messageId
+          }
+        }
+      });
+      assert.equal(mergeRequest.statusCode, 200);
+      const holdId = mergeRequest.body.result.holdIds[0];
+      assert.ok(typeof holdId === "string" && holdId.length > 0);
+
+      const overviewWithPendingGate = await requestJson({
+        port,
+        method: "GET",
+        path: "/topics/topic_batch6_control_truth/overview"
+      });
+      assert.equal(overviewWithPendingGate.statusCode, 200);
+      assert.equal(overviewWithPendingGate.body.pendingApprovals.length, 1);
+      assert.equal(overviewWithPendingGate.body.pendingApprovals[0].evidence_anchor.source, "server_owned");
+      assert.equal(overviewWithPendingGate.body.pendingApprovals[0].failure_reason, null);
+      assert.ok(
+        overviewWithPendingGate.body.mergeLifecycle.evidence_anchor.pending_approval_ids.includes(holdId)
+      );
+
+      const rejectDecision = await requestJson({
+        port,
+        method: "POST",
+        path: `/topics/topic_batch6_control_truth/approvals/${holdId}/decision`,
+        body: {
+          decider: "human_sample_01",
+          approve: false,
+          interventionId: holdId
+        }
+      });
+      assert.equal(rejectDecision.statusCode, 200);
+      assert.equal(rejectDecision.body.status, "rejected");
+      assert.equal(rejectDecision.body.failure_reason, "approval_rejected");
+      assert.equal(rejectDecision.body.evidence_anchor.source, "server_owned");
+
+      const overviewAfterReject = await requestJson({
+        port,
+        method: "GET",
+        path: "/topics/topic_batch6_control_truth/overview"
+      });
+      assert.equal(overviewAfterReject.statusCode, 200);
+      assert.equal(overviewAfterReject.body.approvalDecisions.length, 1);
+      assert.equal(overviewAfterReject.body.approvalDecisions[0].failure_reason, "approval_rejected");
+      assert.equal(overviewAfterReject.body.mergeLifecycle.closeout_explanation.status, "failed");
+      assert.equal(overviewAfterReject.body.mergeLifecycle.closeout_explanation.reason_code, "truth_failure_reason");
+      assert.ok(
+        overviewAfterReject.body.mergeLifecycle.evidence_anchor.blocker_ids.includes(`approval_rejected:${holdId}`)
+      );
+
+      const repoBinding = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/topics/topic_batch6_control_truth/repo-binding",
+        body: {
+          provider_ref: {
+            provider: "github",
+            repo_ref: "little-shock/openshockswarm"
+          },
+          default_branch: "main",
+          bound_by: "lead_sample_01"
+        }
+      });
+      assert.equal(repoBinding.statusCode, 200);
+      assert.equal(repoBinding.body.delivery_projection.evidence_anchor.source, "server_owned");
+      assert.equal(repoBinding.body.delivery_projection.closeout_explanation.reason_code, "truth_failure_reason");
+
+      const blockLead = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/agents",
+        body: {
+          agentId: "lead_sample_01",
+          role: "lead",
+          status: "blocked"
+        }
+      });
+      assert.equal(blockLead.statusCode, 200);
+
+      const blockedConflictOpen = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "challenge",
+          sourceAgentId: "worker_sample_01",
+          sourceRole: "worker",
+          payload: {
+            conflictId: "conflict_batch6_control_blocked",
+            scopes: ["delivery"]
+          }
+        }
+      });
+      assert.equal(blockedConflictOpen.statusCode, 200);
+
+      const blockedResolution = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_batch6_control_truth/messages",
+        body: {
+          type: "conflict_resolution",
+          sourceAgentId: "lead_sample_01",
+          sourceRole: "lead",
+          payload: {
+            conflictId: "conflict_batch6_control_blocked",
+            outcome: "accept_side"
+          }
+        }
+      });
+      assert.equal(blockedResolution.statusCode, 400);
+      assert.equal(blockedResolution.body.error, "source_actor_inactive");
+    }
+  );
+});
