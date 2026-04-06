@@ -2286,23 +2286,35 @@ export class ServerCoordinator {
     const backendDerivedProjection = {
       source_contract: "backend_truth_only",
       projection_surfaces: [
+        "/v1/topics/:topicId/messages",
         "/v1/topics/:topicId/repo-binding",
         "/v1/topics/:topicId/prs",
         "/v1/topics/:topicId/notifications",
         "/v1/topics/:topicId/run-history",
+        "/v1/runs/:runId?topic_id=:topicId",
+        "/v1/runs/:runId/timeline?topic_id=:topicId",
         "/v1/runs/:runId/replay?topic_id=:topicId",
         "/v1/execution/runs/:runId/events?topic_id=:topicId",
+        "/v1/runs/:runId/feedback?topic_id=:topicId",
+        "/v1/runs/:runId/holds?topic_id=:topicId",
         "/v1/debug/events?topic_id=:topicId&run_id=:runId",
         "/v1/debug/history?topic_id=:topicId&run_id=:runId",
         "/v1/execution/runs/:runId/debug?topic_id=:topicId",
-        "/v1/compatibility/shell-adapter?topic_id=:topicId"
+        "/v1/compatibility/shell-adapter?topic_id=:topicId",
+        "/v1/inbox/:actorId?topic_id=:topicId",
+        "/v1/inbox/:actorId/acks"
       ],
       lineage_anchors: {
+        topic_messages: "/v1/topics/:topicId/messages",
         run_history: "/v1/topics/:topicId/run-history",
+        run_detail: "/v1/runs/:runId?topic_id=:topicId",
+        run_timeline: "/v1/runs/:runId/timeline?topic_id=:topicId",
         run_replay: "/v1/runs/:runId/replay?topic_id=:topicId",
-        execution_events: "/v1/execution/runs/:runId/events?topic_id=:topicId",
+        run_feedback: "/v1/runs/:runId/feedback?topic_id=:topicId",
+        run_holds: "/v1/runs/:runId/holds?topic_id=:topicId",
         debug_events: "/v1/debug/events?topic_id=:topicId",
         debug_history: "/v1/debug/history?topic_id=:topicId&run_id=:runId",
+        execution_events: "/v1/execution/runs/:runId/events?topic_id=:topicId",
         execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId"
       }
     };

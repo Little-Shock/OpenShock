@@ -2366,7 +2366,14 @@ export function createHttpServer(coordinator, options = {}) {
           cursor: parsedUrl.searchParams.get("cursor"),
           limit: parsedUrl.searchParams.get("limit")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "notification_projection",
+            sourcePlane: "control_plane_projection",
+            topicId: route.topicId
+          })
+        });
         return;
       }
 
@@ -2506,7 +2513,15 @@ export function createHttpServer(coordinator, options = {}) {
         const result = coordinator.listRunTimelineProjection(route.runId, {
           topicId: parsedUrl.searchParams.get("topic_id")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "run_timeline_projection",
+            sourcePlane: "execution_plane_projection",
+            topicId: result.topic_id ?? null,
+            runId: route.runId
+          })
+        });
         return;
       }
 
@@ -2532,7 +2547,15 @@ export function createHttpServer(coordinator, options = {}) {
         const result = coordinator.getRunProjection(route.runId, {
           topicId: parsedUrl.searchParams.get("topic_id")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "run_projection",
+            sourcePlane: "execution_plane_projection",
+            topicId: result.topic_id ?? null,
+            runId: route.runId
+          })
+        });
         return;
       }
 
@@ -2574,7 +2597,15 @@ export function createHttpServer(coordinator, options = {}) {
         const result = coordinator.listRunFeedbackProjection(route.runId, {
           topicId: parsedUrl.searchParams.get("topic_id")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "run_feedback_projection",
+            sourcePlane: "execution_plane_projection",
+            topicId: result.topic_id ?? null,
+            runId: route.runId
+          })
+        });
         return;
       }
 
@@ -2582,7 +2613,15 @@ export function createHttpServer(coordinator, options = {}) {
         const result = coordinator.listRunHoldProjection(route.runId, {
           topicId: parsedUrl.searchParams.get("topic_id")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "run_hold_projection",
+            sourcePlane: "execution_plane_projection",
+            topicId: result.topic_id ?? null,
+            runId: route.runId
+          })
+        });
         return;
       }
 
@@ -2641,14 +2680,28 @@ export function createHttpServer(coordinator, options = {}) {
           cursor: parsedUrl.searchParams.get("cursor"),
           limit: parsedUrl.searchParams.get("limit")
         });
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "inbox_projection",
+            sourcePlane: "control_plane_projection",
+            topicId: result.topic_id ?? null
+          })
+        });
         return;
       }
 
       if (route.route === "V1_POST_INBOX_ACKS") {
         const body = await readJsonBody(request);
         const result = coordinator.ackActorInboxItems(route.actorId, body);
-        sendJson(response, 200, result);
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "inbox_ack_projection",
+            sourcePlane: "control_plane_projection",
+            topicId: result.acked_items?.[0]?.topic_id ?? null
+          })
+        });
         return;
       }
 

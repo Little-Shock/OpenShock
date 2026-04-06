@@ -591,9 +591,21 @@ test("v1 batch2 integration surface exposes run-history/replay/notification/inbo
         path: "/v1/runs/run_batch2_01?topic_id=topic_v1_batch2"
       });
       assert.equal(runDetail.statusCode, 200);
+      assert.equal(runDetail.body.projection_meta.resource, "run_projection");
+      assert.equal(runDetail.body.projection_meta.source_plane, "execution_plane_projection");
       assert.equal(runDetail.body.run_id, "run_batch2_01");
       assert.equal(runDetail.body.topic_id, "topic_v1_batch2");
       assert.equal(runDetail.body.links.replay, "/v1/runs/run_batch2_01/replay");
+
+      const runTimeline = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/runs/run_batch2_01/timeline?topic_id=topic_v1_batch2"
+      });
+      assert.equal(runTimeline.statusCode, 200);
+      assert.equal(runTimeline.body.projection_meta.resource, "run_timeline_projection");
+      assert.equal(runTimeline.body.projection_meta.source_plane, "execution_plane_projection");
+      assert.equal(runTimeline.body.projection_meta.run_id, "run_batch2_01");
 
       const replayPage1 = await requestJson({
         port,
@@ -620,10 +632,30 @@ test("v1 batch2 integration surface exposes run-history/replay/notification/inbo
         path: "/v1/topics/topic_v1_batch2/notifications?limit=10"
       });
       assert.equal(notifications.statusCode, 200);
+      assert.equal(notifications.body.projection_meta.resource, "notification_projection");
+      assert.equal(notifications.body.projection_meta.source_plane, "control_plane_projection");
       assert.equal(notifications.body.projection, "control_plane_projection");
       assert.ok(notifications.body.items.length >= 1);
       assert.equal(notifications.body.items[0].debug_anchor.topic_id, "topic_v1_batch2");
       assert.equal(notifications.body.items[0].closeout_projection.topic_ref.topic_id, "topic_v1_batch2");
+
+      const runFeedback = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/runs/run_batch2_01/feedback?topic_id=topic_v1_batch2"
+      });
+      assert.equal(runFeedback.statusCode, 200);
+      assert.equal(runFeedback.body.projection_meta.resource, "run_feedback_projection");
+      assert.equal(runFeedback.body.projection_meta.source_plane, "execution_plane_projection");
+
+      const runHolds = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/runs/run_batch2_01/holds?topic_id=topic_v1_batch2"
+      });
+      assert.equal(runHolds.statusCode, 200);
+      assert.equal(runHolds.body.projection_meta.resource, "run_hold_projection");
+      assert.equal(runHolds.body.projection_meta.source_plane, "execution_plane_projection");
 
       const inbox = await requestJson({
         port,
@@ -631,6 +663,8 @@ test("v1 batch2 integration surface exposes run-history/replay/notification/inbo
         path: "/v1/inbox/human_sample_01?topic_id=topic_v1_batch2&limit=20"
       });
       assert.equal(inbox.statusCode, 200);
+      assert.equal(inbox.body.projection_meta.resource, "inbox_projection");
+      assert.equal(inbox.body.projection_meta.source_plane, "control_plane_projection");
       assert.equal(inbox.body.projection, "control_plane_projection");
       const pendingHold = inbox.body.items.find((item) => item.kind === "approval_hold_pending");
       assert.ok(pendingHold);
@@ -651,6 +685,8 @@ test("v1 batch2 integration surface exposes run-history/replay/notification/inbo
         }
       });
       assert.equal(ackInbox.statusCode, 200);
+      assert.equal(ackInbox.body.projection_meta.resource, "inbox_ack_projection");
+      assert.equal(ackInbox.body.projection_meta.source_plane, "control_plane_projection");
       assert.equal(ackInbox.body.acked_items.length, 1);
       assert.equal(ackInbox.body.acked_items[0].item_id, pendingHold.item_id);
 
@@ -671,6 +707,7 @@ test("v1 batch2 integration surface exposes run-history/replay/notification/inbo
         path: "/v1/compatibility/shell-adapter"
       });
       assert.equal(shellCompatibility.statusCode, 200);
+      assert.equal(shellCompatibility.body.projection_meta.resource, "shell_adapter_compatibility_projection");
       assert.equal(shellCompatibility.body.adapter, "shell_v0a_compatibility_layer");
       assert.equal(shellCompatibility.body.backend_contract_source, "/v1/*");
       assert.ok(shellCompatibility.body.adapter_routes.includes("/api/v0a/shell-state"));
@@ -2139,6 +2176,8 @@ test("v1 batch7 execution events replay endpoint honors after_sequence contract"
         path: "/v1/execution/runs/run_batch7_events_01/debug?topic_id=topic_v1_batch7_execution_events"
       });
       assert.equal(runDebug.statusCode, 200);
+      assert.equal(runDebug.body.projection_meta.resource, "execution_run_debug_evidence_projection");
+      assert.equal(runDebug.body.projection_meta.source_plane, "execution_plane_projection");
       assert.equal(
         runDebug.body.evidence_bundle.replay_contract.events_path,
         "/v1/execution/runs/run_batch7_events_01/events?topic_id=topic_v1_batch7_execution_events"
@@ -2150,6 +2189,8 @@ test("v1 batch7 execution events replay endpoint honors after_sequence contract"
         path: "/v1/execution/runs/run_batch7_events_01/events?topic_id=topic_v1_batch7_execution_events&after_sequence=0&limit=2"
       });
       assert.equal(firstPage.statusCode, 200);
+      assert.equal(firstPage.body.projection_meta.resource, "execution_run_event_projection");
+      assert.equal(firstPage.body.projection_meta.source_plane, "execution_plane_projection");
       assert.equal(firstPage.body.projection, "execution_plane_projection");
       assert.equal(firstPage.body.start_after_sequence, 0);
       assert.ok(firstPage.body.latest_sequence >= 3);
@@ -2491,6 +2532,11 @@ test("v1 batch7 integration projection closure keeps projection meta and backend
       assert.ok(
         shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
           "/v1/execution/runs/:runId/events?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/topics/:topicId/messages"
         )
       );
       assert.equal(
