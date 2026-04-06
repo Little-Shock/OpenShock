@@ -131,14 +131,30 @@ function writeRuntimeConfig(res) {
 
 async function writeShellState(res) {
   try {
-    const runtimeConfig = await fetchUpstreamJson("/runtime/config");
-    const topicId = resolveSampleTopicId(runtimeConfig);
-    const [overview, coarse, messages] = await Promise.all([
-      fetchUpstreamJson(`/topics/${encodeURIComponent(topicId)}/overview`),
-      fetchUpstreamJson(`/topics/${encodeURIComponent(topicId)}/coarse`),
-      fetchUpstreamJson(`/topics/${encodeURIComponent(topicId)}/messages`),
-    ]);
-    const payload = buildShellStatePayload({ topicId, overview, coarse, messages });
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const [topicRead, topicStatusRead, topicStateRead, mergeLifecycleRead, taskAllocationRead, holdsRead, messages, runHistory] =
+      await Promise.all([
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/status`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/topic-state`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/merge-lifecycle`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/task-allocation`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/approval-holds?status=pending&limit=50`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages?route=topic`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/run-history?limit=20`),
+      ]);
+    const payload = buildShellStatePayload({
+      topicId,
+      topic: topicRead?.topic ?? null,
+      status: topicStatusRead?.status ?? null,
+      topicState: topicStateRead?.topic_state ?? null,
+      mergeLifecycle: mergeLifecycleRead?.merge_lifecycle ?? null,
+      taskAllocation: taskAllocationRead?.task_allocation ?? null,
+      approvalHolds: Array.isArray(holdsRead?.items) ? holdsRead.items : [],
+      messages: Array.isArray(messages) ? messages : [],
+      runHistory: Array.isArray(runHistory?.items) ? runHistory.items : [],
+    });
     return writeJson(res, 200, payload);
   } catch (error) {
     return writeUpstreamError(res, error);
@@ -156,25 +172,24 @@ async function handleApprovalDecision(req, res, approvalId) {
       return writeJson(res, 400, { error: "invalid_decision", message: "decision must be approve or reject" });
     }
 
-    const runtimeConfig = await fetchUpstreamJson("/runtime/config");
-    const topicId = resolveSampleTopicId(runtimeConfig);
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
     const operator = normalizeOperator(input.operator);
-    await fetchUpstreamJson(`/topics/${encodeURIComponent(topicId)}/agents`, {
-      method: "POST",
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
       body: {
-        agentId: operator,
         role: "human",
         status: "active",
       },
     });
     const result = await fetchUpstreamJson(
-      `/topics/${encodeURIComponent(topicId)}/approvals/${encodeURIComponent(approvalId)}/decision`,
+      `/v1/topics/${encodedTopicId}/approval-holds/${encodeURIComponent(approvalId)}/decisions`,
       {
         method: "POST",
         body: {
-          decider: operator,
+          decider_actor_id: operator,
           approve: decision === "approve",
-          interventionId: approvalId,
+          intervention_point: approvalId,
         },
       },
     );
@@ -195,18 +210,17 @@ async function handleInterventionAction(req, res, interventionId) {
       return writeJson(res, 400, { error: "invalid_action", message: "action is required" });
     }
 
-    const runtimeConfig = await fetchUpstreamJson("/runtime/config");
-    const topicId = resolveSampleTopicId(runtimeConfig);
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
     const operator = normalizeOperator(input.operator);
-    await fetchUpstreamJson(`/topics/${encodeURIComponent(topicId)}/agents`, {
-      method: "POST",
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
       body: {
-        agentId: operator,
         role: "human",
         status: "active",
       },
     });
-    const result = await fetchUpstreamJson(`/topics/${encodeURIComponent(topicId)}/messages`, {
+    const result = await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages`, {
       method: "POST",
       body: {
         type: "status_report",
@@ -238,13 +252,21 @@ async function handleInterventionPointAction(req, res, pointId) {
       return writeJson(res, 400, { error: "invalid_action", message: "action must be approve, hold, or escalate" });
     }
 
-    const runtimeConfig = await fetchUpstreamJson("/runtime/config");
-    const topicId = resolveSampleTopicId(runtimeConfig);
-    const result = await fetchUpstreamJson(`/topics/${encodeURIComponent(topicId)}/messages`, {
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const operator = normalizeOperator(input.operator);
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
+      body: {
+        role: "human",
+        status: "active",
+      },
+    });
+    const result = await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages`, {
       method: "POST",
       body: {
         type: "status_report",
-        sourceAgentId: normalizeOperator(input.operator),
+        sourceAgentId: operator,
         sourceRole: "human",
         targetScope: "topic",
         payload: {
@@ -383,15 +405,17 @@ function safeJsonParse(text) {
   }
 }
 
-function resolveSampleTopicId(runtimeConfig) {
-  const topicId = runtimeConfig?.sampleFixture?.topicId;
-  if (typeof topicId !== "string" || topicId.trim().length === 0) {
+async function resolveConsumerTopicId() {
+  const topics = await fetchUpstreamJson("/v1/topics?limit=1");
+  const firstTopic = Array.isArray(topics?.items) ? topics.items[0] : null;
+  const topicId = typeof firstTopic?.topic_id === "string" ? firstTopic.topic_id.trim() : "";
+  if (topicId.length === 0) {
     throw new LocalRouteError(502, {
-      error: "runtime_config_invalid",
-      message: "runtime config missing sampleFixture.topicId",
+      error: "consumer_topic_unavailable",
+      message: "no topic available from /v1/topics",
     });
   }
-  return topicId.trim();
+  return topicId;
 }
 
 function normalizeDecision(decision) {
@@ -425,41 +449,73 @@ function normalizeNote(value) {
   return normalized || null;
 }
 
-function buildShellStatePayload({ topicId, overview, coarse, messages }) {
+function buildShellStatePayload({
+  topicId,
+  topic,
+  status,
+  topicState,
+  mergeLifecycle,
+  taskAllocation,
+  approvalHolds,
+  messages,
+  runHistory,
+}) {
   const now = Date.now();
-  const leadAgent = Array.isArray(overview.agents)
-    ? overview.agents.find((agent) => agent.role === "lead")
-    : null;
-  const pendingApprovals = Array.isArray(overview.pendingApprovals) ? overview.pendingApprovals : [];
-  const openConflicts = Array.isArray(overview.openConflicts) ? overview.openConflicts : [];
-  const blockers = Array.isArray(overview.blockers) ? overview.blockers : [];
-  const allMessages = Array.isArray(messages) ? messages : [];
+  const normalizedTopicState = normalizeTopicState(topicState, status);
+  const normalizedStatus = normalizeStatus(status, normalizedTopicState);
+  const normalizedMergeLifecycle = normalizeMergeLifecycle(mergeLifecycle, normalizedStatus);
+  const normalizedTaskAllocation = normalizeTaskAllocation(taskAllocation);
+  const normalizedApprovals = normalizeApprovalHolds(approvalHolds);
+  const normalizedMessages = normalizeMessages(messages);
+  const normalizedRunHistory = normalizeRunHistory(runHistory);
+  const actors = normalizeTopicActors(topic);
+  const leadAgent = actors.find((agent) => normalizeText(agent?.role) === "lead");
+
+  const activeActorCount = Number(normalizedStatus.active_actor_count || 0);
+  const blockedActorCount = Number(normalizedStatus.blocked_actor_count || 0);
+  const coarseModel = {
+    revision: normalizedTopicState.revision,
+    activeAgents: Array.from({ length: Math.max(0, activeActorCount) }, (_, index) => `active_${index}`),
+    blockedAgents: Array.from({ length: Math.max(0, blockedActorCount) }, (_, index) => `blocked_${index}`),
+    pendingApprovalCount: Number(normalizedTopicState.pending_approval_count || 0),
+    openConflictCount: Number(normalizedTopicState.open_conflict_count || 0),
+    blockerCount: Number(normalizedTopicState.blocker_count || 0),
+    riskFlags: Array.isArray(normalizedStatus.risk_flags) ? normalizedStatus.risk_flags : [],
+    deliveryState: {
+      state: normalizedMergeLifecycle.delivery?.state || "unknown",
+      prUrl: normalizedMergeLifecycle.delivery?.pr_url || null,
+      lastUpdatedAt: normalizedStatus.updated_at || topic?.updated_at || new Date().toISOString(),
+    },
+  };
+
+  const openConflicts = Array.isArray(topic?.open_conflicts) ? topic.open_conflicts : [];
+  const blockers = Array.isArray(topic?.blockers) ? topic.blockers : [];
 
   return {
     generatedAt: new Date().toISOString(),
     topics: [
       {
         id: topicId,
-        title: overview?.truth?.goal || "Integrated runtime topic",
-        revision: Number(overview?.revision || 0),
-        leadAgent: leadAgent?.agentId || "n/a",
-        status: computeTopicStatus({ pendingApprovals, blockers, openConflicts }),
-        pendingApprovals: pendingApprovals.length,
-        deliveryState: coarse?.deliveryState?.state || "unknown",
+        title: topic?.goal || "Integrated runtime topic",
+        revision: Number(normalizedTopicState.revision || topic?.revision || 0),
+        leadAgent: leadAgent?.actor_id || leadAgent?.agentId || "n/a",
+        status: computeTopicStatus({ pendingApprovals: normalizedApprovals, blockers, openConflicts }),
+        pendingApprovals: normalizedApprovals.length,
+        deliveryState: normalizedMergeLifecycle.delivery?.state || "unknown",
         riskLevel: computeRiskLevel({ blockers, openConflicts }),
       },
     ],
-    agents: mapAgents(overview?.agents, now),
+    agents: mapAgents(actors, now),
     delivery: [
       {
         topicId,
-        stage: coarse?.deliveryState?.state || "unknown",
-        prState: coarse?.deliveryState?.prUrl ? "open" : "none",
-        nextGate: pendingApprovals.length > 0 ? "human_gate_pending" : "none",
-        updatedAt: coarse?.deliveryState?.lastUpdatedAt || overview?.updatedAt || new Date().toISOString(),
+        stage: normalizedMergeLifecycle.stage || "unknown",
+        prState: normalizedMergeLifecycle.delivery?.pr_url ? "open" : "none",
+        nextGate: normalizedApprovals.length > 0 ? "human_gate_pending" : "none",
+        updatedAt: coarseModel.deliveryState.lastUpdatedAt,
       },
     ],
-    approvals: pendingApprovals.map((hold) => ({
+    approvals: normalizedApprovals.map((hold) => ({
       id: hold.holdId,
       gateType: hold.gate,
       topicId,
@@ -469,13 +525,115 @@ function buildShellStatePayload({ topicId, overview, coarse, messages }) {
       note: `gate ${hold.gate}`,
       status: hold.status,
     })),
-    interventionPoints: buildInterventionPoints(topicId, allMessages, coarse, pendingApprovals.length),
+    interventionPoints: buildInterventionPoints(topicId, normalizedMessages, coarseModel, normalizedApprovals.length),
     interventions: buildInterventions(topicId, blockers, openConflicts),
     observability: {
-      metrics: buildMetrics(coarse, blockers, openConflicts),
-      events: buildEvents(topicId, allMessages, blockers, openConflicts),
+      metrics: buildMetrics(coarseModel, blockers, openConflicts),
+      events: buildEvents(
+        topicId,
+        normalizedMessages,
+        blockers,
+        openConflicts,
+        normalizedRunHistory,
+        normalizedTaskAllocation,
+      ),
     },
   };
+}
+
+function normalizeTopicActors(topic) {
+  if (!topic || typeof topic !== "object") {
+    return [];
+  }
+  if (Array.isArray(topic.agents)) {
+    return topic.agents;
+  }
+  if (Array.isArray(topic.actor_registry)) {
+    return topic.actor_registry;
+  }
+  return [];
+}
+
+function normalizeTopicState(topicState, status) {
+  const source = topicState && typeof topicState === "object" ? topicState : status?.topic_state ?? {};
+  return {
+    revision: Number(source?.revision || status?.revision || 0),
+    merge_stage: normalizeText(source?.merge_stage) || "unknown",
+    open_conflict_count: Number(source?.open_conflict_count || status?.open_conflict_count || 0),
+    pending_approval_count: Number(source?.pending_approval_count || status?.pending_approval_count || 0),
+    blocker_count: Number(source?.blocker_count || status?.blocker_count || 0),
+  };
+}
+
+function normalizeStatus(status, topicState) {
+  const source = status && typeof status === "object" ? status : {};
+  return {
+    revision: Number(source.revision || topicState.revision || 0),
+    active_actor_count: Number(source.active_actor_count || 0),
+    blocked_actor_count: Number(source.blocked_actor_count || 0),
+    open_conflict_count: Number(source.open_conflict_count || topicState.open_conflict_count || 0),
+    pending_approval_count: Number(source.pending_approval_count || topicState.pending_approval_count || 0),
+    blocker_count: Number(source.blocker_count || topicState.blocker_count || 0),
+    risk_flags: Array.isArray(source.risk_flags) ? source.risk_flags : [],
+    delivery_state: source.delivery_state && typeof source.delivery_state === "object" ? source.delivery_state : {},
+    updated_at: source.updated_at || null,
+  };
+}
+
+function normalizeMergeLifecycle(mergeLifecycle, status) {
+  const source = mergeLifecycle && typeof mergeLifecycle === "object" ? mergeLifecycle : {};
+  return {
+    stage: normalizeText(source.stage) || normalizeText(status?.topic_state?.merge_stage) || "unknown",
+    delivery: {
+      state: normalizeText(source?.delivery?.state || status?.delivery_state?.state) || "unknown",
+      pr_url: source?.delivery?.pr_url || status?.delivery_state?.pr_url || null,
+    },
+  };
+}
+
+function normalizeTaskAllocation(taskAllocation) {
+  const items = Array.isArray(taskAllocation?.items) ? taskAllocation.items : [];
+  return {
+    summary: {
+      total_tasks: Number(taskAllocation?.summary?.total_tasks || items.length),
+      assigned_tasks: Number(taskAllocation?.summary?.assigned_tasks || 0),
+      unassigned_tasks: Number(taskAllocation?.summary?.unassigned_tasks || Math.max(0, items.length)),
+    },
+  };
+}
+
+function normalizeApprovalHolds(approvalHolds) {
+  if (!Array.isArray(approvalHolds)) {
+    return [];
+  }
+  return approvalHolds.map((hold) => ({
+    holdId: normalizeText(hold?.hold_id || hold?.holdId),
+    gate: normalizeText(hold?.gate) || "approval_hold",
+    status: normalizeText(hold?.status) || "pending",
+    createdAt: hold?.created_at || hold?.createdAt || new Date().toISOString(),
+  }));
+}
+
+function normalizeMessages(messages) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+  return messages.map((message) => ({
+    ...message,
+    createdAt: message?.createdAt || message?.created_at || message?.at || new Date().toISOString(),
+  }));
+}
+
+function normalizeRunHistory(runHistory) {
+  if (!Array.isArray(runHistory)) {
+    return [];
+  }
+  return runHistory.map((item) => ({
+    runId: normalizeText(item?.run_id || item?.runId),
+    state: normalizeText(item?.state) || "unknown",
+    summary: normalizeText(item?.summary) || "run_history",
+    updatedAt: item?.updated_at || item?.updatedAt || item?.at || new Date().toISOString(),
+  }));
 }
 
 function mapAgents(agents, nowMs) {
@@ -483,12 +641,12 @@ function mapAgents(agents, nowMs) {
     return [];
   }
   return agents.map((agent) => ({
-    displayName: agent.agentId,
-    role: agent.role,
+    displayName: agent.agentId || agent.actor_id || "unknown_actor",
+    role: agent.role || "unknown",
     status: agent.status || "unknown",
-    currentLane: agent.laneId || "topic",
-    lastHeartbeatSec: secondsSince(agent.lastSeenAt, nowMs),
-    blockedOn: agent.status === "blocked" ? "coordinator_blocker" : null,
+    currentLane: agent.laneId || agent.lane_id || "topic",
+    lastHeartbeatSec: secondsSince(agent.lastSeenAt || agent.last_seen_at, nowMs),
+    blockedOn: (agent.status || "").toLowerCase() === "blocked" ? "coordinator_blocker" : null,
   }));
 }
 
@@ -659,7 +817,7 @@ function buildMetrics(coarse, blockers, openConflicts) {
   ];
 }
 
-function buildEvents(topicId, messages, blockers, openConflicts) {
+function buildEvents(topicId, messages, blockers, openConflicts, runHistory, taskAllocation) {
   const timeline = [];
   for (const message of messages || []) {
     const eventName = normalizeText(message?.payload?.event);
@@ -686,6 +844,22 @@ function buildEvents(topicId, messages, blockers, openConflicts) {
       topicId,
       message: `conflict · ${conflict.conflictId}`,
       severity: "warning",
+    });
+  }
+  for (const runItem of runHistory || []) {
+    timeline.push({
+      at: runItem.updatedAt || new Date().toISOString(),
+      topicId,
+      message: `run_history · ${runItem.runId || "unknown"} · ${runItem.state}`,
+      severity: runItem.state === "failed" ? "warning" : "info",
+    });
+  }
+  if (taskAllocation?.summary) {
+    timeline.push({
+      at: new Date().toISOString(),
+      topicId,
+      message: `task_allocation · total=${taskAllocation.summary.total_tasks} assigned=${taskAllocation.summary.assigned_tasks}`,
+      severity: "info",
     });
   }
 

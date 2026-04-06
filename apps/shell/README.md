@@ -35,14 +35,19 @@ Open:
 ## Integrated runtime contract
 
 The shell no longer owns local mock state. `dev-server.mjs` serves shell assets and keeps one adapter
-surface (`/api/v0a/*`) that is composed from the integrated server truth endpoints:
+surface (`/api/v0a/*`) that is composed from stable `/v1` endpoints:
 
-- `GET /runtime/config`
-- `GET /topics/:topicId/overview`
-- `GET /topics/:topicId/coarse`
-- `GET /topics/:topicId/messages`
-- `POST /topics/:topicId/approvals/:holdId/decision`
-- `POST /topics/:topicId/messages`
+- `GET /v1/topics?limit=1`
+- `GET /v1/topics/:topicId`
+- `GET /v1/topics/:topicId/status`
+- `GET /v1/topics/:topicId/topic-state`
+- `GET /v1/topics/:topicId/merge-lifecycle`
+- `GET /v1/topics/:topicId/task-allocation`
+- `GET /v1/topics/:topicId/approval-holds?status=pending`
+- `GET /v1/topics/:topicId/messages`
+- `GET /v1/topics/:topicId/run-history`
+- `POST /v1/topics/:topicId/approval-holds/:holdId/decisions`
+- `POST /v1/topics/:topicId/messages`
 
 So the shell no longer requires upstream `/api/v0a/*` routes to exist.
 
@@ -50,10 +55,10 @@ So the shell no longer requires upstream `/api/v0a/*` routes to exist.
   - Returns topic/agent/approval/intervention/observability data synthesized from real `/topics/*` + `/runtime/*`.
 - `POST /api/v0a/approvals/:approvalId/decision`
   - Body: `{ "decision": "approve" | "reject", "operator": "<string>", "note": "<string>" }`
-  - Writes to `POST /topics/:topicId/approvals/:holdId/decision`.
+  - Writes to `POST /v1/topics/:topicId/approval-holds/:holdId/decisions`.
 - `POST /api/v0a/interventions/:interventionId/action`
   - Body: `{ "action": "pause" | "resume" | "reroute" | "request_report", "operator": "<string>", "note": "<string>" }`
-  - Writes to `POST /topics/:topicId/messages` as runtime status events.
+  - Writes to `POST /v1/topics/:topicId/messages` as runtime status events.
 - `POST /api/v0a/intervention-points/:pointId/action`
   - Body: `{ "action": "approve" | "hold" | "escalate", "operator": "<string>", "note": "<string>" }`
-  - Writes to `POST /topics/:topicId/messages` as runtime status events.
+  - Writes to `POST /v1/topics/:topicId/messages` as runtime status events.

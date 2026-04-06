@@ -2325,7 +2325,13 @@ export class ServerCoordinator {
     const backendDerivedProjection = {
       source_contract: "backend_truth_only",
       projection_surfaces: [
+        "/v1/topics/:topicId/status",
+        "/v1/topics/:topicId/topic-state",
+        "/v1/topics/:topicId/merge-lifecycle",
+        "/v1/topics/:topicId/task-allocation",
         "/v1/topics/:topicId/messages",
+        "/v1/topics/:topicId/approval-holds?status=:status",
+        "/v1/topics/:topicId/approval-holds/:holdId/decisions",
         "/v1/topics/:topicId/repo-binding",
         "/v1/topics/:topicId/prs",
         "/v1/topics/:topicId/notifications",
@@ -2346,7 +2352,13 @@ export class ServerCoordinator {
         "/v1/inbox/:actorId/acks"
       ],
       lineage_anchors: {
+        topic_status: "/v1/topics/:topicId/status",
+        topic_state: "/v1/topics/:topicId/topic-state",
+        merge_lifecycle: "/v1/topics/:topicId/merge-lifecycle",
+        task_allocation: "/v1/topics/:topicId/task-allocation",
         topic_messages: "/v1/topics/:topicId/messages",
+        approval_holds: "/v1/topics/:topicId/approval-holds?status=:status",
+        approval_decisions: "/v1/topics/:topicId/approval-holds/:holdId/decisions",
         run_history: "/v1/topics/:topicId/run-history",
         run_detail: "/v1/runs/:runId?topic_id=:topicId",
         run_timeline: "/v1/runs/:runId/timeline?topic_id=:topicId",

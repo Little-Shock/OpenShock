@@ -3186,35 +3186,47 @@ test("v1 phase3 batch1 execution/compatibility consumer verification keeps stabl
       assert.equal(shellCompatibility.statusCode, 200);
       assert.equal(shellCompatibility.body.projection_meta.resource, "shell_adapter_compatibility_projection");
       assert.equal(shellCompatibility.body.projection_meta.topic_id, topicId);
+      const projectionSurfaces = shellCompatibility.body.backend_derived_projection.projection_surfaces;
+      assert.ok(Array.isArray(projectionSurfaces));
+      assert.ok(projectionSurfaces.includes("/v1/topics/:topicId/status"));
+      assert.ok(projectionSurfaces.includes("/v1/topics/:topicId/topic-state"));
+      assert.ok(projectionSurfaces.includes("/v1/topics/:topicId/merge-lifecycle"));
+      assert.ok(projectionSurfaces.includes("/v1/topics/:topicId/task-allocation"));
+      assert.ok(projectionSurfaces.includes("/v1/topics/:topicId/messages"));
+      assert.ok(projectionSurfaces.includes("/v1/topics/:topicId/approval-holds?status=:status"));
+      assert.ok(projectionSurfaces.includes("/v1/topics/:topicId/approval-holds/:holdId/decisions"));
       assert.ok(
-        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
-          "/v1/runs/:runId?topic_id=:topicId"
-        )
+        projectionSurfaces.includes("/v1/runs/:runId?topic_id=:topicId")
       );
       assert.ok(
-        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
-          "/v1/runs/:runId/timeline?topic_id=:topicId"
-        )
+        projectionSurfaces.includes("/v1/runs/:runId/timeline?topic_id=:topicId")
       );
       assert.ok(
-        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
-          "/v1/runs/:runId/feedback?topic_id=:topicId"
-        )
+        projectionSurfaces.includes("/v1/runs/:runId/feedback?topic_id=:topicId")
       );
       assert.ok(
-        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
-          "/v1/runs/:runId/holds?topic_id=:topicId"
-        )
+        projectionSurfaces.includes("/v1/runs/:runId/holds?topic_id=:topicId")
       );
       assert.ok(
-        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
-          "/v1/execution/runs/:runId/debug?topic_id=:topicId"
-        )
+        projectionSurfaces.includes("/v1/execution/runs/:runId/debug?topic_id=:topicId")
       );
       assert.ok(
-        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
-          "/v1/execution/runs/:runId/events?topic_id=:topicId"
-        )
+        projectionSurfaces.includes("/v1/execution/runs/:runId/events?topic_id=:topicId")
+      );
+      for (const surface of projectionSurfaces) {
+        assert.ok(surface.startsWith("/v1/"), `legacy surface leaked: ${surface}`);
+      }
+      assert.equal(shellCompatibility.body.backend_derived_projection.lineage_anchors.topic_status, "/v1/topics/:topicId/status");
+      assert.equal(shellCompatibility.body.backend_derived_projection.lineage_anchors.topic_state, "/v1/topics/:topicId/topic-state");
+      assert.equal(shellCompatibility.body.backend_derived_projection.lineage_anchors.merge_lifecycle, "/v1/topics/:topicId/merge-lifecycle");
+      assert.equal(shellCompatibility.body.backend_derived_projection.lineage_anchors.task_allocation, "/v1/topics/:topicId/task-allocation");
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.approval_holds,
+        "/v1/topics/:topicId/approval-holds?status=:status"
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.approval_decisions,
+        "/v1/topics/:topicId/approval-holds/:holdId/decisions"
       );
 
       const runDetailViaTemplate = await requestJson({
@@ -3574,4 +3586,3 @@ test("v1 phase3 batch1 control-plane consumer contract keeps topic-state/merge-l
     }
   );
 });
-
