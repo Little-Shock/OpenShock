@@ -125,6 +125,15 @@ function parseOffsetCursor(input, { codePrefix }) {
   return offset;
 }
 
+function parseAfterSequence(input, { codePrefix }) {
+  if (input === null || input === undefined || input === "") {
+    return 0;
+  }
+  const numeric = Number(input);
+  assertOrThrow(Number.isInteger(numeric) && numeric >= 0, `${codePrefix}_after_sequence_invalid`, "after_sequence must be a non-negative integer");
+  return numeric;
+}
+
 function parseLimit(input, { codePrefix, defaultLimit = 20, maxLimit = 200 }) {
   if (input === null || input === undefined || input === "") {
     return defaultLimit;
@@ -2010,6 +2019,43 @@ export class ServerCoordinator {
     };
   }
 
+  listExecutionRunEventsProjection(runId, input = {}) {
+    assertOrThrow(typeof runId === "string" && runId.length > 0, "run_id_required", "runId is required");
+    const topicId = typeof input.topicId === "string" && input.topicId.trim().length > 0 ? input.topicId.trim() : null;
+    const afterSequence = parseAfterSequence(input.afterSequence, { codePrefix: "run_events" });
+    const limit = parseLimit(input.limit, { codePrefix: "run_events", defaultLimit: 50, maxLimit: 500 });
+    const resolved = this.resolveTopicForRun(runId, topicId);
+    const explanationProjection = buildRunExplanationProjection(resolved.topic, runId);
+    const timeline = buildRunReplayEvidenceTimeline(resolved.topic, resolved.topicId, runId);
+    const latestSequence = timeline.length;
+    assertOrThrow(
+      afterSequence <= latestSequence,
+      "run_events_after_sequence_invalid",
+      "after_sequence cannot exceed latest sequence"
+    );
+    const items = timeline
+      .filter((entry) => entry.sequence > afterSequence)
+      .slice(0, limit)
+      .map((entry) => ({
+        sequence: entry.sequence,
+        ...deepClone(entry.event),
+        closeout_projection: deepClone(entry.closeout_projection),
+        explanation_projection: deepClone(explanationProjection)
+      }));
+    const nextAfterSequence = items.length > 0 ? items[items.length - 1].sequence : null;
+    return {
+      projection: "execution_plane_projection",
+      cursor_scope: `run:${resolved.topicId}:${runId}:events`,
+      topic_id: resolved.topicId,
+      run_id: runId,
+      start_after_sequence: afterSequence,
+      latest_sequence: latestSequence,
+      explanation_projection: deepClone(explanationProjection),
+      items,
+      next_after_sequence: nextAfterSequence
+    };
+  }
+
   getExecutionRunDebugEvidenceProjection(runId, input = {}) {
     assertOrThrow(typeof runId === "string" && runId.length > 0, "run_id_required", "runId is required");
     const topicId = typeof input.topicId === "string" && input.topicId.trim().length > 0 ? input.topicId.trim() : null;
@@ -2026,7 +2072,7 @@ export class ServerCoordinator {
       artifact_refs: deepClone(explanationProjection.execution_evidence?.artifact_refs ?? [])
     };
     const replayContract = {
-      events_path: `/v1/runs/${encodeURIComponent(runId)}/replay?topic_id=${encodeURIComponent(resolved.topicId)}`,
+      events_path: `/v1/execution/runs/${encodeURIComponent(runId)}/events?topic_id=${encodeURIComponent(resolved.topicId)}`,
       start_after_sequence: 0,
       latest_sequence: latestSequence,
       anchors: {

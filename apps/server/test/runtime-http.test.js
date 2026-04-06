@@ -1999,7 +1999,7 @@ test("v1 batch6 execution debug evidence endpoint exposes failure anchor and rep
       assert.equal(runDebug.body.evidence_bundle.recovery.failure_reason, "approval_waiting");
       assert.equal(
         runDebug.body.evidence_bundle.replay_contract.events_path,
-        "/v1/runs/run_batch6_exec_failure_01/replay?topic_id=topic_v1_batch6_execution_failure"
+        "/v1/execution/runs/run_batch6_exec_failure_01/events?topic_id=topic_v1_batch6_execution_failure"
       );
       assert.ok(runDebug.body.evidence_bundle.replay_contract.latest_sequence >= 2);
       assert.ok(runDebug.body.evidence_bundle.replay_contract.anchors.failure);
@@ -2016,6 +2016,185 @@ test("v1 batch6 execution debug evidence endpoint exposes failure anchor and rep
       );
 
       const payload = JSON.stringify(runDebug.body);
+      assert.equal(payload.includes("worktree_path"), false);
+      assert.equal(payload.includes("lane_root_path"), false);
+      assert.equal(payload.includes("lane_worktree_path"), false);
+      assert.equal(payload.includes("run_path"), false);
+      assert.equal(payload.includes("acked_sequence"), false);
+      assert.equal(payload.includes("unacked_events"), false);
+    }
+  );
+});
+
+test("v1 batch7 execution events replay endpoint honors after_sequence contract", async () => {
+  await withRuntimeServer(
+    {
+      fixture: {
+        topicId: "topic_v1_batch7_execution_events"
+      }
+    },
+    async ({ port }) => {
+      const seeded = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/fixtures/seed",
+        body: {}
+      });
+      assert.equal(seeded.statusCode, 200);
+
+      const overview = await requestJson({
+        port,
+        method: "GET",
+        path: "/topics/topic_v1_batch7_execution_events/overview"
+      });
+      assert.equal(overview.statusCode, 200);
+
+      const truthPatch = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_v1_batch7_execution_events/messages",
+        body: {
+          type: "shared_truth_proposal",
+          sourceAgentId: "lead_sample_01",
+          sourceRole: "lead",
+          truthRevision: overview.body.revision,
+          payload: {
+            patch: {
+              deliveryState: {
+                state: "awaiting_merge_gate",
+                run_id: "run_batch7_events_01"
+              },
+              delivery_closeout: {
+                run_id: "run_batch7_events_01",
+                checkpoint_refs: ["checkpoint://batch7-events"],
+                artifact_refs: ["artifact://batch7-events"]
+              },
+              replay_debug_evidence: {
+                run_id: "run_batch7_events_01",
+                failure_reason: "batch7_blocked",
+                checkpoint_refs: ["checkpoint://batch7-events"],
+                artifact_refs: ["artifact://batch7-events"]
+              }
+            }
+          }
+        }
+      });
+      assert.equal(truthPatch.statusCode, 200);
+
+      const feedbackEvent = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/daemon/events",
+        body: {
+          topicId: "topic_v1_batch7_execution_events",
+          type: "feedback_ingest",
+          runId: "run_batch7_events_01",
+          laneId: "lane_batch7_events_01",
+          payload: {
+            feedbackId: "feedback_batch7_events_01",
+            summary: "batch7 execution events replay evidence",
+            trace_id: "trace_batch7_events_01"
+          }
+        }
+      });
+      assert.equal(feedbackEvent.statusCode, 200);
+
+      const checkpointEvent = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/daemon/events",
+        body: {
+          topicId: "topic_v1_batch7_execution_events",
+          type: "status_report",
+          runId: "run_batch7_events_01",
+          laneId: "lane_batch7_events_01",
+          payload: {
+            event: "run_checkpoint_recorded",
+            checkpoint_refs: ["checkpoint://batch7-events"]
+          }
+        }
+      });
+      assert.equal(checkpointEvent.statusCode, 200);
+
+      const artifactEvent = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/daemon/events",
+        body: {
+          topicId: "topic_v1_batch7_execution_events",
+          type: "status_report",
+          runId: "run_batch7_events_01",
+          laneId: "lane_batch7_events_01",
+          payload: {
+            event: "run_artifact_linked",
+            artifact_refs: ["artifact://batch7-events"]
+          }
+        }
+      });
+      assert.equal(artifactEvent.statusCode, 200);
+
+      const runDebug = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/execution/runs/run_batch7_events_01/debug?topic_id=topic_v1_batch7_execution_events"
+      });
+      assert.equal(runDebug.statusCode, 200);
+      assert.equal(
+        runDebug.body.evidence_bundle.replay_contract.events_path,
+        "/v1/execution/runs/run_batch7_events_01/events?topic_id=topic_v1_batch7_execution_events"
+      );
+
+      const firstPage = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/execution/runs/run_batch7_events_01/events?topic_id=topic_v1_batch7_execution_events&after_sequence=0&limit=2"
+      });
+      assert.equal(firstPage.statusCode, 200);
+      assert.equal(firstPage.body.projection, "execution_plane_projection");
+      assert.equal(firstPage.body.start_after_sequence, 0);
+      assert.ok(firstPage.body.latest_sequence >= 3);
+      assert.equal(firstPage.body.items.length, 2);
+      assert.equal(firstPage.body.items[0].sequence, 1);
+      assert.equal(firstPage.body.items[1].sequence, 2);
+      assert.equal(firstPage.body.next_after_sequence, 2);
+
+      const secondPage = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/execution/runs/run_batch7_events_01/events?topic_id=topic_v1_batch7_execution_events&after_sequence=2&limit=20"
+      });
+      assert.equal(secondPage.statusCode, 200);
+      assert.ok(secondPage.body.items.length >= 1);
+      assert.equal(secondPage.body.items[0].sequence, 3);
+
+      const replayedItems = [...firstPage.body.items, ...secondPage.body.items];
+      const replayedEventTypes = new Set(replayedItems.map((item) => item.event_type));
+      assert.ok(replayedEventTypes.has("run_checkpoint_recorded"));
+      assert.ok(replayedEventTypes.has("run_artifact_linked"));
+      assert.ok(
+        replayedItems.some((item) => item.closeout_projection.checkpoint_refs.includes("checkpoint://batch7-events"))
+      );
+      assert.ok(
+        replayedItems.some((item) => item.closeout_projection.artifact_refs.includes("artifact://batch7-events"))
+      );
+
+      const afterInvalid = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/execution/runs/run_batch7_events_01/events?topic_id=topic_v1_batch7_execution_events&after_sequence=-1"
+      });
+      assert.equal(afterInvalid.statusCode, 422);
+      assert.equal(afterInvalid.body.error.code ?? afterInvalid.body.error, "run_events_after_sequence_invalid");
+
+      const missingRun = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/execution/runs/run_missing_batch7/events?topic_id=topic_v1_batch7_execution_events"
+      });
+      assert.equal(missingRun.statusCode, 404);
+      assert.equal(missingRun.body.error.code ?? missingRun.body.error, "run_not_found");
+
+      const payload = JSON.stringify(firstPage.body);
       assert.equal(payload.includes("worktree_path"), false);
       assert.equal(payload.includes("lane_root_path"), false);
       assert.equal(payload.includes("lane_worktree_path"), false);

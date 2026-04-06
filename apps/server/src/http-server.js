@@ -292,6 +292,11 @@ function matchRoute(method, pathName) {
     return { route: "V1_GET_EXECUTION_RUN_DEBUG", runId: v1ExecutionRunDebugMatch[1] };
   }
 
+  const v1ExecutionRunEventsMatch = pathName.match(/^\/v1\/execution\/runs\/([^/]+)\/events$/);
+  if (method === "GET" && v1ExecutionRunEventsMatch) {
+    return { route: "V1_GET_EXECUTION_RUN_EVENTS", runId: v1ExecutionRunEventsMatch[1] };
+  }
+
   const v1RunsTimelineMatch = pathName.match(/^\/v1\/runs\/([^/]+)\/timeline$/);
   if (method === "GET" && v1RunsTimelineMatch) {
     return { route: "V1_GET_RUN_TIMELINE", runId: v1RunsTimelineMatch[1] };
@@ -2534,6 +2539,16 @@ export function createHttpServer(coordinator, options = {}) {
       if (route.route === "V1_GET_EXECUTION_RUN_DEBUG") {
         const result = coordinator.getExecutionRunDebugEvidenceProjection(route.runId, {
           topicId: parsedUrl.searchParams.get("topic_id")
+        });
+        sendJson(response, 200, result);
+        return;
+      }
+
+      if (route.route === "V1_GET_EXECUTION_RUN_EVENTS") {
+        const result = coordinator.listExecutionRunEventsProjection(route.runId, {
+          topicId: parsedUrl.searchParams.get("topic_id"),
+          afterSequence: parsedUrl.searchParams.get("after_sequence"),
+          limit: parsedUrl.searchParams.get("limit")
         });
         sendJson(response, 200, result);
         return;
