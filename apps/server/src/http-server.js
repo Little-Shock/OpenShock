@@ -391,6 +391,58 @@ function matchRoute(method, pathName) {
     return { route: "V1_POST_INBOX_ACKS", actorId: v1InboxAckMatch[1] };
   }
 
+  if (method === "GET" && pathName === "/v1/runtime/registry") {
+    return { route: "V1_GET_RUNTIME_REGISTRY" };
+  }
+
+  if (method === "GET" && pathName === "/v1/runtime/machines") {
+    return { route: "V1_GET_RUNTIME_MACHINES" };
+  }
+
+  const v1RuntimeMachineMatch = pathName.match(/^\/v1\/runtime\/machines\/([^/]+)$/);
+  if (method === "GET" && v1RuntimeMachineMatch) {
+    return { route: "V1_GET_RUNTIME_MACHINE", machineId: v1RuntimeMachineMatch[1] };
+  }
+  if (method === "PUT" && v1RuntimeMachineMatch) {
+    return { route: "V1_PUT_RUNTIME_MACHINE", machineId: v1RuntimeMachineMatch[1] };
+  }
+
+  if (method === "GET" && pathName === "/v1/runtime/agents") {
+    return { route: "V1_GET_RUNTIME_AGENTS" };
+  }
+
+  const v1RuntimeAgentMatch = pathName.match(/^\/v1\/runtime\/agents\/([^/]+)$/);
+  if (method === "GET" && v1RuntimeAgentMatch) {
+    return { route: "V1_GET_RUNTIME_AGENT", agentId: v1RuntimeAgentMatch[1] };
+  }
+  if (method === "PUT" && v1RuntimeAgentMatch) {
+    return { route: "V1_PUT_RUNTIME_AGENT", agentId: v1RuntimeAgentMatch[1] };
+  }
+
+  const v1RuntimeAgentPairingMatch = pathName.match(/^\/v1\/runtime\/agents\/([^/]+)\/pairing$/);
+  if (method === "PUT" && v1RuntimeAgentPairingMatch) {
+    return { route: "V1_PUT_RUNTIME_AGENT_PAIRING", agentId: v1RuntimeAgentPairingMatch[1] };
+  }
+
+  const v1RuntimeAgentHeartbeatMatch = pathName.match(/^\/v1\/runtime\/agents\/([^/]+)\/heartbeat$/);
+  if (method === "POST" && v1RuntimeAgentHeartbeatMatch) {
+    return { route: "V1_POST_RUNTIME_AGENT_HEARTBEAT", agentId: v1RuntimeAgentHeartbeatMatch[1] };
+  }
+
+  if (method === "GET" && pathName === "/v1/runtime/worktree-claims") {
+    return { route: "V1_GET_RUNTIME_WORKTREE_CLAIMS" };
+  }
+
+  const v1RuntimeWorktreeClaimMatch = pathName.match(/^\/v1\/runtime\/worktree-claims\/([^/]+)$/);
+  if (method === "PUT" && v1RuntimeWorktreeClaimMatch) {
+    return { route: "V1_PUT_RUNTIME_WORKTREE_CLAIM", claimKey: v1RuntimeWorktreeClaimMatch[1] };
+  }
+
+  const v1RuntimeWorktreeReleaseMatch = pathName.match(/^\/v1\/runtime\/worktree-claims\/([^/]+)\/release$/);
+  if (method === "POST" && v1RuntimeWorktreeReleaseMatch) {
+    return { route: "V1_POST_RUNTIME_WORKTREE_RELEASE", claimKey: v1RuntimeWorktreeReleaseMatch[1] };
+  }
+
   if (method === "GET" && pathName === "/v1/compatibility/shell-adapter") {
     return { route: "V1_GET_SHELL_ADAPTER_COMPATIBILITY" };
   }
@@ -580,6 +632,54 @@ function serializeActor(actor) {
     status: actor.status,
     lane_id: actor.laneId ?? null,
     last_seen_at: actor.lastSeenAt ?? null
+  };
+}
+
+function serializeRuntimeMachine(machine) {
+  return {
+    machine_id: machine.machineId,
+    runtime_id: machine.runtimeId,
+    status: machine.status,
+    liveness: machine.liveness ?? "unknown",
+    capabilities: deepClone(machine.capabilities ?? []),
+    paired_by: machine.pairedBy ?? null,
+    registered_at: machine.registeredAt ?? null,
+    paired_at: machine.pairedAt ?? null,
+    last_seen_at: machine.lastSeenAt ?? null,
+    updated_at: machine.updatedAt ?? null
+  };
+}
+
+function serializeRuntimeAgent(agent) {
+  return {
+    agent_id: agent.agentId,
+    machine_id: agent.machineId,
+    runtime_id: agent.runtimeId,
+    status: agent.status,
+    pairing_state: agent.pairingState ?? "unknown",
+    liveness: agent.liveness ?? "unknown",
+    registered_at: agent.registeredAt ?? null,
+    paired_at: agent.pairedAt ?? null,
+    last_seen_at: agent.lastSeenAt ?? null,
+    updated_at: agent.updatedAt ?? null
+  };
+}
+
+function serializeRuntimeWorktreeClaim(claim) {
+  return {
+    claim_key: claim.claimKey,
+    agent_id: claim.agentId,
+    machine_id: claim.machineId,
+    runtime_id: claim.runtimeId,
+    repo_ref: claim.repoRef,
+    branch: claim.branch,
+    lane_id: claim.laneId ?? null,
+    claim_status: claim.claimStatus ?? "active",
+    holder_liveness: claim.holderLiveness ?? "unknown",
+    reclaimed_from_agent_id: claim.reclaimedFromAgentId ?? null,
+    claimed_at: claim.claimedAt ?? null,
+    last_heartbeat_at: claim.lastHeartbeatAt ?? null,
+    updated_at: claim.updatedAt ?? null
   };
 }
 
@@ -1093,7 +1193,8 @@ function classifyCoordinatorError(error) {
     code === "stale_revision" ||
     code === "hold_finalized" ||
     code === "conflict_already_closed" ||
-    code === "idempotency_key_conflict"
+    code === "idempotency_key_conflict" ||
+    code === "worktree_isolation_conflict"
   ) {
     return { family: "state_conflict", statusCode: 409, retryable: false };
   }
@@ -2911,6 +3012,191 @@ export function createHttpServer(coordinator, options = {}) {
             sourcePlane: "control_plane_projection",
             topicId: result.acked_items?.[0]?.topic_id ?? null
           })
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_RUNTIME_REGISTRY") {
+        const registry = coordinator.getRuntimeRegistry();
+        sendJson(response, 200, {
+          projection: "single_operator_runtime_registry",
+          contract_version: registry.contractVersion,
+          mode: registry.mode,
+          liveness_timeout_ms: registry.livenessTimeoutMs,
+          summary: {
+            machine_count: registry.summary.machineCount,
+            agent_count: registry.summary.agentCount,
+            online_agent_count: registry.summary.onlineAgentCount,
+            offline_agent_count: registry.summary.offlineAgentCount,
+            active_worktree_claim_count: registry.summary.activeWorktreeClaimCount
+          },
+          machines: registry.machines.map((machine) => serializeRuntimeMachine(machine)),
+          agents: registry.agents.map((agent) => serializeRuntimeAgent(agent)),
+          worktree_claims: registry.worktreeClaims.map((claim) => serializeRuntimeWorktreeClaim(claim)),
+          projection_meta: integrationProjectionMeta({
+            resource: "runtime_registry_projection",
+            sourcePlane: "operator_runtime_projection"
+          }),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_RUNTIME_MACHINES") {
+        const items = coordinator.listRuntimeMachines().map((machine) => serializeRuntimeMachine(machine));
+        const page = paginate(items, {
+          cursor: parsedUrl.searchParams.get("cursor"),
+          limit: parsePageLimit(parsedUrl.searchParams),
+          scope: "runtime:machines"
+        });
+        sendJson(response, 200, {
+          items: page.items,
+          page: page.page,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_RUNTIME_MACHINE") {
+        const machine = coordinator.getRuntimeMachine(route.machineId);
+        sendJson(response, 200, {
+          machine: serializeRuntimeMachine(machine),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_RUNTIME_MACHINE") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_runtime_machine", "runtime machine payload must be object");
+        const machine = coordinator.upsertRuntimeMachine(route.machineId, {
+          runtimeId: body.runtime_id,
+          status: body.status,
+          capabilities: body.capabilities,
+          pairedBy: body.paired_by
+        });
+        sendJson(response, 200, {
+          machine: serializeRuntimeMachine(machine),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_RUNTIME_AGENTS") {
+        const items = coordinator.listRuntimeAgents().map((agent) => serializeRuntimeAgent(agent));
+        const page = paginate(items, {
+          cursor: parsedUrl.searchParams.get("cursor"),
+          limit: parsePageLimit(parsedUrl.searchParams),
+          scope: "runtime:agents"
+        });
+        sendJson(response, 200, {
+          items: page.items,
+          page: page.page,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_RUNTIME_AGENT") {
+        const agent = coordinator.getRuntimeAgent(route.agentId);
+        sendJson(response, 200, {
+          agent: serializeRuntimeAgent(agent),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_RUNTIME_AGENT") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_runtime_agent", "runtime agent payload must be object");
+        const agent = coordinator.upsertRuntimeAgent(route.agentId, {
+          machineId: body.machine_id,
+          status: body.status
+        });
+        sendJson(response, 200, {
+          agent: serializeRuntimeAgent(agent),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_RUNTIME_AGENT_PAIRING") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_runtime_pairing", "runtime pairing payload must be object");
+        const agent = coordinator.pairRuntimeAgent(route.agentId, {
+          machineId: body.machine_id,
+          status: body.status
+        });
+        sendJson(response, 200, {
+          pairing: {
+            agent: serializeRuntimeAgent(agent),
+            paired_at: agent.pairedAt ?? null
+          },
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_RUNTIME_AGENT_HEARTBEAT") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_runtime_heartbeat", "runtime heartbeat payload must be object");
+        const agent = coordinator.heartbeatRuntimeAgent(route.agentId, {
+          status: body.status
+        });
+        sendJson(response, 200, {
+          heartbeat: {
+            agent: serializeRuntimeAgent(agent),
+            heartbeat_at: agent.lastSeenAt ?? null
+          },
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_RUNTIME_WORKTREE_CLAIMS") {
+        const items = coordinator.listRuntimeWorktreeClaims().map((claim) => serializeRuntimeWorktreeClaim(claim));
+        const page = paginate(items, {
+          cursor: parsedUrl.searchParams.get("cursor"),
+          limit: parsePageLimit(parsedUrl.searchParams),
+          scope: "runtime:worktree_claims"
+        });
+        sendJson(response, 200, {
+          items: page.items,
+          page: page.page,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_RUNTIME_WORKTREE_CLAIM") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_worktree_claim", "worktree claim payload must be object");
+        const claim = coordinator.claimRuntimeWorktree(route.claimKey, {
+          agentId: body.agent_id,
+          repoRef: body.repo_ref,
+          branch: body.branch,
+          laneId: body.lane_id
+        });
+        sendJson(response, 200, {
+          claim: serializeRuntimeWorktreeClaim(claim),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_RUNTIME_WORKTREE_RELEASE") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_worktree_release", "worktree release payload must be object");
+        const release = coordinator.releaseRuntimeWorktree(route.claimKey, {
+          agentId: body.agent_id
+        });
+        sendJson(response, 200, {
+          release: {
+            claim_key: release.claimKey,
+            released_by: release.releasedBy,
+            released_at: release.releasedAt
+          },
+          request_id: requestId
         });
         return;
       }

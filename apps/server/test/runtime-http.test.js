@@ -48,8 +48,16 @@ async function requestJson({ port, method, path, body, headers }) {
 }
 
 async function withRuntimeServer(options, run) {
-  const coordinator = new ServerCoordinator({ escalationMs: 10_000 });
-  const server = createHttpServer(coordinator, options);
+  const coordinatorOptions =
+    options && typeof options === "object" && options.coordinatorOptions && typeof options.coordinatorOptions === "object"
+      ? options.coordinatorOptions
+      : {};
+  const serverOptions =
+    options && typeof options === "object"
+      ? Object.fromEntries(Object.entries(options).filter(([key]) => key !== "coordinatorOptions"))
+      : options;
+  const coordinator = new ServerCoordinator({ escalationMs: 10_000, ...coordinatorOptions });
+  const server = createHttpServer(coordinator, serverOptions);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
 
@@ -3723,6 +3731,216 @@ test("v1 phase3 batch1 control-plane consumer contract keeps topic-state/merge-l
         shellCompatibility.body.backend_derived_projection.lineage_anchors.control_plane_consumer,
         "/v1/topics/:topicId/control-plane-consumer"
       );
+    }
+  );
+});
+
+test("v1 stage2 runtime registration/pairing/liveness and worktree isolation stay single-human multi-agent", async () => {
+  await withRuntimeServer(
+    {
+      coordinatorOptions: {
+        runtimeLivenessMs: 1000
+      }
+    },
+    async ({ port }) => {
+      const machine = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/machines/machine_local_stage2",
+        body: {
+          runtime_id: "runtime_local_stage2",
+          status: "online",
+          capabilities: ["node", "git"]
+        }
+      });
+      assert.equal(machine.statusCode, 200);
+      assert.equal(machine.body.machine.machine_id, "machine_local_stage2");
+      assert.equal(machine.body.machine.runtime_id, "runtime_local_stage2");
+      assert.equal(machine.body.machine.liveness, "online");
+
+      const agentAlpha = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_alpha_stage2",
+        body: {
+          machine_id: "machine_local_stage2",
+          status: "idle"
+        }
+      });
+      assert.equal(agentAlpha.statusCode, 200);
+      assert.equal(agentAlpha.body.agent.machine_id, "machine_local_stage2");
+      assert.equal(agentAlpha.body.agent.runtime_id, "runtime_local_stage2");
+      assert.equal(agentAlpha.body.agent.pairing_state, "paired");
+      assert.equal(agentAlpha.body.agent.liveness, "online");
+
+      const agentBeta = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_beta_stage2",
+        body: {
+          machine_id: "machine_local_stage2",
+          status: "idle"
+        }
+      });
+      assert.equal(agentBeta.statusCode, 200);
+
+      const pairBeta = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_beta_stage2/pairing",
+        body: {
+          machine_id: "machine_local_stage2",
+          status: "ready"
+        }
+      });
+      assert.equal(pairBeta.statusCode, 200);
+      assert.equal(pairBeta.body.pairing.agent.agent_id, "agent_beta_stage2");
+      assert.equal(pairBeta.body.pairing.agent.status, "ready");
+      assert.equal(pairBeta.body.pairing.agent.machine_id, "machine_local_stage2");
+
+      const heartbeatAlpha = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_alpha_stage2/heartbeat",
+        body: {
+          status: "running"
+        }
+      });
+      assert.equal(heartbeatAlpha.statusCode, 200);
+      assert.equal(heartbeatAlpha.body.heartbeat.agent.agent_id, "agent_alpha_stage2");
+      assert.equal(heartbeatAlpha.body.heartbeat.agent.status, "running");
+      assert.equal(heartbeatAlpha.body.heartbeat.agent.liveness, "online");
+
+      const firstClaim = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/worktree-claims/topic_stage2_main",
+        body: {
+          agent_id: "agent_alpha_stage2",
+          repo_ref: "Little-Shock/OpenShockSwarm",
+          branch: "feat/initial-implementation",
+          lane_id: "lane_stage2_alpha"
+        }
+      });
+      assert.equal(firstClaim.statusCode, 200);
+      assert.equal(firstClaim.body.claim.claim_key, "topic_stage2_main");
+      assert.equal(firstClaim.body.claim.agent_id, "agent_alpha_stage2");
+      assert.equal(firstClaim.body.claim.reclaimed_from_agent_id, null);
+      assert.equal(firstClaim.body.claim.claim_status, "active");
+
+      const conflictClaim = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/worktree-claims/topic_stage2_main",
+        body: {
+          agent_id: "agent_beta_stage2",
+          repo_ref: "Little-Shock/OpenShockSwarm",
+          branch: "feat/initial-implementation",
+          lane_id: "lane_stage2_beta"
+        }
+      });
+      assert.equal(conflictClaim.statusCode, 409);
+      assert.equal(conflictClaim.body.error.code, "worktree_isolation_conflict");
+
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      const staleRegistry = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/runtime/registry"
+      });
+      assert.equal(staleRegistry.statusCode, 200);
+      assert.equal(
+        staleRegistry.body.agents.some((item) => item.agent_id === "agent_alpha_stage2" && item.liveness === "offline"),
+        true
+      );
+
+      const heartbeatBeta = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_beta_stage2/heartbeat",
+        body: {
+          status: "running"
+        }
+      });
+      assert.equal(heartbeatBeta.statusCode, 200);
+      assert.equal(heartbeatBeta.body.heartbeat.agent.liveness, "online");
+
+      const reclaimedClaim = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/worktree-claims/topic_stage2_main",
+        body: {
+          agent_id: "agent_beta_stage2",
+          repo_ref: "Little-Shock/OpenShockSwarm",
+          branch: "feat/initial-implementation",
+          lane_id: "lane_stage2_beta"
+        }
+      });
+      assert.equal(reclaimedClaim.statusCode, 200);
+      assert.equal(reclaimedClaim.body.claim.agent_id, "agent_beta_stage2");
+      assert.equal(reclaimedClaim.body.claim.reclaimed_from_agent_id, "agent_alpha_stage2");
+
+      const worktreeClaims = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/runtime/worktree-claims?limit=20"
+      });
+      assert.equal(worktreeClaims.statusCode, 200);
+      assert.equal(worktreeClaims.body.items.length, 1);
+      assert.equal(worktreeClaims.body.items[0].claim_key, "topic_stage2_main");
+      assert.equal(worktreeClaims.body.items[0].agent_id, "agent_beta_stage2");
+
+      const badClaim = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/worktree-claims/topic_stage2_invalid",
+        body: {
+          agent_id: "agent_beta_stage2",
+          branch: "feat/initial-implementation"
+        }
+      });
+      assert.equal(badClaim.statusCode, 400);
+      assert.equal(badClaim.body.error.code, "invalid_repo_ref");
+
+      const releaseClaim = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/worktree-claims/topic_stage2_main/release",
+        body: {
+          agent_id: "agent_beta_stage2"
+        }
+      });
+      assert.equal(releaseClaim.statusCode, 200);
+      assert.equal(releaseClaim.body.release.claim_key, "topic_stage2_main");
+      assert.equal(releaseClaim.body.release.released_by, "agent_beta_stage2");
+
+      const unknownHeartbeat = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_unknown_stage2/heartbeat",
+        body: {
+          status: "running"
+        }
+      });
+      assert.equal(unknownHeartbeat.statusCode, 404);
+      assert.equal(unknownHeartbeat.body.error.code, "runtime_agent_not_found");
+
+      const finalRegistry = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/runtime/registry"
+      });
+      assert.equal(finalRegistry.statusCode, 200);
+      assert.equal(finalRegistry.body.mode, "single_human_multi_agent");
+      assert.equal(finalRegistry.body.summary.machine_count, 1);
+      assert.equal(finalRegistry.body.summary.agent_count, 2);
+      assert.equal(finalRegistry.body.summary.active_worktree_claim_count, 0);
+      assert.equal(finalRegistry.body.projection_meta.resource, "runtime_registry_projection");
+      const registryPayload = JSON.stringify(finalRegistry.body);
+      assert.equal(registryPayload.includes("worktree_path"), false);
+      assert.equal(registryPayload.includes("lane_worktree_path"), false);
+      assert.equal(registryPayload.includes("file://"), false);
     }
   );
 });

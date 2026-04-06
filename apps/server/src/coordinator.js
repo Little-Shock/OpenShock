@@ -144,6 +144,29 @@ function parseLimit(input, { codePrefix, defaultLimit = 20, maxLimit = 200 }) {
   return numeric;
 }
 
+function parseRuntimeLivenessMs(input) {
+  const fallback = 30_000;
+  if (input === undefined || input === null || input === "") {
+    return fallback;
+  }
+  const numeric = Number(input);
+  if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 1_000) {
+    return fallback;
+  }
+  return numeric;
+}
+
+function resolveLivenessState(lastSeenAt, nowMs, timeoutMs) {
+  if (typeof lastSeenAt !== "string" || lastSeenAt.trim().length === 0) {
+    return "unknown";
+  }
+  const seenMs = Date.parse(lastSeenAt);
+  if (!Number.isFinite(seenMs)) {
+    return "unknown";
+  }
+  return nowMs - seenMs <= timeoutMs ? "online" : "offline";
+}
+
 function parseProviderRef(input, { requireRepoRef = true } = {}) {
   assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "provider_ref_required", "provider_ref must be an object");
   const provider = typeof input.provider === "string" ? input.provider.trim() : "";
@@ -1349,7 +1372,11 @@ export class ServerCoordinator {
   constructor(options = {}) {
     this.topics = new Map();
     this.prIndex = new Map();
+    this.runtimeMachines = new Map();
+    this.runtimeAgents = new Map();
+    this.runtimeWorktreeClaims = new Map();
     this.escalationMs = Number(options.escalationMs ?? 120000);
+    this.runtimeLivenessMs = parseRuntimeLivenessMs(options.runtimeLivenessMs);
     this.conflictSweepOnRead = options.conflictSweepOnRead ?? true;
   }
 
@@ -1711,6 +1738,277 @@ export class ServerCoordinator {
       state: topic.truth.prWriteback.state,
       prUrl: topic.truth.prWriteback.prUrl,
       lastUpdatedAt: topic.truth.prWriteback.lastUpdatedAt
+    };
+  }
+
+  upsertRuntimeMachine(machineId, input = {}) {
+    assertOrThrow(typeof machineId === "string" && machineId.trim().length > 0, "invalid_machine_id", "machineId is required");
+    assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "invalid_runtime_machine", "runtime machine payload must be object");
+    const runtimeId =
+      typeof input.runtimeId === "string" && input.runtimeId.trim().length > 0 ? input.runtimeId.trim() : null;
+    assertOrThrow(runtimeId, "invalid_runtime_id", "runtimeId is required");
+    const now = nowIso();
+    const normalizedMachineId = machineId.trim();
+    const existing = this.runtimeMachines.get(normalizedMachineId);
+    const capabilities = Array.isArray(input.capabilities)
+      ? input.capabilities
+          .filter((item) => typeof item === "string" && item.trim().length > 0)
+          .map((item) => item.trim())
+      : existing?.capabilities ?? [];
+    const status =
+      typeof input.status === "string" && input.status.trim().length > 0
+        ? input.status.trim()
+        : existing?.status ?? "online";
+    const machine = {
+      machineId: normalizedMachineId,
+      runtimeId,
+      status,
+      capabilities,
+      pairedBy: typeof input.pairedBy === "string" && input.pairedBy.trim().length > 0 ? input.pairedBy.trim() : existing?.pairedBy ?? "system",
+      registeredAt: existing?.registeredAt ?? now,
+      pairedAt: existing?.pairedAt ?? now,
+      lastSeenAt: now,
+      updatedAt: now
+    };
+    this.runtimeMachines.set(normalizedMachineId, machine);
+    return this.getRuntimeMachine(normalizedMachineId);
+  }
+
+  listRuntimeMachines() {
+    const nowMs = Date.now();
+    return Array.from(this.runtimeMachines.values())
+      .map((machine) => ({
+        ...deepClone(machine),
+        liveness: resolveLivenessState(machine.lastSeenAt, nowMs, this.runtimeLivenessMs)
+      }))
+      .sort((left, right) => left.machineId.localeCompare(right.machineId));
+  }
+
+  getRuntimeMachine(machineId) {
+    assertOrThrow(typeof machineId === "string" && machineId.trim().length > 0, "invalid_machine_id", "machineId is required");
+    const machine = this.runtimeMachines.get(machineId.trim());
+    assertOrThrow(machine, "runtime_machine_not_found", `runtime machine ${machineId} not found`);
+    const nowMs = Date.now();
+    return {
+      ...deepClone(machine),
+      liveness: resolveLivenessState(machine.lastSeenAt, nowMs, this.runtimeLivenessMs)
+    };
+  }
+
+  upsertRuntimeAgent(agentId, input = {}) {
+    assertOrThrow(typeof agentId === "string" && agentId.trim().length > 0, "invalid_runtime_agent_id", "agentId is required");
+    assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "invalid_runtime_agent", "runtime agent payload must be object");
+    const machineId =
+      typeof input.machineId === "string" && input.machineId.trim().length > 0 ? input.machineId.trim() : null;
+    assertOrThrow(machineId, "invalid_machine_id", "machineId is required");
+    const machine = this.runtimeMachines.get(machineId);
+    assertOrThrow(machine, "runtime_machine_not_found", `runtime machine ${machineId} not found`);
+    const now = nowIso();
+    const normalizedAgentId = agentId.trim();
+    const existing = this.runtimeAgents.get(normalizedAgentId);
+    const agent = {
+      agentId: normalizedAgentId,
+      machineId,
+      runtimeId: machine.runtimeId,
+      status:
+        typeof input.status === "string" && input.status.trim().length > 0
+          ? input.status.trim()
+          : existing?.status ?? "idle",
+      pairingState: "paired",
+      registeredAt: existing?.registeredAt ?? now,
+      pairedAt: now,
+      lastSeenAt: now,
+      updatedAt: now
+    };
+    this.runtimeAgents.set(normalizedAgentId, agent);
+    machine.lastSeenAt = now;
+    machine.updatedAt = now;
+    machine.status = "online";
+    return this.getRuntimeAgent(normalizedAgentId);
+  }
+
+  listRuntimeAgents() {
+    const nowMs = Date.now();
+    return Array.from(this.runtimeAgents.values())
+      .map((agent) => ({
+        ...deepClone(agent),
+        liveness: resolveLivenessState(agent.lastSeenAt, nowMs, this.runtimeLivenessMs)
+      }))
+      .sort((left, right) => left.agentId.localeCompare(right.agentId));
+  }
+
+  getRuntimeAgent(agentId) {
+    assertOrThrow(typeof agentId === "string" && agentId.trim().length > 0, "invalid_runtime_agent_id", "agentId is required");
+    const agent = this.runtimeAgents.get(agentId.trim());
+    assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${agentId} not found`);
+    const nowMs = Date.now();
+    return {
+      ...deepClone(agent),
+      liveness: resolveLivenessState(agent.lastSeenAt, nowMs, this.runtimeLivenessMs)
+    };
+  }
+
+  pairRuntimeAgent(agentId, input = {}) {
+    assertOrThrow(typeof agentId === "string" && agentId.trim().length > 0, "invalid_runtime_agent_id", "agentId is required");
+    assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "invalid_runtime_pairing", "runtime pairing payload must be object");
+    const normalizedAgentId = agentId.trim();
+    const agent = this.runtimeAgents.get(normalizedAgentId);
+    assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${normalizedAgentId} not found`);
+    const machineId =
+      typeof input.machineId === "string" && input.machineId.trim().length > 0 ? input.machineId.trim() : null;
+    assertOrThrow(machineId, "invalid_machine_id", "machineId is required");
+    const machine = this.runtimeMachines.get(machineId);
+    assertOrThrow(machine, "runtime_machine_not_found", `runtime machine ${machineId} not found`);
+    const now = nowIso();
+    agent.machineId = machineId;
+    agent.runtimeId = machine.runtimeId;
+    if (typeof input.status === "string" && input.status.trim().length > 0) {
+      agent.status = input.status.trim();
+    }
+    agent.pairingState = "paired";
+    agent.pairedAt = now;
+    agent.lastSeenAt = now;
+    agent.updatedAt = now;
+    machine.lastSeenAt = now;
+    machine.updatedAt = now;
+    machine.status = "online";
+    return this.getRuntimeAgent(normalizedAgentId);
+  }
+
+  heartbeatRuntimeAgent(agentId, input = {}) {
+    assertOrThrow(typeof agentId === "string" && agentId.trim().length > 0, "invalid_runtime_agent_id", "agentId is required");
+    assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "invalid_runtime_heartbeat", "runtime heartbeat payload must be object");
+    const normalizedAgentId = agentId.trim();
+    const agent = this.runtimeAgents.get(normalizedAgentId);
+    assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${normalizedAgentId} not found`);
+    const now = nowIso();
+    if (typeof input.status === "string" && input.status.trim().length > 0) {
+      agent.status = input.status.trim();
+    }
+    agent.lastSeenAt = now;
+    agent.updatedAt = now;
+    const machine = this.runtimeMachines.get(agent.machineId);
+    if (machine) {
+      machine.lastSeenAt = now;
+      machine.updatedAt = now;
+      machine.status = "online";
+    }
+    return this.getRuntimeAgent(normalizedAgentId);
+  }
+
+  claimRuntimeWorktree(claimKey, input = {}) {
+    assertOrThrow(typeof claimKey === "string" && claimKey.trim().length > 0, "invalid_worktree_claim_key", "claim key is required");
+    assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "invalid_worktree_claim", "worktree claim payload must be object");
+    const normalizedClaimKey = claimKey.trim();
+    const agentId =
+      typeof input.agentId === "string" && input.agentId.trim().length > 0 ? input.agentId.trim() : null;
+    const repoRef =
+      typeof input.repoRef === "string" && input.repoRef.trim().length > 0 ? input.repoRef.trim() : null;
+    const branch =
+      typeof input.branch === "string" && input.branch.trim().length > 0 ? input.branch.trim() : null;
+    assertOrThrow(agentId, "invalid_runtime_agent_id", "agentId is required");
+    assertOrThrow(repoRef, "invalid_repo_ref", "repoRef is required");
+    assertOrThrow(branch, "invalid_repo_branch", "branch is required");
+    const agent = this.runtimeAgents.get(agentId);
+    assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${agentId} not found`);
+    const nowMs = Date.now();
+    const agentLiveness = resolveLivenessState(agent.lastSeenAt, nowMs, this.runtimeLivenessMs);
+    assertOrThrow(agentLiveness === "online", "runtime_agent_not_live", `runtime agent ${agentId} must be online`);
+    const existing = this.runtimeWorktreeClaims.get(normalizedClaimKey);
+    const now = nowIso();
+    let reclaimedFromAgentId = null;
+    if (existing && existing.agentId !== agentId) {
+      const holder = this.runtimeAgents.get(existing.agentId);
+      const holderLiveness = resolveLivenessState(holder?.lastSeenAt ?? null, nowMs, this.runtimeLivenessMs);
+      if (holderLiveness === "online") {
+        throw new CoordinatorError(
+          "worktree_isolation_conflict",
+          `worktree claim ${normalizedClaimKey} is already held by ${existing.agentId}`,
+          {
+            claimKey: normalizedClaimKey,
+            holder_agent_id: existing.agentId,
+            holder_machine_id: existing.machineId
+          }
+        );
+      }
+      reclaimedFromAgentId = existing.agentId;
+    }
+    const claim = {
+      claimKey: normalizedClaimKey,
+      agentId,
+      machineId: agent.machineId,
+      runtimeId: agent.runtimeId,
+      repoRef,
+      branch,
+      laneId: typeof input.laneId === "string" && input.laneId.trim().length > 0 ? input.laneId.trim() : null,
+      claimStatus: "active",
+      claimedAt: existing?.claimedAt ?? now,
+      lastHeartbeatAt: now,
+      updatedAt: now
+    };
+    this.runtimeWorktreeClaims.set(normalizedClaimKey, claim);
+    return {
+      ...deepClone(claim),
+      reclaimedFromAgentId
+    };
+  }
+
+  releaseRuntimeWorktree(claimKey, input = {}) {
+    assertOrThrow(typeof claimKey === "string" && claimKey.trim().length > 0, "invalid_worktree_claim_key", "claim key is required");
+    assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "invalid_worktree_release", "worktree release payload must be object");
+    const normalizedClaimKey = claimKey.trim();
+    const claim = this.runtimeWorktreeClaims.get(normalizedClaimKey);
+    assertOrThrow(claim, "worktree_claim_not_found", `worktree claim ${normalizedClaimKey} not found`);
+    const releasingAgentId =
+      typeof input.agentId === "string" && input.agentId.trim().length > 0 ? input.agentId.trim() : null;
+    if (releasingAgentId !== null) {
+      assertOrThrow(
+        releasingAgentId === claim.agentId,
+        "worktree_release_forbidden",
+        `worktree claim ${normalizedClaimKey} is owned by ${claim.agentId}`
+      );
+    }
+    this.runtimeWorktreeClaims.delete(normalizedClaimKey);
+    return {
+      claimKey: normalizedClaimKey,
+      releasedBy: releasingAgentId ?? claim.agentId,
+      releasedAt: nowIso()
+    };
+  }
+
+  listRuntimeWorktreeClaims() {
+    const nowMs = Date.now();
+    return Array.from(this.runtimeWorktreeClaims.values())
+      .map((claim) => {
+        const holder = this.runtimeAgents.get(claim.agentId);
+        return {
+          ...deepClone(claim),
+          holderLiveness: resolveLivenessState(holder?.lastSeenAt ?? null, nowMs, this.runtimeLivenessMs)
+        };
+      })
+      .sort((left, right) => left.claimKey.localeCompare(right.claimKey));
+  }
+
+  getRuntimeRegistry() {
+    const machines = this.listRuntimeMachines();
+    const agents = this.listRuntimeAgents();
+    const worktreeClaims = this.listRuntimeWorktreeClaims();
+    const onlineAgents = agents.filter((agent) => agent.liveness === "online").length;
+    const offlineAgents = agents.filter((agent) => agent.liveness === "offline").length;
+    return {
+      contractVersion: "v1.stage2",
+      mode: "single_human_multi_agent",
+      livenessTimeoutMs: this.runtimeLivenessMs,
+      summary: {
+        machineCount: machines.length,
+        agentCount: agents.length,
+        onlineAgentCount: onlineAgents,
+        offlineAgentCount: offlineAgents,
+        activeWorktreeClaimCount: worktreeClaims.length
+      },
+      machines,
+      agents,
+      worktreeClaims
     };
   }
 
