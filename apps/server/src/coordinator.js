@@ -970,7 +970,19 @@ function buildRunExplanationProjection(topic, runId = null) {
     compatibility_anchor: {
       contract: "/v1/compatibility/shell-adapter",
       run_history: `/v1/topics/${encodeURIComponent(topic.topicId)}/run-history`,
+      run: resolvedRunId
+        ? `/v1/runs/${encodeURIComponent(resolvedRunId)}?topic_id=${encodeURIComponent(topic.topicId)}`
+        : null,
+      timeline: resolvedRunId
+        ? `/v1/runs/${encodeURIComponent(resolvedRunId)}/timeline?topic_id=${encodeURIComponent(topic.topicId)}`
+        : null,
       replay: resolvedRunId ? `/v1/runs/${encodeURIComponent(resolvedRunId)}/replay?topic_id=${encodeURIComponent(topic.topicId)}` : null,
+      feedback: resolvedRunId
+        ? `/v1/runs/${encodeURIComponent(resolvedRunId)}/feedback?topic_id=${encodeURIComponent(topic.topicId)}`
+        : null,
+      holds: resolvedRunId
+        ? `/v1/runs/${encodeURIComponent(resolvedRunId)}/holds?topic_id=${encodeURIComponent(topic.topicId)}`
+        : null,
       execution_events: resolvedRunId
         ? `/v1/execution/runs/${encodeURIComponent(resolvedRunId)}/events?topic_id=${encodeURIComponent(topic.topicId)}`
         : null,

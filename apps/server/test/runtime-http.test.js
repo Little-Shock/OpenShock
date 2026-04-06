@@ -2663,6 +2663,22 @@ test("v1 batch7 integration projection closure keeps projection meta and backend
       assert.equal(runHistory.body.projection_meta.source_plane, "execution_plane_projection");
       assert.equal(runHistory.body.projection_meta.topic_id, "topic_v1_batch7_projection");
       assert.equal(runHistory.body.items[0].explanation_projection.run_id, "run_batch7_01");
+      assert.equal(
+        runHistory.body.items[0].explanation_projection.compatibility_anchor.run,
+        "/v1/runs/run_batch7_01?topic_id=topic_v1_batch7_projection"
+      );
+      assert.equal(
+        runHistory.body.items[0].explanation_projection.compatibility_anchor.timeline,
+        "/v1/runs/run_batch7_01/timeline?topic_id=topic_v1_batch7_projection"
+      );
+      assert.equal(
+        runHistory.body.items[0].explanation_projection.compatibility_anchor.feedback,
+        "/v1/runs/run_batch7_01/feedback?topic_id=topic_v1_batch7_projection"
+      );
+      assert.equal(
+        runHistory.body.items[0].explanation_projection.compatibility_anchor.holds,
+        "/v1/runs/run_batch7_01/holds?topic_id=topic_v1_batch7_projection"
+      );
 
       const runReplay = await requestJson({
         port,
@@ -2756,6 +2772,26 @@ test("v1 batch7 integration projection closure keeps projection meta and backend
       );
       assert.ok(
         shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId/timeline?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId/feedback?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/runs/:runId/holds?topic_id=:topicId"
+        )
+      );
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
           "/v1/topics/:topicId/debug/rejections"
         )
       );
@@ -2776,6 +2812,22 @@ test("v1 batch7 integration projection closure keeps projection meta and backend
       assert.equal(
         shellCompatibility.body.backend_derived_projection.lineage_anchors.execution_events,
         "/v1/execution/runs/:runId/events?topic_id=:topicId"
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.run_detail,
+        "/v1/runs/:runId?topic_id=:topicId"
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.run_timeline,
+        "/v1/runs/:runId/timeline?topic_id=:topicId"
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.run_feedback,
+        "/v1/runs/:runId/feedback?topic_id=:topicId"
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.run_holds,
+        "/v1/runs/:runId/holds?topic_id=:topicId"
       );
       assert.equal(
         shellCompatibility.body.backend_derived_projection.lineage_anchors.topic_debug_rejections,
