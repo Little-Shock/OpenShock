@@ -53,6 +53,7 @@ It rejects request-body overrides to keep fixture identity deterministic.
 `/runtime/daemon/events` lets daemon-side runtime publish execution events into server truth.
 It only accepts execution-side event types: `feedback_ingest`, `blocker_escalation`, `status_report`.
 Generic write-surface fields are rejected.
+Daemon events are bound to the configured runtime daemon identity and registered as a `system` actor before ingest.
 
 `/runtime/smoke` reports whether server is reachable and whether the sample topic is ready.
 
@@ -66,6 +67,26 @@ curl -s -X POST http://127.0.0.1:4300/runtime/daemon/events \
   -d '{"topicId":"topic_0a_sample","type":"feedback_ingest","payload":{"summary":"daemon heartbeat"}}'
 curl -s http://127.0.0.1:4300/runtime/smoke | jq
 ```
+
+## Permission Boundary Notes
+
+`POST /topics/:topicId/messages` rejects:
+
+- unregistered `sourceAgentId`
+- `sourceRole` mismatch against the registered actor role
+- non-`active` actor status
+
+`POST /topics/:topicId/approvals/:holdId/decision` requires:
+
+- `decider`: registered `human` actor id
+- `interventionPoint`: must match the hold gate (for example `pr-merge`)
+- `approve`: boolean
+
+and rejects:
+
+- unregistered/non-human decider
+- non-`active` human decider
+- intervention point that does not match the hold gate
 
 ## Notes
 
