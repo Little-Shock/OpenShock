@@ -1,0 +1,267 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f8fb;
+  --panel: #ffffff;
+  --border: #d8dce5;
+  --text: #162033;
+  --muted: #5c667a;
+  --critical: #c23a3a;
+  --warning: #b6831f;
+  --ok: #256d3f;
+  --accent: #2a5ee6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 20px;
+  font-family: "Space Grotesk", "Inter", "Segoe UI", sans-serif;
+  color: var(--text);
+  background: linear-gradient(180deg, #f8faff 0%, #f7f8fb 40%, #f4f6fa 100%);
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.shell-header {
+  align-items: flex-end;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 7px 12px;
+}
+
+button:hover {
+  border-color: #b8bfd0;
+}
+
+.shell-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+#metrics-panel,
+#event-panel {
+  grid-column: span 12;
+}
+
+#topic-panel,
+#agent-panel {
+  grid-column: span 6;
+}
+
+#delivery-panel {
+  grid-column: span 12;
+}
+
+#approval-panel,
+#intervention-points-panel,
+#intervention-panel {
+  grid-column: span 6;
+}
+
+table {
+  border-collapse: collapse;
+  margin-top: 10px;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid #eceff5;
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: #4b5670;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+td {
+  font-size: 14px;
+}
+
+.metric-cards {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  margin-top: 10px;
+}
+
+.metric-card {
+  border: 1px solid #dfe4f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.metric-label {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.metric-trend-up {
+  color: var(--warning);
+}
+
+.metric-trend-down {
+  color: var(--ok);
+}
+
+.list-cards {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.queue-card {
+  border: 1px solid #e2e6f0;
+  border-radius: 10px;
+  padding: 11px;
+}
+
+.queue-card header {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.queue-card h3 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.queue-meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 5px 0 0;
+}
+
+.panel-subtitle {
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.event-feed {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.event-feed li {
+  border-left: 3px solid #d7dcec;
+  margin-bottom: 8px;
+  padding: 6px 0 6px 9px;
+}
+
+.event-feed li.critical {
+  border-left-color: var(--critical);
+}
+
+.event-feed li.warning {
+  border-left-color: var(--warning);
+}
+
+.badge {
+  border: 1px solid #d8dfef;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  text-transform: uppercase;
+}
+
+.badge-running {
+  background: #ebf3ff;
+  border-color: #c8dcff;
+  color: #1f4ac0;
+}
+
+.badge-blocked {
+  background: #ffefef;
+  border-color: #f7cbcb;
+  color: #a93333;
+}
+
+.badge-pending {
+  background: #fff7e7;
+  border-color: #f6dcaa;
+  color: #8f6416;
+}
+
+.badge-idle {
+  background: #f0f2f8;
+  border-color: #d8dcea;
+  color: #4d5874;
+}
+
+@media (max-width: 980px) {
+  #topic-panel,
+  #agent-panel,
+  #delivery-panel,
+  #approval-panel,
+  #intervention-points-panel,
+  #intervention-panel {
+    grid-column: span 12;
+  }
+
+  .metric-cards {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+}

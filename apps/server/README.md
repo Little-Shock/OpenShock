@@ -1,0 +1,73 @@
+# OpenShock Server 0A Skeleton
+
+This module implements the first server-side coordination core for 0A.
+
+It focuses on the scope frozen in `open-shock-boundary-contract-v2`:
+
+- Topic truth revision ownership
+- Structured message routing
+- Shared-truth proposal serialization
+- Conflict tracking and escalation timers
+- Human-gate hold/release
+- Delivery state writeback
+- Coarse observability read model
+
+## Run
+
+```bash
+cd apps/server
+npm test
+npm start
+```
+
+By default the HTTP server listens on `:4300`.
+
+## HTTP endpoints
+
+- `POST /topics`
+- `POST /topics/:topicId/agents`
+- `POST /topics/:topicId/messages`
+- `POST /topics/:topicId/approvals/:holdId/decision`
+- `GET /topics/:topicId/overview`
+- `GET /topics/:topicId/coarse`
+- `GET /topics/:topicId/messages?route=<scope>`
+- `GET /runtime/config`
+- `POST /runtime/fixtures/seed`
+- `POST /runtime/daemon/events`
+- `GET /runtime/smoke`
+- `GET /health`
+
+## Integrated Runtime Helpers
+
+`/runtime/config` returns the runtime entry contract used by integrated bring-up:
+
+- runtime name
+- server port
+- shell URL
+- daemon identity
+- sample topic fixture and endpoint paths
+
+`/runtime/fixtures/seed` creates a deterministic sample topic with one lead and two workers.
+It rejects request-body overrides to keep fixture identity deterministic.
+
+`/runtime/daemon/events` lets daemon-side runtime publish execution events into server truth.
+It only accepts execution-side event types: `feedback_ingest`, `blocker_escalation`, `status_report`.
+Generic write-surface fields are rejected.
+
+`/runtime/smoke` reports whether server is reachable and whether the sample topic is ready.
+
+Example local flow:
+
+```bash
+curl -s http://127.0.0.1:4300/runtime/config | jq
+curl -s -X POST http://127.0.0.1:4300/runtime/fixtures/seed -H 'content-type: application/json' -d '{}'
+curl -s -X POST http://127.0.0.1:4300/runtime/daemon/events \
+  -H 'content-type: application/json' \
+  -d '{"topicId":"topic_0a_sample","type":"feedback_ingest","payload":{"summary":"daemon heartbeat"}}'
+curl -s http://127.0.0.1:4300/runtime/smoke | jq
+```
+
+## Notes
+
+This is a coordination skeleton, not a full production backend.
+Persistence and distributed durability are intentionally out of scope for 0A skeleton delivery.

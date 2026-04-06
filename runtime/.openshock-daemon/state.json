@@ -1,0 +1,2425 @@
+{
+  "version": 1,
+  "lanes": {
+    "lane_3152431c4557a2b4": {
+      "id": "lane_3152431c4557a2b4",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_3152431c4557a2b4/worktree",
+      "created_at": "2026-04-05T10:41:11.957757Z",
+      "updated_at": "2026-04-05T10:41:11.957757Z"
+    },
+    "lane_37b7bff1c9019fc3": {
+      "id": "lane_37b7bff1c9019fc3",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_37b7bff1c9019fc3/worktree",
+      "created_at": "2026-04-05T10:49:45.056041Z",
+      "updated_at": "2026-04-05T10:49:45.056041Z"
+    },
+    "lane_3a53cf27e1a565fc": {
+      "id": "lane_3a53cf27e1a565fc",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_3a53cf27e1a565fc/worktree",
+      "created_at": "2026-04-05T10:49:52.170125Z",
+      "updated_at": "2026-04-05T10:49:52.170125Z"
+    },
+    "lane_43ee1f1e6f226006": {
+      "id": "lane_43ee1f1e6f226006",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_43ee1f1e6f226006/worktree",
+      "created_at": "2026-04-05T10:31:16.07893Z",
+      "updated_at": "2026-04-05T10:31:16.07893Z"
+    },
+    "lane_499dbb0d340168bb": {
+      "id": "lane_499dbb0d340168bb",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_499dbb0d340168bb/worktree",
+      "created_at": "2026-04-05T10:49:49.789741Z",
+      "updated_at": "2026-04-05T10:49:49.789741Z"
+    },
+    "lane_4d321becd7d31443": {
+      "id": "lane_4d321becd7d31443",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_4d321becd7d31443/worktree",
+      "created_at": "2026-04-05T09:59:00.837418Z",
+      "updated_at": "2026-04-05T09:59:00.837418Z"
+    },
+    "lane_5b77f288b1a4c261": {
+      "id": "lane_5b77f288b1a4c261",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_5b77f288b1a4c261/worktree",
+      "created_at": "2026-04-05T10:34:52.39908Z",
+      "updated_at": "2026-04-05T10:34:52.39908Z"
+    },
+    "lane_78d15e939e90b449": {
+      "id": "lane_78d15e939e90b449",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_78d15e939e90b449/worktree",
+      "created_at": "2026-04-05T09:54:28.448753Z",
+      "updated_at": "2026-04-05T09:54:28.448753Z"
+    },
+    "lane_85f69f721e049d02": {
+      "id": "lane_85f69f721e049d02",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_85f69f721e049d02/worktree",
+      "created_at": "2026-04-05T09:08:35.152855Z",
+      "updated_at": "2026-04-05T09:08:35.152855Z"
+    },
+    "lane_94d154ebaabd0c30": {
+      "id": "lane_94d154ebaabd0c30",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_94d154ebaabd0c30/worktree",
+      "created_at": "2026-04-05T09:08:35.184636Z",
+      "updated_at": "2026-04-05T09:08:35.184636Z"
+    },
+    "lane_996d510ad7466722": {
+      "id": "lane_996d510ad7466722",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_996d510ad7466722/worktree",
+      "created_at": "2026-04-05T10:49:47.421016Z",
+      "updated_at": "2026-04-05T10:49:47.421016Z"
+    },
+    "lane_9c6455a420dbc44b": {
+      "id": "lane_9c6455a420dbc44b",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_9c6455a420dbc44b/worktree",
+      "created_at": "2026-04-05T10:31:13.928031Z",
+      "updated_at": "2026-04-05T10:31:13.928031Z"
+    },
+    "lane_a5f16a9ef55ffed9": {
+      "id": "lane_a5f16a9ef55ffed9",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_a5f16a9ef55ffed9/worktree",
+      "created_at": "2026-04-05T10:49:43.752992Z",
+      "updated_at": "2026-04-05T10:49:43.752992Z"
+    },
+    "lane_acbacb1d92e358a0": {
+      "id": "lane_acbacb1d92e358a0",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_acbacb1d92e358a0/worktree",
+      "created_at": "2026-04-05T09:55:55.101504Z",
+      "updated_at": "2026-04-05T09:55:55.101504Z"
+    },
+    "lane_c85c23ece3d29adf": {
+      "id": "lane_c85c23ece3d29adf",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_c85c23ece3d29adf/worktree",
+      "created_at": "2026-04-05T10:39:43.365462Z",
+      "updated_at": "2026-04-05T10:39:43.365462Z"
+    },
+    "lane_dad821a0453f4cf8": {
+      "id": "lane_dad821a0453f4cf8",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_dad821a0453f4cf8/worktree",
+      "created_at": "2026-04-05T10:23:15.545974Z",
+      "updated_at": "2026-04-05T10:23:15.545974Z"
+    },
+    "lane_dfe81c6b439aeb5e": {
+      "id": "lane_dfe81c6b439aeb5e",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_dfe81c6b439aeb5e/worktree",
+      "created_at": "2026-04-05T10:25:10.065795Z",
+      "updated_at": "2026-04-05T10:25:10.065795Z"
+    },
+    "lane_e6d1b2a01024c604": {
+      "id": "lane_e6d1b2a01024c604",
+      "issue_id": "INTEGRATED-ISSUE",
+      "topic_id": "topic_0a_sample",
+      "branch": "topic/topic_0a_sample",
+      "worktree_path": "runtime/.openshock-daemon/worktrees/lanes/lane_e6d1b2a01024c604/worktree",
+      "created_at": "2026-04-05T10:49:42.438887Z",
+      "updated_at": "2026-04-05T10:49:42.438887Z"
+    }
+  },
+  "runs": {
+    "run_3157ce229d4f64e8": {
+      "id": "run_3157ce229d4f64e8",
+      "lane_id": "lane_4d321becd7d31443",
+      "session_id": "session_c3553ef78240c38e",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T09:59:00.837811Z",
+      "updated_at": "2026-04-05T09:59:00.838748Z",
+      "started_at": "2026-04-05T09:59:00.838192Z",
+      "finished_at": "2026-04-05T09:59:00.838748Z",
+      "recovery_needed": false
+    },
+    "run_3e0f195b80819600": {
+      "id": "run_3e0f195b80819600",
+      "lane_id": "lane_9c6455a420dbc44b",
+      "session_id": "session_df1d8106bd9f4e9f",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:31:13.930367Z",
+      "updated_at": "2026-04-05T10:31:13.934994Z",
+      "started_at": "2026-04-05T10:31:13.932241Z",
+      "finished_at": "2026-04-05T10:31:13.934994Z",
+      "recovery_needed": false
+    },
+    "run_43e318b1b43c43d7": {
+      "id": "run_43e318b1b43c43d7",
+      "lane_id": "lane_a5f16a9ef55ffed9",
+      "session_id": "session_47c0fdd92708ec21",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:49:43.754997Z",
+      "updated_at": "2026-04-05T10:49:43.761867Z",
+      "started_at": "2026-04-05T10:49:43.75771Z",
+      "finished_at": "2026-04-05T10:49:43.761867Z",
+      "recovery_needed": false
+    },
+    "run_4452b5c53c7247e9": {
+      "id": "run_4452b5c53c7247e9",
+      "lane_id": "lane_dfe81c6b439aeb5e",
+      "session_id": "session_e7d28ce0722aaba7",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:25:10.067439Z",
+      "updated_at": "2026-04-05T10:25:10.072565Z",
+      "started_at": "2026-04-05T10:25:10.069331Z",
+      "finished_at": "2026-04-05T10:25:10.072565Z",
+      "recovery_needed": false
+    },
+    "run_446b58e81029ec73": {
+      "id": "run_446b58e81029ec73",
+      "lane_id": "lane_94d154ebaabd0c30",
+      "session_id": "session_a7eb0f52e4b5484b",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T09:08:35.184909Z",
+      "updated_at": "2026-04-05T09:08:35.185654Z",
+      "started_at": "2026-04-05T09:08:35.185228Z",
+      "finished_at": "2026-04-05T09:08:35.185654Z",
+      "recovery_needed": false
+    },
+    "run_50818e3ef76ac913": {
+      "id": "run_50818e3ef76ac913",
+      "lane_id": "lane_37b7bff1c9019fc3",
+      "session_id": "session_b3b5bffbe6786b34",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:49:45.058506Z",
+      "updated_at": "2026-04-05T10:49:45.065393Z",
+      "started_at": "2026-04-05T10:49:45.061415Z",
+      "finished_at": "2026-04-05T10:49:45.065393Z",
+      "recovery_needed": false
+    },
+    "run_567456411c57309c": {
+      "id": "run_567456411c57309c",
+      "lane_id": "lane_996d510ad7466722",
+      "session_id": "session_4a792cf62b52f89a",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:49:47.423497Z",
+      "updated_at": "2026-04-05T10:49:47.431256Z",
+      "started_at": "2026-04-05T10:49:47.426883Z",
+      "finished_at": "2026-04-05T10:49:47.431256Z",
+      "recovery_needed": false
+    },
+    "run_587a013df78464d6": {
+      "id": "run_587a013df78464d6",
+      "lane_id": "lane_499dbb0d340168bb",
+      "session_id": "session_1c24f6a3cc211531",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:49:49.792556Z",
+      "updated_at": "2026-04-05T10:49:49.800787Z",
+      "started_at": "2026-04-05T10:49:49.796157Z",
+      "finished_at": "2026-04-05T10:49:49.800787Z",
+      "recovery_needed": false
+    },
+    "run_5ff69c779541c61e": {
+      "id": "run_5ff69c779541c61e",
+      "lane_id": "lane_3a53cf27e1a565fc",
+      "session_id": "session_569cc13ba692f3a4",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:49:52.173308Z",
+      "updated_at": "2026-04-05T10:49:52.182205Z",
+      "started_at": "2026-04-05T10:49:52.17729Z",
+      "finished_at": "2026-04-05T10:49:52.182205Z",
+      "recovery_needed": false
+    },
+    "run_6358bc95927a7019": {
+      "id": "run_6358bc95927a7019",
+      "lane_id": "lane_78d15e939e90b449",
+      "session_id": "session_2583b0efa69d622f",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T09:54:28.449309Z",
+      "updated_at": "2026-04-05T09:54:28.45053Z",
+      "started_at": "2026-04-05T09:54:28.449658Z",
+      "finished_at": "2026-04-05T09:54:28.45053Z",
+      "recovery_needed": false
+    },
+    "run_7f8ba1ae1d444f12": {
+      "id": "run_7f8ba1ae1d444f12",
+      "lane_id": "lane_3152431c4557a2b4",
+      "session_id": "session_c2c9808e07246cb3",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:41:11.96093Z",
+      "updated_at": "2026-04-05T10:41:11.967425Z",
+      "started_at": "2026-04-05T10:41:11.963763Z",
+      "finished_at": "2026-04-05T10:41:11.967425Z",
+      "recovery_needed": false
+    },
+    "run_817b97390f99984f": {
+      "id": "run_817b97390f99984f",
+      "lane_id": "lane_acbacb1d92e358a0",
+      "session_id": "session_76afcf1db349ece9",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T09:55:55.101939Z",
+      "updated_at": "2026-04-05T09:55:55.103472Z",
+      "started_at": "2026-04-05T09:55:55.102637Z",
+      "finished_at": "2026-04-05T09:55:55.103472Z",
+      "recovery_needed": false
+    },
+    "run_9ba89f737d76c188": {
+      "id": "run_9ba89f737d76c188",
+      "lane_id": "lane_85f69f721e049d02",
+      "session_id": "session_886dffd9db91a64b",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T09:08:35.153156Z",
+      "updated_at": "2026-04-05T09:08:35.153921Z",
+      "started_at": "2026-04-05T09:08:35.153479Z",
+      "finished_at": "2026-04-05T09:08:35.153921Z",
+      "recovery_needed": false
+    },
+    "run_b1a725cf7147a34f": {
+      "id": "run_b1a725cf7147a34f",
+      "lane_id": "lane_43ee1f1e6f226006",
+      "session_id": "session_e199e22554d66ff5",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:31:16.08071Z",
+      "updated_at": "2026-04-05T10:31:16.08681Z",
+      "started_at": "2026-04-05T10:31:16.083349Z",
+      "finished_at": "2026-04-05T10:31:16.08681Z",
+      "recovery_needed": false
+    },
+    "run_e21376a412272f6c": {
+      "id": "run_e21376a412272f6c",
+      "lane_id": "lane_c85c23ece3d29adf",
+      "session_id": "session_41b913d50d3f8b42",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:39:43.368668Z",
+      "updated_at": "2026-04-05T10:39:43.375185Z",
+      "started_at": "2026-04-05T10:39:43.371488Z",
+      "finished_at": "2026-04-05T10:39:43.375185Z",
+      "recovery_needed": false
+    },
+    "run_eaaa4b64b0702ee2": {
+      "id": "run_eaaa4b64b0702ee2",
+      "lane_id": "lane_e6d1b2a01024c604",
+      "session_id": "session_bdf08cbfca8b73fb",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:49:42.442502Z",
+      "updated_at": "2026-04-05T10:49:42.449378Z",
+      "started_at": "2026-04-05T10:49:42.445316Z",
+      "finished_at": "2026-04-05T10:49:42.449378Z",
+      "recovery_needed": false
+    },
+    "run_f8037692edcd2224": {
+      "id": "run_f8037692edcd2224",
+      "lane_id": "lane_5b77f288b1a4c261",
+      "session_id": "session_a287f2948dc3f1e7",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:34:52.401293Z",
+      "updated_at": "2026-04-05T10:34:52.409194Z",
+      "started_at": "2026-04-05T10:34:52.404517Z",
+      "finished_at": "2026-04-05T10:34:52.409194Z",
+      "recovery_needed": false
+    },
+    "run_f86d6f27db3986f5": {
+      "id": "run_f86d6f27db3986f5",
+      "lane_id": "lane_dad821a0453f4cf8",
+      "session_id": "session_00b56a9e7d21bea1",
+      "runtime_id": "runtime_local_01",
+      "state": "completed",
+      "sequence": 8,
+      "acked_sequence": 0,
+      "created_at": "2026-04-05T10:23:15.54763Z",
+      "updated_at": "2026-04-05T10:23:15.551269Z",
+      "started_at": "2026-04-05T10:23:15.549092Z",
+      "finished_at": "2026-04-05T10:23:15.551269Z",
+      "recovery_needed": false
+    }
+  },
+  "events": {
+    "run_3157ce229d4f64e8": [
+      {
+        "sequence": 1,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T09:59:00.837811Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T09:59:00.83801Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T09:59:00.838192Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_f2b3c7355be9576b",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T09:59:00.838375Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_3b107bd419ee58c3",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T09:59:00.838375Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_3b107bd419ee58c3",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T09:59:00.83857Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T09:59:00.83857Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_3157ce229d4f64e8",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T09:59:00.838748Z"
+      }
+    ],
+    "run_3e0f195b80819600": [
+      {
+        "sequence": 1,
+        "run_id": "run_3e0f195b80819600",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:31:13.930367Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_3e0f195b80819600",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:31:13.931332Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_3e0f195b80819600",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:31:13.932241Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_3e0f195b80819600",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_22858530de0c4cf3",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:31:13.93317Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_3e0f195b80819600",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_aad97ece4261fd05",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:31:13.93317Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_3e0f195b80819600",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_aad97ece4261fd05",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:31:13.934142Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_3e0f195b80819600",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:31:13.934142Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_3e0f195b80819600",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:31:13.934994Z"
+      }
+    ],
+    "run_43e318b1b43c43d7": [
+      {
+        "sequence": 1,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:49:43.754997Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:49:43.756387Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:49:43.75771Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_7ca7e1f6636c1096",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:43.758921Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_c944dd9c0ac9e30d",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:43.758921Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_c944dd9c0ac9e30d",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:49:43.760532Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:49:43.760532Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_43e318b1b43c43d7",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:49:43.761867Z"
+      }
+    ],
+    "run_4452b5c53c7247e9": [
+      {
+        "sequence": 1,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:25:10.067439Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:25:10.068344Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:25:10.069331Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_78ebbf70be185df5",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:25:10.070532Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_62d93bfaf6362393",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:25:10.070532Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_62d93bfaf6362393",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:25:10.071699Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:25:10.071699Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_4452b5c53c7247e9",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:25:10.072565Z"
+      }
+    ],
+    "run_446b58e81029ec73": [
+      {
+        "sequence": 1,
+        "run_id": "run_446b58e81029ec73",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T09:08:35.184909Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_446b58e81029ec73",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T09:08:35.185068Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_446b58e81029ec73",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T09:08:35.185228Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_446b58e81029ec73",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_345249c610e5c576",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T09:08:35.185366Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_446b58e81029ec73",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_2c15a835b55fd6f1",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T09:08:35.185366Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_446b58e81029ec73",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_2c15a835b55fd6f1",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T09:08:35.18551Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_446b58e81029ec73",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T09:08:35.18551Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_446b58e81029ec73",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T09:08:35.185654Z"
+      }
+    ],
+    "run_50818e3ef76ac913": [
+      {
+        "sequence": 1,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:49:45.058506Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:49:45.05995Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:49:45.061415Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_a24356be54d449e4",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:45.062803Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_337e3c8750a5dc0b",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:45.062803Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_337e3c8750a5dc0b",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:49:45.064079Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:49:45.064079Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_50818e3ef76ac913",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:49:45.065393Z"
+      }
+    ],
+    "run_567456411c57309c": [
+      {
+        "sequence": 1,
+        "run_id": "run_567456411c57309c",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:49:47.423497Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_567456411c57309c",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:49:47.425222Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_567456411c57309c",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:49:47.426883Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_567456411c57309c",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_65774bebdf0a085e",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:47.42839Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_567456411c57309c",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_492b81f7906cd262",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:47.42839Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_567456411c57309c",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_492b81f7906cd262",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:49:47.429793Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_567456411c57309c",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:49:47.429793Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_567456411c57309c",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:49:47.431256Z"
+      }
+    ],
+    "run_587a013df78464d6": [
+      {
+        "sequence": 1,
+        "run_id": "run_587a013df78464d6",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:49:49.792556Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_587a013df78464d6",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:49:49.794527Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_587a013df78464d6",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:49:49.796157Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_587a013df78464d6",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_3b93eaf97f5488b5",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:49.797799Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_587a013df78464d6",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_25b51ee4c59c488b",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:49.797799Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_587a013df78464d6",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_25b51ee4c59c488b",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:49:49.799447Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_587a013df78464d6",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:49:49.799447Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_587a013df78464d6",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:49:49.800787Z"
+      }
+    ],
+    "run_5ff69c779541c61e": [
+      {
+        "sequence": 1,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:49:52.173308Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:49:52.175399Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:49:52.17729Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_d51eca0837a16b20",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:52.178869Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_c8a233c92f18afbb",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:52.178869Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_c8a233c92f18afbb",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:49:52.180662Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:49:52.180662Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_5ff69c779541c61e",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:49:52.182205Z"
+      }
+    ],
+    "run_6358bc95927a7019": [
+      {
+        "sequence": 1,
+        "run_id": "run_6358bc95927a7019",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T09:54:28.449309Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_6358bc95927a7019",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T09:54:28.449486Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_6358bc95927a7019",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T09:54:28.449658Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_6358bc95927a7019",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_c8cd7c5eff05c6bf",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T09:54:28.449993Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_6358bc95927a7019",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_2476e531a38da2dd",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T09:54:28.449993Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_6358bc95927a7019",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_2476e531a38da2dd",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T09:54:28.450243Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_6358bc95927a7019",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T09:54:28.450243Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_6358bc95927a7019",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T09:54:28.45053Z"
+      }
+    ],
+    "run_7f8ba1ae1d444f12": [
+      {
+        "sequence": 1,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:41:11.96093Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:41:11.962469Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:41:11.963763Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_32bc771c1c60f9b6",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:41:11.96516Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_117f99ee9f2a3a07",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:41:11.96516Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_117f99ee9f2a3a07",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:41:11.96636Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:41:11.96636Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_7f8ba1ae1d444f12",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:41:11.967425Z"
+      }
+    ],
+    "run_817b97390f99984f": [
+      {
+        "sequence": 1,
+        "run_id": "run_817b97390f99984f",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T09:55:55.101939Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_817b97390f99984f",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T09:55:55.10224Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_817b97390f99984f",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T09:55:55.102637Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_817b97390f99984f",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_4fd4b8c09750a34a",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T09:55:55.10295Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_817b97390f99984f",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_362ee478ed1d0dd6",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T09:55:55.10295Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_817b97390f99984f",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_362ee478ed1d0dd6",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T09:55:55.103256Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_817b97390f99984f",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T09:55:55.103256Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_817b97390f99984f",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T09:55:55.103472Z"
+      }
+    ],
+    "run_9ba89f737d76c188": [
+      {
+        "sequence": 1,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T09:08:35.153156Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T09:08:35.15335Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T09:08:35.153479Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_d6bc29fb379bfda7",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T09:08:35.153616Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_2b55e6ece8c3c98b",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T09:08:35.153616Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_2b55e6ece8c3c98b",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T09:08:35.153775Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T09:08:35.153775Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_9ba89f737d76c188",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T09:08:35.153921Z"
+      }
+    ],
+    "run_b1a725cf7147a34f": [
+      {
+        "sequence": 1,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:31:16.08071Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:31:16.081993Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:31:16.083349Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_9d8b7b1998ba7a72",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:31:16.084596Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_3a7a33a84c0e27d4",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:31:16.084596Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_3a7a33a84c0e27d4",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:31:16.085783Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:31:16.085783Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_b1a725cf7147a34f",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:31:16.08681Z"
+      }
+    ],
+    "run_e21376a412272f6c": [
+      {
+        "sequence": 1,
+        "run_id": "run_e21376a412272f6c",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:39:43.368668Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_e21376a412272f6c",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:39:43.37024Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_e21376a412272f6c",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:39:43.371488Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_e21376a412272f6c",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_86ceb4a46b5a6bac",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:39:43.372724Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_e21376a412272f6c",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_997b78bb67a3015b",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:39:43.372724Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_e21376a412272f6c",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_997b78bb67a3015b",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:39:43.373938Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_e21376a412272f6c",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:39:43.373938Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_e21376a412272f6c",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:39:43.375185Z"
+      }
+    ],
+    "run_eaaa4b64b0702ee2": [
+      {
+        "sequence": 1,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:49:42.442502Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:49:42.443999Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:49:42.445316Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_4d006020691266c2",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:42.447001Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_dba8e77e94515cd2",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:49:42.447001Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_dba8e77e94515cd2",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:49:42.448361Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:49:42.448361Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_eaaa4b64b0702ee2",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:49:42.449378Z"
+      }
+    ],
+    "run_f8037692edcd2224": [
+      {
+        "sequence": 1,
+        "run_id": "run_f8037692edcd2224",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:34:52.401293Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_f8037692edcd2224",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:34:52.402924Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_f8037692edcd2224",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:34:52.404517Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_f8037692edcd2224",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_9f16194d0becbefc",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:34:52.406357Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_f8037692edcd2224",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_24cb244f5da0a3e1",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:34:52.406357Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_f8037692edcd2224",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_24cb244f5da0a3e1",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:34:52.408084Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_f8037692edcd2224",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:34:52.408084Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_f8037692edcd2224",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:34:52.409194Z"
+      }
+    ],
+    "run_f86d6f27db3986f5": [
+      {
+        "sequence": 1,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "run_enqueued",
+        "state": "queued",
+        "message": "run queued",
+        "created_at": "2026-04-05T10:23:15.54763Z"
+      },
+      {
+        "sequence": 2,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "run_dispatched",
+        "state": "dispatched",
+        "message": "run dispatched to runtime",
+        "metadata": {
+          "runtime_id": "runtime_local_01"
+        },
+        "created_at": "2026-04-05T10:23:15.548439Z"
+      },
+      {
+        "sequence": 3,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "run_started",
+        "state": "running",
+        "message": "run is running",
+        "created_at": "2026-04-05T10:23:15.549092Z"
+      },
+      {
+        "sequence": 4,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "execution_feedback_ingested",
+        "state": "running",
+        "message": "demo feedback entering integrated runtime",
+        "metadata": {
+          "feedback_id": "feedback_76667b185b8255a3",
+          "kind": "integrated_demo",
+          "severity": "warning",
+          "source": "runtime"
+        },
+        "created_at": "2026-04-05T10:23:15.549956Z"
+      },
+      {
+        "sequence": 5,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "execution_approval_hold_requested",
+        "state": "approval_required",
+        "message": "demo hold",
+        "metadata": {
+          "hold_id": "hold_09ec313642e5a743",
+          "requested_by": "runtime"
+        },
+        "created_at": "2026-04-05T10:23:15.549956Z"
+      },
+      {
+        "sequence": 6,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "execution_approval_hold_released",
+        "state": "approval_required",
+        "message": "demo approve",
+        "metadata": {
+          "hold_id": "hold_09ec313642e5a743",
+          "resolved_by": "operator"
+        },
+        "created_at": "2026-04-05T10:23:15.550636Z"
+      },
+      {
+        "sequence": 7,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "execution_approval_holds_cleared",
+        "state": "running",
+        "message": "all execution approval holds released",
+        "created_at": "2026-04-05T10:23:15.550636Z"
+      },
+      {
+        "sequence": 8,
+        "run_id": "run_f86d6f27db3986f5",
+        "type": "run_completed",
+        "state": "completed",
+        "message": "demo completed",
+        "created_at": "2026-04-05T10:23:15.551269Z"
+      }
+    ]
+  },
+  "feedbacks": {
+    "run_3157ce229d4f64e8": [
+      {
+        "id": "feedback_f2b3c7355be9576b",
+        "run_id": "run_3157ce229d4f64e8",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T09:59:00.838375Z"
+      }
+    ],
+    "run_3e0f195b80819600": [
+      {
+        "id": "feedback_22858530de0c4cf3",
+        "run_id": "run_3e0f195b80819600",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:31:13.93317Z"
+      }
+    ],
+    "run_43e318b1b43c43d7": [
+      {
+        "id": "feedback_7ca7e1f6636c1096",
+        "run_id": "run_43e318b1b43c43d7",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:49:43.758921Z"
+      }
+    ],
+    "run_4452b5c53c7247e9": [
+      {
+        "id": "feedback_78ebbf70be185df5",
+        "run_id": "run_4452b5c53c7247e9",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:25:10.070532Z"
+      }
+    ],
+    "run_446b58e81029ec73": [
+      {
+        "id": "feedback_345249c610e5c576",
+        "run_id": "run_446b58e81029ec73",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T09:08:35.185366Z"
+      }
+    ],
+    "run_50818e3ef76ac913": [
+      {
+        "id": "feedback_a24356be54d449e4",
+        "run_id": "run_50818e3ef76ac913",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:49:45.062803Z"
+      }
+    ],
+    "run_567456411c57309c": [
+      {
+        "id": "feedback_65774bebdf0a085e",
+        "run_id": "run_567456411c57309c",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:49:47.42839Z"
+      }
+    ],
+    "run_587a013df78464d6": [
+      {
+        "id": "feedback_3b93eaf97f5488b5",
+        "run_id": "run_587a013df78464d6",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:49:49.797799Z"
+      }
+    ],
+    "run_5ff69c779541c61e": [
+      {
+        "id": "feedback_d51eca0837a16b20",
+        "run_id": "run_5ff69c779541c61e",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:49:52.178869Z"
+      }
+    ],
+    "run_6358bc95927a7019": [
+      {
+        "id": "feedback_c8cd7c5eff05c6bf",
+        "run_id": "run_6358bc95927a7019",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T09:54:28.449993Z"
+      }
+    ],
+    "run_7f8ba1ae1d444f12": [
+      {
+        "id": "feedback_32bc771c1c60f9b6",
+        "run_id": "run_7f8ba1ae1d444f12",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:41:11.96516Z"
+      }
+    ],
+    "run_817b97390f99984f": [
+      {
+        "id": "feedback_4fd4b8c09750a34a",
+        "run_id": "run_817b97390f99984f",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T09:55:55.10295Z"
+      }
+    ],
+    "run_9ba89f737d76c188": [
+      {
+        "id": "feedback_d6bc29fb379bfda7",
+        "run_id": "run_9ba89f737d76c188",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T09:08:35.153616Z"
+      }
+    ],
+    "run_b1a725cf7147a34f": [
+      {
+        "id": "feedback_9d8b7b1998ba7a72",
+        "run_id": "run_b1a725cf7147a34f",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:31:16.084596Z"
+      }
+    ],
+    "run_e21376a412272f6c": [
+      {
+        "id": "feedback_86ceb4a46b5a6bac",
+        "run_id": "run_e21376a412272f6c",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:39:43.372724Z"
+      }
+    ],
+    "run_eaaa4b64b0702ee2": [
+      {
+        "id": "feedback_4d006020691266c2",
+        "run_id": "run_eaaa4b64b0702ee2",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:49:42.447001Z"
+      }
+    ],
+    "run_f8037692edcd2224": [
+      {
+        "id": "feedback_9f16194d0becbefc",
+        "run_id": "run_f8037692edcd2224",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:34:52.406357Z"
+      }
+    ],
+    "run_f86d6f27db3986f5": [
+      {
+        "id": "feedback_76667b185b8255a3",
+        "run_id": "run_f86d6f27db3986f5",
+        "source": "runtime",
+        "kind": "integrated_demo",
+        "severity": "warning",
+        "message": "demo feedback entering integrated runtime",
+        "created_at": "2026-04-05T10:23:15.549956Z"
+      }
+    ]
+  },
+  "holds": {
+    "run_3157ce229d4f64e8": [
+      {
+        "id": "hold_3b107bd419ee58c3",
+        "run_id": "run_3157ce229d4f64e8",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_f2b3c7355be9576b",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T09:59:00.838375Z",
+        "resolved_at": "2026-04-05T09:59:00.83857Z"
+      }
+    ],
+    "run_3e0f195b80819600": [
+      {
+        "id": "hold_aad97ece4261fd05",
+        "run_id": "run_3e0f195b80819600",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_22858530de0c4cf3",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:31:13.93317Z",
+        "resolved_at": "2026-04-05T10:31:13.934142Z"
+      }
+    ],
+    "run_43e318b1b43c43d7": [
+      {
+        "id": "hold_c944dd9c0ac9e30d",
+        "run_id": "run_43e318b1b43c43d7",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_7ca7e1f6636c1096",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:49:43.758921Z",
+        "resolved_at": "2026-04-05T10:49:43.760532Z"
+      }
+    ],
+    "run_4452b5c53c7247e9": [
+      {
+        "id": "hold_62d93bfaf6362393",
+        "run_id": "run_4452b5c53c7247e9",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_78ebbf70be185df5",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:25:10.070532Z",
+        "resolved_at": "2026-04-05T10:25:10.071699Z"
+      }
+    ],
+    "run_446b58e81029ec73": [
+      {
+        "id": "hold_2c15a835b55fd6f1",
+        "run_id": "run_446b58e81029ec73",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_345249c610e5c576",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T09:08:35.185366Z",
+        "resolved_at": "2026-04-05T09:08:35.18551Z"
+      }
+    ],
+    "run_50818e3ef76ac913": [
+      {
+        "id": "hold_337e3c8750a5dc0b",
+        "run_id": "run_50818e3ef76ac913",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_a24356be54d449e4",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:49:45.062803Z",
+        "resolved_at": "2026-04-05T10:49:45.064079Z"
+      }
+    ],
+    "run_567456411c57309c": [
+      {
+        "id": "hold_492b81f7906cd262",
+        "run_id": "run_567456411c57309c",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_65774bebdf0a085e",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:49:47.42839Z",
+        "resolved_at": "2026-04-05T10:49:47.429793Z"
+      }
+    ],
+    "run_587a013df78464d6": [
+      {
+        "id": "hold_25b51ee4c59c488b",
+        "run_id": "run_587a013df78464d6",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_3b93eaf97f5488b5",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:49:49.797799Z",
+        "resolved_at": "2026-04-05T10:49:49.799447Z"
+      }
+    ],
+    "run_5ff69c779541c61e": [
+      {
+        "id": "hold_c8a233c92f18afbb",
+        "run_id": "run_5ff69c779541c61e",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_d51eca0837a16b20",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:49:52.178869Z",
+        "resolved_at": "2026-04-05T10:49:52.180662Z"
+      }
+    ],
+    "run_6358bc95927a7019": [
+      {
+        "id": "hold_2476e531a38da2dd",
+        "run_id": "run_6358bc95927a7019",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_c8cd7c5eff05c6bf",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T09:54:28.449993Z",
+        "resolved_at": "2026-04-05T09:54:28.450243Z"
+      }
+    ],
+    "run_7f8ba1ae1d444f12": [
+      {
+        "id": "hold_117f99ee9f2a3a07",
+        "run_id": "run_7f8ba1ae1d444f12",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_32bc771c1c60f9b6",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:41:11.96516Z",
+        "resolved_at": "2026-04-05T10:41:11.96636Z"
+      }
+    ],
+    "run_817b97390f99984f": [
+      {
+        "id": "hold_362ee478ed1d0dd6",
+        "run_id": "run_817b97390f99984f",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_4fd4b8c09750a34a",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T09:55:55.10295Z",
+        "resolved_at": "2026-04-05T09:55:55.103256Z"
+      }
+    ],
+    "run_9ba89f737d76c188": [
+      {
+        "id": "hold_2b55e6ece8c3c98b",
+        "run_id": "run_9ba89f737d76c188",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_d6bc29fb379bfda7",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T09:08:35.153616Z",
+        "resolved_at": "2026-04-05T09:08:35.153775Z"
+      }
+    ],
+    "run_b1a725cf7147a34f": [
+      {
+        "id": "hold_3a7a33a84c0e27d4",
+        "run_id": "run_b1a725cf7147a34f",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_9d8b7b1998ba7a72",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:31:16.084596Z",
+        "resolved_at": "2026-04-05T10:31:16.085783Z"
+      }
+    ],
+    "run_e21376a412272f6c": [
+      {
+        "id": "hold_997b78bb67a3015b",
+        "run_id": "run_e21376a412272f6c",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_86ceb4a46b5a6bac",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:39:43.372724Z",
+        "resolved_at": "2026-04-05T10:39:43.373938Z"
+      }
+    ],
+    "run_eaaa4b64b0702ee2": [
+      {
+        "id": "hold_dba8e77e94515cd2",
+        "run_id": "run_eaaa4b64b0702ee2",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_4d006020691266c2",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:49:42.447001Z",
+        "resolved_at": "2026-04-05T10:49:42.448361Z"
+      }
+    ],
+    "run_f8037692edcd2224": [
+      {
+        "id": "hold_24cb244f5da0a3e1",
+        "run_id": "run_f8037692edcd2224",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_9f16194d0becbefc",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:34:52.406357Z",
+        "resolved_at": "2026-04-05T10:34:52.408084Z"
+      }
+    ],
+    "run_f86d6f27db3986f5": [
+      {
+        "id": "hold_09ec313642e5a743",
+        "run_id": "run_f86d6f27db3986f5",
+        "state": "released",
+        "reason": "demo hold",
+        "requested_by": "runtime",
+        "resolved_by": "operator",
+        "resolution_note": "demo approve",
+        "metadata": {
+          "feedback_id": "feedback_76667b185b8255a3",
+          "trigger": "execution_feedback"
+        },
+        "created_at": "2026-04-05T10:23:15.549956Z",
+        "resolved_at": "2026-04-05T10:23:15.550636Z"
+      }
+    ]
+  }
+}

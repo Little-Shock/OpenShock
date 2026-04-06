@@ -1,0 +1,19 @@
+{
+  "workspace_id": "ws_demo",
+  "runtime_id": "runtime_local_01",
+  "shell_state_url": "http://127.0.0.1:4174/api/v0a/shell-state",
+  "server": {
+    "base_url": "http://127.0.0.1:4315",
+    "api_token": "",
+    "runtime_config_path": "/runtime/config",
+    "fixture_seed_path": "/runtime/fixtures/seed",
+    "daemon_events_path": "/runtime/daemon/events",
+    "runtime_smoke_path": "/runtime/smoke"
+  },
+  "daemon": {
+    "state_path": ".openshock-daemon/state.json",
+    "ack_path": ".openshock-daemon/ack.json",
+    "worktree_root": ".openshock-daemon/worktrees",
+    "publish_cursor_path": ".openshock-daemon/publish-cursor.json"
+  }
+}

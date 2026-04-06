@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenShock 0A Shell</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="shell-header">
+      <div>
+        <h1>OpenShock 0A Thin Shell</h1>
+        <p>Topic overview, agent status, approval/intervention points, coarse observability.</p>
+      </div>
+      <div class="header-actions">
+        <button id="refresh-button" type="button">Refresh</button>
+        <span id="last-updated">Last updated: --</span>
+      </div>
+    </header>
+
+    <main class="shell-grid">
+      <section class="panel" id="metrics-panel">
+        <h2>Coarse Metrics</h2>
+        <div id="metric-cards" class="metric-cards"></div>
+      </section>
+
+      <section class="panel" id="topic-panel">
+        <h2>Topic Overview</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Topic</th>
+              <th>Revision</th>
+              <th>Lead</th>
+              <th>Status</th>
+              <th>Pending Gates</th>
+              <th>Delivery</th>
+              <th>Risk</th>
+            </tr>
+          </thead>
+          <tbody id="topic-table-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="agent-panel">
+        <h2>Agent Status</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Lane</th>
+              <th>Heartbeat</th>
+              <th>Blocker</th>
+            </tr>
+          </thead>
+          <tbody id="agent-table-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="delivery-panel">
+        <h2>Delivery State</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Topic</th>
+              <th>Stage</th>
+              <th>PR State</th>
+              <th>Next Gate</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody id="delivery-table-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="approval-panel">
+        <h2>Approval Queue</h2>
+        <div id="approval-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="intervention-points-panel">
+        <h2>Human Intervention Points</h2>
+        <p class="panel-subtitle">Three fixed intervention points in 0A: lead plan, worker dispatch, merge closeout.</p>
+        <div id="intervention-points-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="intervention-panel">
+        <h2>Intervention Queue</h2>
+        <div id="intervention-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="event-panel">
+        <h2>Coarse Event Feed</h2>
+        <ul id="event-feed" class="event-feed"></ul>
+      </section>
+    </main>
+
+    <template id="queue-action-template">
+      <button class="action-button" type="button"></button>
+    </template>
+
+    <script src="./runtime-config.js"></script>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
