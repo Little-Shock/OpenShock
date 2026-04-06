@@ -1526,6 +1526,170 @@ export class ServerCoordinator {
     };
   }
 
+  listTopics() {
+    return Array.from(this.topics.values()).map((topic) => ({
+      topicId: topic.topicId,
+      revision: topic.revision,
+      goal: topic.truth.goal,
+      constraints: deepClone(topic.truth.constraints ?? []),
+      deliveryState: deepClone(topic.truth.deliveryState ?? {}),
+      prWriteback: deepClone(topic.truth.prWriteback ?? null),
+      taskAllocation: deepClone(topic.truth.taskAllocation ?? []),
+      mergeIntent: deepClone(topic.truth.mergeIntent ?? null),
+      stableArtifacts: deepClone(topic.truth.stableArtifacts ?? []),
+      actorCount: topic.agents.size,
+      updatedAt: topic.updatedAt
+    }));
+  }
+
+  listActors(topicId) {
+    const topic = this.requireTopic(topicId);
+    return Array.from(topic.agents.values()).map((agent) => deepClone(agent));
+  }
+
+  getActor(topicId, actorId) {
+    const topic = this.requireTopic(topicId);
+    assertOrThrow(typeof actorId === "string" && actorId.length > 0, "invalid_actor_id", "actorId is required");
+    const actor = topic.agents.get(actorId);
+    assertOrThrow(actor, "actor_not_found", `actor ${actorId} not found`);
+    return deepClone(actor);
+  }
+
+  resolveWriteActor(topicId, input = {}) {
+    const topic = this.requireTopic(topicId);
+    assertOrThrow(input && typeof input === "object", "invalid_write_actor", "write actor payload is required");
+    assertOrThrow(
+      typeof input.agentId === "string" && input.agentId.trim().length > 0,
+      "invalid_write_actor",
+      "agentId is required"
+    );
+    const actorId = input.agentId.trim();
+    const actor = topic.agents.get(actorId);
+    assertOrThrow(actor, "write_actor_not_registered", `actor ${actorId} is not registered`);
+    assertOrThrow(actor.status === "active", "write_actor_inactive", `actor ${actorId} must be active`);
+    if (typeof input.expectedRole === "string" && input.expectedRole.length > 0) {
+      assertOrThrow(actor.role === input.expectedRole, "write_actor_role_mismatch", "actor role mismatch");
+    }
+    if (Array.isArray(input.allowedRoles) && input.allowedRoles.length > 0) {
+      assertOrThrow(input.allowedRoles.includes(actor.role), "write_actor_role_forbidden", "actor role is not allowed");
+    }
+    return deepClone(actor);
+  }
+
+  getDispatch(topicId, dispatchId) {
+    const topic = this.requireTopic(topicId);
+    const dispatch = topic.dispatches.get(dispatchId);
+    assertOrThrow(dispatch, "dispatch_not_found", `dispatch ${dispatchId} not found`);
+    return deepClone(dispatch);
+  }
+
+  getConflict(topicId, conflictId) {
+    const topic = this.requireTopic(topicId);
+    const conflict = topic.conflicts.get(conflictId);
+    assertOrThrow(conflict, "conflict_not_found", `conflict ${conflictId} not found`);
+    return deepClone(conflict);
+  }
+
+  getApprovalHold(topicId, holdId) {
+    const topic = this.requireTopic(topicId);
+    const hold = topic.approvals.get(holdId);
+    assertOrThrow(hold, "hold_not_found", `hold ${holdId} not found`);
+    return deepClone(hold);
+  }
+
+  writeDeliveryState(topicId, input = {}) {
+    const topic = this.requireTopic(topicId);
+    assertOrThrow(input && typeof input === "object", "invalid_delivery_writeback", "delivery writeback payload is required");
+    this.resolveWriteActor(topicId, {
+      agentId: input.sourceActorId,
+      allowedRoles: ["lead", "human"]
+    });
+    assertOrThrow(typeof input.state === "string" && input.state.trim().length > 0, "delivery_state_required", "state is required");
+    topic.truth.deliveryState = topic.truth.deliveryState ?? {};
+    topic.truth.deliveryState.state = input.state.trim();
+    if (Object.prototype.hasOwnProperty.call(input, "prUrl")) {
+      topic.truth.deliveryState.prUrl = input.prUrl ?? null;
+    }
+    topic.truth.deliveryState.lastUpdatedAt = nowIso();
+    topic.updatedAt = topic.truth.deliveryState.lastUpdatedAt;
+    keepHistory(topic, {
+      event: "delivery_state_writeback",
+      at: topic.updatedAt,
+      by: input.sourceActorId ?? null,
+      to: topic.truth.deliveryState.state
+    });
+    return {
+      state: topic.truth.deliveryState.state,
+      prUrl: topic.truth.deliveryState.prUrl ?? null,
+      lastUpdatedAt: topic.truth.deliveryState.lastUpdatedAt
+    };
+  }
+
+  writePrWriteback(topicId, input = {}) {
+    const topic = this.requireTopic(topicId);
+    assertOrThrow(input && typeof input === "object", "invalid_pr_writeback", "pr writeback payload is required");
+    this.resolveWriteActor(topicId, {
+      agentId: input.sourceActorId,
+      allowedRoles: ["lead", "human"]
+    });
+    assertOrThrow(
+      typeof input.prUrl === "string" && input.prUrl.trim().length > 0,
+      "pr_writeback_url_required",
+      "prUrl is required"
+    );
+    topic.truth.prWriteback = topic.truth.prWriteback ?? {
+      state: "not_started",
+      prUrl: null,
+      lastUpdatedAt: null
+    };
+    const nextState = typeof input.state === "string" && input.state.trim().length > 0 ? input.state.trim() : "pr_ready";
+    topic.truth.prWriteback.state = nextState;
+    topic.truth.prWriteback.prUrl = input.prUrl.trim();
+    topic.truth.prWriteback.lastUpdatedAt = nowIso();
+    topic.updatedAt = topic.truth.prWriteback.lastUpdatedAt;
+    keepHistory(topic, {
+      event: "pr_writeback_state_writeback",
+      at: topic.updatedAt,
+      by: input.sourceActorId ?? null,
+      to: topic.truth.prWriteback.state
+    });
+    return {
+      state: topic.truth.prWriteback.state,
+      prUrl: topic.truth.prWriteback.prUrl,
+      lastUpdatedAt: topic.truth.prWriteback.lastUpdatedAt
+    };
+  }
+
+  getResourceStateGraph() {
+    return {
+      dispatch: {
+        states: ["pending_accept", "active"],
+        transitions: [
+          { from: "pending_accept", to: "active", trigger: "status_report:dispatch_accepted" }
+        ]
+      },
+      conflict: {
+        states: ["unresolved", "resolved"],
+        transitions: [
+          { from: "unresolved", to: "resolved", trigger: "conflict_resolution" }
+        ]
+      },
+      approvalHold: {
+        states: ["pending", "approved", "rejected"],
+        transitions: [
+          { from: "pending", to: "approved", trigger: "decision:approve" },
+          { from: "pending", to: "rejected", trigger: "decision:reject" }
+        ]
+      },
+      delivery: {
+        states: ["not_started", "awaiting_merge_gate", "pr_ready", "merged", "failed"]
+      },
+      prWriteback: {
+        states: ["not_started", "pr_ready", "merged", "failed"]
+      }
+    };
+  }
+
   listTopicEventProjection(topicId, input = {}) {
     const topic = this.requireTopic(topicId);
     const limit = parseLimit(input.limit, { codePrefix: "topic_events", defaultLimit: 20, maxLimit: 200 });
