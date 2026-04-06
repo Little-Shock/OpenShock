@@ -3515,6 +3515,29 @@ test("v1 phase3 batch1 control-plane consumer contract keeps topic-state/merge-l
       assert.equal(taskAllocation.body.task_allocation.summary.unassigned_tasks, 1);
       assert.equal(taskAllocation.body.task_allocation.evidence_anchor.source, "server_owned");
 
+      const controlConsumerBeforeHandoff = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_v1_phase3_batch1_control_contract/control-plane-consumer"
+      });
+      assert.equal(controlConsumerBeforeHandoff.statusCode, 200);
+      assert.equal(controlConsumerBeforeHandoff.body.projection, "control_plane_consumer_projection");
+      assert.equal(controlConsumerBeforeHandoff.body.contract_version, "v1.stage1");
+      assert.equal(controlConsumerBeforeHandoff.body.topic_id, "topic_v1_phase3_batch1_control_contract");
+      assert.equal(controlConsumerBeforeHandoff.body.topic_status.topic_id, "topic_v1_phase3_batch1_control_contract");
+      assert.equal(controlConsumerBeforeHandoff.body.topic_state.revision, truthPatch.body.revision);
+      assert.equal(controlConsumerBeforeHandoff.body.merge_lifecycle.stage, "awaiting_merge_gate");
+      assert.equal(controlConsumerBeforeHandoff.body.task_allocation.summary.total_tasks, 2);
+      assert.equal(controlConsumerBeforeHandoff.body.approval_holds.status, "pending");
+      assert.equal(controlConsumerBeforeHandoff.body.approval_holds.items.length, 0);
+      assert.equal(controlConsumerBeforeHandoff.body.approval_decisions.items.length, 0);
+      assert.equal(controlConsumerBeforeHandoff.body.write_anchors.actor_upsert, "/v1/topics/topic_v1_phase3_batch1_control_contract/actors/:actorId");
+      assert.equal(controlConsumerBeforeHandoff.body.write_anchors.topic_messages, "/v1/topics/topic_v1_phase3_batch1_control_contract/messages");
+      assert.equal(
+        controlConsumerBeforeHandoff.body.write_anchors.approval_decisions,
+        "/v1/topics/topic_v1_phase3_batch1_control_contract/approval-holds/:holdId/decisions"
+      );
+
       const handoff = await requestJson({
         port,
         method: "POST",
@@ -3615,6 +3638,30 @@ test("v1 phase3 batch1 control-plane consumer contract keeps topic-state/merge-l
       assert.ok(decisionList.body.items.some((item) => item.hold_id === holdId && item.status === "approved"));
       assert.equal(decisionList.body.items[0].evidence_anchor.source, "server_owned");
 
+      const controlConsumerAfterDecision = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_v1_phase3_batch1_control_contract/control-plane-consumer"
+      });
+      assert.equal(controlConsumerAfterDecision.statusCode, 200);
+      assert.ok(
+        controlConsumerAfterDecision.body.topic_messages.items.some(
+          (item) => item.messageId === mergeRequest.body.messageId && item.type === "merge_request"
+        )
+      );
+      assert.ok(
+        controlConsumerAfterDecision.body.approval_holds.items.every((item) => item.status === "pending")
+      );
+      assert.ok(
+        controlConsumerAfterDecision.body.approval_decisions.items.some(
+          (item) => item.hold_id === holdId && item.status === "approved"
+        )
+      );
+      assert.equal(controlConsumerAfterDecision.body.closeout_clues.status, "waiting_gate");
+      assert.equal(controlConsumerAfterDecision.body.projection_meta.resource, "control_plane_consumer_projection");
+      assert.equal(controlConsumerAfterDecision.body.projection_meta.topic_id, "topic_v1_phase3_batch1_control_contract");
+      assert.equal(controlConsumerAfterDecision.body.projection_meta.source_plane, "control_plane_projection");
+
       const mergeLifecycleAfterApprove = await requestJson({
         port,
         method: "GET",
@@ -3660,6 +3707,22 @@ test("v1 phase3 batch1 control-plane consumer contract keeps topic-state/merge-l
       assert.equal(mergeLifecycleAfterRejectedWrite.statusCode, 200);
       assert.equal(mergeLifecycleAfterRejectedWrite.body.merge_lifecycle.stage, "awaiting_merge_gate");
       assert.equal(mergeLifecycleAfterRejectedWrite.body.merge_lifecycle.delivery.state, "pr_ready");
+
+      const shellCompatibility = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/compatibility/shell-adapter?topic_id=topic_v1_phase3_batch1_control_contract"
+      });
+      assert.equal(shellCompatibility.statusCode, 200);
+      assert.ok(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes(
+          "/v1/topics/:topicId/control-plane-consumer"
+        )
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.control_plane_consumer,
+        "/v1/topics/:topicId/control-plane-consumer"
+      );
     }
   );
 });

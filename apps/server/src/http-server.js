@@ -254,6 +254,11 @@ function matchRoute(method, pathName) {
     return { route: "V1_GET_TOPIC_TASK_ALLOCATION", topicId: v1TopicTaskAllocationMatch[1] };
   }
 
+  const v1TopicControlConsumerMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/control-plane-consumer$/);
+  if (method === "GET" && v1TopicControlConsumerMatch) {
+    return { route: "V1_GET_TOPIC_CONTROL_PLANE_CONSUMER", topicId: v1TopicControlConsumerMatch[1] };
+  }
+
   const v1TopicDeliveryMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/delivery$/);
   if (method === "GET" && v1TopicDeliveryMatch) {
     return { route: "V1_GET_TOPIC_DELIVERY", topicId: v1TopicDeliveryMatch[1] };
@@ -2175,6 +2180,63 @@ export function createHttpServer(coordinator, options = {}) {
         const overview = coordinator.getTopicOverview(route.topicId);
         sendJson(response, 200, {
           task_allocation: serializeTaskAllocationReadModel(overview),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_TOPIC_CONTROL_PLANE_CONSUMER") {
+        const overview = coordinator.getTopicOverview(route.topicId);
+        const coarse = coordinator.getCoarseObservability(route.topicId);
+        const messageRoute =
+          typeof parsedUrl.searchParams.get("route") === "string" && parsedUrl.searchParams.get("route").trim().length > 0
+            ? parsedUrl.searchParams.get("route").trim()
+            : "topic";
+        const approvalStatus =
+          typeof parsedUrl.searchParams.get("approval_status") === "string" &&
+          parsedUrl.searchParams.get("approval_status").trim().length > 0
+            ? parsedUrl.searchParams.get("approval_status").trim()
+            : "pending";
+        const topicIdEncoded = encodeURIComponent(route.topicId);
+        const mergeLifecycle = serializeMergeLifecycle(overview);
+
+        sendJson(response, 200, {
+          projection: "control_plane_consumer_projection",
+          contract_version: "v1.stage1",
+          topic_id: route.topicId,
+          topic_status: serializeTopicStatusReadModel(overview, coarse),
+          topic_state: serializeTopicState(overview),
+          merge_lifecycle: mergeLifecycle,
+          task_allocation: serializeTaskAllocationReadModel(overview),
+          topic_messages: {
+            route: messageRoute,
+            items: coordinator.listMessages(route.topicId, { route: messageRoute })
+          },
+          approval_holds: {
+            status: approvalStatus,
+            items: coordinator
+              .listApprovalHolds(route.topicId, { status: approvalStatus })
+              .map((hold) => serializeApprovalHoldResource(hold))
+          },
+          approval_decisions: {
+            items: overview.approvalDecisions.map((decision) => serializeDecisionResource(decision))
+          },
+          intervention_queue: {
+            open_conflicts: overview.openConflicts.map((conflict) => serializeConflictResource(conflict)),
+            blockers: deepClone(overview.blockers)
+          },
+          closeout_clues: deepClone(mergeLifecycle.closeout_explanation),
+          write_anchors: {
+            actor_upsert: `/v1/topics/${topicIdEncoded}/actors/:actorId`,
+            topic_messages: `/v1/topics/${topicIdEncoded}/messages`,
+            approval_holds: `/v1/topics/${topicIdEncoded}/approval-holds?status=:status`,
+            approval_decisions: `/v1/topics/${topicIdEncoded}/approval-holds/:holdId/decisions`
+          },
+          projection_meta: integrationProjectionMeta({
+            resource: "control_plane_consumer_projection",
+            sourcePlane: "control_plane_projection",
+            topicId: route.topicId
+          }),
           request_id: requestId
         });
         return;
