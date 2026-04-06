@@ -2788,3 +2788,149 @@ test("v1 batch7 integration projection closure keeps projection meta and backend
     }
   );
 });
+
+test("v1 batch9 control-plane truth read surfaces expose topic-state/merge-lifecycle/task-allocation without write-gate regression", async () => {
+  await withRuntimeServer(
+    {
+      fixture: {
+        topicId: "topic_v1_batch9_control_state"
+      }
+    },
+    async ({ port }) => {
+      const seeded = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/fixtures/seed",
+        body: {}
+      });
+      assert.equal(seeded.statusCode, 200);
+
+      const overview = await requestJson({
+        port,
+        method: "GET",
+        path: "/topics/topic_v1_batch9_control_state/overview"
+      });
+      assert.equal(overview.statusCode, 200);
+
+      const truthPatch = await requestJson({
+        port,
+        method: "POST",
+        path: "/topics/topic_v1_batch9_control_state/messages",
+        body: {
+          type: "shared_truth_proposal",
+          sourceAgentId: "lead_sample_01",
+          sourceRole: "lead",
+          truthRevision: overview.body.revision,
+          payload: {
+            patch: {
+              taskAllocation: [
+                {
+                  task_id: "task_batch9_control_01",
+                  summary: "close topic merge lifecycle read model",
+                  worker_actor_id: "worker_sample_01",
+                  status: "in_progress"
+                },
+                {
+                  task_id: "task_batch9_control_02",
+                  summary: "verify shared write-gate remains strict",
+                  status: "pending"
+                }
+              ],
+              mergeIntent: {
+                stage: "awaiting_merge_gate",
+                deliveryReadyLineage: {
+                  run_id: "run_batch9_control_01",
+                  checkpoint_ref: "checkpoint://batch9-control",
+                  artifact_refs: ["artifact://batch9-control"]
+                }
+              },
+              deliveryState: {
+                state: "awaiting_merge_gate"
+              }
+            }
+          }
+        }
+      });
+      assert.equal(truthPatch.statusCode, 200);
+      assert.equal(truthPatch.body.state, "accepted");
+
+      const topicState = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_v1_batch9_control_state/topic-state"
+      });
+      assert.equal(topicState.statusCode, 200);
+      assert.equal(topicState.body.topic_state.revision, truthPatch.body.revision);
+      assert.equal(topicState.body.topic_state.merge_stage, "awaiting_merge_gate");
+      assert.equal(topicState.body.topic_state.pending_approval_count, 0);
+      assert.equal(topicState.body.topic_state.open_conflict_count, 0);
+
+      const mergeLifecycle = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_v1_batch9_control_state/merge-lifecycle"
+      });
+      assert.equal(mergeLifecycle.statusCode, 200);
+      assert.equal(mergeLifecycle.body.merge_lifecycle.stage, "awaiting_merge_gate");
+      assert.equal(mergeLifecycle.body.merge_lifecycle.closeout_lineage.run_id, "run_batch9_control_01");
+      assert.equal(
+        mergeLifecycle.body.merge_lifecycle.closeout_lineage.checkpoint_ref,
+        "checkpoint://batch9-control"
+      );
+      assert.ok(
+        mergeLifecycle.body.merge_lifecycle.closeout_lineage.artifact_refs.includes("artifact://batch9-control")
+      );
+      assert.equal(mergeLifecycle.body.merge_lifecycle.closeout_explanation.status, "waiting_gate");
+      assert.equal(mergeLifecycle.body.merge_lifecycle.evidence_anchor.source, "server_owned");
+
+      const taskAllocation = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_v1_batch9_control_state/task-allocation"
+      });
+      assert.equal(taskAllocation.statusCode, 200);
+      assert.equal(taskAllocation.body.task_allocation.topic_id, "topic_v1_batch9_control_state");
+      assert.equal(taskAllocation.body.task_allocation.items.length, 2);
+      assert.equal(taskAllocation.body.task_allocation.summary.total_tasks, 2);
+      assert.equal(taskAllocation.body.task_allocation.summary.assigned_tasks, 1);
+      assert.equal(taskAllocation.body.task_allocation.summary.unassigned_tasks, 1);
+      assert.equal(taskAllocation.body.task_allocation.evidence_anchor.source, "server_owned");
+
+      const blockLead = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/topics/topic_v1_batch9_control_state/actors/lead_sample_01",
+        body: {
+          role: "lead",
+          status: "blocked"
+        }
+      });
+      assert.equal(blockLead.statusCode, 200);
+
+      const blockedDeliveryWrite = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/topics/topic_v1_batch9_control_state/delivery",
+        headers: {
+          "idempotency-key": "batch9-control-delivery-blocked-actor"
+        },
+        body: {
+          source_actor_id: "lead_sample_01",
+          state: "pr_ready",
+          note: "should be rejected by shared write-gate"
+        }
+      });
+      assert.equal(blockedDeliveryWrite.statusCode, 422);
+      assert.equal(blockedDeliveryWrite.body.error.code, "write_actor_inactive");
+
+      const mergeLifecycleAfterReject = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/topics/topic_v1_batch9_control_state/merge-lifecycle"
+      });
+      assert.equal(mergeLifecycleAfterReject.statusCode, 200);
+      assert.equal(mergeLifecycleAfterReject.body.merge_lifecycle.stage, "awaiting_merge_gate");
+      assert.equal(mergeLifecycleAfterReject.body.merge_lifecycle.delivery.state, "awaiting_merge_gate");
+    }
+  );
+});

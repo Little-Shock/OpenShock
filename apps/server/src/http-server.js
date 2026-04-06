@@ -239,6 +239,21 @@ function matchRoute(method, pathName) {
     return { route: "V1_GET_TOPIC_STATUS", topicId: v1TopicStatusMatch[1] };
   }
 
+  const v1TopicStateMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/topic-state$/);
+  if (method === "GET" && v1TopicStateMatch) {
+    return { route: "V1_GET_TOPIC_STATE", topicId: v1TopicStateMatch[1] };
+  }
+
+  const v1TopicMergeLifecycleMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/merge-lifecycle$/);
+  if (method === "GET" && v1TopicMergeLifecycleMatch) {
+    return { route: "V1_GET_TOPIC_MERGE_LIFECYCLE", topicId: v1TopicMergeLifecycleMatch[1] };
+  }
+
+  const v1TopicTaskAllocationMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/task-allocation$/);
+  if (method === "GET" && v1TopicTaskAllocationMatch) {
+    return { route: "V1_GET_TOPIC_TASK_ALLOCATION", topicId: v1TopicTaskAllocationMatch[1] };
+  }
+
   const v1TopicDeliveryMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/delivery$/);
   if (method === "GET" && v1TopicDeliveryMatch) {
     return { route: "V1_GET_TOPIC_DELIVERY", topicId: v1TopicDeliveryMatch[1] };
@@ -867,6 +882,38 @@ function serializeTopicStatusReadModel(overview, coarseModel) {
     blocker_count: coarseModel.blockerCount,
     risk_flags: deepClone(coarseModel.riskFlags),
     evidence_anchor: deepClone(mergeLifecycle.evidence_anchor),
+    updated_at: overview.updatedAt
+  };
+}
+
+function serializeTaskAllocationReadModel(overview) {
+  const tasks = deepClone(overview.truth.taskAllocation ?? []);
+  const assignedCount = tasks.filter((task) => {
+    if (!task || typeof task !== "object") {
+      return false;
+    }
+    const assigneeKeys = ["worker_actor_id", "workerActorId", "assignee_actor_id", "assigneeActorId", "assignee"];
+    for (const key of assigneeKeys) {
+      if (typeof task[key] === "string" && task[key].trim().length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }).length;
+
+  return {
+    topic_id: overview.topicId,
+    revision: overview.revision,
+    items: tasks,
+    summary: {
+      total_tasks: tasks.length,
+      assigned_tasks: assignedCount,
+      unassigned_tasks: tasks.length - assignedCount
+    },
+    evidence_anchor: {
+      source: "server_owned",
+      truth_path: "topic.truth.taskAllocation"
+    },
     updated_at: overview.updatedAt
   };
 }
@@ -2096,6 +2143,33 @@ export function createHttpServer(coordinator, options = {}) {
         const coarse = coordinator.getCoarseObservability(route.topicId);
         sendJson(response, 200, {
           status: serializeTopicStatusReadModel(overview, coarse),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_TOPIC_STATE") {
+        const overview = coordinator.getTopicOverview(route.topicId);
+        sendJson(response, 200, {
+          topic_state: serializeTopicState(overview),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_TOPIC_MERGE_LIFECYCLE") {
+        const overview = coordinator.getTopicOverview(route.topicId);
+        sendJson(response, 200, {
+          merge_lifecycle: serializeMergeLifecycle(overview),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_TOPIC_TASK_ALLOCATION") {
+        const overview = coordinator.getTopicOverview(route.topicId);
+        sendJson(response, 200, {
+          task_allocation: serializeTaskAllocationReadModel(overview),
           request_id: requestId
         });
         return;
