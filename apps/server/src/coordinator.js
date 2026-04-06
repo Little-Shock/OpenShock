@@ -2015,6 +2015,75 @@ export class ServerCoordinator {
     };
   }
 
+  getTopicExecutionInboxConsumerProjection(topicId, input = {}) {
+    this.requireTopic(topicId);
+    const actorId =
+      typeof input.actorId === "string" && input.actorId.trim().length > 0 ? input.actorId.trim() : null;
+    assertOrThrow(actorId, "invalid_actor_id", "actor_id query is required");
+
+    const runHistory = this.listTopicRunHistoryProjection(topicId, {
+      cursor: input.runCursor,
+      limit: input.runLimit
+    });
+    const selectedRunIdRaw =
+      typeof input.runId === "string" && input.runId.trim().length > 0
+        ? input.runId.trim()
+        : runHistory.items[0]?.run_id ?? null;
+    const selectedRunId =
+      typeof selectedRunIdRaw === "string" && selectedRunIdRaw.length > 0 ? selectedRunIdRaw : null;
+
+    const runSummary = selectedRunId ? this.getRunProjection(selectedRunId, { topicId }) : null;
+    const runTimeline = selectedRunId ? this.listRunTimelineProjection(selectedRunId, { topicId }) : null;
+    const runFeedback = selectedRunId ? this.listRunFeedbackProjection(selectedRunId, { topicId }) : null;
+    const runHolds = selectedRunId ? this.listRunHoldProjection(selectedRunId, { topicId }) : null;
+    const inboxProjection = this.listActorInboxProjection(actorId, {
+      topicId,
+      cursor: input.inboxCursor,
+      limit: input.inboxLimit
+    });
+
+    const explanationProjection = runSummary?.explanation_projection ?? null;
+    const encodedTopicId = encodeURIComponent(topicId);
+    const encodedActorId = encodeURIComponent(actorId);
+    return {
+      projection: "execution_inbox_consumer_projection",
+      contract_version: "v1.stage1",
+      topic_id: topicId,
+      actor_id: actorId,
+      selected_run_id: selectedRunId,
+      run_history: deepClone(runHistory),
+      selected_run: selectedRunId
+        ? {
+            summary: deepClone(runSummary),
+            timeline: deepClone(runTimeline),
+            feedback: deepClone(runFeedback),
+            holds: deepClone(runHolds)
+          }
+        : null,
+      inbox: deepClone(inboxProjection),
+      closeout_clues: {
+        outcome: explanationProjection?.outcome ?? "in_progress",
+        merge_lifecycle_state: explanationProjection?.control_evidence?.merge_lifecycle_state ?? "unknown",
+        failure_reason: explanationProjection?.control_evidence?.failure_reason ?? null,
+        pending_approval_count: explanationProjection?.control_evidence?.approval_hold_count ?? 0,
+        unresolved_conflict_count: explanationProjection?.control_evidence?.unresolved_conflict_count ?? 0,
+        blocker_count: explanationProjection?.control_evidence?.blocker_count ?? 0
+      },
+      compatibility_anchor: {
+        contract: `/v1/compatibility/shell-adapter?topic_id=${encodedTopicId}`,
+        run_history: `/v1/topics/${encodedTopicId}/run-history`,
+        run: explanationProjection?.compatibility_anchor?.run ?? null,
+        timeline: explanationProjection?.compatibility_anchor?.timeline ?? null,
+        feedback: explanationProjection?.compatibility_anchor?.feedback ?? null,
+        holds: explanationProjection?.compatibility_anchor?.holds ?? null,
+        execution_events: explanationProjection?.compatibility_anchor?.execution_events ?? null,
+        execution_debug: explanationProjection?.compatibility_anchor?.execution_debug ?? null,
+        inbox: `/v1/inbox/${encodedActorId}?topic_id=${encodedTopicId}`,
+        inbox_acks: `/v1/inbox/${encodedActorId}/acks`
+      }
+    };
+  }
+
   getRunProjection(runId, input = {}) {
     assertOrThrow(typeof runId === "string" && runId.length > 0, "run_id_required", "runId is required");
     const topicId = typeof input.topicId === "string" && input.topicId.trim().length > 0 ? input.topicId.trim() : null;
@@ -2347,6 +2416,7 @@ export class ServerCoordinator {
         "/v1/debug/events?topic_id=:topicId&run_id=:runId",
         "/v1/debug/history?topic_id=:topicId&run_id=:runId",
         "/v1/execution/runs/:runId/debug?topic_id=:topicId",
+        "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
         "/v1/compatibility/shell-adapter?topic_id=:topicId",
         "/v1/inbox/:actorId?topic_id=:topicId",
         "/v1/inbox/:actorId/acks"
@@ -2370,7 +2440,8 @@ export class ServerCoordinator {
         debug_events: "/v1/debug/events?topic_id=:topicId",
         debug_history: "/v1/debug/history?topic_id=:topicId&run_id=:runId",
         execution_events: "/v1/execution/runs/:runId/events?topic_id=:topicId",
-        execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId"
+        execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId",
+        execution_inbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
       }
     };
     if (!topicId) {

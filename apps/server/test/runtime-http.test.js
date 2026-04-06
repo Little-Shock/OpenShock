@@ -3012,6 +3012,17 @@ test("v1 phase3 batch1 execution/compatibility consumer verification keeps stabl
       });
       assert.equal(seeded.statusCode, 200);
 
+      const registerHuman = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/topics/${encodeURIComponent(topicId)}/actors/human_sample_01`,
+        body: {
+          role: "human",
+          status: "active"
+        }
+      });
+      assert.equal(registerHuman.statusCode, 200);
+
       const overview = await requestJson({
         port,
         method: "GET",
@@ -3178,6 +3189,64 @@ test("v1 phase3 batch1 execution/compatibility consumer verification keeps stabl
       assert.equal(runEvents.body.projection_meta.topic_id, topicId);
       assert.equal(runEvents.body.projection_meta.run_id, runId);
 
+      const executionInbox = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/topics/${encodeURIComponent(topicId)}/execution-inbox?actor_id=human_sample_01&run_limit=20&inbox_limit=20`
+      });
+      assert.equal(executionInbox.statusCode, 200);
+      assert.equal(executionInbox.body.projection, "execution_inbox_consumer_projection");
+      assert.equal(executionInbox.body.contract_version, "v1.stage1");
+      assert.equal(executionInbox.body.topic_id, topicId);
+      assert.equal(executionInbox.body.actor_id, "human_sample_01");
+      assert.equal(executionInbox.body.selected_run_id, runId);
+      assert.equal(executionInbox.body.run_history.projection, "execution_plane_projection");
+      assert.equal(executionInbox.body.run_history.topic_id, topicId);
+      assert.equal(executionInbox.body.selected_run.summary.run_id, runId);
+      assert.equal(executionInbox.body.selected_run.summary.topic_id, topicId);
+      assert.equal(executionInbox.body.selected_run.timeline.projection, "execution_plane_projection");
+      assert.equal(executionInbox.body.selected_run.feedback.projection, "execution_plane_projection");
+      assert.equal(executionInbox.body.selected_run.holds.projection, "execution_plane_projection");
+      assert.equal(executionInbox.body.inbox.projection, "control_plane_projection");
+      assert.equal(executionInbox.body.inbox.topic_id, topicId);
+      assert.equal(executionInbox.body.inbox.actor_id, "human_sample_01");
+      assert.equal(
+        executionInbox.body.compatibility_anchor.inbox,
+        `/v1/inbox/human_sample_01?topic_id=${encodeURIComponent(topicId)}`
+      );
+      assert.equal(executionInbox.body.compatibility_anchor.inbox_acks, "/v1/inbox/human_sample_01/acks");
+      assert.equal(executionInbox.body.compatibility_anchor.run, `/v1/runs/${runId}?topic_id=${topicId}`);
+      assert.equal(
+        executionInbox.body.compatibility_anchor.timeline,
+        `/v1/runs/${runId}/timeline?topic_id=${topicId}`
+      );
+      assert.equal(
+        executionInbox.body.compatibility_anchor.feedback,
+        `/v1/runs/${runId}/feedback?topic_id=${topicId}`
+      );
+      assert.equal(
+        executionInbox.body.compatibility_anchor.holds,
+        `/v1/runs/${runId}/holds?topic_id=${topicId}`
+      );
+      assert.equal(executionInbox.body.closeout_clues.outcome, "failure_or_blocked");
+      assert.equal(executionInbox.body.closeout_clues.blocker_count > 0, true);
+
+      const missingActorId = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/topics/${encodeURIComponent(topicId)}/execution-inbox`
+      });
+      assert.equal(missingActorId.statusCode, 400);
+      assert.equal(missingActorId.body.error.code, "invalid_actor_id");
+
+      const missingRun = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/topics/${encodeURIComponent(topicId)}/execution-inbox?actor_id=human_sample_01&run_id=run_missing_phase3_execution_consumer`
+      });
+      assert.equal(missingRun.statusCode, 404);
+      assert.equal(missingRun.body.error.code, "run_not_found");
+
       const shellCompatibility = await requestJson({
         port,
         method: "GET",
@@ -3213,6 +3282,9 @@ test("v1 phase3 batch1 execution/compatibility consumer verification keeps stabl
       assert.ok(
         projectionSurfaces.includes("/v1/execution/runs/:runId/events?topic_id=:topicId")
       );
+      assert.ok(
+        projectionSurfaces.includes("/v1/topics/:topicId/execution-inbox?actor_id=:actorId")
+      );
       for (const surface of projectionSurfaces) {
         assert.ok(surface.startsWith("/v1/"), `legacy surface leaked: ${surface}`);
       }
@@ -3227,6 +3299,10 @@ test("v1 phase3 batch1 execution/compatibility consumer verification keeps stabl
       assert.equal(
         shellCompatibility.body.backend_derived_projection.lineage_anchors.approval_decisions,
         "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.execution_inbox,
+        "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
       );
 
       const runDetailViaTemplate = await requestJson({
@@ -3304,6 +3380,7 @@ test("v1 phase3 batch1 execution/compatibility consumer verification keeps stabl
       const payload = JSON.stringify({
         runDebug: runDebug.body,
         runEvents: runEvents.body,
+        executionInbox: executionInbox.body,
         shellAdapter: shellCompatibility.body
       });
       assert.equal(payload.includes("worktree_path"), false);

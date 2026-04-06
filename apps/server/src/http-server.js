@@ -285,6 +285,11 @@ function matchRoute(method, pathName) {
     return { route: "V1_GET_TOPIC_RUN_HISTORY", topicId: v1TopicRunHistoryMatch[1] };
   }
 
+  const v1TopicExecutionInboxMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/execution-inbox$/);
+  if (method === "GET" && v1TopicExecutionInboxMatch) {
+    return { route: "V1_GET_TOPIC_EXECUTION_INBOX", topicId: v1TopicExecutionInboxMatch[1] };
+  }
+
   const v1TopicNotificationsMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/notifications$/);
   if (method === "GET" && v1TopicNotificationsMatch) {
     return { route: "V1_GET_TOPIC_NOTIFICATIONS", topicId: v1TopicNotificationsMatch[1] };
@@ -2478,6 +2483,27 @@ export function createHttpServer(coordinator, options = {}) {
             resource: "run_history_projection",
             sourcePlane: "execution_plane_projection",
             topicId: route.topicId
+          })
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_TOPIC_EXECUTION_INBOX") {
+        const result = coordinator.getTopicExecutionInboxConsumerProjection(route.topicId, {
+          actorId: parsedUrl.searchParams.get("actor_id"),
+          runId: parsedUrl.searchParams.get("run_id"),
+          runCursor: parsedUrl.searchParams.get("run_cursor"),
+          runLimit: parsedUrl.searchParams.get("run_limit"),
+          inboxCursor: parsedUrl.searchParams.get("inbox_cursor"),
+          inboxLimit: parsedUrl.searchParams.get("inbox_limit")
+        });
+        sendJson(response, 200, {
+          ...result,
+          projection_meta: integrationProjectionMeta({
+            resource: "execution_inbox_consumer_projection",
+            sourcePlane: "cross_plane_consumer_projection",
+            topicId: route.topicId,
+            runId: result.selected_run_id ?? null
           })
         });
         return;
