@@ -8,11 +8,11 @@ For Stage 3 release/handoff entry, start from repo-level files:
 - `docs/stage3-delivery-ops-entry.md`
 - `docs/stage3-release-gate.md`
 
-Current stage focus is Stage 3 delivery and ops readiness, with boundaries locked to:
+Current stage focus is Stage 4A1 governance foundation, with boundaries locked to:
 
-- single-human multi-agent runtime model
-- no new backend truth source or backend noun
-- compatibility alias + runtime helper cleanup under one contract
+- account identity/member/workspace-installation/repo-binding control-plane contract
+- installation bound to workspace scope (not personal install scope)
+- no 4A2/4B/4C backflow and no new backend truth source
 
 ## Run
 
@@ -33,6 +33,16 @@ Representative surfaces used by shell and gates:
 - control plane: `/v1/topics/*`, `/v1/channels/*`
 - execution plane: `/v1/runs/*`, `/v1/execution/runs/*`, `/v1/runtime/*`
 - integration projections: `/v1/compatibility/shell-adapter`, `/v1/debug/*`
+
+Stage 4A1 governance contract is carried by:
+
+- `GET /v1/channels/:channelId/context`
+- `PUT /v1/channels/:channelId/context`
+- `GET /v1/channels/:channelId/repo-binding`
+- `PUT /v1/channels/:channelId/repo-binding`
+
+These contract projections include `auth_identity`, `member`, `github_installation`, `repo_binding`,
+permission matrix, state graph, and channel audit anchors.
 
 ## Compatibility Alias Boundary
 

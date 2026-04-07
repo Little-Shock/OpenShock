@@ -182,6 +182,84 @@ const CHANNEL_OPERATOR_ACTION_TYPES = new Set([
   "recovery"
 ]);
 
+const WORKSPACE_MEMBER_ROLES = new Set(["owner", "admin", "member", "viewer"]);
+const WORKSPACE_MEMBER_STATUSES = new Set(["invited", "active", "disabled", "removed"]);
+const AUTH_IDENTITY_STATUSES = new Set(["bound", "revoked"]);
+const GITHUB_INSTALLATION_STATUSES = new Set(["active", "removed"]);
+
+const WORKSPACE_GOVERNANCE_PERMISSION_MATRIX = Object.freeze({
+  owner: Object.freeze({
+    manage_installation: true,
+    manage_repo_binding: true,
+    read_installation: true,
+    read_repo_binding: true
+  }),
+  admin: Object.freeze({
+    manage_installation: true,
+    manage_repo_binding: true,
+    read_installation: true,
+    read_repo_binding: true
+  }),
+  member: Object.freeze({
+    manage_installation: false,
+    manage_repo_binding: false,
+    read_installation: true,
+    read_repo_binding: true
+  }),
+  viewer: Object.freeze({
+    manage_installation: false,
+    manage_repo_binding: false,
+    read_installation: true,
+    read_repo_binding: true
+  })
+});
+
+const WORKSPACE_GOVERNANCE_STATE_GRAPH = Object.freeze({
+  states: Object.freeze([
+    "identity_bound",
+    "member_active",
+    "installation_active",
+    "repo_authorized",
+    "binding_selected",
+    "project_channel_consume"
+  ]),
+  transitions: Object.freeze([
+    Object.freeze({
+      from: "identity_bound",
+      to: "member_active",
+      requires: Object.freeze(["auth_identity", "member"])
+    }),
+    Object.freeze({
+      from: "member_active",
+      to: "installation_active",
+      requires: Object.freeze(["github_installation"])
+    }),
+    Object.freeze({
+      from: "installation_active",
+      to: "repo_authorized",
+      requires: Object.freeze(["github_installation.authorized_repos"])
+    }),
+    Object.freeze({
+      from: "repo_authorized",
+      to: "binding_selected",
+      requires: Object.freeze(["repo_binding"])
+    }),
+    Object.freeze({
+      from: "binding_selected",
+      to: "project_channel_consume",
+      requires: Object.freeze(["channel_context"])
+    })
+  ])
+});
+
+function createEmptyChannelGovernance() {
+  return {
+    authIdentity: null,
+    member: null,
+    githubInstallation: null
+  };
+}
+
 function parseProviderRef(input, { requireRepoRef = true } = {}) {
   assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "provider_ref_required", "provider_ref must be an object");
   const provider = typeof input.provider === "string" ? input.provider.trim() : "";
@@ -2396,8 +2474,206 @@ export class ServerCoordinator {
     return normalizedOperatorId;
   }
 
+  ensureChannelGovernance(channel) {
+    if (!channel.governance || typeof channel.governance !== "object") {
+      channel.governance = createEmptyChannelGovernance();
+    }
+    if (!Object.prototype.hasOwnProperty.call(channel.governance, "authIdentity")) {
+      channel.governance.authIdentity = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(channel.governance, "member")) {
+      channel.governance.member = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(channel.governance, "githubInstallation")) {
+      channel.governance.githubInstallation = null;
+    }
+    return channel.governance;
+  }
+
+  findLatestChannelAuditByAction(channel, action) {
+    for (let index = channel.auditTrail.length - 1; index >= 0; index -= 1) {
+      const entry = channel.auditTrail[index];
+      if (entry.action === action) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  buildChannelAuditAnchor(channel) {
+    const mapEntry = (entry) =>
+      entry
+        ? {
+            auditId: entry.auditId,
+            action: entry.action,
+            at: entry.at
+          }
+        : null;
+    return {
+      trail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`,
+      latest: {
+        authIdentity: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_auth_identity_upsert")),
+        member: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_member_upsert")),
+        githubInstallation: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_github_installation_upsert")),
+        repoBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_repo_binding_upsert"))
+      }
+    };
+  }
+
+  upsertChannelGovernance(channel, input = {}, operatorId, policySnapshot) {
+    const governance = this.ensureChannelGovernance(channel);
+    if (input.authIdentity !== undefined) {
+      const authIdentityInput = input.authIdentity;
+      assertOrThrow(
+        authIdentityInput && typeof authIdentityInput === "object" && !Array.isArray(authIdentityInput),
+        "invalid_auth_identity",
+        "auth_identity payload must be object"
+      );
+      const allowedKeys = new Set(["identityId", "provider", "subjectRef", "githubLogin", "status"]);
+      for (const key of Object.keys(authIdentityInput)) {
+        assertOrThrow(allowedKeys.has(key), "invalid_auth_identity_field", `unsupported auth_identity field: ${key}`);
+      }
+      const now = nowIso();
+      const provider = normalizeOptionalScopeId(authIdentityInput.provider);
+      const subjectRef = normalizeOptionalScopeId(authIdentityInput.subjectRef);
+      assertOrThrow(provider, "invalid_auth_identity_provider", "auth_identity.provider is required");
+      assertOrThrow(subjectRef, "invalid_auth_identity_subject", "auth_identity.subject_ref is required");
+      const status = normalizeOptionalScopeId(authIdentityInput.status) ?? "bound";
+      assertOrThrow(AUTH_IDENTITY_STATUSES.has(status), "invalid_auth_identity_status", "auth_identity.status is invalid");
+      const identityId = normalizeOptionalScopeId(authIdentityInput.identityId) ?? governance.authIdentity?.identityId ?? generateId("identity");
+      governance.authIdentity = {
+        identityId,
+        provider,
+        subjectRef,
+        githubLogin: normalizeOptionalScopeId(authIdentityInput.githubLogin),
+        status,
+        boundAt: governance.authIdentity?.boundAt ?? now,
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_auth_identity_upsert",
+        target: `channel:${channel.channelId}:auth_identity`,
+        policySnapshot,
+        details: {
+          identity_id: governance.authIdentity.identityId,
+          provider: governance.authIdentity.provider,
+          subject_ref: governance.authIdentity.subjectRef,
+          github_login: governance.authIdentity.githubLogin,
+          status: governance.authIdentity.status
+        }
+      });
+    }
+
+    if (input.member !== undefined) {
+      const memberInput = input.member;
+      assertOrThrow(memberInput && typeof memberInput === "object" && !Array.isArray(memberInput), "invalid_member", "member payload must be object");
+      const allowedKeys = new Set(["memberId", "role", "status"]);
+      for (const key of Object.keys(memberInput)) {
+        assertOrThrow(allowedKeys.has(key), "invalid_member_field", `unsupported member field: ${key}`);
+      }
+      const now = nowIso();
+      const role = normalizeOptionalScopeId(memberInput.role);
+      assertOrThrow(role, "invalid_member_role", "member.role is required");
+      assertOrThrow(WORKSPACE_MEMBER_ROLES.has(role), "invalid_member_role", "member.role is invalid");
+      const status = normalizeOptionalScopeId(memberInput.status) ?? "active";
+      assertOrThrow(WORKSPACE_MEMBER_STATUSES.has(status), "invalid_member_status", "member.status is invalid");
+      const memberId = normalizeOptionalScopeId(memberInput.memberId) ?? governance.member?.memberId ?? generateId("member");
+      governance.member = {
+        memberId,
+        role,
+        status,
+        joinedAt: governance.member?.joinedAt ?? now,
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_member_upsert",
+        target: `channel:${channel.channelId}:member:${memberId}`,
+        policySnapshot,
+        details: {
+          member_id: governance.member.memberId,
+          role: governance.member.role,
+          status: governance.member.status
+        }
+      });
+    }
+
+    if (input.githubInstallation !== undefined) {
+      const installationInput = input.githubInstallation;
+      assertOrThrow(
+        installationInput && typeof installationInput === "object" && !Array.isArray(installationInput),
+        "invalid_github_installation",
+        "github_installation payload must be object"
+      );
+      const allowedKeys = new Set(["installationId", "provider", "workspaceId", "status", "authorizedRepos"]);
+      for (const key of Object.keys(installationInput)) {
+        assertOrThrow(allowedKeys.has(key), "invalid_github_installation_field", `unsupported github_installation field: ${key}`);
+      }
+      const now = nowIso();
+      const existingInstallation = governance.githubInstallation;
+      const installationId =
+        normalizeOptionalScopeId(installationInput.installationId) ??
+        existingInstallation?.installationId ??
+        null;
+      assertOrThrow(installationId, "invalid_github_installation_id", "github_installation.installation_id is required");
+      const provider = normalizeOptionalScopeId(installationInput.provider) ?? existingInstallation?.provider ?? "github_app";
+      const workspaceId = normalizeOptionalScopeId(installationInput.workspaceId) ?? existingInstallation?.workspaceId ?? channel.workspace.workspaceId;
+      assertOrThrow(workspaceId, "invalid_workspace_installation_scope", "github_installation.workspace_id is required");
+      assertOrThrow(
+        workspaceId === channel.workspace.workspaceId,
+        "invalid_workspace_installation_scope",
+        "github_installation must bind to channel workspace scope"
+      );
+      const status = normalizeOptionalScopeId(installationInput.status) ?? existingInstallation?.status ?? "active";
+      assertOrThrow(
+        GITHUB_INSTALLATION_STATUSES.has(status),
+        "invalid_github_installation_status",
+        "github_installation.status is invalid"
+      );
+      let authorizedRepos = existingInstallation?.authorizedRepos ?? [];
+      if (installationInput.authorizedRepos !== undefined) {
+        assertOrThrow(
+          Array.isArray(installationInput.authorizedRepos),
+          "invalid_github_installation_repos",
+          "github_installation.authorized_repos must be string[]"
+        );
+        authorizedRepos = installationInput.authorizedRepos
+          .filter((item) => typeof item === "string" && item.trim().length > 0)
+          .map((item) => item.trim());
+      }
+      governance.githubInstallation = {
+        installationId,
+        provider,
+        workspaceId,
+        status,
+        authorizedRepos: Array.from(new Set(authorizedRepos)),
+        installedAt: existingInstallation?.installedAt ?? now,
+        removedAt: status === "removed" ? now : null,
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_github_installation_upsert",
+        target: `channel:${channel.channelId}:github_installation:${installationId}`,
+        policySnapshot,
+        details: {
+          installation_id: installationId,
+          provider,
+          workspace_id: workspaceId,
+          status,
+          authorized_repo_count: governance.githubInstallation.authorizedRepos.length
+        }
+      });
+    }
+  }
+
   getChannelContextContract(channelId) {
     const channel = this.requireChannelContext(channelId);
+    this.ensureChannelGovernance(channel);
     return deepClone({
       channelId: channel.channelId,
       ownerOperatorId: channel.ownerOperatorId,
@@ -2410,10 +2686,18 @@ export class ServerCoordinator {
         baselineRef: null,
         fixedDirectory: null,
         docPaths: [],
-        runtimeEntries: [],
-        ruleEntries: []
+          runtimeEntries: [],
+          ruleEntries: []
+        },
+      governance: {
+        authIdentity: channel.governance.authIdentity,
+        member: channel.governance.member,
+        githubInstallation: channel.governance.githubInstallation,
+        permissionMatrix: WORKSPACE_GOVERNANCE_PERMISSION_MATRIX,
+        stateGraph: WORKSPACE_GOVERNANCE_STATE_GRAPH
       },
       repoBinding: channel.repoBinding ?? null,
+      auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt
     });
   }
@@ -2429,6 +2713,9 @@ export class ServerCoordinator {
       "docPaths",
       "runtimeEntries",
       "ruleEntries",
+      "authIdentity",
+      "member",
+      "githubInstallation",
       "policySnapshot"
     ]);
     for (const key of Object.keys(input)) {
@@ -2453,6 +2740,7 @@ export class ServerCoordinator {
           runtimeEntries: [],
           ruleEntries: []
         },
+        governance: createEmptyChannelGovernance(),
         repoBinding: null,
         auditTrail: [],
         updatedAt: nowIso()
@@ -2498,6 +2786,16 @@ export class ServerCoordinator {
         .filter((item) => typeof item === "string" && item.trim().length > 0)
         .map((item) => item.trim());
     }
+    this.upsertChannelGovernance(
+      channel,
+      {
+        authIdentity: input.authIdentity,
+        member: input.member,
+        githubInstallation: input.githubInstallation
+      },
+      operatorId,
+      input.policySnapshot
+    );
 
     this.appendChannelAuditEntry(channel, {
       actorId: operatorId,
@@ -2520,10 +2818,16 @@ export class ServerCoordinator {
 
   getChannelRepoBindingConfig(channelId) {
     const channel = this.requireChannelContext(channelId);
+    this.ensureChannelGovernance(channel);
     return deepClone({
       channelId: channel.channelId,
       ownerOperatorId: channel.ownerOperatorId,
+      governance: {
+        githubInstallation: channel.governance.githubInstallation,
+        permissionMatrix: WORKSPACE_GOVERNANCE_PERMISSION_MATRIX
+      },
       repoBinding: channel.repoBinding,
+      auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt
     });
   }
@@ -2536,6 +2840,7 @@ export class ServerCoordinator {
       "providerRef",
       "defaultBranch",
       "fixedDirectory",
+      "workspaceInstallationId",
       "policySnapshot"
     ]);
     for (const key of Object.keys(input)) {
@@ -2549,11 +2854,19 @@ export class ServerCoordinator {
     assertOrThrow(providerRef, "repo_binding_provider_required", "provider_ref is required");
     const defaultBranch = normalizeOptionalScopeId(input.defaultBranch) ?? channel.repoBinding?.defaultBranch ?? null;
     const fixedDirectory = normalizeOptionalScopeId(input.fixedDirectory) ?? channel.repoBinding?.fixedDirectory ?? channel.context.fixedDirectory ?? null;
+    this.ensureChannelGovernance(channel);
+    const installationId =
+      normalizeOptionalScopeId(input.workspaceInstallationId) ??
+      channel.repoBinding?.workspaceInstallationId ??
+      channel.governance.githubInstallation?.installationId ??
+      null;
     channel.repoBinding = {
       topicId,
       providerRef,
       defaultBranch,
       fixedDirectory,
+      workspaceInstallationId: installationId,
+      authorizationScope: "workspace_installation",
       updatedAt: nowIso(),
       updatedBy: operatorId
     };
@@ -2574,7 +2887,8 @@ export class ServerCoordinator {
         provider: providerRef.provider,
         repo_ref: providerRef.repo_ref,
         default_branch: defaultBranch,
-        fixed_directory: fixedDirectory
+        fixed_directory: fixedDirectory,
+        workspace_installation_id: installationId
       }
     });
     this.channelContexts.set(channel.channelId, channel);

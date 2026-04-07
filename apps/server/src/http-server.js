@@ -799,7 +799,7 @@ function serializeChannelContextContract(input = {}) {
   const channelId = input.channelId;
   return {
     projection: "channel_context_contract",
-    contract_version: "v1.stage2",
+    contract_version: "v1.stage4a1",
     channel_id: channelId,
     project_aligned_entry: true,
     owner_operator_id: input.ownerOperatorId ?? null,
@@ -815,24 +815,101 @@ function serializeChannelContextContract(input = {}) {
       runtime_entries: deepClone(input.context?.runtimeEntries ?? []),
       rule_entries: deepClone(input.context?.ruleEntries ?? [])
     },
+    governance: {
+      auth_identity: input.governance?.authIdentity
+        ? {
+            identity_id: input.governance.authIdentity.identityId ?? null,
+            provider: input.governance.authIdentity.provider ?? null,
+            subject_ref: input.governance.authIdentity.subjectRef ?? null,
+            github_login: input.governance.authIdentity.githubLogin ?? null,
+            status: input.governance.authIdentity.status ?? "bound",
+            bound_at: input.governance.authIdentity.boundAt ?? null,
+            updated_at: input.governance.authIdentity.updatedAt ?? null,
+            updated_by: input.governance.authIdentity.updatedBy ?? null
+          }
+        : null,
+      member: input.governance?.member
+        ? {
+            member_id: input.governance.member.memberId ?? null,
+            role: input.governance.member.role ?? null,
+            status: input.governance.member.status ?? null,
+            joined_at: input.governance.member.joinedAt ?? null,
+            updated_at: input.governance.member.updatedAt ?? null,
+            updated_by: input.governance.member.updatedBy ?? null
+          }
+        : null,
+      github_installation: input.governance?.githubInstallation
+        ? {
+            installation_id: input.governance.githubInstallation.installationId ?? null,
+            provider: input.governance.githubInstallation.provider ?? null,
+            workspace_id: input.governance.githubInstallation.workspaceId ?? null,
+            status: input.governance.githubInstallation.status ?? null,
+            authorized_repos: deepClone(input.governance.githubInstallation.authorizedRepos ?? []),
+            installed_at: input.governance.githubInstallation.installedAt ?? null,
+            removed_at: input.governance.githubInstallation.removedAt ?? null,
+            updated_at: input.governance.githubInstallation.updatedAt ?? null,
+            updated_by: input.governance.githubInstallation.updatedBy ?? null
+          }
+        : null,
+      permission_matrix: deepClone(input.governance?.permissionMatrix ?? {}),
+      state_graph: deepClone(input.governance?.stateGraph ?? {})
+    },
     repo_binding: input.repoBinding
       ? {
           topic_id: input.repoBinding.topicId ?? null,
           provider_ref: deepClone(input.repoBinding.providerRef ?? null),
           default_branch: input.repoBinding.defaultBranch ?? null,
           fixed_directory: input.repoBinding.fixedDirectory ?? null,
+          workspace_installation_id: input.repoBinding.workspaceInstallationId ?? null,
+          authorization_scope: input.repoBinding.authorizationScope ?? "workspace_installation",
           updated_at: input.repoBinding.updatedAt ?? null,
           updated_by: input.repoBinding.updatedBy ?? null
         }
       : null,
     write_anchors: {
       context_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      auth_identity_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      member_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      github_installation_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       repo_binding_upsert: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
       topic_repo_binding: "/v1/topics/:topicId/repo-binding",
       work_assignment: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/:agentId`,
       operator_action: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
       recent_actions: `/v1/channels/${encodeURIComponent(channelId)}/recent-actions`,
       audit_trail: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`,
+      latest: {
+        auth_identity: input.auditAnchor?.latest?.authIdentity
+          ? {
+              audit_id: input.auditAnchor.latest.authIdentity.auditId ?? null,
+              action: input.auditAnchor.latest.authIdentity.action ?? null,
+              at: input.auditAnchor.latest.authIdentity.at ?? null
+            }
+          : null,
+        member: input.auditAnchor?.latest?.member
+          ? {
+              audit_id: input.auditAnchor.latest.member.auditId ?? null,
+              action: input.auditAnchor.latest.member.action ?? null,
+              at: input.auditAnchor.latest.member.at ?? null
+            }
+          : null,
+        github_installation: input.auditAnchor?.latest?.githubInstallation
+          ? {
+              audit_id: input.auditAnchor.latest.githubInstallation.auditId ?? null,
+              action: input.auditAnchor.latest.githubInstallation.action ?? null,
+              at: input.auditAnchor.latest.githubInstallation.at ?? null
+            }
+          : null,
+        repo_binding: input.auditAnchor?.latest?.repoBinding
+          ? {
+              audit_id: input.auditAnchor.latest.repoBinding.auditId ?? null,
+              action: input.auditAnchor.latest.repoBinding.action ?? null,
+              at: input.auditAnchor.latest.repoBinding.at ?? null
+            }
+          : null
+      }
     },
     updated_at: input.updatedAt ?? null
   };
@@ -841,19 +918,44 @@ function serializeChannelContextContract(input = {}) {
 function serializeChannelRepoBindingConfig(input = {}) {
   return {
     projection: "channel_repo_binding_config",
-    contract_version: "v1.stage2",
+    contract_version: "v1.stage4a1",
     channel_id: input.channelId,
     owner_operator_id: input.ownerOperatorId ?? null,
+    governance: {
+      github_installation: input.governance?.githubInstallation
+        ? {
+            installation_id: input.governance.githubInstallation.installationId ?? null,
+            workspace_id: input.governance.githubInstallation.workspaceId ?? null,
+            status: input.governance.githubInstallation.status ?? null,
+            authorized_repos: deepClone(input.governance.githubInstallation.authorizedRepos ?? [])
+          }
+        : null,
+      permission_matrix: deepClone(input.governance?.permissionMatrix ?? {})
+    },
     repo_binding: input.repoBinding
       ? {
           topic_id: input.repoBinding.topicId ?? null,
           provider_ref: deepClone(input.repoBinding.providerRef ?? null),
           default_branch: input.repoBinding.defaultBranch ?? null,
           fixed_directory: input.repoBinding.fixedDirectory ?? null,
+          workspace_installation_id: input.repoBinding.workspaceInstallationId ?? null,
+          authorization_scope: input.repoBinding.authorizationScope ?? "workspace_installation",
           updated_at: input.repoBinding.updatedAt ?? null,
           updated_by: input.repoBinding.updatedBy ?? null
         }
       : null,
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? null,
+      latest: {
+        repo_binding: input.auditAnchor?.latest?.repoBinding
+          ? {
+              audit_id: input.auditAnchor.latest.repoBinding.auditId ?? null,
+              action: input.auditAnchor.latest.repoBinding.action ?? null,
+              at: input.auditAnchor.latest.repoBinding.at ?? null
+            }
+          : null
+      }
+    },
     updated_at: input.updatedAt ?? null
   };
 }
@@ -1971,11 +2073,47 @@ export function createHttpServer(coordinator, options = {}) {
           "doc_paths",
           "runtime_entries",
           "rule_entries",
+          "auth_identity",
+          "member",
+          "github_installation",
           "policy_snapshot"
         ]);
         for (const key of Object.keys(body)) {
           if (!allowedFields.has(key)) {
             throw new CoordinatorError("invalid_channel_context_field", `unsupported channel context field: ${key}`);
+          }
+        }
+        if (body.auth_identity !== undefined) {
+          assertObjectBody(body.auth_identity, "invalid_auth_identity", "auth_identity payload must be object");
+          const allowedAuthIdentityFields = new Set(["identity_id", "provider", "subject_ref", "github_login", "status"]);
+          for (const key of Object.keys(body.auth_identity)) {
+            if (!allowedAuthIdentityFields.has(key)) {
+              throw new CoordinatorError("invalid_auth_identity_field", `unsupported auth_identity field: ${key}`);
+            }
+          }
+        }
+        if (body.member !== undefined) {
+          assertObjectBody(body.member, "invalid_member", "member payload must be object");
+          const allowedMemberFields = new Set(["member_id", "role", "status"]);
+          for (const key of Object.keys(body.member)) {
+            if (!allowedMemberFields.has(key)) {
+              throw new CoordinatorError("invalid_member_field", `unsupported member field: ${key}`);
+            }
+          }
+        }
+        if (body.github_installation !== undefined) {
+          assertObjectBody(body.github_installation, "invalid_github_installation", "github_installation payload must be object");
+          const allowedInstallationFields = new Set([
+            "installation_id",
+            "provider",
+            "workspace_id",
+            "status",
+            "authorized_repos"
+          ]);
+          for (const key of Object.keys(body.github_installation)) {
+            if (!allowedInstallationFields.has(key)) {
+              throw new CoordinatorError("invalid_github_installation_field", `unsupported github_installation field: ${key}`);
+            }
           }
         }
         const context = coordinator.upsertChannelContextContract(route.channelId, {
@@ -1987,6 +2125,31 @@ export function createHttpServer(coordinator, options = {}) {
           docPaths: body.doc_paths,
           runtimeEntries: body.runtime_entries,
           ruleEntries: body.rule_entries,
+          authIdentity: body.auth_identity
+            ? {
+                identityId: body.auth_identity.identity_id,
+                provider: body.auth_identity.provider,
+                subjectRef: body.auth_identity.subject_ref,
+                githubLogin: body.auth_identity.github_login,
+                status: body.auth_identity.status
+              }
+            : undefined,
+          member: body.member
+            ? {
+                memberId: body.member.member_id,
+                role: body.member.role,
+                status: body.member.status
+              }
+            : undefined,
+          githubInstallation: body.github_installation
+            ? {
+                installationId: body.github_installation.installation_id,
+                provider: body.github_installation.provider,
+                workspaceId: body.github_installation.workspace_id,
+                status: body.github_installation.status,
+                authorizedRepos: body.github_installation.authorized_repos
+              }
+            : undefined,
           policySnapshot: body.policy_snapshot
         });
         sendJson(response, 200, {
@@ -2014,6 +2177,7 @@ export function createHttpServer(coordinator, options = {}) {
           "provider_ref",
           "default_branch",
           "fixed_directory",
+          "workspace_installation_id",
           "policy_snapshot"
         ]);
         for (const key of Object.keys(body)) {
@@ -2027,6 +2191,7 @@ export function createHttpServer(coordinator, options = {}) {
           providerRef: body.provider_ref,
           defaultBranch: body.default_branch,
           fixedDirectory: body.fixed_directory,
+          workspaceInstallationId: body.workspace_installation_id,
           policySnapshot: body.policy_snapshot
         });
         sendJson(response, 200, {

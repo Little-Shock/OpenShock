@@ -4065,10 +4065,13 @@ test("v1 stage2 runtime registration/pairing/liveness and worktree isolation sta
   );
 });
 
-test("v1 stage2 control-plane channel context contract keeps single-operator repo binding and audit trail", async () => {
-  const channelId = "channel_open_shock_stage2";
-  const topicId = "topic_stage2_control_plane_contract";
-  const operatorId = "human_operator_stage2";
+test("v1 stage4a1 control-plane governance contract keeps identity/member/installation/repo binding chain with audit anchors", async () => {
+  const channelId = "channel_open_shock_stage4a1";
+  const topicId = "topic_stage4a1_control_plane_contract";
+  const operatorId = "human_operator_stage4a1";
+  const workspaceId = "workspace_stage4a1";
+  const installationId = "gh_ins_workspace_stage4a1";
+  const memberId = "member_stage4a1_owner";
 
   await withRuntimeServer(
     {
@@ -4099,7 +4102,7 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
         path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
         body: {
           operator_id: operatorId,
-          workspace_id: "workspace_default",
+          workspace_id: workspaceId,
           workspace_root: "/Users/atou/.slock/agents",
           baseline_ref: "feat/initial-implementation@3058687",
           fixed_directory: "/Users/atou/OpenShockSwarm",
@@ -4109,23 +4112,61 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
           ],
           runtime_entries: ["/runtime/config", "/v1/runtime/registry"],
           rule_entries: ["/Users/atou/.slock/agents/AGENTS.md"],
+          auth_identity: {
+            identity_id: "auth_identity_stage4a1",
+            provider: "github",
+            subject_ref: "github_user_42",
+            github_login: "atou",
+            status: "bound"
+          },
+          member: {
+            member_id: memberId,
+            role: "owner",
+            status: "active"
+          },
+          github_installation: {
+            installation_id: installationId,
+            provider: "github_app",
+            workspace_id: workspaceId,
+            status: "active",
+            authorized_repos: ["Little-Shock/OpenShockSwarm", "Little-Shock/OpenShockDocs"]
+          },
           policy_snapshot: {
-            mode: "single_human_multi_agent",
-            boundary: "channel_aligned_entry"
+            mode: "multi_human_governance_stage4a1",
+            boundary: "workspace_installation_only"
           }
         }
       });
       assert.equal(upsertContext.statusCode, 200);
       assert.equal(upsertContext.body.context.channel_id, channelId);
       assert.equal(upsertContext.body.context.owner_operator_id, operatorId);
+      assert.equal(upsertContext.body.context.contract_version, "v1.stage4a1");
       assert.equal(upsertContext.body.context.project_aligned_entry, true);
       assert.equal(upsertContext.body.context.workspace.root_path, "/Users/atou/.slock/agents");
       assert.equal(upsertContext.body.context.context.fixed_directory, "/Users/atou/OpenShockSwarm");
       assert.equal(upsertContext.body.context.context.doc_paths.length, 2);
+      assert.equal(upsertContext.body.context.governance.auth_identity.provider, "github");
+      assert.equal(upsertContext.body.context.governance.member.role, "owner");
+      assert.equal(upsertContext.body.context.governance.github_installation.workspace_id, workspaceId);
+      assert.equal(upsertContext.body.context.governance.github_installation.authorized_repos.length, 2);
+      assert.equal(upsertContext.body.context.governance.permission_matrix.owner.manage_installation, true);
+      assert.equal(upsertContext.body.context.governance.permission_matrix.member.manage_repo_binding, false);
+      assert.equal(upsertContext.body.context.governance.state_graph.states.includes("binding_selected"), true);
+      assert.equal(
+        upsertContext.body.context.write_anchors.github_installation_upsert,
+        `/v1/channels/${encodeURIComponent(channelId)}/context`
+      );
       assert.equal(
         upsertContext.body.context.write_anchors.repo_binding_upsert,
         `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`
       );
+      assert.equal(upsertContext.body.context.audit_anchor.latest.auth_identity.action, "channel_auth_identity_upsert");
+      assert.equal(upsertContext.body.context.audit_anchor.latest.member.action, "channel_member_upsert");
+      assert.equal(
+        upsertContext.body.context.audit_anchor.latest.github_installation.action,
+        "channel_github_installation_upsert"
+      );
+      assert.equal(upsertContext.body.context.audit_anchor.latest.repo_binding, null);
 
       const upsertRepoBinding = await requestJson({
         port,
@@ -4140,8 +4181,9 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
           },
           default_branch: "feat/initial-implementation",
           fixed_directory: "/Users/atou/OpenShockSwarm",
+          workspace_installation_id: installationId,
           policy_snapshot: {
-            mode: "single_human_multi_agent",
+            mode: "multi_human_governance_stage4a1",
             action: "repo_binding_upsert"
           }
         }
@@ -4149,9 +4191,16 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
       assert.equal(upsertRepoBinding.statusCode, 200);
       assert.equal(upsertRepoBinding.body.repo_binding.channel_id, channelId);
       assert.equal(upsertRepoBinding.body.repo_binding.owner_operator_id, operatorId);
+      assert.equal(upsertRepoBinding.body.repo_binding.contract_version, "v1.stage4a1");
       assert.equal(upsertRepoBinding.body.repo_binding.repo_binding.topic_id, topicId);
       assert.equal(upsertRepoBinding.body.repo_binding.repo_binding.provider_ref.repo_ref, "Little-Shock/OpenShockSwarm");
       assert.equal(upsertRepoBinding.body.repo_binding.repo_binding.default_branch, "feat/initial-implementation");
+      assert.equal(upsertRepoBinding.body.repo_binding.repo_binding.workspace_installation_id, installationId);
+      assert.equal(upsertRepoBinding.body.repo_binding.repo_binding.authorization_scope, "workspace_installation");
+      assert.equal(
+        upsertRepoBinding.body.repo_binding.governance.github_installation.authorized_repos.includes("Little-Shock/OpenShockSwarm"),
+        true
+      );
 
       const topicRepoBinding = await requestJson({
         port,
@@ -4169,9 +4218,11 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
       });
       assert.equal(channelContext.statusCode, 200);
       assert.equal(channelContext.body.context.repo_binding.topic_id, topicId);
+      assert.equal(channelContext.body.context.repo_binding.workspace_installation_id, installationId);
       assert.equal(channelContext.body.context.context.baseline_ref, "feat/initial-implementation@3058687");
       assert.equal(channelContext.body.context.context.runtime_entries.includes("/v1/runtime/registry"), true);
       assert.equal(channelContext.body.context.context.rule_entries.includes("/Users/atou/.slock/agents/AGENTS.md"), true);
+      assert.equal(channelContext.body.context.audit_anchor.latest.repo_binding.action, "channel_repo_binding_upsert");
 
       const auditTrail = await requestJson({
         port,
@@ -4184,6 +4235,24 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
       assert.equal(
         auditTrail.body.items.some(
           (item) => item.action === "channel_context_upsert" && item.actor_id === operatorId
+        ),
+        true
+      );
+      assert.equal(
+        auditTrail.body.items.some(
+          (item) => item.action === "channel_auth_identity_upsert" && item.actor_id === operatorId
+        ),
+        true
+      );
+      assert.equal(
+        auditTrail.body.items.some(
+          (item) => item.action === "channel_member_upsert" && item.actor_id === operatorId
+        ),
+        true
+      );
+      assert.equal(
+        auditTrail.body.items.some(
+          (item) => item.action === "channel_github_installation_upsert" && item.actor_id === operatorId
         ),
         true
       );
@@ -4214,6 +4283,22 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
       assert.equal(wrongOperator.statusCode, 422);
       assert.equal(wrongOperator.body.error.code, "channel_operator_mismatch");
 
+      const invalidMemberRole = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          member: {
+            member_id: memberId,
+            role: "operator",
+            status: "active"
+          }
+        }
+      });
+      assert.equal(invalidMemberRole.statusCode, 400);
+      assert.equal(invalidMemberRole.body.error.code, "invalid_member_role");
+
       const invalidField = await requestJson({
         port,
         method: "PUT",
@@ -4227,6 +4312,22 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
       assert.equal(invalidField.statusCode, 400);
       assert.equal(invalidField.body.error.code, "invalid_channel_context_field");
 
+      const invalidInstallationField = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          github_installation: {
+            installation_id: installationId,
+            workspace_id: workspaceId,
+            user_id: "github_user_personal"
+          }
+        }
+      });
+      assert.equal(invalidInstallationField.statusCode, 400);
+      assert.equal(invalidInstallationField.body.error.code, "invalid_github_installation_field");
+
       const payload = JSON.stringify({
         context: channelContext.body.context,
         repoBinding: upsertRepoBinding.body.repo_binding,
@@ -4234,6 +4335,7 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
       });
       assert.equal(payload.includes("\"project_id\""), false);
       assert.equal(payload.includes("\"workspace_invite\""), false);
+      assert.equal(payload.includes("\"personal_installation\""), false);
     }
   );
 });
