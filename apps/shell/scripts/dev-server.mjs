@@ -581,44 +581,51 @@ async function handleOperatorChannelContextUpsert(req, res) {
     const docPaths = normalizeStringArray(input.doc_paths);
     const runtimeEntries = normalizeStringArray(input.runtime_entries);
     const ruleEntries = normalizeStringArray(input.rule_entries);
-    const hostedAccessInput =
-      input.hosted_access && typeof input.hosted_access === "object" && !Array.isArray(input.hosted_access)
-        ? input.hosted_access
-        : {};
-    const hostedWebUrl = normalizeText(hostedAccessInput.hosted_web_url) || normalizeText(input.hosted_web_url) || null;
-    const accessMode = normalizeText(hostedAccessInput.access_mode) || normalizeText(input.access_mode) || null;
-    const stableLoginState =
-      normalizeText(hostedAccessInput.stable_login_state) || normalizeText(input.stable_login_state) || null;
-    const loginProvider = normalizeText(hostedAccessInput.login_provider) || normalizeText(input.login_provider) || null;
-    const nonLocalAccessEnabledValue =
-      hostedAccessInput.non_local_access_enabled ?? input.non_local_access_enabled ?? undefined;
-    const nonLocalAccessEnabled =
-      typeof nonLocalAccessEnabledValue === "boolean" ? nonLocalAccessEnabledValue : undefined;
-    const sessionTtlMinutesValue = hostedAccessInput.session_ttl_minutes ?? input.session_ttl_minutes ?? undefined;
-    const sessionTtlMinutes =
-      sessionTtlMinutesValue === null
-        ? null
-        : Number.isInteger(sessionTtlMinutesValue) && sessionTtlMinutesValue > 0
-          ? sessionTtlMinutesValue
-          : undefined;
-    const hostedAccessPayload = {};
-    if (hostedWebUrl) {
-      hostedAccessPayload.hosted_web_url = hostedWebUrl;
-    }
-    if (accessMode) {
-      hostedAccessPayload.access_mode = accessMode;
-    }
-    if (nonLocalAccessEnabled !== undefined) {
-      hostedAccessPayload.non_local_access_enabled = nonLocalAccessEnabled;
-    }
-    if (stableLoginState) {
-      hostedAccessPayload.stable_login_state = stableLoginState;
-    }
-    if (loginProvider) {
-      hostedAccessPayload.login_provider = loginProvider;
-    }
-    if (sessionTtlMinutes !== undefined) {
-      hostedAccessPayload.session_ttl_minutes = sessionTtlMinutes;
+    const hasHostedAccessKey = Object.prototype.hasOwnProperty.call(input, "hosted_access");
+    const hostedAccessRaw = hasHostedAccessKey ? input.hosted_access : undefined;
+    let hostedAccessPayload;
+    if (
+      hasHostedAccessKey &&
+      (hostedAccessRaw === null || typeof hostedAccessRaw !== "object" || Array.isArray(hostedAccessRaw))
+    ) {
+      hostedAccessPayload = hostedAccessRaw;
+    } else {
+      const hostedAccessInput =
+        hostedAccessRaw && typeof hostedAccessRaw === "object" && !Array.isArray(hostedAccessRaw) ? hostedAccessRaw : {};
+      const readHostedAccessField = (key) =>
+        Object.prototype.hasOwnProperty.call(hostedAccessInput, key)
+          ? hostedAccessInput[key]
+          : Object.prototype.hasOwnProperty.call(input, key)
+            ? input[key]
+            : undefined;
+      const nextHostedAccessPayload = {};
+      const hostedWebUrl = readHostedAccessField("hosted_web_url");
+      if (hostedWebUrl !== undefined) {
+        nextHostedAccessPayload.hosted_web_url = hostedWebUrl;
+      }
+      const accessMode = readHostedAccessField("access_mode");
+      if (accessMode !== undefined) {
+        nextHostedAccessPayload.access_mode = accessMode;
+      }
+      const nonLocalAccessEnabled = readHostedAccessField("non_local_access_enabled");
+      if (nonLocalAccessEnabled !== undefined) {
+        nextHostedAccessPayload.non_local_access_enabled = nonLocalAccessEnabled;
+      }
+      const stableLoginState = readHostedAccessField("stable_login_state");
+      if (stableLoginState !== undefined) {
+        nextHostedAccessPayload.stable_login_state = stableLoginState;
+      }
+      const loginProvider = readHostedAccessField("login_provider");
+      if (loginProvider !== undefined) {
+        nextHostedAccessPayload.login_provider = loginProvider;
+      }
+      const sessionTtlMinutes = readHostedAccessField("session_ttl_minutes");
+      if (sessionTtlMinutes !== undefined) {
+        nextHostedAccessPayload.session_ttl_minutes = sessionTtlMinutes;
+      }
+      if (hasHostedAccessKey || Object.keys(nextHostedAccessPayload).length > 0) {
+        hostedAccessPayload = nextHostedAccessPayload;
+      }
     }
     const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
       method: "PUT",
@@ -631,7 +638,7 @@ async function handleOperatorChannelContextUpsert(req, res) {
         doc_paths: docPaths.length > 0 ? docPaths : undefined,
         runtime_entries: runtimeEntries.length > 0 ? runtimeEntries : undefined,
         rule_entries: ruleEntries.length > 0 ? ruleEntries : undefined,
-        hosted_access: Object.keys(hostedAccessPayload).length > 0 ? hostedAccessPayload : undefined,
+        hosted_access: hostedAccessPayload,
         policy_snapshot: {
           mode: "single_human_multi_agent",
           boundary: "channel_aligned_entry",
