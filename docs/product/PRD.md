@@ -276,6 +276,7 @@ OpenShock 的前端应该：
 - 有点玩心
 - 清晰但不死板
 - 让 Agent 和 Machine 像角色，不像配置项
+- 优先参考 `app.slock.ai` 当前协作壳，而不是把 Board 当首页中心
 
 OpenShock 的前端不应该：
 
@@ -392,7 +393,7 @@ OpenShock 的前端不应该：
 - 全局频道：`#all`、`#roadmap`、`#announcements`
 - Issue Room：每个 Issue 一间房
 - Topic：Issue Room 内围绕一个需求、一个问题或一个决策点的局部话题
-- Room 视图：`Chat / Topics / Board`
+- Room 视图：`Chat / Topic / Run / PR / Board`
 - Thread：围绕具体消息、具体 run、具体 review 的分叉讨论
 - DM：人类与 Agent，或人类与人类的直接沟通
 - Agent Mailbox：Agent 间正式、可追踪的异步消息
@@ -406,6 +407,7 @@ MVP 的简化约束：
 - 认真干活的空间统一叫 `Issue Room`
 - 每个 Issue 自动生成一个 Issue Room
 - Phase 0 中每个 Issue Room 默认只带一个 `Topic`，避免过重的信息结构
+- `Board` 保留，但优先级低于 `Channel / Issue Room / DM / Thread / Agent / Machine presence`，不再作为首页默认心智中心
 
 ### 2. 骨架：Multica 式控制面
 

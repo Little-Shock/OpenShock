@@ -1,7 +1,7 @@
 # OpenShock Test Cases
 
-**版本:** 1.0
-**更新日期:** 2026 年 4 月 6 日
+**版本:** 1.1
+**更新日期:** 2026 年 4 月 7 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
 ---
@@ -359,3 +359,68 @@
   2. 检查系统是否拦截并生成 approval item。
 - 预期结果: 高风险动作不会直接执行，系统产生显式审批记录。
 - 业务结论: 2026 年 4 月 7 日 `TKT-09` 已把 role / permission action matrix 收进真实前台与后端 guard，但 destructive git、越界写入、敏感凭证使用的 approval-required contract 仍未系统化产品化；因此这条安全 gate 继续保留 `Not Run`，留给 `TKT-15` 继续吸收。
+
+## TC-028 app.slock.ai Shell / Sidebar / Search Entry
+
+- 业务目标: 确认 OpenShock 已从“多页面控制台”收成 `app.slock.ai` 式 workspace shell。
+- 当前执行状态: Not Run
+- 对应 Checklist: `CHK-01` `CHK-16`
+- 前置条件: 新壳已接到 live workspace state。
+- 测试步骤:
+  1. 打开默认入口，确认先进入统一 workspace shell。
+  2. 检查 sidebar 是否存在 workspace context、频道、DM、threads/saved、inbox、presence 等主入口。
+  3. 检查 search / quick switch 入口是否常驻可见。
+- 预期结果: 用户在同一层级完成主要协作导航，不需要先跳到 setup/board 之类 utility page。
+- 业务结论: 当前 repo 仍以 `频道 / 讨论间 / 收件箱 / 任务板 + 多个 utility pages` 组合呈现，尚未完成 `app.slock.ai` 式 workspace shell，对应下一批 `TKT-16`。
+
+## TC-029 DM / Thread / Saved Workflow
+
+- 业务目标: 确认 DM、followed thread、saved/later 已形成完整消息工作流。
+- 当前执行状态: Blocked
+- 对应 Checklist: `CHK-16` `CHK-17`
+- 前置条件: 存在 DM、线程关注和 saved/later 的前台入口与状态模型。
+- 测试步骤:
+  1. 从 sidebar 进入一条 DM。
+  2. 在频道中打开并 follow 一条 thread。
+  3. 从 saved/later 或 followed threads 再次回到该 thread。
+- 预期结果: DM、线程回访和暂存面在同一套壳层里闭环可用。
+- 业务结论: 当前 repo 还没有完整 DM / followed thread / saved 工作流，这条用例继续保持 `Blocked`，留给 `TKT-17`。
+
+## TC-030 Agent / Machine / Human Profile Surface
+
+- 业务目标: 确认人物与机器不只是列表项，而是可直接 drill-in 的资料面。
+- 当前执行状态: Not Run
+- 对应 Checklist: `CHK-02` `CHK-17`
+- 前置条件: `Agent / Machine / Human` 至少都有 profile route 或 profile panel。
+- 测试步骤:
+  1. 从 shell 或 room 中点击一个 Agent。
+  2. 再点击一个 Machine 和一个 Human。
+  3. 检查 presence、activity、runtime/capability、最近 run/room 关系是否可见。
+- 预期结果: `Agent / Machine / Human` 都成为可导航的一等对象。
+- 业务结论: 当前 repo 只有部分 Agent 页面和 machine summary，还没有统一 profile surface；这条用例保留 `Not Run`，留给 `TKT-18`。
+
+## TC-031 Room Context Tabs / Topic Workbench
+
+- 业务目标: 确认 Room 已经成为主工作台，而不是聊天页再跳多个详情页。
+- 当前执行状态: Not Run
+- 对应 Checklist: `CHK-06` `CHK-17`
+- 前置条件: room workbench 已提供 `Chat / Topic / Run / PR / Context` tabs 或等价切换面。
+- 测试步骤:
+  1. 打开一条 room。
+  2. 在不离开 room 的情况下切换 `Chat / Topic / Run / PR / Context`。
+  3. 验证 run control、PR entry、inbox back-link 仍保持可用。
+- 预期结果: 用户围绕同一条 room 完成讨论、执行、交付和回溯，不需要频繁跨页。
+- 业务结论: 当前 room / run / PR truth 虽已存在，但 workbench tabs 还未成型；这条用例保留 `Not Run`，留给 `TKT-16` `TKT-17` `TKT-19` 共同收口。
+
+## TC-032 Board Secondary Planning Surface
+
+- 业务目标: 确认 Board 仍可用，但已经退到次级 planning surface。
+- 当前执行状态: Not Run
+- 对应 Checklist: `CHK-05` `CHK-18`
+- 前置条件: board 已与 room / issue context 建立回跳关系，且主导航优先级已下调。
+- 测试步骤:
+  1. 从 room 或 issue 进入 planning surface。
+  2. 查看 board lane 并创建或打开一条 issue。
+  3. 返回 room，确认 Board 不是默认首页心智中心。
+- 预期结果: Board 服务于规划，不抢占协作壳主路径。
+- 业务结论: 当前 `/board` 已有 live issue truth，但仍是主导航高优先级入口；这条用例保留 `Not Run`，留给 `TKT-20`。

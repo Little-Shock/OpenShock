@@ -61,14 +61,17 @@
 - server：GitHub PR 路径已支持按 effective auth path 在 `gh CLI / GitHub App` 间切换，并带 contract tests
 - daemon：Go 本地 runtime bridge，支持 CLI 探测、prompt 执行、流式执行、worktree ensure
 - memory：artifact detail / version / governance contract 已有后端与测试基线
+- 审批与通知：approval center lifecycle、browser push / email delivery 已有浏览器级证据
+- 执行控制：stop / resume / follow-thread、多 runtime scheduler / failover 已有浏览器级证据
 
 ### 还不能在文档里写成“已完成”的能力
 
-- 邮箱登录与完整 workspace 权限系统
-- GitHub App onboarding 的浏览器级真实闭环
-- runtime pairing 冷启动一致性
-- 生产级 realtime
-- 真正的多 Agent 自治编排
+- `app.slock.ai` 式 workspace shell、DM、thread、search、profile surface
+- Board 次级化后的前端信息架构
+- GitHub App installation-complete 后的 live callback / repo 持续同步
+- 设备授权 / 完整邮箱验证 / 更完整外部身份绑定
+- destructive action approval、secret boundary、越界写保护
+- 真正的多 Agent 自治编排与更重的长期记忆整理
 
 如果某份文档把这些写成“已经做完”，那份文档就是漂了。
 

@@ -40,6 +40,7 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
 - web 壳可以展示 `Chat / Board / Inbox / Issues / Rooms / Agents / Setup / Settings`
 - server 有文件持久化状态、Issue 创建、Room/Run/Session 读取、PR 状态回写、runtime pairing、repo binding、GitHub readiness probe，以及 `gh CLI / GitHub App` 双 auth path 的 PR contract
 - daemon 可以探测本地 `codex` / `claude`，支持同步执行、流式执行，以及 `git worktree` lane 创建
+- 当前 `main` 也已经收住了 approval center、notification delivery、memory governance、stop/resume/follow-thread 和 multi-runtime scheduler / failover 的第一轮闭环
 
 ## 当前仓库真值
 
@@ -94,14 +95,14 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
   - 工作区会生成 `MEMORY.md`、`notes/`、`decisions/`、`.openshock/agents/...`
   - memory artifact 已有 version / governance / detail contract
 
-### 还没有做成“真服务”的部分
+### 还没有做成“完整产品闭环”的部分
 
-- 邮箱登录 / 多用户 workspace / 完整权限中心
-- GitHub App onboarding 和浏览器级真实回放
-- 完整的审批系统与通知系统
-- 多 Agent 调度 loop 与长期自治
-- 生产级 realtime 基础设施
-- runtime pairing 冷启动一致性修复
+- `app.slock.ai` 式 workspace shell、DM、thread、search、profile surface
+- Board 次级化后的前端信息架构
+- GitHub App installation-complete 后的 live callback / repo 持续同步
+- 设备授权 / 完整邮箱验证 / 更完整外部身份绑定
+- destructive action approval、secret boundary、越界写保护
+- 多 Agent 调度 loop 与更重的长期自治 / 长期记忆整理
 
 换句话说：现在已经是“可运行基线”，但还不是“完整产品闭环”。
 

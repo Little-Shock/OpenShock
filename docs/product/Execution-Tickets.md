@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.0
+**版本:** 1.1
 **更新日期:** 2026 年 4 月 7 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -8,8 +8,8 @@
 
 ## 一、使用方式
 
-- 这份文档只承接 **未完成功能** 的 canonical ticket backlog。
-- 已完成能力继续以 [Checklist](./Checklist.md) 和记实测试报告为准，不再重新起票。
+- 这份文档承接 **当前未完成功能** 的 canonical ticket backlog，并保留刚完成批次的简短归档。
+- 已完成能力的详细证据继续以 [Checklist](./Checklist.md) 和记实测试报告为准，不在这里重复展开。
 - 每张票必须绑定对应 `Checklist` 和 `Test Case`，否则不能 claim。
 
 ### 状态定义
@@ -21,247 +21,107 @@
 
 ---
 
-## 二、P0 收口票
+## 二、当前批次优先级
 
-## TKT-01 Runtime Pairing 冷启动一致性
+1. 前端主线先往 `app.slock.ai` 的协作壳靠拢。
+2. Board 保留，但降为次级 planning surface。
+3. destructive guard、GitHub live callback、设备授权继续保留在并行 backlog，不抢当前前端批次。
+
+### Frontend Batch Merge Gate
+
+- 每张前端票都必须补 headed browser walkthrough 证据，不接受只跑 headless。
+- 每张前端票都必须更新 `Checklist -> Test Cases -> Ticket` 的映射。
+- 每张前端票都必须做桌面主视口走查；如改布局，还要补一轮窄屏抽查。
+
+---
+
+## 三、当前待收口票
+
+## TKT-16 app.slock.ai Shell / Workspace Navigation Reframe
 
 - 状态: `todo`
 - 优先级: `P0`
-- 目标: 修复 server 冷启动后 pairing URL 与真实 daemon 漂移的问题，保证 Setup 首跳不 502。
+- 目标: 把当前多页面控制台壳重排成 `app.slock.ai` 风格的 workspace-scoped collaboration shell，让 `Channel / Room / Inbox / DM / Presence` 成为默认入口。
 - 范围:
-  - server pairing state 选取与 heartbeat 同步
-  - pairing GET truth 与 exec bridge truth 对齐
-  - regression tests
+  - sidebar order、workspace context、global search 入口、threads / saved 入口占位
+  - utility pages 降级为 secondary surfaces，不再和聊天壳抢主导航
+  - 现有 route regroup、shell primitives、responsive layout
 - 依赖: 无
 - Done When:
-  - 非默认 daemon 端口启动时，`GET /v1/runtime/pairing` 与 `POST /v1/exec` 首次即一致
-  - 相关 contract tests 通过
-- Checklist: `CHK-04` `CHK-14`
-- Test Cases: `TC-004` `TC-021` `TC-026`
+  - 用户进入应用后先落到统一工作区壳，而不是分散 utility page
+  - `Channel / Room / Inbox / Agent / Machine` 能在同一层级被发现
+  - headed walkthrough 能稳定覆盖新壳
+- Checklist: `CHK-01` `CHK-16`
+- Test Cases: `TC-028` `TC-031`
 
-## TKT-02 Release Gate 与 Smoke Hardening
+## TKT-17 DM / Thread / Search / Saved Surface
 
 - 状态: `todo`
 - 优先级: `P0`
-- 目标: 让 `ops:smoke` 和 release gate 真正能挡住 pairing 漂移，而不是假绿。
+- 目标: 补齐 Slock 壳最缺的消息型 surface，让 `DM / followed thread / saved / search` 成为真实前台入口。
 - 范围:
-  - `scripts/ops-smoke.sh`
-  - release gate pairing truth check
-  - Runbook / Observability 更新
-- 依赖: `TKT-01`
+  - DM 数据模型到前端入口
+  - followed thread / deep-link / unread semantics
+  - search / quick switch 入口与基础结果面
+  - saved / later 列表或等价暂存面
+- 依赖: `TKT-16`
 - Done When:
-  - pairing URL 漂移时 smoke 失败
-  - release gate 输出能明确指出失败原因
-- Checklist: `CHK-15`
-- Test Cases: `TC-021`
+  - 用户可从壳层进入 DM、线程回访和 search
+  - 线程可以被 follow / reopen，而不是只停在 run control 的 `follow-thread` 语义
+  - 至少有一条 headed browser walkthrough 覆盖 `channel -> thread -> reopen` 或等价 DM 流程
+- Checklist: `CHK-16` `CHK-17`
+- Test Cases: `TC-029` `TC-031`
 
-## TKT-03 Headed Setup 主链 E2E
-
-- 状态: `todo`
-- 优先级: `P0`
-- 目标: 建立非无头浏览器自动化，串起 Setup 主链和基础 product shell。
-- 范围:
-  - headed browser automation harness
-  - Setup repo binding / GitHub readiness / runtime pairing / bridge
-  - 安全的 screenshot / evidence 输出
-- 依赖: `TKT-01` `TKT-02`
-- Done When:
-  - headed 模式能稳定回放 Setup 主链
-  - 报告里有截图、步骤、结果
-- Checklist: `CHK-04` `CHK-15`
-- Test Cases: `TC-001` `TC-002` `TC-003` `TC-026`
-
----
-
-## 三、GitHub 闭环票
-
-## TKT-04 GitHub App Onboarding 与 Repo Binding UX
+## TKT-18 Agent / Machine / Human Profile + Presence
 
 - 状态: `todo`
 - 优先级: `P1`
-- 目标: 把当前 effective auth path 和 install state，收成真正可操作的 GitHub App onboarding 体验。
+- 目标: 把 `Agent / Machine / Human` 做成像 `app.slock.ai` 一样的一等资料面和 activity surface。
 - 范围:
-  - Setup 中的 installation action、missing fields、repo binding blocked contract
-  - 文档和运维配置说明
-  - 浏览器回放证据
-- 依赖: `TKT-03`
+  - profile routes / panel
+  - presence badges / activity summary / capability facts
+  - shell / room 内的 drill-in entry
+- 依赖: `TKT-16`
 - Done When:
-  - 用户能从 Setup 明确看到缺什么、去哪装、装完后怎么回来
-  - repo binding 在 app 未安装时给出清晰 blocked contract
-- Checklist: `CHK-04` `CHK-07`
-- Test Cases: `TC-015` `TC-022` `TC-026`
+  - shell 内任一 `Agent / Machine / Human` 可跳到 profile surface
+  - live state 的 presence / runtime / capability truth 被直接消费
+  - profile surface 不再只是孤立详情页
+- Checklist: `CHK-02` `CHK-17`
+- Test Cases: `TC-030`
 
-## TKT-05 Webhook Replay / Review Sync 实机验证
+## TKT-19 Room Context Tabs / Topic Workbench
 
 - 状态: `todo`
 - 优先级: `P1`
-- 目标: 把 webhook ingest、review/comment/check/merge 事件写回，从 contract test 推进到实机验证。
+- 目标: 把 Room 收成主工作台，让 `Chat / Topic / Run / PR / Context` 在一个 workbench 里切换，而不是频繁跳页。
 - 范围:
-  - webhook replay fixture
-  - signature verify / normalization
-  - state / inbox / room / PR reconciliation
-- 依赖: `TKT-04`
+  - room header tabs
+  - topic summary / run truth / PR truth / memory-context back-links
+  - room-first navigation and state persistence
+- 依赖: `TKT-16` `TKT-18`
 - Done When:
-  - webhook 事件回放能更新 PR / inbox / room
-  - 错误态有显式 observability
-- Checklist: `CHK-07`
-- Test Cases: `TC-015` `TC-025`
+  - Room 变成默认工作台
+  - `Chat / Topic / Run / PR` 切换不丢当前上下文
+  - run control、PR entry、inbox back-link 保持可用
+- Checklist: `CHK-06` `CHK-17`
+- Test Cases: `TC-031`
 
-## TKT-06 真实远端 PR 浏览器安全闭环
+## TKT-20 Board Secondary Planning Surface
 
 - 状态: `todo`
-- 优先级: `P1`
-- 目标: 在安全测试仓库里验证从 room 发起 PR、sync、merge 的浏览器级闭环。
+- 优先级: `P2`
+- 目标: 保留 Board，但把它降为 issue / room 的次级规划面，不再主导首页心智。
 - 范围:
-  - safe test repo / branch hygiene
-  - PR create / sync / merge happy path
-  - review decision / failure path evidence
-- 依赖: `TKT-04` `TKT-05`
+  - board nav demotion
+  - room / issue context back-links
+  - 更轻的 planning cards，与 issue lane 对齐
+- 依赖: `TKT-19`
 - Done When:
-  - 浏览器级和 API 级证据都能证明远端 PR 闭环真实可用
-  - failure path 不会静默吞掉
-- Checklist: `CHK-07`
-- Test Cases: `TC-016` `TC-022` `TC-025` `TC-026`
-
----
-
-## 四、身份与权限票
-
-## TKT-07 登录 / Session Foundation
-
-- 状态: `todo`
-- 优先级: `P1`
-- 目标: 收住登录、会话和基础身份链，结束“只有读取面、没有真实登录”的状态。
-- 范围:
-  - login / logout / session lifecycle
-  - session persistence
-  - access 页面与 server contract
-- 依赖: 无
-- Done When:
-  - 用户能完成登录并拿到真实 session
-  - 非登录态和登录态行为可区分
-- Checklist: `CHK-13`
-- Test Cases: `TC-012` `TC-014`
-
-## TKT-08 Workspace Invite / Member / Role
-
-- 状态: `todo`
-- 优先级: `P1`
-- 目标: 把 workspace member、invite、role 管理做成真实团队能力。
-- 范围:
-  - invite / accept
-  - member roster
-  - role change UI + API
-- 依赖: `TKT-07`
-- Done When:
-  - workspace 成员能被邀请、加入、调整角色
-  - 权限变化在 UI 和 API 同时生效
-- Checklist: `CHK-13`
-- Test Cases: `TC-014` `TC-024`
-
-## TKT-09 Action-level AuthZ Matrix
-
-- 状态: `todo`
-- 优先级: `P1`
-- 目标: 把 issue / room / run / inbox / repo binding / PR 相关关键动作全接到角色权限矩阵。
-- 范围:
-  - permission matrix
-  - backend guards
-  - UI disable / denied states
-- 依赖: `TKT-07` `TKT-08`
-- Done When:
-  - viewer / reviewer / admin 的动作边界清楚且有测试锁住
-  - 写接口不会再凭默认本地身份放行
-- Checklist: `CHK-12` `CHK-13`
-- Test Cases: `TC-011` `TC-024` `TC-027`
-
----
-
-## 五、审批与通知票
-
-## TKT-10 Approval Center Lifecycle
-
-- 状态: `todo`
-- 优先级: `P1`
-- 目标: 把当前 Inbox 卡片提升成完整审批中心，而不是只做局部 decision mutation。
-- 范围:
-  - approval / blocked / review / status lifecycle
-  - filter / unread / resolution semantics
-  - room / run / PR back-link
-- 依赖: `TKT-09`
-- Done When:
-  - approval center 有稳定生命周期
-  - 人类决策能完整回写对应对象
-- Checklist: `CHK-08` `CHK-11`
-- Test Cases: `TC-010` `TC-027`
-
-## TKT-11 Notification Preference 与 Delivery
-
-- 状态: `todo`
-- 优先级: `P1`
-- 目标: 做出浏览器 push / email fanout 的真实通知链。
-- 范围:
-  - notification preferences
-  - subscriber model
-  - browser push / email delivery worker
-- 依赖: `TKT-10`
-- Done When:
-  - blocked / review / approval 事件能主动触达
-  - 失败和重试有显式状态
-- Checklist: `CHK-11`
-- Test Cases: `TC-017`
-
----
-
-## 六、执行控制与治理票
-
-## TKT-12 Memory Injection / Promotion / Governance Surface
-
-- 状态: `todo`
-- 优先级: `P1`
-- 目标: 把当前后端已有的 memory contract 继续推进成可治理、可注入、可提升的产品面。
-- 范围:
-  - memory center
-  - diff / audit / governance UI
-  - injection policy
-  - skill / policy promotion flow
-- 依赖: 无
-- Done When:
-  - 用户能看到 version / diff / audit
-  - 高价值经验可提升为 skill / policy
-- Checklist: `CHK-10`
-- Test Cases: `TC-019` `TC-023`
-
-## TKT-13 Stop / Resume / Follow-thread
-
-- 状态: `todo`
-- 优先级: `P1`
-- 目标: 让人类可以真正暂停、恢复和接续线程。
-- 范围:
-  - run state machine
-  - room / run UI controls
-  - follow-thread semantics
-- 依赖: `TKT-09`
-- Done When:
-  - stop / resume / follow-thread 都有真实状态变化和回写
-- Checklist: `CHK-09`
-- Test Cases: `TC-018`
-
-## TKT-14 Multi-runtime Scheduler / Failover
-
-- 状态: `done`
-- 优先级: `P1`
-- 目标: 从 registry/pairing 基线升级到真实调度器、lease 和 failover。
-- 范围:
-  - runtime scheduler
-  - selection / lease / conflict guard
-  - offline / failover handling
-- 依赖: `TKT-01`
-- Done When:
-  - 多 runtime 调度决策可见
-  - offline runtime 有显式 failover 行为
-- Checklist: `CHK-14`
-- Test Cases: `TC-020`
+  - Board 仍可创建 / 浏览 issue，但不再是 primary shell center
+  - 进入 Room / Issue 后能顺手打开 planning surface 再回来
+  - 文档、导航和用词都不再把 Board 写成默认中心
+- Checklist: `CHK-05` `CHK-18`
+- Test Cases: `TC-032`
 
 ## TKT-15 Sandbox / Secrets / Destructive Action Guard
 
@@ -272,9 +132,42 @@
   - secret boundary
   - destructive git / filesystem approval
   - sandbox mode visibility
-- 依赖: `TKT-09`
+- 依赖: 无
 - Done When:
   - destructive action 进入 approval required
   - secrets 与 runtime capability 边界清楚
 - Checklist: `CHK-12`
 - Test Cases: `TC-027`
+
+---
+
+## 四、已完成批次归档
+
+- `TKT-01` `done`
+  - Runtime pairing 冷启动一致性已收平，Setup 首跳不再因旧 daemon URL 漂移而 502。
+- `TKT-02` `done`
+  - `ops:smoke` / release gate 已能显式拦截 pairing 漂移。
+- `TKT-03` `done`
+  - headed Setup 主链自动化已建立，并能输出截图、trace、日志与报告。
+- `TKT-04` `done`
+  - GitHub App onboarding / repo binding blocked UX 已在浏览器里可复核。
+- `TKT-05` `done`
+  - signed webhook replay / review sync exact evidence 已补齐。
+- `TKT-06` `done`
+  - 真实远端 PR create / sync / merge browser loop 已通过。
+- `TKT-07` `done`
+  - login / logout / session persistence foundation 已站住。
+- `TKT-08` `done`
+  - workspace invite / member / role lifecycle 已站住。
+- `TKT-09` `done`
+  - action-level authz matrix 已接到 live frontend + backend guards。
+- `TKT-10` `done`
+  - approval center lifecycle 已落到 `/inbox`。
+- `TKT-11` `done`
+  - browser push / email preference / delivery chain 已站住。
+- `TKT-12` `done`
+  - memory injection / promotion / governance surface 已站住。
+- `TKT-13` `done`
+  - stop / resume / follow-thread 人类接管链已站住。
+- `TKT-14` `done`
+  - multi-runtime scheduler / lease / failover 已站住。

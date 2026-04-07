@@ -143,7 +143,7 @@ function SurfaceStateMessage({
 
 export function StitchBoardView() {
   const router = useRouter();
-  const { state, loading, error, createIssue } = usePhaseZeroState();
+  const { state, approvalCenter, loading, error, createIssue } = usePhaseZeroState();
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("把真实 PR 写回接进讨论间");
   const [summary, setSummary] = useState("从房间直接创建 PR，并把 review / merge 状态回写到 Room 和 Inbox。");
@@ -156,9 +156,13 @@ export function StitchBoardView() {
   const livePullRequests = loading || error ? [] : state.pullRequests;
   const columns = buildBoardColumns(liveIssues);
   const sidebarChannels = loading || error ? [] : state.channels;
+  const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = liveMachines;
   const sidebarAgents = liveAgents;
   const activeAgents = liveAgents.filter((agent) => agent.state === "running").length;
+  const inboxCount = loading || error ? 0 : approvalCenter.openCount;
+  const workspaceName = loading || error ? undefined : state.workspace.name;
+  const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
 
   async function handleCreateIssue() {
     if (!title.trim() || creating || !canCreateIssue) return;
@@ -178,10 +182,26 @@ export function StitchBoardView() {
 
   return (
     <main className="h-screen overflow-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
-      <div className="grid h-screen w-screen overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[256px_minmax(0,1fr)]">
-        <StitchSidebar active="board" channels={sidebarChannels} machines={sidebarMachines} agents={sidebarAgents} />
+      <div className="grid h-screen w-screen overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[298px_minmax(0,1fr)]">
+        <StitchSidebar
+          active="board"
+          channels={sidebarChannels}
+          rooms={sidebarRooms}
+          machines={sidebarMachines}
+          agents={sidebarAgents}
+          workspaceName={workspaceName}
+          workspaceSubtitle={workspaceSubtitle}
+          inboxCount={inboxCount}
+        />
         <section className="flex min-h-0 flex-col">
-          <StitchTopBar tabs={["仪表盘", "任务板", "节点"]} activeTab="任务板" searchPlaceholder="搜索任务..." />
+          <StitchTopBar
+            eyebrow="Planning Surface"
+            title="Board"
+            description="Board 是 issue room 的 planning mirror，不是主协作入口。真正的推进仍然发生在聊天、讨论间和 inbox。"
+            tabs={["Rooms First", "Board", "Machines"]}
+            activeTab="Board"
+            searchPlaceholder="Search issue / room / run"
+          />
           <div className="border-b-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-2">
             <div className="grid items-center gap-3 xl:grid-cols-[220px_160px_1fr_auto_auto]">
               <p className="font-mono text-[10px] tracking-[0.16em]">{liveMachines.length} machines visible</p>
@@ -285,10 +305,14 @@ export function StitchInboxView() {
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [activeFilter, setActiveFilter] = useState<ApprovalCenterFilter>("all");
   const sidebarChannels = loading || error ? [] : state.channels;
+  const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = loading || error ? [] : state.machines;
   const sidebarAgents = loading || error ? [] : state.agents;
   const centerLoading = loading || approvalCenterLoading;
   const blockedCount = loading || error ? 0 : approvalCenter.blockedCount;
+  const inboxCount = loading || error ? 0 : approvalCenter.openCount;
+  const workspaceName = loading || error ? undefined : state.workspace.name;
+  const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
 
   function findPullRequestForItem(item: Pick<ApprovalCenterItem, "href" | "roomId" | "runId">) {
     return state.pullRequests.find(
@@ -340,10 +364,26 @@ export function StitchInboxView() {
 
   return (
     <main className="h-screen overflow-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
-      <div className="grid h-screen w-screen overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[256px_minmax(0,1fr)]">
-        <StitchSidebar active="inbox" channels={sidebarChannels} machines={sidebarMachines} agents={sidebarAgents} />
+      <div className="grid h-screen w-screen overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[298px_minmax(0,1fr)]">
+        <StitchSidebar
+          active="inbox"
+          channels={sidebarChannels}
+          rooms={sidebarRooms}
+          machines={sidebarMachines}
+          agents={sidebarAgents}
+          workspaceName={workspaceName}
+          workspaceSubtitle={workspaceSubtitle}
+          inboxCount={inboxCount}
+        />
         <section className="flex min-h-0 flex-col">
-          <StitchTopBar tabs={["仪表盘", "收件箱", "系统"]} activeTab="收件箱" searchPlaceholder="搜索信号..." />
+          <StitchTopBar
+            eyebrow="Human Decision Surface"
+            title="Approval Center"
+            description="这里是需要人类判断的唯一入口。approval、blocked、review 会在这里汇总，并回跳到 room / run / PR。"
+            tabs={["Inbox", "Review", "Recent"]}
+            activeTab="Inbox"
+            searchPlaceholder="Search approval / review / block"
+          />
           <div className="flex-1 overflow-y-auto bg-white px-10 py-8">
             <div className="mx-auto max-w-5xl">
               <p className="inline-flex rounded-[4px] bg-[#ead7ff] px-2 py-1 font-mono text-[9px] text-[var(--shock-purple)]">HUMAN INTELLIGENCE REQUIRED</p>

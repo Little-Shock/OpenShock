@@ -1,6 +1,6 @@
 # OpenShock Product Checklist
 
-**版本:** 1.0
+**版本:** 1.1
 **更新日期:** 2026 年 4 月 7 日
 **关联文档:** [PRD](./PRD.md) · [Phase 0 MVP](./Phase0-MVP.md) · [Execution Tickets](./Execution-Tickets.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -41,9 +41,10 @@
   - 多 runtime 调度与 failover
   - 执行隔离与权限控制
 - 主要 GAP:
+  - `app.slock.ai` 式 workspace shell、DM、thread、search、profile surface 仍未收平
+  - Board 还没有退到次级 planning surface
   - GitHub App installation-complete 后的 live webhook / repo 持续同步
   - 设备授权 / 完整邮箱验证 / 更完整成员权限链路
-  - 更细粒度通知策略与跨设备恢复触达
   - destructive action approval、secrets 分层、越界写保护
   - 更重的长期记忆整理与外部 provider 编排
 
@@ -62,8 +63,9 @@
   - [x] 主要页面可在浏览器走查中打开
   - [x] room / run 现在已有真实的 `stop / resume / follow-thread` 控制面，不再只停在协作文案
 - 当前 GAP:
-  - [ ] `DM / Machine / Topic` 仍未形成完整的一等入口
-  - [ ] Slock 式 presence 与跨 channel/room 的 follow-thread 编排还未完整产品化
+  - [ ] `app.slock.ai` 式 workspace shell、search、threads/saved 还未成型
+  - [ ] `DM / Machine / Topic / Thread` 仍未形成完整的一等入口
+  - [ ] Board 仍偏主入口，尚未退到次级 planning surface
 - 对应 Test Cases: `TC-001` `TC-007` `TC-018`
 
 ### CHK-02 Agent 一等公民模型
@@ -276,14 +278,58 @@
   - [ ] 产品指标、体验指标、设计指标尚未形成持续观测
 - 对应 Test Cases: `TC-011` `TC-021` `TC-026`
 
+### CHK-16 app.slock.ai 壳层对齐与导航秩序
+
+- PRD 来源: 六、八
+- 优先级: P0
+- 当前状态: 部分完成
+- 已落地:
+  - [x] 当前 web 已有频道、讨论间、收件箱、Setup、Agent、Machine 数据源与基础左栏骨架
+  - [x] `OpenShockShell`、`StitchSidebar`、`StitchTopBar` 已提供可演进的全屏壳层原语
+  - [x] `/v1/state` 已能把 channels / agents / machines / inbox / rooms 收成同一份 workspace truth
+- 当前 GAP:
+  - [ ] 仍缺 `app.slock.ai` 式 workspace-scoped shell：统一 sidebar order、global search 入口、threads/saved 快捷面、workspace context
+  - [ ] `Setup / Issues / Runs / Agents / Memory / Access / Settings` 仍像后台导航，而不是协作壳中的次级 surface
+  - [ ] `DM` 还没有成为一等协作入口
+- 对应 Test Cases: `TC-028` `TC-029`
+
+### CHK-17 会话上下文、Presence 与 Profile Surface
+
+- PRD 来源: 七、八、十
+- 优先级: P0/P1
+- 当前状态: 部分完成
+- 已落地:
+  - [x] room / run 已有 live truth，且 stop / resume / follow-thread 已可真实回写
+  - [x] room 数据里已有 topic，shell 与 setup 侧已有 machine / agent summary
+  - [x] Agent 列表、Room 详情、Run 详情已经存在
+- 当前 GAP:
+  - [ ] `Thread / followed thread / saved later` 还没形成完整前台工作流
+  - [ ] `Agent / Machine / Human` 还没有像 `app.slock.ai` 那样的一等 profile route / panel
+  - [ ] Room 还缺稳定的 `Chat / Topic / Run / PR / Context` 工作台 tabs，用户仍需频繁跨页面跳转
+- 对应 Test Cases: `TC-030` `TC-031`
+
+### CHK-18 Board 次级规划面
+
+- PRD 来源: 六.3、八、十
+- 优先级: P2
+- 当前状态: 部分完成
+- 已落地:
+  - [x] `/board` 已接 live issue truth，并可创建 issue 后进入 room
+  - [x] board lane 与 issue -> room -> run 主链已联动
+- 当前 GAP:
+  - [ ] Board 仍是主导航显眼入口，优先级还高于 DM / Thread / Profile / Search
+  - [ ] Board 还没有明确退到 issue / room planning surface，而不是首页心智中心
+  - [ ] Board 与 room / topic / run context 的回跳关系仍不够紧
+- 对应 Test Cases: `TC-032`
+
 ---
 
 ## 四、近期收口顺序
 
-1. 先修 `CHK-04/CHK-14` 的 runtime pairing 冷启动一致性。
-2. 再把 `CHK-15` 的 smoke gate 补到能识别 pairing 漂移。
-3. 然后按 `CHK-07/CHK-13/CHK-11` 推进 GitHub 授权、成员权限、通知链。
-4. 最后再做 `CHK-14/CHK-15` 这类多 runtime 调度与安全 guard，以及更重的长期记忆增强。
+1. 先收 `CHK-16`，把 `app.slock.ai` 式 shell、sidebar order、search、workspace context 和 DM 框架立住。
+2. 再收 `CHK-17`，把 thread / profile / presence / room workbench tabs 接成统一前台工作面。
+3. 然后处理 `CHK-18`，把 Board 明确降为次级 planning surface，不再主导首页心智。
+4. 并行保留 `CHK-07/CHK-12/CHK-13/CHK-15` 的 GitHub live callback、设备授权、destructive guard 与持续观测，但不抢当前前端主线批次。
 
 ---
 
@@ -297,3 +343,6 @@
 - `CHK-09` -> `TKT-13`
 - `CHK-14` -> `TKT-14`
 - `CHK-12` -> `TKT-15`
+- `CHK-01` `CHK-16` -> `TKT-16` `TKT-17`
+- `CHK-02` `CHK-06` `CHK-17` -> `TKT-18` `TKT-19`
+- `CHK-05` `CHK-18` -> `TKT-20`

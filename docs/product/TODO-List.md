@@ -1,7 +1,7 @@
 # OpenShock To Do List
 
-**版本:** 0.3
-**更新日期:** 2026 年 4 月 6 日
+**版本:** 0.4
+**更新日期:** 2026 年 4 月 7 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -22,94 +22,95 @@
 
 ## 二、当前已经站住的基线
 
-- chat-first 主壳与主要路由可在浏览器打开
-- issue -> room -> run -> session -> worktree lane 主链已存在
-- daemon bridge 可执行本地 prompt
-- memory 列表/详情、version/governance contract 和文件写回已存在
-- auth session / workspace members / owner-side roster mutation surface 已存在
-- state SSE 初始快照已存在
+- Setup 主链、runtime pairing 冷启动一致性、release smoke gate 已站住
+- 真实远端 PR browser loop、signed webhook replay 已站住
+- login / session / invite / member role / action-level authz matrix 已站住
+- approval center、notification delivery、memory governance、stop/resume/follow-thread 已站住
+- multi-runtime scheduler / active lease / offline failover 已站住
 
-这些能力的详细验收见 [Product Checklist](./Checklist.md) 中的 `CHK-01/03/05/10/13/15`。
+这些能力的详细验收见 [Product Checklist](./Checklist.md) 中的 `CHK-04/07/08/09/10/11/12/13/14/15`。
 
 ---
 
 ## 三、当前必须先收的 GAP
 
-### GAP-01 Runtime Pairing 冷启动一致性
+### GAP-07 app.slock.ai 壳层对齐
 
-- 现象:
-  - `GET /v1/runtime/pairing` 可能返回旧的 `8090`
-  - 实际活跃 daemon 在 `18090`
-  - 首次 `POST /v1/exec` 会直接 `502`
+- 现状:
+  - 当前已有 chat-first 路由和全屏壳层原语，但整体还是“多页面控制台”
+  - `app.slock.ai` 式 workspace shell、sidebar order、search、threads/saved 入口还没形成
 - 影响:
-  - Setup 主链首跳失败
-  - `ops:smoke` 产生假绿
+  - 前端气质仍偏后台，不够像真正的协作壳
+  - 用户仍需要在多个 utility page 之间跳转
 - 相关合同:
-  - `CHK-04`
-  - `CHK-14`
-  - `CHK-15`
+  - `CHK-01`
+  - `CHK-16`
 - 优先级: P0
 
-### GAP-02 GitHub App / Webhook / 真实远端 PR 闭环
+### GAP-08 DM / Thread / Profile / Presence 工作面
 
 - 现状:
-  - 当前已经有 effective auth path、app-backed PR create/sync/merge contract 和相关 tests
-  - 但 onboarding、浏览器级真实回放、live repo/webhook 实机验证还没收口
+  - room / run / topic / machine / agent truth 已有数据基础
+  - 但 `DM / followed thread / saved / agent-machine-human profile / room workbench tabs` 还未形成统一前台工作流
+- 影响:
+  - OpenShock 还不像 `app.slock.ai` 那样以“会话 + 人物/机器资料面”驱动工作
+  - 线程、人物、机器、run truth 仍过度依赖分散页面
 - 相关合同:
-  - `CHK-07`
-  - `CHK-13`
+  - `CHK-02`
+  - `CHK-06`
+  - `CHK-17`
 - 优先级: P0/P1
 
-### GAP-03 完整身份、成员、角色与设备授权
+### GAP-09 Board 次级化
 
 - 现状:
-  - login / logout / session persistence foundation 已站住，`/access` 已消费 live auth/member/role truth
-  - owner-side invite、member role/status mutation 已接进 `/access`
-  - 跨 issue / room / run / inbox / repo / runtime 的 action-level authz matrix 已收平
-  - 设备授权与完整邮箱验证流程仍未完成
+  - `/board` 已接 live issue truth，并能创建 issue 后进入 room
+  - 但 Board 目前仍是主导航中的高优先级入口
+- 影响:
+  - 产品心智仍会被“任务板”拉偏，不够像 Slock 式协作壳
+  - Room / Topic / Run 的工作台主线不够突出
+- 相关合同:
+  - `CHK-05`
+  - `CHK-18`
+- 优先级: P2
+
+### GAP-10 GitHub App installation-complete live callback
+
+- 现状:
+  - onboarding、webhook replay、远端 PR merge 已经站住
+  - installation-complete 后的 live callback / repo 持续同步仍缺实机闭环
+- 相关合同:
+  - `CHK-07`
+- 优先级: P1
+
+### GAP-11 设备授权 / 完整邮箱验证
+
+- 现状:
+  - login / invite / role / authz matrix 已站住
+  - 设备授权、verify / reset 邮件链、完整外部身份绑定仍未产品化
 - 相关合同:
   - `CHK-12`
   - `CHK-13`
 - 优先级: P1
 
-### GAP-04 通知、恢复触达与审批中心产品化
+### GAP-12 Destructive Guard / Secret Boundary
 
 - 现状:
-  - notifications 对象存在
-  - approval center lifecycle 已落到 `/inbox`
-  - `/settings` 已接上 browser push / email policy、subscriber model、fanout receipts 与 retry truth
-  - 邀请 / verify / reset password mail template 仍未接到同一 delivery chain
+  - 权限矩阵与 run control 已站住
+  - destructive action approval、secret boundary、越界写保护仍未产品化
 - 相关合同:
-  - `CHK-08`
-  - `CHK-11`
+  - `CHK-12`
 - 优先级: P1
-
-### GAP-05 多 Runtime 调度与 Failover
-
-- 现状:
-  - registry / pairing / selection / scheduler / lease / failover handling 已落地
-  - 当前剩余的 runtime 风险已收敛到 `GAP-01` 的 pairing 冷启动一致性，不再是独立的 scheduler blocker
-- 相关合同:
-  - `CHK-14`
-- 优先级: P1
-
-### GAP-06 Long-term Memory Hardening
-
-- 现状:
-  - 当前已有 run stop/resume/follow-thread 人类接管闭环，以及 memory contract、injection preview 与 skill/policy promotion flow
-  - 更重的长期记忆整理引擎、TTL、去重压缩与外部 provider 编排仍未完成
-- 相关合同:
-  - `CHK-10`
-- 优先级: P2
 
 ---
 
 ## 四、推荐推进顺序
 
-1. 先修 `GAP-01`，同时补 `ops:smoke`，把 Setup 主链和回归门收稳。
-2. 再推进 `GAP-02`，把 GitHub 线从“探测/本地状态”升级到“远端闭环”。
-3. 然后处理 `GAP-03` 与 `GAP-04`，补团队级身份与通知能力。
-4. 最后推进 `GAP-05` 与 `GAP-06`，扩到多 runtime 调度和更重的长期记忆增强。
+1. 先做 `TKT-16`，把 `GAP-07` 的 shell / sidebar / search / workspace context 立住。
+2. 再做 `TKT-17`，把 `DM / thread / saved / search` 接进同一条前台消息工作流。
+3. 然后做 `TKT-18` 和 `TKT-19`，把 `Agent / Machine / Human profile` 与 `Room workbench tabs` 做成完整协作面。
+4. 最后再做 `TKT-20`，把 Board 明确降到次级 planning surface。
+5. `GAP-10/11/12` 继续保留并行 backlog，但不抢当前前端主线优先级。
 
 ---
 
