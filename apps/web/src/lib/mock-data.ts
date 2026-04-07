@@ -543,7 +543,6 @@ export const auth: AuthSnapshot = {
 
 export const tabs: Array<{ id: AppTab; label: string; href: string }> = [
   { id: "chat", label: "频道", href: "/chat/all" },
-  { id: "rooms", label: "讨论间", href: "/rooms" },
   { id: "inbox", label: "收件箱", href: "/inbox" },
   { id: "board", label: "任务板", href: "/board" },
 ];

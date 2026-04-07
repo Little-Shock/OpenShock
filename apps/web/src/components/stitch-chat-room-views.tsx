@@ -800,14 +800,8 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
               <span className="border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
                 {room?.issueKey ?? "issue"}
               </span>
-              <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-                topic {room?.topic.status ?? "syncing"}
-              </span>
               <span className="border border-[var(--shock-ink)] bg-[var(--shock-cyan)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
                 run {currentRunStatus ?? "syncing"}
-              </span>
-              <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-                {activeAgents.length} agents
               </span>
               <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
                 {room?.boardCount ?? 0} board cards
@@ -819,10 +813,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
               <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">
-                      Live Collaboration
-                    </p>
-                    <p className="mt-1 font-display text-[18px] font-bold">
+                    <p className="font-display text-[18px] font-bold">
                       {room?.topic.title ?? "等待讨论间同步"}
                     </p>
                   </div>

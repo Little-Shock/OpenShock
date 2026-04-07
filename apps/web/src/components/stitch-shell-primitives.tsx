@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import type { AgentStatus, Channel, MachineStatus, Room } from "@/lib/mock-data";
 
@@ -122,23 +123,36 @@ type StitchSidebarProps = {
 function SidebarSection({
   title,
   count,
+  defaultOpen = true,
   children,
 }: {
   title: string;
   count?: number;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+
   return (
     <section className="mt-3">
-      <div className="mb-2 flex items-center justify-between gap-2 px-2">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:rgba(24,20,14,0.62)]">
-          {title}
-        </p>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="mb-2 flex w-full items-center justify-between gap-2 px-2 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.62)]">
+            {open ? "v" : ">"}
+          </span>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:rgba(24,20,14,0.62)]">
+            {title}
+          </p>
+        </div>
         {typeof count === "number" ? (
           <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.52)]">{count}</span>
         ) : null}
-      </div>
-      <div className="space-y-1">{children}</div>
+      </button>
+      {open ? <div className="space-y-1">{children}</div> : null}
     </section>
   );
 }
@@ -185,6 +199,7 @@ export function StitchSidebar({
   const openInboxCount = inboxCount ?? 0;
   const runningAgents = agentList.filter((agent) => agent.state === "running").length;
   const blockedAgents = agentList.filter((agent) => agent.state === "blocked").length;
+  const selectedRoom = selectedRoomId ? roomList.find((room) => room.id === selectedRoomId) : undefined;
 
   return (
     <aside className="hidden h-full w-[286px] flex-col border-r-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] md:flex">
@@ -229,32 +244,10 @@ export function StitchSidebar({
               "flex items-center gap-2 border-2 border-[var(--shock-ink)] px-2 py-2 text-sm shadow-[var(--shock-shadow-sm)]",
               active === "channels" ? "bg-[var(--shock-pink)] font-semibold text-white" : "border-transparent bg-transparent hover:border-[var(--shock-ink)] hover:bg-white"
             )}
-          >
+            >
             <HashIcon />
             <span className="flex-1">Search</span>
             <span className="font-mono text-[10px]">Ctrl+K</span>
-          </Link>
-          <Link
-            href="/rooms"
-            className={cn(
-              "flex items-center gap-2 border-2 px-2 py-2 text-sm",
-              active === "rooms" ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]" : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
-            )}
-          >
-            <RoomIcon />
-            <span className="flex-1">Rooms</span>
-            <span className="font-mono text-[10px]">{roomList.length}</span>
-          </Link>
-          <Link
-            href="/inbox"
-            className={cn(
-              "flex items-center gap-2 border-2 px-2 py-2 text-sm",
-              active === "inbox" ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]" : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
-            )}
-          >
-            <InboxIcon />
-            <span className="flex-1">Inbox</span>
-            <span className="font-mono text-[10px]">{openInboxCount}</span>
           </Link>
         </div>
 
@@ -286,7 +279,7 @@ export function StitchSidebar({
           ))}
         </SidebarSection>
 
-        <SidebarSection title="Issue Rooms" count={roomList.length}>
+        <SidebarSection title="Rooms" count={roomList.length} defaultOpen={Boolean(selectedRoomId) || roomList.length <= 5}>
           {roomList.map((room) => (
             <Link
               key={room.id}
@@ -311,49 +304,50 @@ export function StitchSidebar({
             </Link>
           ))}
         </SidebarSection>
-
-        <SidebarSection title="Agents" count={agentList.length}>
-          {agentList.slice(0, 6).map((agent) => (
-            <Link
-              key={agent.id}
-              href={`/agents/${agent.id}`}
-              className="block border-2 border-transparent px-2 py-2 text-sm transition-colors hover:border-[var(--shock-ink)] hover:bg-white"
-            >
-              <div className="flex items-center gap-2">
-                <span className={cn("h-2.5 w-2.5 rounded-full border border-[var(--shock-ink)]", agentStateTone(agent.state))} />
-                <p className="min-w-0 flex-1 truncate font-medium">{agent.name}</p>
-              </div>
-              <p className="mt-1 truncate pl-4 font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
-                {agentStateLabel(agent.state)} · {agent.runtimePreference}
-              </p>
-            </Link>
-          ))}
-        </SidebarSection>
       </div>
 
       <div className="border-t-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-2">
-        <Link
-          href="/board"
-          className={cn(
-            "flex items-center justify-between border-2 px-2 py-2 text-sm",
-            active === "board" ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]" : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
-          )}
-        >
-          <span className="font-medium">Board</span>
-          <span className="font-mono text-[10px] uppercase">secondary</span>
-        </Link>
-        <div className="mt-2 border-2 border-[var(--shock-ink)] bg-white px-2 py-2 text-[11px] shadow-[var(--shock-shadow-sm)]">
-          <div className="flex items-center justify-between">
-            <span>Running</span>
-            <span className="font-mono">{runningAgents}</span>
+        <div className="grid grid-cols-2 gap-2">
+          <Link
+            href="/inbox"
+            className={cn(
+              "flex items-center justify-between border-2 px-2 py-2 text-sm shadow-[var(--shock-shadow-sm)]",
+              active === "inbox" ? "border-[var(--shock-ink)] bg-[var(--shock-pink)] text-white" : "bg-white"
+            )}
+          >
+            <span className="font-medium">Inbox</span>
+            <span className="font-mono text-[10px]">{openInboxCount}</span>
+          </Link>
+          <Link
+            href="/board"
+            className={cn(
+              "flex items-center justify-between border-2 px-2 py-2 text-sm shadow-[var(--shock-shadow-sm)]",
+              active === "board" ? "border-[var(--shock-ink)] bg-white" : "bg-white"
+            )}
+          >
+            <span className="font-medium">Board</span>
+            <span className="font-mono text-[10px]">{roomList.length}</span>
+          </Link>
+        </div>
+
+        <div className="mt-2 border-2 border-[var(--shock-ink)] bg-white px-2 py-2 shadow-[var(--shock-shadow-sm)]">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate font-display text-[14px] font-bold leading-none">
+                {selectedRoom?.title || workspaceName || "OpenShock"}
+              </p>
+              <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
+                {selectedRoom ? selectedRoom.issueKey : workspaceSubtitle || "shock-main"}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-mono text-[10px] uppercase text-[color:rgba(24,20,14,0.56)]">runtime</p>
+              <p className="font-mono text-[10px] uppercase">{runningAgents}/{machineList.length}</p>
+            </div>
           </div>
-          <div className="mt-1 flex items-center justify-between">
-            <span>Blocked</span>
+          <div className="mt-2 flex items-center justify-between text-[11px]">
+            <span>blocked</span>
             <span className="font-mono">{blockedAgents}</span>
-          </div>
-          <div className="mt-1 flex items-center justify-between">
-            <span>Machines</span>
-            <span className="font-mono">{machineList.length}</span>
           </div>
         </div>
       </div>
