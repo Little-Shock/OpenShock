@@ -147,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/state", s.handleState)
 	mux.HandleFunc("/v1/workspace", s.handleWorkspace)
 	mux.HandleFunc("/v1/channels", s.handleChannels)
+	mux.HandleFunc("/v1/channels/", s.handleChannelRoutes)
 	mux.HandleFunc("/v1/issues", s.handleIssues)
 	mux.HandleFunc("/v1/rooms", s.handleRooms)
 	mux.HandleFunc("/v1/rooms/", s.handleRoomRoutes)
@@ -197,6 +198,40 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.store.Snapshot().Channels)
+}
+
+func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/v1/channels/")
+	if strings.HasSuffix(path, "/messages") {
+		channelID := strings.TrimSuffix(path, "/messages")
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		var req RoomMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		prompt := strings.TrimSpace(req.Prompt)
+		if prompt == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "prompt is required"})
+			return
+		}
+		nextState, err := s.store.AppendChannelConversation(channelID, prompt)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				status = http.StatusNotFound
+			}
+			writeJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"state": nextState})
+		return
+	}
+
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "channel route not found"})
 }
 
 func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {

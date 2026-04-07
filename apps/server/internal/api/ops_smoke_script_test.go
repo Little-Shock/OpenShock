@@ -147,14 +147,35 @@ func runOpsSmokeScript(t *testing.T, serverURL, daemonURL string) (string, error
 	}
 	projectRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", "..", ".."))
 	scriptPath := filepath.Join(projectRoot, "scripts", "ops-smoke.sh")
+	if runtime.GOOS == "windows" {
+		scriptPath = windowsPathToBashPath(scriptPath)
+	} else {
+		scriptPath = filepath.ToSlash(scriptPath)
+	}
 
-	cmd := exec.Command("bash", scriptPath)
-	cmd.Dir = projectRoot
-	cmd.Env = append(cmd.Environ(),
-		"OPENSHOCK_SERVER_URL="+serverURL,
-		"OPENSHOCK_DAEMON_URL="+daemonURL,
+	commandLine := strings.Join([]string{
+		"OPENSHOCK_SERVER_URL=" + shellQuote(serverURL),
+		"OPENSHOCK_DAEMON_URL=" + shellQuote(daemonURL),
 		"OPENSHOCK_CURL_MAX_TIME=2",
-	)
+		shellQuote(scriptPath),
+	}, " ")
+	cmd := exec.Command("bash", "-lc", commandLine)
+	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func windowsPathToBashPath(path string) string {
+	path = filepath.Clean(path)
+	path = filepath.ToSlash(path)
+	if len(path) >= 2 && path[1] == ':' {
+		drive := strings.ToLower(path[:1])
+		rest := strings.TrimPrefix(path[2:], "/")
+		return "/mnt/" + drive + "/" + rest
+	}
+	return path
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }

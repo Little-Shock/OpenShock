@@ -233,7 +233,7 @@ function ClaudeCompactComposer({
 }
 
 export function StitchChannelsView({ channelId }: { channelId: string }) {
-  const { state, loading, error } = usePhaseZeroState();
+  const { state, loading, error, postChannelMessage } = usePhaseZeroState();
   const channel = loading || error ? undefined : state.channels.find((item) => item.id === channelId);
   const messages = channel ? state.channelMessages[channel.id] ?? [] : [];
   const sidebarChannels = loading || error ? [] : state.channels;
@@ -241,10 +241,29 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
   const sidebarAgents = loading || error ? [] : state.agents;
   const runningAgents = sidebarAgents.filter((agent) => agent.state === "running").length;
   const blockedAgents = sidebarAgents.filter((agent) => agent.state === "blocked").length;
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  async function handleChannelSend() {
+    if (!channel || !draft.trim() || sending || loading || Boolean(error)) {
+      return;
+    }
+    setSending(true);
+    setSendError(null);
+    try {
+      await postChannelMessage(channel.id, draft.trim());
+      setDraft("");
+    } catch (channelError) {
+      setSendError(channelError instanceof Error ? channelError.message : "频道消息发送失败");
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
-    <main className="h-screen overflow-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
-      <div className="grid h-screen w-screen overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[256px_minmax(0,1fr)]">
+    <main className="min-h-screen overflow-x-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
+      <div className="grid min-h-screen w-full border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[256px_minmax(0,1fr)]">
         <StitchSidebar active="channels" channels={sidebarChannels} machines={sidebarMachines} agents={sidebarAgents} />
         <section className="flex min-h-0 flex-col bg-white">
           <StitchTopBar
@@ -348,17 +367,30 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
               <div className="border-t-2 border-[var(--shock-ink)] bg-white px-6 py-4">
                 <div className="mx-auto flex max-w-4xl items-center gap-3">
                   <button className="flex h-11 w-11 items-center justify-center rounded-[4px] border-2 border-[var(--shock-ink)] bg-white text-xl">+</button>
-                  <div className="flex-1 rounded-[4px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-4 py-3 font-mono text-[11px] text-[color:rgba(24,20,14,0.48)]">
-                    {channel ? `发送消息到 ${channel.name}...` : "等待频道同步..."}
-                  </div>
+                  <input
+                    data-testid="channel-message-input"
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    disabled={!channel || loading || Boolean(error) || sending}
+                    className="h-11 flex-1 rounded-[4px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-4 py-3 font-mono text-[11px] outline-none"
+                    placeholder={channel ? `发送消息到 ${channel.name}...` : "等待频道同步..."}
+                  />
                   <button className="flex h-11 w-11 items-center justify-center rounded-[4px] border-2 border-[var(--shock-ink)] bg-white">☺</button>
                   <button
-                    disabled={!channel || loading || Boolean(error)}
+                    type="button"
+                    data-testid="channel-send-message"
+                    onClick={() => void handleChannelSend()}
+                    disabled={!channel || loading || Boolean(error) || sending || !draft.trim()}
                     className="rounded-[4px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-5 py-3 font-mono text-[11px] tracking-[0.14em] disabled:opacity-60"
                   >
-                    发送 ↗
+                    {sending ? "发送中..." : "发送 ↗"}
                   </button>
                 </div>
+                {sendError ? (
+                  <p data-testid="channel-send-error" className="mx-auto mt-3 max-w-4xl text-sm leading-6 text-[var(--shock-pink)]">
+                    {sendError}
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -529,8 +561,8 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
-      <div className="grid h-screen w-screen overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[256px_minmax(0,1fr)]">
+    <main className="min-h-screen overflow-x-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
+      <div className="grid min-h-screen w-full border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[256px_minmax(0,1fr)]">
         <StitchSidebar active="rooms" channels={sidebarChannels} machines={sidebarMachines} agents={sidebarAgents} />
         <section className="flex min-h-0 flex-col bg-white">
           <StitchTopBar title={`讨论间：${room?.title ?? roomId}`} searchPlaceholder="搜索工作区..." />

@@ -3,6 +3,7 @@ package runtime
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -114,7 +115,12 @@ func TestSnapshotIncludesRuntimeRegistrationMetadata(t *testing.T) {
 
 func writeExecutable(t *testing.T, path string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	content := []byte("#!/bin/sh\nexit 0\n")
+	if goruntime.GOOS == "windows" {
+		path += ".cmd"
+		content = []byte("@echo off\r\nexit /b 0\r\n")
+	}
+	if err := os.WriteFile(path, content, 0o755); err != nil {
 		t.Fatalf("write executable %s: %v", path, err)
 	}
 }

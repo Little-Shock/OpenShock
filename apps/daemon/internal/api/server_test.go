@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -119,6 +120,73 @@ func TestExecConflictGuardRejectsSameCwdAndAllowsDifferentCwd(t *testing.T) {
 	}
 }
 
+func TestExecConflictGuardAllowsSameLeaseHolderReentry(t *testing.T) {
+	root := t.TempDir()
+	prependDaemonCLIPath(t, writeDaemonClaudeCLI(t))
+
+	server := httptest.NewServer(New(runtime.NewService("daemon-test", root), root).Handler())
+	defer server.Close()
+
+	firstBody, err := json.Marshal(map[string]any{
+		"provider":  "claude",
+		"prompt":    "hold-lease",
+		"cwd":       root,
+		"leaseId":   "session-a",
+		"sessionId": "session-a",
+		"runId":     "run-a",
+	})
+	if err != nil {
+		t.Fatalf("Marshal(firstBody) error = %v", err)
+	}
+	firstResp, err := http.Post(server.URL+"/v1/exec/stream", "application/json", bytes.NewReader(firstBody))
+	if err != nil {
+		t.Fatalf("POST first stream exec error = %v", err)
+	}
+	defer firstResp.Body.Close()
+	if firstResp.StatusCode != http.StatusOK {
+		t.Fatalf("first stream status = %d, want %d", firstResp.StatusCode, http.StatusOK)
+	}
+
+	scanner := bufio.NewScanner(firstResp.Body)
+	if !scanner.Scan() {
+		t.Fatalf("expected at least one stream event, scanner err = %v", scanner.Err())
+	}
+
+	reentrantBody, err := json.Marshal(map[string]any{
+		"provider":  "claude",
+		"prompt":    "same-holder",
+		"cwd":       root,
+		"leaseId":   "session-a",
+		"sessionId": "session-a",
+		"runId":     "run-a",
+	})
+	if err != nil {
+		t.Fatalf("Marshal(reentrantBody) error = %v", err)
+	}
+	reentrantResp, err := http.Post(server.URL+"/v1/exec", "application/json", bytes.NewReader(reentrantBody))
+	if err != nil {
+		t.Fatalf("POST reentrant exec error = %v", err)
+	}
+	defer reentrantResp.Body.Close()
+	if reentrantResp.StatusCode != http.StatusOK {
+		t.Fatalf("reentrant exec status = %d, want %d", reentrantResp.StatusCode, http.StatusOK)
+	}
+
+	var reentrantPayload map[string]any
+	if err := json.NewDecoder(reentrantResp.Body).Decode(&reentrantPayload); err != nil {
+		t.Fatalf("Decode reentrant payload error = %v", err)
+	}
+	if output, _ := reentrantPayload["output"].(string); !strings.Contains(output, "daemon-ready") {
+		t.Fatalf("reentrant exec payload = %#v, want daemon-ready output", reentrantPayload)
+	}
+
+	for scanner.Scan() {
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner.Err() = %v", err)
+	}
+}
+
 func writeDaemonClaudeCLI(t *testing.T) string {
 	t.Helper()
 
@@ -136,6 +204,14 @@ case "$args" in
     ;;
 esac
 `
+	if goruntime.GOOS == "windows" {
+		cmdPath := filepath.Join(dir, "claude.cmd")
+		cmdScript := "@echo off\r\nset args=%*\r\necho %args% | findstr /c:\"hold-lease\" >nul\r\nif %errorlevel%==0 (\r\n  powershell -NoProfile -Command \"Start-Sleep -Seconds 1\"\r\n  echo held-lease\r\n) else (\r\n  echo daemon-ready\r\n)\r\n"
+		if err := os.WriteFile(cmdPath, []byte(cmdScript), 0o755); err != nil {
+			t.Fatalf("write fake claude cmd: %v", err)
+		}
+		return dir
+	}
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake claude cli: %v", err)
 	}

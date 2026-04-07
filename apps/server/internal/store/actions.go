@@ -866,6 +866,39 @@ func (s *Store) AppendConversation(roomID, prompt, output string) (State, error)
 	return cloneState(s.state), nil
 }
 
+func (s *Store) AppendChannelConversation(channelID, prompt string) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	channelIndex := -1
+	for index := range s.state.Channels {
+		if s.state.Channels[index].ID == channelID {
+			channelIndex = index
+			break
+		}
+	}
+	if channelIndex == -1 {
+		return State{}, fmt.Errorf("channel not found")
+	}
+
+	now := shortClock()
+	humanMessage := Message{
+		ID:      fmt.Sprintf("%s-human-%d", channelID, time.Now().UnixNano()),
+		Speaker: "Lead_Architect",
+		Role:    "human",
+		Tone:    "human",
+		Message: defaultString(strings.TrimSpace(prompt), "空消息已忽略。"),
+		Time:    now,
+	}
+	s.appendChannelMessageLocked(channelID, humanMessage)
+	s.state.Channels[channelIndex].Unread = 0
+
+	if err := s.persistLocked(); err != nil {
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
 func (s *Store) AppendSystemRoomMessage(roomID, speaker, text, tone string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

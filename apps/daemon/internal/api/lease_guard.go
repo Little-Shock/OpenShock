@@ -24,16 +24,21 @@ type daemonLeaseConflict struct {
 	AcquiredAt    string `json:"acquiredAt"`
 }
 
+type daemonLeaseEntry struct {
+	claim daemonLeaseConflict
+	refs  int
+}
+
 type leaseGuard struct {
 	mu        sync.Mutex
-	exec      map[string]daemonLeaseConflict
-	worktrees map[string]daemonLeaseConflict
+	exec      map[string]daemonLeaseEntry
+	worktrees map[string]daemonLeaseEntry
 }
 
 func newLeaseGuard() *leaseGuard {
 	return &leaseGuard{
-		exec:      make(map[string]daemonLeaseConflict),
-		worktrees: make(map[string]daemonLeaseConflict),
+		exec:      make(map[string]daemonLeaseEntry),
+		worktrees: make(map[string]daemonLeaseEntry),
 	}
 }
 
@@ -94,20 +99,57 @@ func (g *leaseGuard) acquireWorktree(req worktree.Request, defaultRoot string) (
 	return g.acquire(g.worktrees, key, claim)
 }
 
-func (g *leaseGuard) acquire(target map[string]daemonLeaseConflict, key string, claim daemonLeaseConflict) (func(), *daemonLeaseConflict) {
+func (g *leaseGuard) acquire(target map[string]daemonLeaseEntry, key string, claim daemonLeaseConflict) (func(), *daemonLeaseConflict) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	if existing, ok := target[key]; ok {
-		conflict := existing
+		if sameLeaseHolder(existing.claim, claim) {
+			existing.refs++
+			target[key] = existing
+			return func() {
+				g.release(target, key)
+			}, nil
+		}
+		conflict := existing.claim
 		return nil, &conflict
 	}
-	target[key] = claim
+	target[key] = daemonLeaseEntry{
+		claim: claim,
+		refs:  1,
+	}
 	return func() {
-		g.mu.Lock()
-		defer g.mu.Unlock()
-		delete(target, key)
+		g.release(target, key)
 	}, nil
+}
+
+func (g *leaseGuard) release(target map[string]daemonLeaseEntry, key string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	entry, ok := target[key]
+	if !ok {
+		return
+	}
+	entry.refs--
+	if entry.refs <= 0 {
+		delete(target, key)
+		return
+	}
+	target[key] = entry
+}
+
+func sameLeaseHolder(left, right daemonLeaseConflict) bool {
+	if strings.TrimSpace(left.LeaseID) != "" && strings.TrimSpace(left.LeaseID) == strings.TrimSpace(right.LeaseID) {
+		return true
+	}
+	if strings.TrimSpace(left.SessionID) != "" && strings.TrimSpace(left.SessionID) == strings.TrimSpace(right.SessionID) {
+		return true
+	}
+	if strings.TrimSpace(left.RunID) != "" && strings.TrimSpace(left.RunID) == strings.TrimSpace(right.RunID) {
+		return true
+	}
+	return strings.TrimSpace(left.RoomID) != "" && strings.TrimSpace(left.RoomID) == strings.TrimSpace(right.RoomID)
 }
 
 func normalizeLeasePath(path string) string {
