@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { usePhaseZeroState } from "@/lib/live-phase0";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "http://127.0.0.1:8080";
 
@@ -52,12 +54,37 @@ function ghCliLabel(status: GitHubConnectionStatus | null) {
 }
 
 export function GitHubConnectionConsole() {
+  const { state } = usePhaseZeroState();
+  const stateStatus = useMemo<GitHubConnectionStatus | null>(() => {
+    if (!state.workspace.repo && !state.workspace.branch && !state.workspace.repoProvider) {
+      return null;
+    }
+    return {
+      repo: state.workspace.repo,
+      repoUrl: state.workspace.repoUrl,
+      branch: state.workspace.branch,
+      provider: state.workspace.repoProvider,
+      remoteConfigured: Boolean(state.workspace.repoUrl),
+      ghCliInstalled: false,
+      ghAuthenticated: false,
+      appConfigured: false,
+      appInstalled: false,
+      installationId: "",
+      installationUrl: "",
+      ready: state.workspace.repoBindingStatus === "bound",
+      authMode: state.workspace.repoAuthMode,
+      preferredAuthMode: state.workspace.repoAuthMode,
+      message: state.workspace.repo
+        ? `当前工作区已读取到 GitHub 仓库：${state.workspace.repo}`
+        : "等待探测 GitHub 连接状态。",
+    };
+  }, [state.workspace]);
   const [status, setStatus] = useState<GitHubConnectionStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  async function loadStatus(showFeedback = false) {
+  const loadStatus = useCallback(async (showFeedback = false) => {
     setLoading(true);
     setError(null);
     if (showFeedback) {
@@ -79,11 +106,24 @@ export function GitHubConnectionConsole() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void loadStatus();
-  }, []);
+    const poll = window.setInterval(() => {
+      void loadStatus();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(poll);
+    };
+  }, [loadStatus]);
+
+  useEffect(() => {
+    if (!status && stateStatus) {
+      setStatus(stateStatus);
+    }
+  }, [stateStatus, status]);
 
   return (
     <section data-testid="setup-github-connection" className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white p-5 shadow-[6px_6px_0_0_var(--shock-yellow)]">

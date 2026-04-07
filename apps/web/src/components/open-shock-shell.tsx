@@ -173,8 +173,8 @@ export function OpenShockShell({
   return (
     <main className="min-h-screen bg-[var(--shock-paper)] text-[var(--shock-ink)]">
       <div className="mx-auto flex min-h-screen max-w-[1860px] flex-col px-2 py-2 md:px-3 md:py-3">
-        <div className="grid min-h-[calc(100vh-1rem)] gap-0 overflow-hidden rounded-[12px] border-2 border-[var(--shock-ink)] bg-white shadow-[6px_6px_0_0_var(--shock-ink)] xl:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="flex min-h-full flex-col border-r-2 border-[var(--shock-ink)] bg-[var(--shock-card)]">
+        <div className="grid min-h-[calc(100vh-1rem)] gap-0 rounded-[12px] border-2 border-[var(--shock-ink)] bg-white shadow-[6px_6px_0_0_var(--shock-ink)] xl:h-[calc(100vh-1rem)] xl:min-h-0 xl:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col border-r-2 border-[var(--shock-ink)] bg-[var(--shock-card)]">
             <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-[6px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] font-mono text-sm font-bold">
@@ -389,7 +389,7 @@ export function OpenShockShell({
             </div>
           </aside>
 
-          <section className="flex min-h-full flex-col bg-white">
+          <section className="flex min-h-0 flex-col bg-white">
             <div className="border-b-2 border-[var(--shock-ink)] px-4 py-3">
               <div className="grid gap-3 xl:grid-cols-[180px_minmax(0,1fr)_auto] xl:items-center">
                 <div className="font-display text-xl font-bold">OPENSHOCK.AI</div>
@@ -454,7 +454,7 @@ export function OpenShockShell({
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-white p-4">{children}</div>
+            <div className="flex-1 overflow-y-auto bg-white p-4 xl:min-h-0">{children}</div>
           </section>
         </div>
       </div>

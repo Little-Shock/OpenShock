@@ -223,7 +223,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     setApprovalCenterLoading(false);
   }, []);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const [stateResult, approvalCenterResult] = await Promise.allSettled([
       readJSON<PhaseZeroState>("/v1/state"),
       readJSON<ApprovalCenterState>("/v1/approval-center"),
@@ -242,7 +242,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
 
     commitRequestError(stateResult.reason);
     throw stateResult.reason;
-  }
+  }, [commitApprovalCenter, commitApprovalCenterError, commitRequestError, commitState]);
 
   const refreshApprovalCenter = useCallback(async () => {
     try {
@@ -262,27 +262,25 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   useEffect(() => {
     let cancelled = false;
     let source: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function hydrateInitialState() {
-      const [stateResult, approvalCenterResult] = await Promise.allSettled([
-        readJSON<PhaseZeroState>("/v1/state"),
-        readJSON<ApprovalCenterState>("/v1/approval-center"),
-      ]);
-
-      if (cancelled) {
+    const scheduleRetry = (delayMs = 2000) => {
+      if (cancelled || retryTimer) {
         return;
       }
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void refresh().catch(() => {});
+      }, delayMs);
+    };
 
-      if (stateResult.status === "fulfilled") {
-        commitState(stateResult.value);
-      } else {
-        commitRequestError(stateResult.reason);
-      }
-
-      if (approvalCenterResult.status === "fulfilled") {
-        commitApprovalCenter(approvalCenterResult.value);
-      } else {
-        commitApprovalCenterError(approvalCenterResult.reason);
+    async function hydrateInitialState() {
+      try {
+        await refresh();
+      } catch {
+        if (!cancelled) {
+          scheduleRetry();
+        }
       }
     }
 
@@ -311,13 +309,27 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
         return;
       }
       setLoading(false);
+      scheduleRetry();
     };
 
     return () => {
       cancelled = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
       source?.close();
     };
-  }, [commitApprovalCenter, commitApprovalCenterError, commitRequestError, commitState, commitStateAndRefreshApprovalCenter]);
+  }, [commitStateAndRefreshApprovalCenter, refresh]);
+
+  useEffect(() => {
+    const poll = window.setInterval(() => {
+      void refresh().catch(() => {});
+    }, 5000);
+
+    return () => {
+      window.clearInterval(poll);
+    };
+  }, [refresh]);
 
   async function loginAuthSession(input: { email: string; name?: string }) {
     const payload = await readJSON<StateMutationResponse>("/v1/auth/session", {

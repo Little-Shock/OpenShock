@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
@@ -48,6 +48,28 @@ function githubAppLabel(snapshot: RepoBindingSnapshot | null) {
 
 export function RepoBindingConsole() {
   const { state } = usePhaseZeroState();
+  const stateBinding = useMemo<RepoBindingSnapshot | null>(() => {
+    if (!state.workspace.repo && !state.workspace.branch && !state.workspace.repoBindingStatus) {
+      return null;
+    }
+    return {
+      repo: state.workspace.repo,
+      repoUrl: state.workspace.repoUrl,
+      branch: state.workspace.branch,
+      provider: state.workspace.repoProvider,
+      bindingStatus: state.workspace.repoBindingStatus,
+      authMode: state.workspace.repoAuthMode,
+      detectedAt: "",
+      connectionReady: state.workspace.repoBindingStatus === "bound",
+      appConfigured: false,
+      appInstalled: false,
+      installationId: "",
+      installationUrl: "",
+      connectionMessage: state.workspace.repo
+        ? `当前工作区已读取到仓库真值：${state.workspace.repo}`
+        : "等待工作区返回仓库真值。",
+    };
+  }, [state.workspace]);
   const [binding, setBinding] = useState<RepoBindingSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,33 +78,42 @@ export function RepoBindingConsole() {
   const bindStatus = permissionStatus(state.auth.session, "repo.admin");
   const bindBoundary = permissionBoundaryCopy(state.auth.session, "repo.admin");
 
+  const loadBinding = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/v1/repo/binding`, { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || `repo binding request failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as RepoBindingSnapshot;
+      setBinding(payload);
+      setError(null);
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "repo binding request failed");
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API_BASE}/v1/repo/binding`, { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) {
-          const payload = (await response.json()) as { error?: string };
-          throw new Error(payload.error || `repo binding request failed: ${response.status}`);
-        }
-        return response.json() as Promise<RepoBindingSnapshot>;
-      })
-      .then((payload) => {
-        if (!cancelled) {
-          setBinding(payload);
-          setError(null);
-        }
-      })
-      .catch((fetchError: Error) => {
-        if (!cancelled) {
-          setError(fetchError.message);
-        }
-      });
+    void loadBinding();
+    const poll = window.setInterval(() => {
+      if (!cancelled) {
+        void loadBinding();
+      }
+    }, 5000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
     };
-  }, []);
+  }, [loadBinding]);
+
+  useEffect(() => {
+    if (!binding && stateBinding) {
+      setBinding(stateBinding);
+    }
+  }, [binding, stateBinding]);
 
   async function handleBindRepo() {
     if (!canBindRepo) {
