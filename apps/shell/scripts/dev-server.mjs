@@ -2191,7 +2191,10 @@ function findLatestStage4a2Enforcement(items) {
   }
   for (const item of items) {
     const payload = item?.payload && typeof item.payload === "object" ? item.payload : {};
-    const enforcement = payload?.enforcement && typeof payload.enforcement === "object" ? payload.enforcement : null;
+    const enforcementCandidate =
+      (item?.enforcement && typeof item.enforcement === "object" ? item.enforcement : null) ||
+      (payload?.enforcement && typeof payload.enforcement === "object" ? payload.enforcement : null);
+    const enforcement = enforcementCandidate;
     if (!enforcement) {
       continue;
     }
@@ -2415,6 +2418,7 @@ function normalizeChannelOperatorActions(items) {
     workitem_id: normalizeText(item?.workitem_id) || null,
     note: normalizeText(item?.note) || null,
     payload: item?.payload && typeof item.payload === "object" ? item.payload : {},
+    enforcement: item?.enforcement && typeof item.enforcement === "object" ? item.enforcement : null,
     target: normalizeText(item?.target) || null,
     at: item?.at || null,
     policy_snapshot: item?.policy_snapshot || {},
