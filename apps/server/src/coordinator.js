@@ -215,6 +215,11 @@ const DIGITAL_TWIN_STATUSES = new Set(["active", "paused", "disabled"]);
 const DIGITAL_TWIN_MODES = new Set(["advisory", "delegate", "simulate"]);
 const OPERATIONAL_CAPABILITY_LEVELS = new Set(["managed", "advanced", "autonomous"]);
 const OPERATIONAL_CAPABILITY_MODES = new Set(["campaign", "incident", "escalation", "optimization"]);
+const MULTI_AGENT_ORCHESTRATION_MODES = new Set(["structured_plan", "handoff_graph", "quorum_gate"]);
+const MULTI_AGENT_ORCHESTRATION_STATUSES = new Set(["draft", "active", "paused", "stopped"]);
+const UPGRADE_ARBITRATION_STATUSES = new Set(["pending", "human_review_required", "approved", "rejected", "rolled_back"]);
+const UPGRADE_ARBITRATION_TARGET_MODES = new Set(["runtime_rebind", "policy_hardened", "manual_takeover"]);
+const HUMAN_UPGRADE_CHAIN_STATUSES = new Set(["pending", "approved", "rejected", "rolled_back"]);
 const EXTERNAL_MEMORY_PROVIDER_CAPABILITIES = Object.freeze({
   memory_search: true,
   memory_get: true,
@@ -334,6 +339,13 @@ function createEmptyChannelExternalMemoryProvider() {
     capabilities: deepClone(EXTERNAL_MEMORY_PROVIDER_CAPABILITIES),
     updatedAt: null,
     updatedBy: null
+  };
+}
+
+function createEmptyChannelOrchestrationUpgrade() {
+  return {
+    multiAgentOrchestration: null,
+    upgradeArbitration: null
   };
 }
 
@@ -2704,6 +2716,31 @@ export class ServerCoordinator {
     return channel.memoryLedger;
   }
 
+  buildChannelOrchestrationEvidenceAnchors(channel) {
+    return {
+      topicState: "/v1/topics/:topicId/topic-state",
+      runTimeline: "/v1/runs/:runId/timeline?topic_id=:topicId",
+      executionInbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
+      topicInbox: "/v1/inbox/:actorId?topic_id=:topicId",
+      recentActions: `/v1/channels/${encodeURIComponent(channel.channelId)}/recent-actions`,
+      operatorActions: `/v1/channels/${encodeURIComponent(channel.channelId)}/operator-actions`,
+      auditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`
+    };
+  }
+
+  ensureChannelOrchestrationUpgrade(channel) {
+    if (!channel.orchestrationUpgrade || typeof channel.orchestrationUpgrade !== "object") {
+      channel.orchestrationUpgrade = createEmptyChannelOrchestrationUpgrade();
+    }
+    if (!Object.prototype.hasOwnProperty.call(channel.orchestrationUpgrade, "multiAgentOrchestration")) {
+      channel.orchestrationUpgrade.multiAgentOrchestration = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(channel.orchestrationUpgrade, "upgradeArbitration")) {
+      channel.orchestrationUpgrade.upgradeArbitration = null;
+    }
+    return channel.orchestrationUpgrade;
+  }
+
   findLatestChannelAuditByAction(channel, action) {
     for (let index = channel.auditTrail.length - 1; index >= 0; index -= 1) {
       const entry = channel.auditTrail[index];
@@ -2737,6 +2774,11 @@ export class ServerCoordinator {
         operationalCapability: mapEntry(
           this.findLatestChannelAuditByAction(channel, "channel_operational_capability_upsert")
         ),
+        multiAgentOrchestration: mapEntry(
+          this.findLatestChannelAuditByAction(channel, "channel_multi_agent_orchestration_upsert")
+        ),
+        upgradeArbitration: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_upgrade_arbitration_upsert")),
+        humanUpgradeChain: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_human_upgrade_chain_upsert")),
         repoBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_repo_binding_upsert")),
         notificationEndpoint: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_notification_endpoint_upsert")),
         externalMemoryProvider: mapEntry(
@@ -3788,6 +3830,7 @@ export class ServerCoordinator {
           ruleEntries: []
         },
         governance: createEmptyChannelGovernance(),
+        orchestrationUpgrade: createEmptyChannelOrchestrationUpgrade(),
         notificationEndpoints: createEmptyChannelNotificationEndpoints(),
         externalMemoryProvider: createEmptyChannelExternalMemoryProvider(),
         memoryLedger: [],
@@ -3882,6 +3925,617 @@ export class ServerCoordinator {
     });
     this.channelContexts.set(normalizedChannelId, channel);
     return this.getChannelContextContract(normalizedChannelId);
+  }
+
+  getChannelOrchestrationUpgradeContract(channelId) {
+    const channel = this.requireChannelContext(channelId);
+    const orchestrationUpgrade = this.ensureChannelOrchestrationUpgrade(channel);
+    return deepClone({
+      contractVersion: "v1.stage4c",
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      multiAgentOrchestration: orchestrationUpgrade.multiAgentOrchestration,
+      upgradeArbitration: orchestrationUpgrade.upgradeArbitration,
+      writeAnchors: {
+        orchestrationUpgradeUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/orchestration-upgrade`,
+        operatorAction: `/v1/channels/${encodeURIComponent(channel.channelId)}/operator-actions`,
+        approvalDecision: "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+      },
+      timelineAnchor: {
+        recentActions: `/v1/channels/${encodeURIComponent(channel.channelId)}/recent-actions`,
+        operatorActions: `/v1/channels/${encodeURIComponent(channel.channelId)}/operator-actions`,
+        runTimeline: "/v1/runs/:runId/timeline?topic_id=:topicId",
+        executionInbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
+        topicInbox: "/v1/inbox/:actorId?topic_id=:topicId",
+        approvalHolds: "/v1/topics/:topicId/approval-holds?status=:status",
+        approvalDecisions: "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+      },
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      updatedAt: channel.updatedAt
+    });
+  }
+
+  upsertChannelOrchestrationUpgradeContract(channelId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_orchestration_upgrade",
+      "orchestration upgrade payload must be object"
+    );
+    const allowedKeys = new Set(["operatorId", "multiAgentOrchestration", "upgradeArbitration", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(
+        allowedKeys.has(key),
+        "invalid_orchestration_upgrade_field",
+        `unsupported orchestration upgrade field: ${key}`
+      );
+    }
+    assertOrThrow(
+      input.multiAgentOrchestration !== undefined || input.upgradeArbitration !== undefined,
+      "invalid_orchestration_upgrade",
+      "orchestration upgrade payload must include multi_agent_orchestration or upgrade_arbitration"
+    );
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const orchestrationUpgrade = this.ensureChannelOrchestrationUpgrade(channel);
+
+    const normalizeStringList = (value, code, message, { minLength = 0 } = {}) => {
+      assertOrThrow(Array.isArray(value), code, message);
+      const normalized = Array.from(
+        new Set(
+          value
+            .filter((item) => typeof item === "string" && item.trim().length > 0)
+            .map((item) => item.trim())
+        )
+      );
+      if (minLength > 0) {
+        assertOrThrow(normalized.length >= minLength, code, message);
+      }
+      return normalized;
+    };
+
+    if (input.multiAgentOrchestration !== undefined) {
+      const orchestrationInput = input.multiAgentOrchestration;
+      assertOrThrow(
+        orchestrationInput && typeof orchestrationInput === "object" && !Array.isArray(orchestrationInput),
+        "invalid_multi_agent_orchestration",
+        "multi_agent_orchestration payload must be object"
+      );
+      const allowedOrchestrationKeys = new Set([
+        "orchestrationId",
+        "mode",
+        "status",
+        "planRef",
+        "participantAgentIds",
+        "participants",
+        "dependencyEdges",
+        "quorum",
+        "stopConditions",
+        "escalationTriggers"
+      ]);
+      for (const key of Object.keys(orchestrationInput)) {
+        assertOrThrow(
+          allowedOrchestrationKeys.has(key),
+          "invalid_multi_agent_orchestration_field",
+          `unsupported multi_agent_orchestration field: ${key}`
+        );
+      }
+      const existing = orchestrationUpgrade.multiAgentOrchestration;
+      const mode = normalizeOptionalScopeId(orchestrationInput.mode) ?? normalizeOptionalScopeId(existing?.mode) ?? "handoff_graph";
+      assertOrThrow(
+        MULTI_AGENT_ORCHESTRATION_MODES.has(mode),
+        "invalid_multi_agent_orchestration_mode",
+        "multi_agent_orchestration.mode is invalid"
+      );
+      const status =
+        normalizeOptionalScopeId(orchestrationInput.status) ?? normalizeOptionalScopeId(existing?.status) ?? "draft";
+      assertOrThrow(
+        MULTI_AGENT_ORCHESTRATION_STATUSES.has(status),
+        "invalid_multi_agent_orchestration_status",
+        "multi_agent_orchestration.status is invalid"
+      );
+      const planRef = normalizeOptionalScopeId(orchestrationInput.planRef) ?? normalizeOptionalScopeId(existing?.planRef);
+      assertOrThrow(planRef, "invalid_multi_agent_orchestration_plan_ref", "multi_agent_orchestration.plan_ref is required");
+
+      const participantAgentIds =
+        orchestrationInput.participantAgentIds === undefined
+          ? deepClone(existing?.participantAgentIds ?? [])
+          : normalizeStringList(
+              orchestrationInput.participantAgentIds,
+              "invalid_multi_agent_orchestration_participant_agent_ids",
+              "multi_agent_orchestration.participant_agent_ids must be string[]",
+              { minLength: 1 }
+            );
+
+      const participantSource =
+        orchestrationInput.participants === undefined ? existing?.participants ?? [] : orchestrationInput.participants;
+      assertOrThrow(
+        Array.isArray(participantSource),
+        "invalid_multi_agent_orchestration_participants",
+        "multi_agent_orchestration.participants must be object[]"
+      );
+      let participants = participantSource.map((item) => {
+        assertOrThrow(
+          item && typeof item === "object" && !Array.isArray(item),
+          "invalid_multi_agent_orchestration_participant",
+          "multi_agent_orchestration participant must be object"
+        );
+        const allowedParticipantKeys = new Set(["agentId", "role", "duty", "required"]);
+        for (const key of Object.keys(item)) {
+          assertOrThrow(
+            allowedParticipantKeys.has(key),
+            "invalid_multi_agent_orchestration_participant_field",
+            `unsupported multi_agent_orchestration.participants field: ${key}`
+          );
+        }
+        const agentId = normalizeOptionalScopeId(item.agentId);
+        assertOrThrow(
+          agentId,
+          "invalid_multi_agent_orchestration_participant_agent_id",
+          "multi_agent_orchestration participant agent_id is required"
+        );
+        const role = normalizeOptionalScopeId(item.role) ?? "worker";
+        assertOrThrow(
+          AGENT_ROLES.has(role),
+          "invalid_multi_agent_orchestration_participant_role",
+          "multi_agent_orchestration participant role is invalid"
+        );
+        if (item.required !== undefined) {
+          assertOrThrow(
+            typeof item.required === "boolean",
+            "invalid_multi_agent_orchestration_participant_required",
+            "multi_agent_orchestration participant required must be boolean"
+          );
+        }
+        return {
+          agentId,
+          role,
+          duty: normalizeOptionalScopeId(item.duty),
+          required: item.required !== false
+        };
+      });
+      if (participants.length === 0 && participantAgentIds.length > 0) {
+        participants = participantAgentIds.map((agentId) => ({
+          agentId,
+          role: "worker",
+          duty: null,
+          required: true
+        }));
+      }
+      const participantIdSet = new Set(participantAgentIds);
+      for (const participant of participants) {
+        participantIdSet.add(participant.agentId);
+      }
+      const normalizedParticipantAgentIds = Array.from(participantIdSet);
+      assertOrThrow(
+        normalizedParticipantAgentIds.length > 0,
+        "invalid_multi_agent_orchestration_participant_agent_ids",
+        "multi_agent_orchestration.participant_agent_ids must include at least one agent"
+      );
+      const participantLookup = new Set(participants.map((item) => item.agentId));
+      for (const participantId of normalizedParticipantAgentIds) {
+        if (!participantLookup.has(participantId)) {
+          participants.push({
+            agentId: participantId,
+            role: "worker",
+            duty: null,
+            required: true
+          });
+        }
+      }
+
+      const dependencySource =
+        orchestrationInput.dependencyEdges === undefined ? existing?.dependencyEdges ?? [] : orchestrationInput.dependencyEdges;
+      assertOrThrow(
+        Array.isArray(dependencySource),
+        "invalid_multi_agent_orchestration_dependency_edges",
+        "multi_agent_orchestration.dependency_edges must be object[]"
+      );
+      const dependencyEdges = dependencySource.map((edge) => {
+        assertOrThrow(
+          edge && typeof edge === "object" && !Array.isArray(edge),
+          "invalid_multi_agent_orchestration_dependency_edge",
+          "multi_agent_orchestration dependency edge must be object"
+        );
+        const allowedEdgeKeys = new Set(["fromAgentId", "toAgentId", "handoffRequired", "condition"]);
+        for (const key of Object.keys(edge)) {
+          assertOrThrow(
+            allowedEdgeKeys.has(key),
+            "invalid_multi_agent_orchestration_dependency_edge_field",
+            `unsupported multi_agent_orchestration.dependency_edges field: ${key}`
+          );
+        }
+        const fromAgentId = normalizeOptionalScopeId(edge.fromAgentId);
+        const toAgentId = normalizeOptionalScopeId(edge.toAgentId);
+        assertOrThrow(
+          fromAgentId && toAgentId,
+          "invalid_multi_agent_orchestration_dependency_edge_agents",
+          "multi_agent_orchestration dependency edge requires from_agent_id and to_agent_id"
+        );
+        assertOrThrow(
+          normalizedParticipantAgentIds.includes(fromAgentId) && normalizedParticipantAgentIds.includes(toAgentId),
+          "invalid_multi_agent_orchestration_dependency_edge_agents",
+          "multi_agent_orchestration dependency edge must reference participant_agent_ids"
+        );
+        if (edge.handoffRequired !== undefined) {
+          assertOrThrow(
+            typeof edge.handoffRequired === "boolean",
+            "invalid_multi_agent_orchestration_dependency_edge_handoff_required",
+            "multi_agent_orchestration dependency edge handoff_required must be boolean"
+          );
+        }
+        return {
+          fromAgentId,
+          toAgentId,
+          handoffRequired: edge.handoffRequired !== false,
+          condition: normalizeOptionalScopeId(edge.condition)
+        };
+      });
+
+      const quorumInput = orchestrationInput.quorum === undefined ? existing?.quorum ?? {} : orchestrationInput.quorum;
+      assertOrThrow(
+        quorumInput && typeof quorumInput === "object" && !Array.isArray(quorumInput),
+        "invalid_multi_agent_orchestration_quorum",
+        "multi_agent_orchestration.quorum must be object"
+      );
+      const allowedQuorumKeys = new Set(["minSuccessCount", "maxParallelAgents", "stopOnBlocked", "stopOnFailureCount"]);
+      for (const key of Object.keys(quorumInput)) {
+        assertOrThrow(
+          allowedQuorumKeys.has(key),
+          "invalid_multi_agent_orchestration_quorum_field",
+          `unsupported multi_agent_orchestration.quorum field: ${key}`
+        );
+      }
+      const minSuccessCount = Number(quorumInput.minSuccessCount ?? 1);
+      const maxParallelAgents = Number(quorumInput.maxParallelAgents ?? normalizedParticipantAgentIds.length);
+      const stopOnFailureCount = Number(quorumInput.stopOnFailureCount ?? 1);
+      assertOrThrow(
+        Number.isInteger(minSuccessCount) && minSuccessCount > 0,
+        "invalid_multi_agent_orchestration_quorum_min_success_count",
+        "multi_agent_orchestration.quorum.min_success_count must be positive integer"
+      );
+      assertOrThrow(
+        Number.isInteger(maxParallelAgents) && maxParallelAgents > 0,
+        "invalid_multi_agent_orchestration_quorum_max_parallel_agents",
+        "multi_agent_orchestration.quorum.max_parallel_agents must be positive integer"
+      );
+      assertOrThrow(
+        Number.isInteger(stopOnFailureCount) && stopOnFailureCount >= 0,
+        "invalid_multi_agent_orchestration_quorum_stop_on_failure_count",
+        "multi_agent_orchestration.quorum.stop_on_failure_count must be non-negative integer"
+      );
+      if (quorumInput.stopOnBlocked !== undefined) {
+        assertOrThrow(
+          typeof quorumInput.stopOnBlocked === "boolean",
+          "invalid_multi_agent_orchestration_quorum_stop_on_blocked",
+          "multi_agent_orchestration.quorum.stop_on_blocked must be boolean"
+        );
+      }
+      const quorum = {
+        minSuccessCount,
+        maxParallelAgents,
+        stopOnBlocked: quorumInput.stopOnBlocked !== false,
+        stopOnFailureCount
+      };
+
+      const stopConditions =
+        orchestrationInput.stopConditions === undefined
+          ? deepClone(existing?.stopConditions ?? ["all_tasks_completed", "approval_rejected"])
+          : normalizeStringList(
+              orchestrationInput.stopConditions,
+              "invalid_multi_agent_orchestration_stop_conditions",
+              "multi_agent_orchestration.stop_conditions must be string[]",
+              { minLength: 1 }
+            );
+      const escalationTriggers =
+        orchestrationInput.escalationTriggers === undefined
+          ? deepClone(existing?.escalationTriggers ?? ["blocked", "approval_required", "timeout_10m"])
+          : normalizeStringList(
+              orchestrationInput.escalationTriggers,
+              "invalid_multi_agent_orchestration_escalation_triggers",
+              "multi_agent_orchestration.escalation_triggers must be string[]",
+              { minLength: 1 }
+            );
+
+      const now = nowIso();
+      orchestrationUpgrade.multiAgentOrchestration = {
+        orchestrationId:
+          normalizeOptionalScopeId(orchestrationInput.orchestrationId) ??
+          normalizeOptionalScopeId(existing?.orchestrationId) ??
+          generateId("orchestration"),
+        mode,
+        status,
+        planRef,
+        participantAgentIds: normalizedParticipantAgentIds,
+        participants,
+        dependencyEdges,
+        quorum,
+        stopConditions,
+        escalationTriggers,
+        evidenceAnchors: this.buildChannelOrchestrationEvidenceAnchors(channel),
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_multi_agent_orchestration_upsert",
+        target: `channel:${channel.channelId}:multi_agent_orchestration`,
+        policySnapshot: input.policySnapshot,
+        details: {
+          orchestration_id: orchestrationUpgrade.multiAgentOrchestration.orchestrationId,
+          mode: orchestrationUpgrade.multiAgentOrchestration.mode,
+          status: orchestrationUpgrade.multiAgentOrchestration.status,
+          participant_count: orchestrationUpgrade.multiAgentOrchestration.participantAgentIds.length,
+          dependency_edge_count: orchestrationUpgrade.multiAgentOrchestration.dependencyEdges.length,
+          quorum_min_success_count: orchestrationUpgrade.multiAgentOrchestration.quorum.minSuccessCount,
+          escalation_trigger_count: orchestrationUpgrade.multiAgentOrchestration.escalationTriggers.length
+        }
+      });
+    }
+
+    if (input.upgradeArbitration !== undefined) {
+      const upgradeInput = input.upgradeArbitration;
+      assertOrThrow(
+        upgradeInput && typeof upgradeInput === "object" && !Array.isArray(upgradeInput),
+        "invalid_upgrade_arbitration",
+        "upgrade_arbitration payload must be object"
+      );
+      const allowedUpgradeKeys = new Set([
+        "arbitrationId",
+        "status",
+        "reason",
+        "candidatePaths",
+        "selectedPathId",
+        "humanUpgradeChain"
+      ]);
+      for (const key of Object.keys(upgradeInput)) {
+        assertOrThrow(
+          allowedUpgradeKeys.has(key),
+          "invalid_upgrade_arbitration_field",
+          `unsupported upgrade_arbitration field: ${key}`
+        );
+      }
+      const existing = orchestrationUpgrade.upgradeArbitration;
+      const status =
+        normalizeOptionalScopeId(upgradeInput.status) ?? normalizeOptionalScopeId(existing?.status) ?? "pending";
+      assertOrThrow(
+        UPGRADE_ARBITRATION_STATUSES.has(status),
+        "invalid_upgrade_arbitration_status",
+        "upgrade_arbitration.status is invalid"
+      );
+
+      const candidatePathSource =
+        upgradeInput.candidatePaths === undefined ? existing?.candidatePaths ?? [] : upgradeInput.candidatePaths;
+      assertOrThrow(
+        Array.isArray(candidatePathSource),
+        "invalid_upgrade_arbitration_candidate_paths",
+        "upgrade_arbitration.candidate_paths must be object[]"
+      );
+      const candidatePaths = candidatePathSource.map((path) => {
+        assertOrThrow(
+          path && typeof path === "object" && !Array.isArray(path),
+          "invalid_upgrade_arbitration_candidate_path",
+          "upgrade_arbitration candidate path must be object"
+        );
+        const allowedPathKeys = new Set(["pathId", "targetMode", "reason", "evidenceRefs"]);
+        for (const key of Object.keys(path)) {
+          assertOrThrow(
+            allowedPathKeys.has(key),
+            "invalid_upgrade_arbitration_candidate_path_field",
+            `unsupported upgrade_arbitration.candidate_paths field: ${key}`
+          );
+        }
+        const pathId = normalizeOptionalScopeId(path.pathId);
+        const targetMode = normalizeOptionalScopeId(path.targetMode);
+        assertOrThrow(pathId, "invalid_upgrade_arbitration_candidate_path_id", "upgrade_arbitration path_id is required");
+        assertOrThrow(
+          targetMode && UPGRADE_ARBITRATION_TARGET_MODES.has(targetMode),
+          "invalid_upgrade_arbitration_target_mode",
+          "upgrade_arbitration target_mode is invalid"
+        );
+        if (path.evidenceRefs !== undefined) {
+          assertOrThrow(
+            Array.isArray(path.evidenceRefs),
+            "invalid_upgrade_arbitration_evidence_refs",
+            "upgrade_arbitration evidence_refs must be string[]"
+          );
+        }
+        return {
+          pathId,
+          targetMode,
+          reason: normalizeOptionalScopeId(path.reason),
+          evidenceRefs:
+            path.evidenceRefs === undefined
+              ? []
+              : path.evidenceRefs
+                  .filter((item) => typeof item === "string" && item.trim().length > 0)
+                  .map((item) => item.trim())
+        };
+      });
+      assertOrThrow(
+        candidatePaths.length > 0,
+        "invalid_upgrade_arbitration_candidate_paths",
+        "upgrade_arbitration.candidate_paths must include at least one path"
+      );
+      const selectedPathId =
+        normalizeOptionalScopeId(upgradeInput.selectedPathId) ??
+        normalizeOptionalScopeId(existing?.selectedPathId) ??
+        candidatePaths[0].pathId;
+      assertOrThrow(
+        candidatePaths.some((item) => item.pathId === selectedPathId),
+        "invalid_upgrade_arbitration_selected_path_id",
+        "upgrade_arbitration.selected_path_id must exist in candidate_paths"
+      );
+
+      const humanChainSource =
+        upgradeInput.humanUpgradeChain === undefined ? existing?.humanUpgradeChain ?? null : upgradeInput.humanUpgradeChain;
+      let humanUpgradeChain = null;
+      if (humanChainSource !== null && humanChainSource !== undefined) {
+        assertOrThrow(
+          humanChainSource && typeof humanChainSource === "object" && !Array.isArray(humanChainSource),
+          "invalid_human_upgrade_chain",
+          "human_upgrade_chain payload must be object"
+        );
+        const allowedHumanChainKeys = new Set([
+          "escalationId",
+          "status",
+          "approvalRequired",
+          "approvalId",
+          "approvedBy",
+          "approvedAt",
+          "rollbackAllowed",
+          "rollbackRef",
+          "operatorActionRef",
+          "approvalHoldRef",
+          "decisionRef"
+        ]);
+        for (const key of Object.keys(humanChainSource)) {
+          assertOrThrow(
+            allowedHumanChainKeys.has(key),
+            "invalid_human_upgrade_chain_field",
+            `unsupported human_upgrade_chain field: ${key}`
+          );
+        }
+        const humanStatus =
+          normalizeOptionalScopeId(humanChainSource.status) ??
+          normalizeOptionalScopeId(existing?.humanUpgradeChain?.status) ??
+          "pending";
+        assertOrThrow(
+          HUMAN_UPGRADE_CHAIN_STATUSES.has(humanStatus),
+          "invalid_human_upgrade_chain_status",
+          "human_upgrade_chain.status is invalid"
+        );
+        const approvalRequired =
+          humanChainSource.approvalRequired === undefined
+            ? existing?.humanUpgradeChain?.approvalRequired !== false
+            : humanChainSource.approvalRequired;
+        assertOrThrow(
+          typeof approvalRequired === "boolean",
+          "invalid_human_upgrade_chain_approval_required",
+          "human_upgrade_chain.approval_required must be boolean"
+        );
+        const approvalId =
+          humanChainSource.approvalId === null
+            ? null
+            : normalizeOptionalScopeId(humanChainSource.approvalId) ??
+              normalizeOptionalScopeId(existing?.humanUpgradeChain?.approvalId);
+        if (humanStatus === "approved" && approvalRequired && !approvalId) {
+          throw new CoordinatorError(
+            "human_upgrade_chain_approval_required",
+            "human_upgrade_chain approved status requires approval_id",
+            {
+              channel_id: channel.channelId
+            }
+          );
+        }
+        const rollbackAllowed =
+          humanChainSource.rollbackAllowed === undefined
+            ? existing?.humanUpgradeChain?.rollbackAllowed !== false
+            : humanChainSource.rollbackAllowed;
+        assertOrThrow(
+          typeof rollbackAllowed === "boolean",
+          "invalid_human_upgrade_chain_rollback_allowed",
+          "human_upgrade_chain.rollback_allowed must be boolean"
+        );
+        const rollbackRef =
+          humanChainSource.rollbackRef === null
+            ? null
+            : normalizeOptionalScopeId(humanChainSource.rollbackRef) ??
+              normalizeOptionalScopeId(existing?.humanUpgradeChain?.rollbackRef);
+        if (humanStatus === "rolled_back" && !rollbackRef) {
+          throw new CoordinatorError(
+            "human_upgrade_chain_rollback_ref_required",
+            "human_upgrade_chain rolled_back status requires rollback_ref",
+            {
+              channel_id: channel.channelId
+            }
+          );
+        }
+        humanUpgradeChain = {
+          escalationId:
+            normalizeOptionalScopeId(humanChainSource.escalationId) ??
+            normalizeOptionalScopeId(existing?.humanUpgradeChain?.escalationId) ??
+            generateId("upgrade_chain"),
+          status: humanStatus,
+          approvalRequired,
+          approvalId,
+          approvedBy:
+            humanChainSource.approvedBy === null
+              ? null
+              : normalizeOptionalScopeId(humanChainSource.approvedBy) ??
+                normalizeOptionalScopeId(existing?.humanUpgradeChain?.approvedBy),
+          approvedAt:
+            humanChainSource.approvedAt === null
+              ? null
+              : normalizeOptionalScopeId(humanChainSource.approvedAt) ??
+                normalizeOptionalScopeId(existing?.humanUpgradeChain?.approvedAt),
+          rollbackAllowed,
+          rollbackRef,
+          operatorActionRef:
+            normalizeOptionalScopeId(humanChainSource.operatorActionRef) ??
+            normalizeOptionalScopeId(existing?.humanUpgradeChain?.operatorActionRef) ??
+            `/v1/channels/${encodeURIComponent(channel.channelId)}/operator-actions`,
+          approvalHoldRef:
+            normalizeOptionalScopeId(humanChainSource.approvalHoldRef) ??
+            normalizeOptionalScopeId(existing?.humanUpgradeChain?.approvalHoldRef) ??
+            "/v1/topics/:topicId/approval-holds?status=:status",
+          decisionRef:
+            normalizeOptionalScopeId(humanChainSource.decisionRef) ??
+            normalizeOptionalScopeId(existing?.humanUpgradeChain?.decisionRef) ??
+            "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+        };
+      }
+
+      const selectedPath = candidatePaths.find((item) => item.pathId === selectedPathId);
+      const now = nowIso();
+      orchestrationUpgrade.upgradeArbitration = {
+        arbitrationId:
+          normalizeOptionalScopeId(upgradeInput.arbitrationId) ??
+          normalizeOptionalScopeId(existing?.arbitrationId) ??
+          generateId("arbitration"),
+        status,
+        reason:
+          upgradeInput.reason === null
+            ? null
+            : normalizeOptionalScopeId(upgradeInput.reason) ?? normalizeOptionalScopeId(existing?.reason),
+        candidatePaths,
+        selectedPathId,
+        humanUpgradeChain,
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_upgrade_arbitration_upsert",
+        target: `channel:${channel.channelId}:upgrade_arbitration`,
+        policySnapshot: input.policySnapshot,
+        details: {
+          arbitration_id: orchestrationUpgrade.upgradeArbitration.arbitrationId,
+          status: orchestrationUpgrade.upgradeArbitration.status,
+          selected_path_id: orchestrationUpgrade.upgradeArbitration.selectedPathId,
+          selected_target_mode: selectedPath?.targetMode ?? null,
+          candidate_path_count: orchestrationUpgrade.upgradeArbitration.candidatePaths.length
+        }
+      });
+      if (humanUpgradeChain) {
+        this.appendChannelAuditEntry(channel, {
+          actorId: operatorId,
+          action: "channel_human_upgrade_chain_upsert",
+          target: `channel:${channel.channelId}:human_upgrade_chain`,
+          policySnapshot: input.policySnapshot,
+          details: {
+            escalation_id: humanUpgradeChain.escalationId,
+            status: humanUpgradeChain.status,
+            approval_required: humanUpgradeChain.approvalRequired,
+            approval_id: humanUpgradeChain.approvalId,
+            rollback_allowed: humanUpgradeChain.rollbackAllowed,
+            rollback_ref: humanUpgradeChain.rollbackRef
+          }
+        });
+      }
+    }
+
+    this.channelContexts.set(channel.channelId, channel);
+    return this.getChannelOrchestrationUpgradeContract(channel.channelId);
   }
 
   getChannelNotificationEndpointContract(channelId) {
@@ -5622,6 +6276,7 @@ export class ServerCoordinator {
         "/v1/inbox/:actorId?topic_id=:topicId",
         "/v1/inbox/:actorId/acks",
         "/v1/channels/:channelId/notification-endpoint",
+        "/v1/channels/:channelId/orchestration-upgrade",
         "/v1/channels/:channelId/external-memory-provider",
         "/v1/channels/:channelId/memory-viewer",
         "/v1/channels/:channelId/memory/search",
@@ -5654,6 +6309,7 @@ export class ServerCoordinator {
         execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId",
         execution_inbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
         channel_notification_endpoint: "/v1/channels/:channelId/notification-endpoint",
+        channel_orchestration_upgrade: "/v1/channels/:channelId/orchestration-upgrade",
         channel_external_memory_provider: "/v1/channels/:channelId/external-memory-provider",
         channel_memory_viewer: "/v1/channels/:channelId/memory-viewer"
       }

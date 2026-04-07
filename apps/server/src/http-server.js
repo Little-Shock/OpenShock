@@ -171,6 +171,20 @@ function matchRoute(method, pathName) {
     };
   }
 
+  const v1ChannelOrchestrationUpgradeMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/orchestration-upgrade$/);
+  if (method === "GET" && v1ChannelOrchestrationUpgradeMatch) {
+    return {
+      route: "V1_GET_CHANNEL_ORCHESTRATION_UPGRADE",
+      channelId: v1ChannelOrchestrationUpgradeMatch[1]
+    };
+  }
+  if (method === "PUT" && v1ChannelOrchestrationUpgradeMatch) {
+    return {
+      route: "V1_PUT_CHANNEL_ORCHESTRATION_UPGRADE",
+      channelId: v1ChannelOrchestrationUpgradeMatch[1]
+    };
+  }
+
   const v1ChannelExternalMemoryProviderMatch = pathName.match(
     /^\/v1\/channels\/([^/]+)\/external-memory-provider$/
   );
@@ -1115,6 +1129,7 @@ function serializeChannelContextContract(input = {}) {
       token_quota_context_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       digital_twin_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       operational_capability_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      orchestration_upgrade_upsert: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
       repo_binding_upsert: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
       notification_endpoint_upsert: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
       external_memory_provider_upsert: `/v1/channels/${encodeURIComponent(channelId)}/external-memory-provider`,
@@ -1195,6 +1210,27 @@ function serializeChannelContextContract(input = {}) {
               audit_id: input.auditAnchor.latest.operationalCapability.auditId ?? null,
               action: input.auditAnchor.latest.operationalCapability.action ?? null,
               at: input.auditAnchor.latest.operationalCapability.at ?? null
+            }
+          : null,
+        multi_agent_orchestration: input.auditAnchor?.latest?.multiAgentOrchestration
+          ? {
+              audit_id: input.auditAnchor.latest.multiAgentOrchestration.auditId ?? null,
+              action: input.auditAnchor.latest.multiAgentOrchestration.action ?? null,
+              at: input.auditAnchor.latest.multiAgentOrchestration.at ?? null
+            }
+          : null,
+        upgrade_arbitration: input.auditAnchor?.latest?.upgradeArbitration
+          ? {
+              audit_id: input.auditAnchor.latest.upgradeArbitration.auditId ?? null,
+              action: input.auditAnchor.latest.upgradeArbitration.action ?? null,
+              at: input.auditAnchor.latest.upgradeArbitration.at ?? null
+            }
+          : null,
+        human_upgrade_chain: input.auditAnchor?.latest?.humanUpgradeChain
+          ? {
+              audit_id: input.auditAnchor.latest.humanUpgradeChain.auditId ?? null,
+              action: input.auditAnchor.latest.humanUpgradeChain.action ?? null,
+              at: input.auditAnchor.latest.humanUpgradeChain.at ?? null
             }
           : null,
         repo_binding: input.auditAnchor?.latest?.repoBinding
@@ -1309,6 +1345,149 @@ function serializeChannelNotificationApprovalContract(input = {}) {
               audit_id: input.auditAnchor.latest.notificationEndpoint.auditId ?? null,
               action: input.auditAnchor.latest.notificationEndpoint.action ?? null,
               at: input.auditAnchor.latest.notificationEndpoint.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
+function serializeChannelOrchestrationUpgradeContract(input = {}) {
+  const channelId = input.channelId;
+  return {
+    projection: "channel_orchestration_upgrade_contract",
+    contract_version: input.contractVersion ?? "v1.stage4c",
+    channel_id: channelId,
+    owner_operator_id: input.ownerOperatorId ?? null,
+    multi_agent_orchestration: input.multiAgentOrchestration
+      ? {
+          orchestration_id: input.multiAgentOrchestration.orchestrationId ?? null,
+          mode: input.multiAgentOrchestration.mode ?? "handoff_graph",
+          status: input.multiAgentOrchestration.status ?? "draft",
+          plan_ref: input.multiAgentOrchestration.planRef ?? null,
+          participant_agent_ids: deepClone(input.multiAgentOrchestration.participantAgentIds ?? []),
+          participants: deepClone(input.multiAgentOrchestration.participants ?? []).map((item) => ({
+            agent_id: item.agentId ?? null,
+            role: item.role ?? "worker",
+            duty: item.duty ?? null,
+            required: item.required !== false
+          })),
+          dependency_edges: deepClone(input.multiAgentOrchestration.dependencyEdges ?? []).map((item) => ({
+            from_agent_id: item.fromAgentId ?? null,
+            to_agent_id: item.toAgentId ?? null,
+            handoff_required: item.handoffRequired !== false,
+            condition: item.condition ?? null
+          })),
+          quorum: {
+            min_success_count: input.multiAgentOrchestration.quorum?.minSuccessCount ?? 1,
+            max_parallel_agents: input.multiAgentOrchestration.quorum?.maxParallelAgents ?? 1,
+            stop_on_blocked: input.multiAgentOrchestration.quorum?.stopOnBlocked !== false,
+            stop_on_failure_count: input.multiAgentOrchestration.quorum?.stopOnFailureCount ?? 1
+          },
+          stop_conditions: deepClone(input.multiAgentOrchestration.stopConditions ?? []),
+          escalation_triggers: deepClone(input.multiAgentOrchestration.escalationTriggers ?? []),
+          evidence_anchors: {
+            topic_state: input.multiAgentOrchestration.evidenceAnchors?.topicState ?? "/v1/topics/:topicId/topic-state",
+            run_timeline:
+              input.multiAgentOrchestration.evidenceAnchors?.runTimeline ??
+              "/v1/runs/:runId/timeline?topic_id=:topicId",
+            execution_inbox:
+              input.multiAgentOrchestration.evidenceAnchors?.executionInbox ??
+              "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
+            topic_inbox: input.multiAgentOrchestration.evidenceAnchors?.topicInbox ?? "/v1/inbox/:actorId?topic_id=:topicId",
+            recent_actions:
+              input.multiAgentOrchestration.evidenceAnchors?.recentActions ??
+              `/v1/channels/${encodeURIComponent(channelId)}/recent-actions`,
+            operator_actions:
+              input.multiAgentOrchestration.evidenceAnchors?.operatorActions ??
+              `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+            audit_trail:
+              input.multiAgentOrchestration.evidenceAnchors?.auditTrail ??
+              `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`
+          },
+          updated_at: input.multiAgentOrchestration.updatedAt ?? null,
+          updated_by: input.multiAgentOrchestration.updatedBy ?? null
+        }
+      : null,
+    upgrade_arbitration: input.upgradeArbitration
+      ? {
+          arbitration_id: input.upgradeArbitration.arbitrationId ?? null,
+          status: input.upgradeArbitration.status ?? "pending",
+          reason: input.upgradeArbitration.reason ?? null,
+          candidate_paths: deepClone(input.upgradeArbitration.candidatePaths ?? []).map((item) => ({
+            path_id: item.pathId ?? null,
+            target_mode: item.targetMode ?? null,
+            reason: item.reason ?? null,
+            evidence_refs: deepClone(item.evidenceRefs ?? [])
+          })),
+          selected_path_id: input.upgradeArbitration.selectedPathId ?? null,
+          human_upgrade_chain: input.upgradeArbitration.humanUpgradeChain
+            ? {
+                escalation_id: input.upgradeArbitration.humanUpgradeChain.escalationId ?? null,
+                status: input.upgradeArbitration.humanUpgradeChain.status ?? "pending",
+                approval_required: input.upgradeArbitration.humanUpgradeChain.approvalRequired !== false,
+                approval_id: input.upgradeArbitration.humanUpgradeChain.approvalId ?? null,
+                approved_by: input.upgradeArbitration.humanUpgradeChain.approvedBy ?? null,
+                approved_at: input.upgradeArbitration.humanUpgradeChain.approvedAt ?? null,
+                rollback_allowed: input.upgradeArbitration.humanUpgradeChain.rollbackAllowed !== false,
+                rollback_ref: input.upgradeArbitration.humanUpgradeChain.rollbackRef ?? null,
+                operator_action_ref:
+                  input.upgradeArbitration.humanUpgradeChain.operatorActionRef ??
+                  `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+                approval_hold_ref:
+                  input.upgradeArbitration.humanUpgradeChain.approvalHoldRef ??
+                  "/v1/topics/:topicId/approval-holds?status=:status",
+                decision_ref:
+                  input.upgradeArbitration.humanUpgradeChain.decisionRef ??
+                  "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+              }
+            : null,
+          updated_at: input.upgradeArbitration.updatedAt ?? null,
+          updated_by: input.upgradeArbitration.updatedBy ?? null
+        }
+      : null,
+    write_anchors: {
+      orchestration_upgrade_upsert:
+        input.writeAnchors?.orchestrationUpgradeUpsert ??
+        `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
+      operator_action: input.writeAnchors?.operatorAction ?? `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+      approval_decision: input.writeAnchors?.approvalDecision ?? "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+    },
+    timeline_anchor: {
+      recent_actions:
+        input.timelineAnchor?.recentActions ?? `/v1/channels/${encodeURIComponent(channelId)}/recent-actions`,
+      operator_actions:
+        input.timelineAnchor?.operatorActions ?? `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+      run_timeline: input.timelineAnchor?.runTimeline ?? "/v1/runs/:runId/timeline?topic_id=:topicId",
+      execution_inbox: input.timelineAnchor?.executionInbox ?? "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
+      topic_inbox: input.timelineAnchor?.topicInbox ?? "/v1/inbox/:actorId?topic_id=:topicId",
+      approval_holds: input.timelineAnchor?.approvalHolds ?? "/v1/topics/:topicId/approval-holds?status=:status",
+      approval_decisions:
+        input.timelineAnchor?.approvalDecisions ?? "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`,
+      latest: {
+        multi_agent_orchestration: input.auditAnchor?.latest?.multiAgentOrchestration
+          ? {
+              audit_id: input.auditAnchor.latest.multiAgentOrchestration.auditId ?? null,
+              action: input.auditAnchor.latest.multiAgentOrchestration.action ?? null,
+              at: input.auditAnchor.latest.multiAgentOrchestration.at ?? null
+            }
+          : null,
+        upgrade_arbitration: input.auditAnchor?.latest?.upgradeArbitration
+          ? {
+              audit_id: input.auditAnchor.latest.upgradeArbitration.auditId ?? null,
+              action: input.auditAnchor.latest.upgradeArbitration.action ?? null,
+              at: input.auditAnchor.latest.upgradeArbitration.at ?? null
+            }
+          : null,
+        human_upgrade_chain: input.auditAnchor?.latest?.humanUpgradeChain
+          ? {
+              audit_id: input.auditAnchor.latest.humanUpgradeChain.auditId ?? null,
+              action: input.auditAnchor.latest.humanUpgradeChain.action ?? null,
+              at: input.auditAnchor.latest.humanUpgradeChain.at ?? null
             }
           : null
       }
@@ -3113,6 +3292,317 @@ export function createHttpServer(coordinator, options = {}) {
         });
         sendJson(response, 200, {
           notification_endpoint: serializeChannelNotificationApprovalContract(contract),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_ORCHESTRATION_UPGRADE") {
+        const contract = coordinator.getChannelOrchestrationUpgradeContract(route.channelId);
+        sendJson(response, 200, {
+          orchestration_upgrade: serializeChannelOrchestrationUpgradeContract(contract),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_CHANNEL_ORCHESTRATION_UPGRADE") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_orchestration_upgrade", "orchestration upgrade payload must be object");
+        const allowedFields = new Set([
+          "operator_id",
+          "multi_agent_orchestration",
+          "upgrade_arbitration",
+          "policy_snapshot"
+        ]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_orchestration_upgrade_field", `unsupported orchestration upgrade field: ${key}`);
+          }
+        }
+        if (body.multi_agent_orchestration === undefined && body.upgrade_arbitration === undefined) {
+          throw new CoordinatorError(
+            "invalid_orchestration_upgrade",
+            "orchestration upgrade payload must include multi_agent_orchestration or upgrade_arbitration"
+          );
+        }
+        if (body.multi_agent_orchestration !== undefined) {
+          assertObjectBody(
+            body.multi_agent_orchestration,
+            "invalid_multi_agent_orchestration",
+            "multi_agent_orchestration payload must be object"
+          );
+          const allowedOrchestrationFields = new Set([
+            "orchestration_id",
+            "mode",
+            "status",
+            "plan_ref",
+            "participant_agent_ids",
+            "participants",
+            "dependency_edges",
+            "quorum",
+            "stop_conditions",
+            "escalation_triggers"
+          ]);
+          for (const key of Object.keys(body.multi_agent_orchestration)) {
+            if (!allowedOrchestrationFields.has(key)) {
+              throw new CoordinatorError(
+                "invalid_multi_agent_orchestration_field",
+                `unsupported multi_agent_orchestration field: ${key}`
+              );
+            }
+          }
+          if (
+            body.multi_agent_orchestration.participant_agent_ids !== undefined &&
+            !Array.isArray(body.multi_agent_orchestration.participant_agent_ids)
+          ) {
+            throw new CoordinatorError(
+              "invalid_multi_agent_orchestration_participant_agent_ids",
+              "multi_agent_orchestration.participant_agent_ids must be string[]"
+            );
+          }
+          if (body.multi_agent_orchestration.participants !== undefined) {
+            if (!Array.isArray(body.multi_agent_orchestration.participants)) {
+              throw new CoordinatorError(
+                "invalid_multi_agent_orchestration_participants",
+                "multi_agent_orchestration.participants must be object[]"
+              );
+            }
+            for (const participant of body.multi_agent_orchestration.participants) {
+              assertObjectBody(
+                participant,
+                "invalid_multi_agent_orchestration_participant",
+                "multi_agent_orchestration participant must be object"
+              );
+              const allowedParticipantFields = new Set(["agent_id", "role", "duty", "required"]);
+              for (const key of Object.keys(participant)) {
+                if (!allowedParticipantFields.has(key)) {
+                  throw new CoordinatorError(
+                    "invalid_multi_agent_orchestration_participant_field",
+                    `unsupported multi_agent_orchestration.participants field: ${key}`
+                  );
+                }
+              }
+            }
+          }
+          if (body.multi_agent_orchestration.dependency_edges !== undefined) {
+            if (!Array.isArray(body.multi_agent_orchestration.dependency_edges)) {
+              throw new CoordinatorError(
+                "invalid_multi_agent_orchestration_dependency_edges",
+                "multi_agent_orchestration.dependency_edges must be object[]"
+              );
+            }
+            for (const edge of body.multi_agent_orchestration.dependency_edges) {
+              assertObjectBody(
+                edge,
+                "invalid_multi_agent_orchestration_dependency_edge",
+                "multi_agent_orchestration dependency edge must be object"
+              );
+              const allowedDependencyFields = new Set([
+                "from_agent_id",
+                "to_agent_id",
+                "handoff_required",
+                "condition"
+              ]);
+              for (const key of Object.keys(edge)) {
+                if (!allowedDependencyFields.has(key)) {
+                  throw new CoordinatorError(
+                    "invalid_multi_agent_orchestration_dependency_edge_field",
+                    `unsupported multi_agent_orchestration.dependency_edges field: ${key}`
+                  );
+                }
+              }
+            }
+          }
+          if (body.multi_agent_orchestration.quorum !== undefined) {
+            assertObjectBody(
+              body.multi_agent_orchestration.quorum,
+              "invalid_multi_agent_orchestration_quorum",
+              "multi_agent_orchestration.quorum must be object"
+            );
+            const allowedQuorumFields = new Set([
+              "min_success_count",
+              "max_parallel_agents",
+              "stop_on_blocked",
+              "stop_on_failure_count"
+            ]);
+            for (const key of Object.keys(body.multi_agent_orchestration.quorum)) {
+              if (!allowedQuorumFields.has(key)) {
+                throw new CoordinatorError(
+                  "invalid_multi_agent_orchestration_quorum_field",
+                  `unsupported multi_agent_orchestration.quorum field: ${key}`
+                );
+              }
+            }
+          }
+          if (
+            body.multi_agent_orchestration.stop_conditions !== undefined &&
+            !Array.isArray(body.multi_agent_orchestration.stop_conditions)
+          ) {
+            throw new CoordinatorError(
+              "invalid_multi_agent_orchestration_stop_conditions",
+              "multi_agent_orchestration.stop_conditions must be string[]"
+            );
+          }
+          if (
+            body.multi_agent_orchestration.escalation_triggers !== undefined &&
+            !Array.isArray(body.multi_agent_orchestration.escalation_triggers)
+          ) {
+            throw new CoordinatorError(
+              "invalid_multi_agent_orchestration_escalation_triggers",
+              "multi_agent_orchestration.escalation_triggers must be string[]"
+            );
+          }
+        }
+        if (body.upgrade_arbitration !== undefined) {
+          assertObjectBody(body.upgrade_arbitration, "invalid_upgrade_arbitration", "upgrade_arbitration payload must be object");
+          const allowedUpgradeFields = new Set([
+            "arbitration_id",
+            "status",
+            "reason",
+            "candidate_paths",
+            "selected_path_id",
+            "human_upgrade_chain"
+          ]);
+          for (const key of Object.keys(body.upgrade_arbitration)) {
+            if (!allowedUpgradeFields.has(key)) {
+              throw new CoordinatorError("invalid_upgrade_arbitration_field", `unsupported upgrade_arbitration field: ${key}`);
+            }
+          }
+          if (body.upgrade_arbitration.candidate_paths !== undefined) {
+            if (!Array.isArray(body.upgrade_arbitration.candidate_paths)) {
+              throw new CoordinatorError(
+                "invalid_upgrade_arbitration_candidate_paths",
+                "upgrade_arbitration.candidate_paths must be object[]"
+              );
+            }
+            for (const item of body.upgrade_arbitration.candidate_paths) {
+              assertObjectBody(
+                item,
+                "invalid_upgrade_arbitration_candidate_path",
+                "upgrade_arbitration candidate path must be object"
+              );
+              const allowedCandidateFields = new Set(["path_id", "target_mode", "reason", "evidence_refs"]);
+              for (const key of Object.keys(item)) {
+                if (!allowedCandidateFields.has(key)) {
+                  throw new CoordinatorError(
+                    "invalid_upgrade_arbitration_candidate_path_field",
+                    `unsupported upgrade_arbitration.candidate_paths field: ${key}`
+                  );
+                }
+              }
+              if (item.evidence_refs !== undefined && !Array.isArray(item.evidence_refs)) {
+                throw new CoordinatorError(
+                  "invalid_upgrade_arbitration_evidence_refs",
+                  "upgrade_arbitration evidence_refs must be string[]"
+                );
+              }
+            }
+          }
+          if (body.upgrade_arbitration.human_upgrade_chain !== undefined && body.upgrade_arbitration.human_upgrade_chain !== null) {
+            assertObjectBody(
+              body.upgrade_arbitration.human_upgrade_chain,
+              "invalid_human_upgrade_chain",
+              "human_upgrade_chain payload must be object"
+            );
+            const allowedHumanChainFields = new Set([
+              "escalation_id",
+              "status",
+              "approval_required",
+              "approval_id",
+              "approved_by",
+              "approved_at",
+              "rollback_allowed",
+              "rollback_ref",
+              "operator_action_ref",
+              "approval_hold_ref",
+              "decision_ref"
+            ]);
+            for (const key of Object.keys(body.upgrade_arbitration.human_upgrade_chain)) {
+              if (!allowedHumanChainFields.has(key)) {
+                throw new CoordinatorError(
+                  "invalid_human_upgrade_chain_field",
+                  `unsupported human_upgrade_chain field: ${key}`
+                );
+              }
+            }
+          }
+        }
+        const contract = coordinator.upsertChannelOrchestrationUpgradeContract(route.channelId, {
+          operatorId: body.operator_id,
+          multiAgentOrchestration: body.multi_agent_orchestration
+            ? {
+                orchestrationId: body.multi_agent_orchestration.orchestration_id,
+                mode: body.multi_agent_orchestration.mode,
+                status: body.multi_agent_orchestration.status,
+                planRef: body.multi_agent_orchestration.plan_ref,
+                participantAgentIds: body.multi_agent_orchestration.participant_agent_ids,
+                participants: Array.isArray(body.multi_agent_orchestration.participants)
+                  ? body.multi_agent_orchestration.participants.map((item) => ({
+                      agentId: item.agent_id,
+                      role: item.role,
+                      duty: item.duty,
+                      required: item.required
+                    }))
+                  : undefined,
+                dependencyEdges: Array.isArray(body.multi_agent_orchestration.dependency_edges)
+                  ? body.multi_agent_orchestration.dependency_edges.map((item) => ({
+                      fromAgentId: item.from_agent_id,
+                      toAgentId: item.to_agent_id,
+                      handoffRequired: item.handoff_required,
+                      condition: item.condition
+                    }))
+                  : undefined,
+                quorum: body.multi_agent_orchestration.quorum
+                  ? {
+                      minSuccessCount: body.multi_agent_orchestration.quorum.min_success_count,
+                      maxParallelAgents: body.multi_agent_orchestration.quorum.max_parallel_agents,
+                      stopOnBlocked: body.multi_agent_orchestration.quorum.stop_on_blocked,
+                      stopOnFailureCount: body.multi_agent_orchestration.quorum.stop_on_failure_count
+                    }
+                  : undefined,
+                stopConditions: body.multi_agent_orchestration.stop_conditions,
+                escalationTriggers: body.multi_agent_orchestration.escalation_triggers
+              }
+            : undefined,
+          upgradeArbitration: body.upgrade_arbitration
+            ? {
+                arbitrationId: body.upgrade_arbitration.arbitration_id,
+                status: body.upgrade_arbitration.status,
+                reason: body.upgrade_arbitration.reason,
+                candidatePaths: Array.isArray(body.upgrade_arbitration.candidate_paths)
+                  ? body.upgrade_arbitration.candidate_paths.map((item) => ({
+                      pathId: item.path_id,
+                      targetMode: item.target_mode,
+                      reason: item.reason,
+                      evidenceRefs: item.evidence_refs
+                    }))
+                  : undefined,
+                selectedPathId: body.upgrade_arbitration.selected_path_id,
+                humanUpgradeChain:
+                  body.upgrade_arbitration.human_upgrade_chain === null
+                    ? null
+                    : body.upgrade_arbitration.human_upgrade_chain
+                      ? {
+                          escalationId: body.upgrade_arbitration.human_upgrade_chain.escalation_id,
+                          status: body.upgrade_arbitration.human_upgrade_chain.status,
+                          approvalRequired: body.upgrade_arbitration.human_upgrade_chain.approval_required,
+                          approvalId: body.upgrade_arbitration.human_upgrade_chain.approval_id,
+                          approvedBy: body.upgrade_arbitration.human_upgrade_chain.approved_by,
+                          approvedAt: body.upgrade_arbitration.human_upgrade_chain.approved_at,
+                          rollbackAllowed: body.upgrade_arbitration.human_upgrade_chain.rollback_allowed,
+                          rollbackRef: body.upgrade_arbitration.human_upgrade_chain.rollback_ref,
+                          operatorActionRef: body.upgrade_arbitration.human_upgrade_chain.operator_action_ref,
+                          approvalHoldRef: body.upgrade_arbitration.human_upgrade_chain.approval_hold_ref,
+                          decisionRef: body.upgrade_arbitration.human_upgrade_chain.decision_ref
+                        }
+                      : undefined
+              }
+            : undefined,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          orchestration_upgrade: serializeChannelOrchestrationUpgradeContract(contract),
           request_id: requestId
         });
         return;

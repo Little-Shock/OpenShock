@@ -5548,6 +5548,269 @@ test("v1 stage4c digital twin and operational capability contract keeps twin-as-
   });
 });
 
+test("v1 stage4c orchestration and upgrade arbitration contract keeps formal truth with explainable human upgrade chain", async () => {
+  const channelId = "channel_stage4c_orchestration_contract";
+  const operatorId = "human_operator_stage4c";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const seeded = await requestJson({
+      port,
+      method: "POST",
+      path: "/runtime/fixtures/seed",
+      body: {}
+    });
+    assert.equal(seeded.statusCode, 200);
+
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage4c",
+        workspace_root: "/Users/atou/.slock/agents",
+        baseline_ref: "feat/initial-implementation@ed132e5",
+        fixed_directory: "/Users/atou/OpenShockSwarm"
+      }
+    });
+    assert.equal(context.statusCode, 200);
+
+    const upsert = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
+      body: {
+        operator_id: operatorId,
+        multi_agent_orchestration: {
+          orchestration_id: "orch_stage4c_001",
+          mode: "handoff_graph",
+          status: "active",
+          plan_ref: "plan_stage4c_001",
+          participant_agent_ids: ["agent_stage4c_lead", "agent_stage4c_worker"],
+          participants: [
+            {
+              agent_id: "agent_stage4c_lead",
+              role: "lead",
+              duty: "plan_and_gate",
+              required: true
+            },
+            {
+              agent_id: "agent_stage4c_worker",
+              role: "worker",
+              duty: "execute_contract",
+              required: true
+            }
+          ],
+          dependency_edges: [
+            {
+              from_agent_id: "agent_stage4c_lead",
+              to_agent_id: "agent_stage4c_worker",
+              handoff_required: true,
+              condition: "dispatch_accepted"
+            }
+          ],
+          quorum: {
+            min_success_count: 1,
+            max_parallel_agents: 2,
+            stop_on_blocked: true,
+            stop_on_failure_count: 1
+          },
+          stop_conditions: ["all_tasks_completed", "approval_rejected"],
+          escalation_triggers: ["blocked", "approval_required", "timeout_10m"]
+        },
+        upgrade_arbitration: {
+          arbitration_id: "arb_stage4c_001",
+          status: "human_review_required",
+          reason: "runtime_recovery_repeated_failures",
+          candidate_paths: [
+            {
+              path_id: "path_manual_takeover",
+              target_mode: "manual_takeover",
+              reason: "operator_takeover",
+              evidence_refs: ["/v1/channels/:channelId/operator-actions"]
+            },
+            {
+              path_id: "path_runtime_rebind",
+              target_mode: "runtime_rebind",
+              reason: "agent_runtime_rebind",
+              evidence_refs: ["/v1/channels/:channelId/recent-actions"]
+            }
+          ],
+          selected_path_id: "path_manual_takeover",
+          human_upgrade_chain: {
+            escalation_id: "upgrade_chain_stage4c_001",
+            status: "pending",
+            approval_required: true,
+            approval_hold_ref: "/v1/topics/:topicId/approval-holds?status=:status",
+            decision_ref: "/v1/topics/:topicId/approval-holds/:holdId/decisions",
+            operator_action_ref: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+            rollback_allowed: true
+          }
+        },
+        policy_snapshot: {
+          mode: "stage4c_contract",
+          boundary: "orchestration_upgrade_only"
+        }
+      }
+    });
+    assert.equal(upsert.statusCode, 200);
+    assert.equal(upsert.body.orchestration_upgrade.contract_version, "v1.stage4c");
+    assert.equal(upsert.body.orchestration_upgrade.multi_agent_orchestration.mode, "handoff_graph");
+    assert.equal(upsert.body.orchestration_upgrade.multi_agent_orchestration.status, "active");
+    assert.equal(upsert.body.orchestration_upgrade.multi_agent_orchestration.participant_agent_ids.length, 2);
+    assert.equal(upsert.body.orchestration_upgrade.upgrade_arbitration.status, "human_review_required");
+    assert.equal(
+      upsert.body.orchestration_upgrade.upgrade_arbitration.human_upgrade_chain.approval_required,
+      true
+    );
+    assert.equal(
+      upsert.body.orchestration_upgrade.write_anchors.orchestration_upgrade_upsert,
+      `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`
+    );
+    assert.equal(
+      upsert.body.orchestration_upgrade.audit_anchor.latest.multi_agent_orchestration.action,
+      "channel_multi_agent_orchestration_upsert"
+    );
+    assert.equal(
+      upsert.body.orchestration_upgrade.audit_anchor.latest.upgrade_arbitration.action,
+      "channel_upgrade_arbitration_upsert"
+    );
+    assert.equal(
+      upsert.body.orchestration_upgrade.audit_anchor.latest.human_upgrade_chain.action,
+      "channel_human_upgrade_chain_upsert"
+    );
+
+    const read = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`
+    });
+    assert.equal(read.statusCode, 200);
+    assert.equal(read.body.orchestration_upgrade.multi_agent_orchestration.plan_ref, "plan_stage4c_001");
+    assert.equal(
+      read.body.orchestration_upgrade.upgrade_arbitration.selected_path_id,
+      "path_manual_takeover"
+    );
+    assert.equal(
+      read.body.orchestration_upgrade.timeline_anchor.operator_actions,
+      `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`
+    );
+
+    const recentActions = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/recent-actions?limit=60`
+    });
+    assert.equal(recentActions.statusCode, 200);
+    assert.equal(
+      recentActions.body.items.some((item) => item.action === "channel_multi_agent_orchestration_upsert"),
+      true
+    );
+    assert.equal(
+      recentActions.body.items.some((item) => item.action === "channel_upgrade_arbitration_upsert"),
+      true
+    );
+
+    const auditTrail = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail?limit=80`
+    });
+    assert.equal(auditTrail.statusCode, 200);
+    assert.equal(
+      auditTrail.body.items.some(
+        (item) => item.action === "channel_human_upgrade_chain_upsert" && item.details.approval_required === true
+      ),
+      true
+    );
+
+    const invalidOrchestrationMode = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
+      body: {
+        operator_id: operatorId,
+        multi_agent_orchestration: {
+          mode: "free_debate_social"
+        }
+      }
+    });
+    assert.equal(invalidOrchestrationMode.statusCode, 400);
+    assert.equal(invalidOrchestrationMode.body.error.code, "invalid_multi_agent_orchestration_mode");
+
+    const invalidParticipantRole = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
+      body: {
+        operator_id: operatorId,
+        multi_agent_orchestration: {
+          mode: "handoff_graph",
+          status: "draft",
+          plan_ref: "plan_stage4c_002",
+          participant_agent_ids: ["agent_stage4c_invalid"],
+          participants: [
+            {
+              agent_id: "agent_stage4c_invalid",
+              role: "reviewer"
+            }
+          ]
+        }
+      }
+    });
+    assert.equal(invalidParticipantRole.statusCode, 400);
+    assert.equal(invalidParticipantRole.body.error.code, "invalid_multi_agent_orchestration_participant_role");
+
+    const invalidUpgradeField = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
+      body: {
+        operator_id: operatorId,
+        upgrade_arbitration: {
+          unexpected_field: true
+        }
+      }
+    });
+    assert.equal(invalidUpgradeField.statusCode, 400);
+    assert.equal(invalidUpgradeField.body.error.code, "invalid_upgrade_arbitration_field");
+
+    const missingApprovalForApprovedChain = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
+      body: {
+        operator_id: operatorId,
+        upgrade_arbitration: {
+          arbitration_id: "arb_stage4c_002",
+          status: "approved",
+          candidate_paths: [
+            {
+              path_id: "path_manual_takeover",
+              target_mode: "manual_takeover"
+            }
+          ],
+          selected_path_id: "path_manual_takeover",
+          human_upgrade_chain: {
+            status: "approved",
+            approval_required: true
+          }
+        }
+      }
+    });
+    assert.equal(missingApprovalForApprovedChain.statusCode, 422);
+    assert.equal(missingApprovalForApprovedChain.body.error.code, "human_upgrade_chain_approval_required");
+
+    const payload = JSON.stringify({
+      contract: read.body.orchestration_upgrade,
+      auditTrail: auditTrail.body
+    });
+    assert.equal(payload.includes("\"free_debate_social\""), false);
+    assert.equal(payload.includes("\"local_shadow_orchestration_state\""), false);
+    assert.equal(payload.includes("\"cloud_sandbox\""), false);
+  });
+});
+
 test("v1 stage2 batch2 runtime recovery contract supports assignment enforcement and operator-triggered recoveries", async () => {
   const operatorId = "human_operator_stage2_batch2";
   const channelId = "channel_open_shock_batch2";
