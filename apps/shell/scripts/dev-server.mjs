@@ -289,42 +289,11 @@ async function writeShellState(res) {
       fetchOptionalUpstreamJson(buildRuntimeRecoveryActionsPath(scope)),
     ]);
     const workspaceId = resolveWorkspaceIdFromChannelContext(channelContextRead.payload?.context);
-    const encodedWorkspaceId = workspaceId ? encodeURIComponent(workspaceId) : "";
-    const [workspaceMembersRead, workspaceIdentitiesRead, workspaceInstallationsRead, workspaceRepoBindingsRead] =
-      await Promise.all([
-        fetchFirstAvailableProjection(
-          workspaceId
-            ? [
-                `/v1/workspaces/${encodedWorkspaceId}/members?limit=100`,
-                `/v1/workspaces/${encodedWorkspaceId}/member?limit=100`,
-              ]
-            : [],
-        ),
-        fetchFirstAvailableProjection(
-          workspaceId
-            ? [
-                `/v1/workspaces/${encodedWorkspaceId}/auth-identities?limit=100`,
-                `/v1/workspaces/${encodedWorkspaceId}/auth_identity?limit=100`,
-              ]
-            : [],
-        ),
-        fetchFirstAvailableProjection(
-          workspaceId
-            ? [
-                `/v1/workspaces/${encodedWorkspaceId}/github-installations?limit=100`,
-                `/v1/workspaces/${encodedWorkspaceId}/github_installation?limit=100`,
-              ]
-            : [],
-        ),
-        fetchFirstAvailableProjection(
-          workspaceId
-            ? [
-                `/v1/workspaces/${encodedWorkspaceId}/repo-bindings?limit=100`,
-                `/v1/workspaces/${encodedWorkspaceId}/repo-binding?limit=100`,
-              ]
-            : [],
-        ),
-      ]);
+    const workspaceGovernanceProjection = buildWorkspaceGovernanceProjectionFromChannelTruth({
+      workspaceId,
+      channelContextRead,
+      channelRepoBindingRead,
+    });
 
     const payload = buildShellStatePayload({
       topicId,
@@ -352,21 +321,7 @@ async function writeShellState(res) {
         ? channelRecentActionsRead.payload.items
         : [],
       runtimeRecoveryActions: Array.isArray(recoveryActionsRead.payload?.items) ? recoveryActionsRead.payload.items : [],
-      workspaceGovernance: {
-        workspace_id: workspaceId || null,
-        members_status: workspaceMembersRead.status,
-        members_source: workspaceMembersRead.path || null,
-        members_payload: workspaceMembersRead.payload || null,
-        identities_status: workspaceIdentitiesRead.status,
-        identities_source: workspaceIdentitiesRead.path || null,
-        identities_payload: workspaceIdentitiesRead.payload || null,
-        installations_status: workspaceInstallationsRead.status,
-        installations_source: workspaceInstallationsRead.path || null,
-        installations_payload: workspaceInstallationsRead.payload || null,
-        repo_bindings_status: workspaceRepoBindingsRead.status,
-        repo_bindings_source: workspaceRepoBindingsRead.path || null,
-        repo_bindings_payload: workspaceRepoBindingsRead.payload || null,
-      },
+      workspaceGovernance: workspaceGovernanceProjection,
       runtimeRegistry: runtimeRegistryRead ?? null,
       runtimeAgents,
       runtimeWorktreeClaims,
@@ -609,10 +564,12 @@ async function handleWorkspaceGovernanceMemberUpsert(req, res) {
       return writeJson(res, 405, { error: "method_not_allowed" });
     }
     const input = await readJsonBody(req);
-    const workspaceId = normalizeText(input.workspace_id);
-    if (!workspaceId) {
-      return writeJson(res, 400, { error: "invalid_workspace_id", message: "workspace_id is required" });
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
     }
+    const workspaceId = normalizeText(input.workspace_id) || null;
     const memberId = normalizeText(input.member_id);
     if (!memberId) {
       return writeJson(res, 400, { error: "invalid_member_id", message: "member_id is required" });
@@ -622,36 +579,23 @@ async function handleWorkspaceGovernanceMemberUpsert(req, res) {
       return writeJson(res, 400, { error: "invalid_member_role", message: "role is required" });
     }
     const status = normalizeText(input.status) || "active";
-    const operatorId = normalizeText(input.operator) || normalizeOperator(input.operator);
-    const encodedWorkspaceId = encodeURIComponent(workspaceId);
-    const encodedMemberId = encodeURIComponent(memberId);
-    const body = {
-      member_id: memberId,
-      role,
-      status,
-      operator_id: operatorId,
-      policy_snapshot: {
-        mode: "multi_human_governance",
-        source: "shell_workspace_governance",
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
+      method: "PUT",
+      body: {
+        operator_id: operatorId,
+        workspace_id: workspaceId,
+        member: {
+          member_id: memberId,
+          role,
+          status,
+        },
+        policy_snapshot: {
+          mode: "multi_human_governance_stage4a1",
+          source: "shell_workspace_governance",
+        },
       },
-    };
-    const result = await fetchFirstSuccessfulUpstreamRequest([
-      {
-        method: "PUT",
-        path: `/v1/workspaces/${encodedWorkspaceId}/members/${encodedMemberId}`,
-        body,
-      },
-      {
-        method: "POST",
-        path: `/v1/workspaces/${encodedWorkspaceId}/members`,
-        body,
-      },
-      {
-        method: "POST",
-        path: `/v1/workspaces/${encodedWorkspaceId}/member`,
-        body,
-      },
-    ]);
+    });
     return writeJson(res, 200, result);
   } catch (error) {
     return writeUpstreamError(res, error);
@@ -664,10 +608,12 @@ async function handleWorkspaceGovernanceGithubIdentityUpsert(req, res) {
       return writeJson(res, 405, { error: "method_not_allowed" });
     }
     const input = await readJsonBody(req);
-    const workspaceId = normalizeText(input.workspace_id);
-    if (!workspaceId) {
-      return writeJson(res, 400, { error: "invalid_workspace_id", message: "workspace_id is required" });
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
     }
+    const workspaceId = normalizeText(input.workspace_id) || null;
     const provider = normalizeText(input.provider) || "github";
     const githubLogin = normalizeText(input.github_login);
     const providerUserId = normalizeText(input.provider_user_id);
@@ -677,40 +623,26 @@ async function handleWorkspaceGovernanceGithubIdentityUpsert(req, res) {
         message: "github_login or provider_user_id is required",
       });
     }
-    const memberId = normalizeText(input.member_id) || null;
-    const operatorId = normalizeText(input.operator) || normalizeOperator(input.operator);
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
     const identityId = providerUserId || githubLogin;
-    const encodedWorkspaceId = encodeURIComponent(workspaceId);
-    const encodedIdentityId = encodeURIComponent(identityId);
-    const body = {
-      member_id: memberId,
-      provider,
-      github_login: githubLogin || null,
-      provider_user_id: providerUserId || null,
-      status: "linked",
-      operator_id: operatorId,
-      policy_snapshot: {
-        mode: "multi_human_governance",
-        source: "shell_workspace_governance",
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
+      method: "PUT",
+      body: {
+        operator_id: operatorId,
+        workspace_id: workspaceId,
+        auth_identity: {
+          identity_id: identityId,
+          provider,
+          subject_ref: providerUserId || identityId,
+          github_login: githubLogin || null,
+          status: "linked",
+        },
+        policy_snapshot: {
+          mode: "multi_human_governance_stage4a1",
+          source: "shell_workspace_governance",
+        },
       },
-    };
-    const result = await fetchFirstSuccessfulUpstreamRequest([
-      {
-        method: "PUT",
-        path: `/v1/workspaces/${encodedWorkspaceId}/auth-identities/${encodedIdentityId}`,
-        body,
-      },
-      {
-        method: "POST",
-        path: `/v1/workspaces/${encodedWorkspaceId}/auth-identities`,
-        body,
-      },
-      {
-        method: "POST",
-        path: `/v1/workspaces/${encodedWorkspaceId}/auth_identity`,
-        body,
-      },
-    ]);
+    });
     return writeJson(res, 200, result);
   } catch (error) {
     return writeUpstreamError(res, error);
@@ -723,52 +655,37 @@ async function handleWorkspaceGovernanceGithubInstallationUpsert(req, res) {
       return writeJson(res, 405, { error: "method_not_allowed" });
     }
     const input = await readJsonBody(req);
-    const workspaceId = normalizeText(input.workspace_id);
-    if (!workspaceId) {
-      return writeJson(res, 400, { error: "invalid_workspace_id", message: "workspace_id is required" });
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
     }
+    const workspaceId = normalizeText(input.workspace_id) || null;
     const installationId = normalizeText(input.installation_id);
     if (!installationId) {
       return writeJson(res, 400, { error: "invalid_installation_id", message: "installation_id is required" });
     }
-    const githubAccountLogin = normalizeText(input.github_account_login);
-    if (!githubAccountLogin) {
-      return writeJson(res, 400, {
-        error: "invalid_github_account_login",
-        message: "github_account_login is required",
-      });
-    }
     const status = normalizeText(input.status) || "installed";
-    const operatorId = normalizeText(input.operator) || normalizeOperator(input.operator);
-    const encodedWorkspaceId = encodeURIComponent(workspaceId);
-    const encodedInstallationId = encodeURIComponent(installationId);
-    const body = {
-      installation_id: installationId,
-      github_account_login: githubAccountLogin,
-      status,
-      operator_id: operatorId,
-      policy_snapshot: {
-        mode: "multi_human_governance",
-        source: "shell_workspace_governance",
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const authorizedRepos = normalizeStringArray(input.authorized_repos);
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
+      method: "PUT",
+      body: {
+        operator_id: operatorId,
+        workspace_id: workspaceId,
+        github_installation: {
+          installation_id: installationId,
+          provider: normalizeText(input.provider) || "github",
+          workspace_id: workspaceId,
+          status,
+          authorized_repos: authorizedRepos,
+        },
+        policy_snapshot: {
+          mode: "multi_human_governance_stage4a1",
+          source: "shell_workspace_governance",
+        },
       },
-    };
-    const result = await fetchFirstSuccessfulUpstreamRequest([
-      {
-        method: "PUT",
-        path: `/v1/workspaces/${encodedWorkspaceId}/github-installations/${encodedInstallationId}`,
-        body,
-      },
-      {
-        method: "POST",
-        path: `/v1/workspaces/${encodedWorkspaceId}/github-installations`,
-        body,
-      },
-      {
-        method: "POST",
-        path: `/v1/workspaces/${encodedWorkspaceId}/github_installation`,
-        body,
-      },
-    ]);
+    });
     return writeJson(res, 200, result);
   } catch (error) {
     return writeUpstreamError(res, error);
@@ -1209,75 +1126,17 @@ function buildRuntimeRecoveryActionsPath(scope) {
 
 async function fetchOptionalUpstreamJson(pathWithQuery) {
   if (!normalizeText(pathWithQuery)) {
-    return { status: "skipped", payload: null };
+    return { status: "skipped", payload: null, path: null };
   }
   try {
     const payload = await fetchUpstreamJson(pathWithQuery);
-    return { status: "ok", payload };
+    return { status: "ok", payload, path: pathWithQuery };
   } catch (error) {
     if (error instanceof UpstreamHttpError && error.statusCode === 404) {
-      return { status: "missing", payload: error.payload || null };
+      return { status: "missing", payload: error.payload || null, path: pathWithQuery };
     }
     throw error;
   }
-}
-
-async function fetchFirstAvailableProjection(paths) {
-  if (!Array.isArray(paths) || paths.length === 0) {
-    return { status: "skipped", payload: null, path: null };
-  }
-  let lastHttpError = null;
-  for (const pathWithQuery of paths) {
-    if (!normalizeText(pathWithQuery)) {
-      continue;
-    }
-    try {
-      const payload = await fetchUpstreamJson(pathWithQuery);
-      return { status: "ok", payload, path: pathWithQuery };
-    } catch (error) {
-      if (error instanceof UpstreamHttpError && error.statusCode === 404) {
-        lastHttpError = error;
-        continue;
-      }
-      throw error;
-    }
-  }
-  return {
-    status: "missing",
-    payload: lastHttpError?.payload || null,
-    path: null,
-  };
-}
-
-async function fetchFirstSuccessfulUpstreamRequest(attempts) {
-  if (!Array.isArray(attempts) || attempts.length === 0) {
-    throw new LocalRouteError(500, { error: "upstream_route_not_configured", message: "no upstream attempts provided" });
-  }
-  let lastHttpError = null;
-  for (const attempt of attempts) {
-    if (!attempt || !normalizeText(attempt.path)) {
-      continue;
-    }
-    try {
-      return await fetchUpstreamJson(attempt.path, {
-        method: attempt.method || "POST",
-        body: attempt.body,
-      });
-    } catch (error) {
-      if (error instanceof UpstreamHttpError && (error.statusCode === 404 || error.statusCode === 405)) {
-        lastHttpError = error;
-        continue;
-      }
-      throw error;
-    }
-  }
-  if (lastHttpError) {
-    throw lastHttpError;
-  }
-  throw new LocalRouteError(500, {
-    error: "upstream_route_not_configured",
-    message: "no usable upstream route for this operation",
-  });
 }
 
 function normalizeDecision(decision) {
@@ -1935,6 +1794,35 @@ function resolveWorkspaceIdFromChannelContext(channelContextContract) {
   return normalizeText(channelContextContract.workspace_id) || normalizeText(channelContextContract.workspaceId) || "";
 }
 
+function buildWorkspaceGovernanceProjectionFromChannelTruth({ workspaceId, channelContextRead, channelRepoBindingRead }) {
+  const context = channelContextRead?.payload?.context;
+  const governance = context?.governance && typeof context.governance === "object" ? context.governance : {};
+  const member = governance.member && typeof governance.member === "object" ? governance.member : null;
+  const authIdentity = governance.auth_identity && typeof governance.auth_identity === "object" ? governance.auth_identity : null;
+  const githubInstallation =
+    governance.github_installation && typeof governance.github_installation === "object" ? governance.github_installation : null;
+  const repoBinding = channelRepoBindingRead?.payload?.repo_binding;
+  const contextStatus = normalizeText(channelContextRead?.status) || "missing";
+  const repoBindingStatus = normalizeText(channelRepoBindingRead?.status) || "missing";
+  const contextOk = contextStatus === "ok";
+  const repoBindingOk = repoBindingStatus === "ok";
+  return {
+    workspace_id: normalizeText(workspaceId) || null,
+    members_status: contextOk ? (member ? "ok" : "pending") : contextStatus,
+    members_source: normalizeText(channelContextRead?.path) || null,
+    members_payload: { members: member ? [member] : [] },
+    identities_status: contextOk ? (authIdentity ? "ok" : "pending") : contextStatus,
+    identities_source: normalizeText(channelContextRead?.path) || null,
+    identities_payload: { auth_identities: authIdentity ? [authIdentity] : [] },
+    installations_status: contextOk ? (githubInstallation ? "ok" : "pending") : contextStatus,
+    installations_source: normalizeText(channelContextRead?.path) || null,
+    installations_payload: { github_installations: githubInstallation ? [githubInstallation] : [] },
+    repo_bindings_status: repoBindingOk ? (repoBinding ? "ok" : "pending") : repoBindingStatus,
+    repo_bindings_source: normalizeText(channelRepoBindingRead?.path) || null,
+    repo_bindings_payload: { repo_bindings: repoBinding ? [repoBinding] : [] },
+  };
+}
+
 function normalizeWorkspaceGovernance({ workspaceGovernance, workspaceId, operatorId, repoBinding }) {
   const normalizedWorkspaceId = normalizeText(workspaceGovernance?.workspace_id) || normalizeText(workspaceId) || null;
   const members = normalizeWorkspaceMembers(workspaceGovernance?.members_payload);
@@ -2012,7 +1900,11 @@ function normalizeWorkspaceAuthIdentities(payload) {
       normalizeText(item?.login) ||
       null,
     provider_user_id:
-      normalizeText(item?.provider_user_id) || normalizeText(item?.providerUserId) || normalizeText(item?.github_user_id) || null,
+      normalizeText(item?.provider_user_id) ||
+      normalizeText(item?.providerUserId) ||
+      normalizeText(item?.github_user_id) ||
+      normalizeText(item?.subject_ref) ||
+      null,
     status: normalizeText(item?.status) || "linked",
     linked_at: item?.linked_at || item?.linkedAt || null,
     updated_at: item?.updated_at || item?.updatedAt || null,
@@ -2036,6 +1928,7 @@ function normalizeWorkspaceGithubInstallations(payload) {
       null,
     status: normalizeText(item?.status) || "installed",
     permission_scope: normalizeText(item?.permission_scope) || normalizeText(item?.permissionScope) || null,
+    authorized_repos: normalizeStringArray(item?.authorized_repos),
     installed_at: item?.installed_at || item?.installedAt || null,
     updated_at: item?.updated_at || item?.updatedAt || null,
   }));

@@ -534,6 +534,7 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
       await requestJson(ENDPOINTS.workspaceGovernanceMemberUpsert, {
         method: "POST",
         body: {
+          channel_id: scopeDefaults.channelId,
           workspace_id: workspaceId,
           member_id: memberId,
           role,
@@ -563,6 +564,7 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
       await requestJson(ENDPOINTS.workspaceGovernanceIdentityUpsert, {
         method: "POST",
         body: {
+          channel_id: scopeDefaults.channelId,
           workspace_id: workspaceId,
           member_id: normalizeText(memberIdInput) || null,
           provider: "github",
@@ -582,20 +584,18 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
       if (!installationId) {
         throw new Error("installation_id is required");
       }
-      const accountInput = window.prompt("GitHub account login", "");
-      if (accountInput === null) {
+      const repoInput = window.prompt("Authorized repos (comma-separated, optional)", "");
+      if (repoInput === null) {
         return;
-      }
-      const accountLogin = normalizeText(accountInput);
-      if (!accountLogin) {
-        throw new Error("github_account_login is required");
       }
       await requestJson(ENDPOINTS.workspaceGovernanceInstallationUpsert, {
         method: "POST",
         body: {
+          channel_id: scopeDefaults.channelId,
           workspace_id: workspaceId,
           installation_id: installationId,
-          github_account_login: accountLogin,
+          provider: "github",
+          authorized_repos: normalizeStringList(repoInput),
           status: "installed",
           operator: scopeDefaults.operatorId,
         },
@@ -648,7 +648,11 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
             .slice(0, 6)
             .map((installation) => {
               const installationId = normalizeText(installation.installation_id) || "unknown_installation";
-              const account = normalizeText(installation.github_account_login) || "unknown_account";
+              const account =
+                normalizeText(installation.github_account_login) ||
+                normalizeText(installation.workspace_id) ||
+                normalizeText(installation.provider) ||
+                "unknown_installation";
               const status = normalizeText(installation.status) || "unknown";
               return `${account}#${installationId}:${status}`;
             })
@@ -1361,6 +1365,16 @@ function normalizeText(value) {
     return "";
   }
   return value.trim();
+}
+
+function normalizeStringList(value) {
+  if (typeof value !== "string") {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
 function safeParseJson(text) {
