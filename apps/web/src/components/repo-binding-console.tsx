@@ -51,6 +51,7 @@ export function RepoBindingConsole() {
   const [binding, setBinding] = useState<RepoBindingSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const canBindRepo = hasSessionPermission(state.auth.session, "repo.admin");
   const bindStatus = permissionStatus(state.auth.session, "repo.admin");
   const bindBoundary = permissionBoundaryCopy(state.auth.session, "repo.admin");
@@ -89,6 +90,7 @@ export function RepoBindingConsole() {
     }
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const response = await fetch(`${API_BASE}/v1/repo/binding`, {
@@ -107,6 +109,11 @@ export function RepoBindingConsole() {
       }
       if (!response.ok) {
         throw new Error(payload.error || `repo binding failed: ${response.status}`);
+      }
+      if (payload.binding) {
+        setSuccess(`已同步当前仓库：${valueOrFallback(payload.binding.repo, "未知仓库")} @ ${valueOrFallback(payload.binding.branch, "未知分支")}`);
+      } else {
+        setSuccess("当前仓库状态已重新同步。");
       }
     } catch (bindError) {
       setError(bindError instanceof Error ? bindError.message : "repo binding failed");
@@ -262,6 +269,12 @@ export function RepoBindingConsole() {
       {error ? (
         <div data-testid="setup-repo-binding-error" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
           {error}
+        </div>
+      ) : null}
+
+      {success ? (
+        <div data-testid="setup-repo-binding-success" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-4 py-3 text-sm text-[var(--shock-ink)]">
+          {success}
         </div>
       ) : null}
     </section>

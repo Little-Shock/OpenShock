@@ -55,10 +55,14 @@ export function GitHubConnectionConsole() {
   const [status, setStatus] = useState<GitHubConnectionStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  async function loadStatus() {
+  async function loadStatus(showFeedback = false) {
     setLoading(true);
     setError(null);
+    if (showFeedback) {
+      setSuccess(null);
+    }
 
     try {
       const response = await fetch(`${API_BASE}/v1/github/connection`, { cache: "no-store" });
@@ -67,6 +71,9 @@ export function GitHubConnectionConsole() {
         throw new Error(payload.error || `github connection failed: ${response.status}`);
       }
       setStatus(payload);
+      if (showFeedback) {
+        setSuccess(payload.ready ? "GitHub 状态已刷新，当前可以继续推进远端 PR 准备。" : "GitHub 状态已刷新，当前仍停留在本地闭环准备态。");
+      }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "github connection failed");
     } finally {
@@ -217,7 +224,7 @@ export function GitHubConnectionConsole() {
         <button
           data-testid="setup-github-refresh-button"
           type="button"
-          onClick={() => void loadStatus()}
+          onClick={() => void loadStatus(true)}
           disabled={loading}
           className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -228,6 +235,12 @@ export function GitHubConnectionConsole() {
       {error ? (
         <div data-testid="setup-github-error" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
           {error}
+        </div>
+      ) : null}
+
+      {success ? (
+        <div data-testid="setup-github-success" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-4 py-3 text-sm text-[var(--shock-ink)]">
+          {success}
         </div>
       ) : null}
     </section>

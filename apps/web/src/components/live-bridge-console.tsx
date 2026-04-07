@@ -103,6 +103,7 @@ export function LiveBridgeConsole() {
   const [prompt, setPrompt] = useState("请用一句中文确认：OpenShock 的多 runtime bridge 已经在线。");
   const [result, setResult] = useState<ExecResult | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const canManageRuntime = hasSessionPermission(state.auth.session, "runtime.manage");
   const canExec = hasSessionPermission(state.auth.session, "run.execute");
@@ -149,10 +150,12 @@ export function LiveBridgeConsole() {
       return;
     }
     setExecError(null);
+    setActionSuccess(null);
 
     try {
       await pairRuntime(daemonUrl);
       setResult(null);
+      setActionSuccess(`已配对 Runtime：${daemonUrl}`);
     } catch {
       // runtimeError already carries the failure contract for the surface
     }
@@ -163,10 +166,12 @@ export function LiveBridgeConsole() {
       return;
     }
     setExecError(null);
+    setActionSuccess(null);
 
     try {
       await unpairRuntime();
       setResult(null);
+      setActionSuccess("当前 Runtime 授权已撤销。");
     } catch {
       // runtimeError already carries the failure contract for the surface
     }
@@ -177,10 +182,12 @@ export function LiveBridgeConsole() {
       return;
     }
     setExecError(null);
+    setActionSuccess(null);
 
     try {
       await selectRuntime(machine);
       setResult(null);
+      setActionSuccess(`已切换到 Runtime：${machine}`);
     } catch {
       // runtimeError already carries the failure contract for the surface
     }
@@ -194,6 +201,7 @@ export function LiveBridgeConsole() {
     setLoading(true);
     setExecError(null);
     setResult(null);
+    setActionSuccess(null);
 
     try {
       const response = await fetch(`${API_BASE}/v1/exec`, {
@@ -212,6 +220,7 @@ export function LiveBridgeConsole() {
       }
 
       setResult(payload);
+      setActionSuccess(`已把提示词发送到 ${payload.provider} runtime。`);
     } catch (bridgeError) {
       setExecError(bridgeError instanceof Error ? bridgeError.message : "unknown bridge error");
     } finally {
@@ -480,6 +489,15 @@ export function LiveBridgeConsole() {
           className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white"
         >
           {runtimeError || execError}
+        </div>
+      ) : null}
+
+      {actionSuccess ? (
+        <div
+          data-testid="setup-bridge-success"
+          className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-4 py-3 text-sm text-[var(--shock-ink)]"
+        >
+          {actionSuccess}
         </div>
       ) : null}
 
