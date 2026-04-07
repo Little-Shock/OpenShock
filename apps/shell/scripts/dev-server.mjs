@@ -2751,13 +2751,13 @@ function buildStage5aHostedWorkbenchProjection({
     normalizeText(statusSource?.hosted_entry_url) ||
     normalizeText(statusSource?.entry_url) ||
     normalizeText(statusSource?.hosted_url) ||
-    normalizeText(runtimeConfig?.shellUrl) ||
     null;
   const hostedHomeUrl =
     normalizeText(statusSource?.hosted_home_url) ||
     normalizeText(statusSource?.home_url) ||
     hostedEntryUrl ||
     null;
+  const hostedHomeNonLocal = isNonLocalHttpUrl(hostedHomeUrl);
   const nonLocalAccess = isNonLocalHttpUrl(hostedEntryUrl);
   const loginReady =
     normalizeText(statusSource?.login_state) === "ready" ||
@@ -2774,14 +2774,14 @@ function buildStage5aHostedWorkbenchProjection({
     normalizeText(channelContextContract?.workspace?.root_path) ||
     normalizeText(repoBinding?.fixed_directory) ||
     null;
-  const hostedAccessStatus = hostedEntryUrl ? "ok" : "pending";
+  const hostedAccessStatus = nonLocalAccess ? "ok" : hostedEntryUrl ? "local_only" : "pending";
   const nonLocalStatus = nonLocalAccess ? "ok" : hostedEntryUrl ? "local_only" : "pending";
   const stableLoginStatus = loginReady ? "ok" : "pending";
-  const hostedHomeStatus = hostedHomeUrl ? "ok" : "pending";
+  const hostedHomeStatus = hostedHomeNonLocal ? "ok" : hostedHomeUrl ? "local_only" : "pending";
   const unifiedInboxStatus = resolvedChannelId ? "ok" : "pending";
   const defaultFlowStatus = resolvedChannelId && resolvedThreadId && resolvedWorkitemId ? "ok" : "pending";
   const deployRuntimeStatus = resolveStage5aDeployRuntimeStatus(statusSource, runtimeSmoke);
-  const deliverySurfaceStatus = localEntryRoot && hostedEntryUrl ? "ok" : "pending";
+  const deliverySurfaceStatus = localEntryRoot && nonLocalAccess ? "ok" : localEntryRoot && hostedEntryUrl ? "local_only" : "pending";
 
   return {
     status: {
@@ -2845,7 +2845,7 @@ function buildStage5aHostedWorkbenchProjection({
       hosted_entry_url: hostedEntryUrl,
       adapter_entry: "/api/v0a/shell-state",
       truth_surface: "/v1/*",
-      single_delivery_path: Boolean(localEntryRoot && hostedEntryUrl),
+      single_delivery_path: Boolean(localEntryRoot && nonLocalAccess),
     },
   };
 }
