@@ -1,6 +1,6 @@
-# Stage 3 Shell Entry and Release Fan-In
+# Stage 3/4 Shell Governance and Release Fan-In
 
-This directory hosts the collaboration shell surface used by Stage 1/2 runtime flow and Stage 3 delivery/ops readiness fan-in.
+This directory hosts the collaboration shell surface used by Stage 1/2 runtime flow, Stage 3 delivery/ops readiness fan-in, and Stage 4A1 workspace governance fan-in.
 
 Stage 3 scope for this module:
 
@@ -12,8 +12,13 @@ Out of scope in this stage:
 
 - New backend truth sources or new backend nouns
 - Re-introducing shadow shell-local truth paths
-- Multi-human collaboration workspace/account/role-flow/notifications
 - Cross-machine scheduling, cloud runtime, or complex orchestration
+
+Stage 4A1 governance fan-in scope:
+
+- Account/member/GitHub identity -> installation -> repo binding management entry
+- Only consume `/v1` governance truth from workspace-scoped resources
+- Keep installation authorization and repo binding authorization as separate checks
 
 ## Stage 3 Entry Contract
 
@@ -82,6 +87,10 @@ The shell does not own local mock truth. `dev-server.mjs` serves shell assets an
 - `GET /v1/channels/:channelId/operator-actions?limit=100`
 - `POST /v1/channels/:channelId/operator-actions`
 - `GET /v1/channels/:channelId/recent-actions?limit=100`
+- `GET /v1/workspaces/:workspaceId/members?limit=100` (or equivalent workspace member projection)
+- `GET /v1/workspaces/:workspaceId/auth-identities?limit=100` (or equivalent auth identity projection)
+- `GET /v1/workspaces/:workspaceId/github-installations?limit=100` (or equivalent installation projection)
+- `GET /v1/workspaces/:workspaceId/repo-bindings?limit=100` (or equivalent workspace repo binding projection)
 - `GET /v1/runtime/registry`
 - `GET /v1/runtime/agents?limit=200`
 - `POST /v1/runtime/agents/:agentId/recovery-actions`
@@ -118,3 +127,9 @@ Adapter routes:
   - Body: `{ "action": "resume" | "rebind" | "reclaim_worktree", "operator": "<string>", "channel_id": "<string|null>", "thread_id": "<string|null>", "workitem_id": "<string|null>", "claim_key": "<string|null>", "reason": "<string|null>" }`
 - `POST /api/v0a/operator/actions`
   - Body: `{ "action_type": "request_report" | "follow_up" | "intervention" | "recovery", "operator": "<string>", "channel_id": "<string>", "thread_id": "<string|null>", "workitem_id": "<string|null>", "agent_id": "<string|null>", "run_id": "<string|null>", "note": "<string|null>" }`
+- `POST /api/v0a/workspace-governance/member-upsert`
+  - Body: `{ "workspace_id": "<string>", "member_id": "<string>", "role": "<string>", "status": "<string>", "operator": "<string>" }`
+- `POST /api/v0a/workspace-governance/github-identity-upsert`
+  - Body: `{ "workspace_id": "<string>", "member_id": "<string|null>", "provider": "github", "github_login": "<string>", "provider_user_id": "<string|null>", "operator": "<string>" }`
+- `POST /api/v0a/workspace-governance/github-installation-upsert`
+  - Body: `{ "workspace_id": "<string>", "installation_id": "<string>", "github_account_login": "<string>", "status": "<string>", "operator": "<string>" }`

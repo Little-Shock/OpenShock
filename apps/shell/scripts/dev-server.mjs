@@ -64,6 +64,18 @@ const server = http.createServer(async (req, res) => {
       return handleOperatorChannelContextUpsert(req, res);
     }
 
+    if (route.kind === "workspace-governance-member-upsert") {
+      return handleWorkspaceGovernanceMemberUpsert(req, res);
+    }
+
+    if (route.kind === "workspace-governance-github-identity-upsert") {
+      return handleWorkspaceGovernanceGithubIdentityUpsert(req, res);
+    }
+
+    if (route.kind === "workspace-governance-github-installation-upsert") {
+      return handleWorkspaceGovernanceGithubInstallationUpsert(req, res);
+    }
+
     if (route.kind === "operator-agent-upsert") {
       return handleOperatorAgentUpsert(req, res, route.actorId);
     }
@@ -136,6 +148,18 @@ function matchRoute(rawUrl) {
 
   if (pathname === "/api/v0a/operator/channel-context" && url.search.length === 0) {
     return { kind: "operator-channel-context-upsert" };
+  }
+
+  if (pathname === "/api/v0a/workspace-governance/member-upsert" && url.search.length === 0) {
+    return { kind: "workspace-governance-member-upsert" };
+  }
+
+  if (pathname === "/api/v0a/workspace-governance/github-identity-upsert" && url.search.length === 0) {
+    return { kind: "workspace-governance-github-identity-upsert" };
+  }
+
+  if (pathname === "/api/v0a/workspace-governance/github-installation-upsert" && url.search.length === 0) {
+    return { kind: "workspace-governance-github-installation-upsert" };
   }
 
   const operatorAgentUpsertMatch = pathname.match(/^\/api\/v0a\/operator\/agents\/([^/]+)\/upsert$/);
@@ -264,6 +288,43 @@ async function writeShellState(res) {
       fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/recent-actions?limit=100` : ""),
       fetchOptionalUpstreamJson(buildRuntimeRecoveryActionsPath(scope)),
     ]);
+    const workspaceId = resolveWorkspaceIdFromChannelContext(channelContextRead.payload?.context);
+    const encodedWorkspaceId = workspaceId ? encodeURIComponent(workspaceId) : "";
+    const [workspaceMembersRead, workspaceIdentitiesRead, workspaceInstallationsRead, workspaceRepoBindingsRead] =
+      await Promise.all([
+        fetchFirstAvailableProjection(
+          workspaceId
+            ? [
+                `/v1/workspaces/${encodedWorkspaceId}/members?limit=100`,
+                `/v1/workspaces/${encodedWorkspaceId}/member?limit=100`,
+              ]
+            : [],
+        ),
+        fetchFirstAvailableProjection(
+          workspaceId
+            ? [
+                `/v1/workspaces/${encodedWorkspaceId}/auth-identities?limit=100`,
+                `/v1/workspaces/${encodedWorkspaceId}/auth_identity?limit=100`,
+              ]
+            : [],
+        ),
+        fetchFirstAvailableProjection(
+          workspaceId
+            ? [
+                `/v1/workspaces/${encodedWorkspaceId}/github-installations?limit=100`,
+                `/v1/workspaces/${encodedWorkspaceId}/github_installation?limit=100`,
+              ]
+            : [],
+        ),
+        fetchFirstAvailableProjection(
+          workspaceId
+            ? [
+                `/v1/workspaces/${encodedWorkspaceId}/repo-bindings?limit=100`,
+                `/v1/workspaces/${encodedWorkspaceId}/repo-binding?limit=100`,
+              ]
+            : [],
+        ),
+      ]);
 
     const payload = buildShellStatePayload({
       topicId,
@@ -291,6 +352,21 @@ async function writeShellState(res) {
         ? channelRecentActionsRead.payload.items
         : [],
       runtimeRecoveryActions: Array.isArray(recoveryActionsRead.payload?.items) ? recoveryActionsRead.payload.items : [],
+      workspaceGovernance: {
+        workspace_id: workspaceId || null,
+        members_status: workspaceMembersRead.status,
+        members_source: workspaceMembersRead.path || null,
+        members_payload: workspaceMembersRead.payload || null,
+        identities_status: workspaceIdentitiesRead.status,
+        identities_source: workspaceIdentitiesRead.path || null,
+        identities_payload: workspaceIdentitiesRead.payload || null,
+        installations_status: workspaceInstallationsRead.status,
+        installations_source: workspaceInstallationsRead.path || null,
+        installations_payload: workspaceInstallationsRead.payload || null,
+        repo_bindings_status: workspaceRepoBindingsRead.status,
+        repo_bindings_source: workspaceRepoBindingsRead.path || null,
+        repo_bindings_payload: workspaceRepoBindingsRead.payload || null,
+      },
       runtimeRegistry: runtimeRegistryRead ?? null,
       runtimeAgents,
       runtimeWorktreeClaims,
@@ -521,6 +597,178 @@ async function handleOperatorChannelContextUpsert(req, res) {
         },
       },
     });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleWorkspaceGovernanceMemberUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const workspaceId = normalizeText(input.workspace_id);
+    if (!workspaceId) {
+      return writeJson(res, 400, { error: "invalid_workspace_id", message: "workspace_id is required" });
+    }
+    const memberId = normalizeText(input.member_id);
+    if (!memberId) {
+      return writeJson(res, 400, { error: "invalid_member_id", message: "member_id is required" });
+    }
+    const role = normalizeText(input.role);
+    if (!role) {
+      return writeJson(res, 400, { error: "invalid_member_role", message: "role is required" });
+    }
+    const status = normalizeText(input.status) || "active";
+    const operatorId = normalizeText(input.operator) || normalizeOperator(input.operator);
+    const encodedWorkspaceId = encodeURIComponent(workspaceId);
+    const encodedMemberId = encodeURIComponent(memberId);
+    const body = {
+      member_id: memberId,
+      role,
+      status,
+      operator_id: operatorId,
+      policy_snapshot: {
+        mode: "multi_human_governance",
+        source: "shell_workspace_governance",
+      },
+    };
+    const result = await fetchFirstSuccessfulUpstreamRequest([
+      {
+        method: "PUT",
+        path: `/v1/workspaces/${encodedWorkspaceId}/members/${encodedMemberId}`,
+        body,
+      },
+      {
+        method: "POST",
+        path: `/v1/workspaces/${encodedWorkspaceId}/members`,
+        body,
+      },
+      {
+        method: "POST",
+        path: `/v1/workspaces/${encodedWorkspaceId}/member`,
+        body,
+      },
+    ]);
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleWorkspaceGovernanceGithubIdentityUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const workspaceId = normalizeText(input.workspace_id);
+    if (!workspaceId) {
+      return writeJson(res, 400, { error: "invalid_workspace_id", message: "workspace_id is required" });
+    }
+    const provider = normalizeText(input.provider) || "github";
+    const githubLogin = normalizeText(input.github_login);
+    const providerUserId = normalizeText(input.provider_user_id);
+    if (!githubLogin && !providerUserId) {
+      return writeJson(res, 400, {
+        error: "invalid_identity",
+        message: "github_login or provider_user_id is required",
+      });
+    }
+    const memberId = normalizeText(input.member_id) || null;
+    const operatorId = normalizeText(input.operator) || normalizeOperator(input.operator);
+    const identityId = providerUserId || githubLogin;
+    const encodedWorkspaceId = encodeURIComponent(workspaceId);
+    const encodedIdentityId = encodeURIComponent(identityId);
+    const body = {
+      member_id: memberId,
+      provider,
+      github_login: githubLogin || null,
+      provider_user_id: providerUserId || null,
+      status: "linked",
+      operator_id: operatorId,
+      policy_snapshot: {
+        mode: "multi_human_governance",
+        source: "shell_workspace_governance",
+      },
+    };
+    const result = await fetchFirstSuccessfulUpstreamRequest([
+      {
+        method: "PUT",
+        path: `/v1/workspaces/${encodedWorkspaceId}/auth-identities/${encodedIdentityId}`,
+        body,
+      },
+      {
+        method: "POST",
+        path: `/v1/workspaces/${encodedWorkspaceId}/auth-identities`,
+        body,
+      },
+      {
+        method: "POST",
+        path: `/v1/workspaces/${encodedWorkspaceId}/auth_identity`,
+        body,
+      },
+    ]);
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleWorkspaceGovernanceGithubInstallationUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const workspaceId = normalizeText(input.workspace_id);
+    if (!workspaceId) {
+      return writeJson(res, 400, { error: "invalid_workspace_id", message: "workspace_id is required" });
+    }
+    const installationId = normalizeText(input.installation_id);
+    if (!installationId) {
+      return writeJson(res, 400, { error: "invalid_installation_id", message: "installation_id is required" });
+    }
+    const githubAccountLogin = normalizeText(input.github_account_login);
+    if (!githubAccountLogin) {
+      return writeJson(res, 400, {
+        error: "invalid_github_account_login",
+        message: "github_account_login is required",
+      });
+    }
+    const status = normalizeText(input.status) || "installed";
+    const operatorId = normalizeText(input.operator) || normalizeOperator(input.operator);
+    const encodedWorkspaceId = encodeURIComponent(workspaceId);
+    const encodedInstallationId = encodeURIComponent(installationId);
+    const body = {
+      installation_id: installationId,
+      github_account_login: githubAccountLogin,
+      status,
+      operator_id: operatorId,
+      policy_snapshot: {
+        mode: "multi_human_governance",
+        source: "shell_workspace_governance",
+      },
+    };
+    const result = await fetchFirstSuccessfulUpstreamRequest([
+      {
+        method: "PUT",
+        path: `/v1/workspaces/${encodedWorkspaceId}/github-installations/${encodedInstallationId}`,
+        body,
+      },
+      {
+        method: "POST",
+        path: `/v1/workspaces/${encodedWorkspaceId}/github-installations`,
+        body,
+      },
+      {
+        method: "POST",
+        path: `/v1/workspaces/${encodedWorkspaceId}/github_installation`,
+        body,
+      },
+    ]);
     return writeJson(res, 200, result);
   } catch (error) {
     return writeUpstreamError(res, error);
@@ -974,6 +1222,64 @@ async function fetchOptionalUpstreamJson(pathWithQuery) {
   }
 }
 
+async function fetchFirstAvailableProjection(paths) {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return { status: "skipped", payload: null, path: null };
+  }
+  let lastHttpError = null;
+  for (const pathWithQuery of paths) {
+    if (!normalizeText(pathWithQuery)) {
+      continue;
+    }
+    try {
+      const payload = await fetchUpstreamJson(pathWithQuery);
+      return { status: "ok", payload, path: pathWithQuery };
+    } catch (error) {
+      if (error instanceof UpstreamHttpError && error.statusCode === 404) {
+        lastHttpError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  return {
+    status: "missing",
+    payload: lastHttpError?.payload || null,
+    path: null,
+  };
+}
+
+async function fetchFirstSuccessfulUpstreamRequest(attempts) {
+  if (!Array.isArray(attempts) || attempts.length === 0) {
+    throw new LocalRouteError(500, { error: "upstream_route_not_configured", message: "no upstream attempts provided" });
+  }
+  let lastHttpError = null;
+  for (const attempt of attempts) {
+    if (!attempt || !normalizeText(attempt.path)) {
+      continue;
+    }
+    try {
+      return await fetchUpstreamJson(attempt.path, {
+        method: attempt.method || "POST",
+        body: attempt.body,
+      });
+    } catch (error) {
+      if (error instanceof UpstreamHttpError && (error.statusCode === 404 || error.statusCode === 405)) {
+        lastHttpError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  if (lastHttpError) {
+    throw lastHttpError;
+  }
+  throw new LocalRouteError(500, {
+    error: "upstream_route_not_configured",
+    message: "no usable upstream route for this operation",
+  });
+}
+
 function normalizeDecision(decision) {
   if (decision === "approve" || decision === "reject") {
     return decision;
@@ -1057,6 +1363,7 @@ function buildShellStatePayload({
   channelOperatorActions,
   channelRecentActions,
   runtimeRecoveryActions,
+  workspaceGovernance,
   runtimeRegistry,
   runtimeAgents,
   runtimeWorktreeClaims,
@@ -1095,6 +1402,7 @@ function buildShellStatePayload({
     channelOperatorActions: normalizedChannelOperatorActions,
     channelRecentActions: normalizedChannelRecentActions,
     runtimeRecoveryActions: normalizedRuntimeRecoveryActions,
+    workspaceGovernance,
     runtimeRegistry,
     runtimeAgents: normalizedRuntimeAgents,
     runtimeWorktreeClaims: normalizedRuntimeWorktreeClaims,
@@ -1313,6 +1621,7 @@ function buildOperatorConsoleState({
   channelOperatorActions,
   channelRecentActions,
   runtimeRecoveryActions,
+  workspaceGovernance,
   runtimeRegistry,
   runtimeAgents,
   runtimeWorktreeClaims,
@@ -1349,6 +1658,12 @@ function buildOperatorConsoleState({
     operatorId,
     channelRepoBindingConfig,
     topicRepoBindingProjection,
+  });
+  const normalizedWorkspaceGovernance = normalizeWorkspaceGovernance({
+    workspaceGovernance,
+    workspaceId: resolveWorkspaceIdFromChannelContext(channelContextContract),
+    operatorId,
+    repoBinding: normalizedRepoBinding,
   });
 
   const auditEntries = buildAuditEntries({
@@ -1388,6 +1703,8 @@ function buildOperatorConsoleState({
       sample_topic_agent_count: sampleTopicAgentCount,
     },
     repo_binding: normalizedRepoBinding,
+    workspace_governance: normalizedWorkspaceGovernance,
+    workspaceGovernance: normalizedWorkspaceGovernance,
     agents: actorRegistry,
     runtime_agents: runtimeAgents,
     work_assignments: channelWorkAssignments,
@@ -1399,6 +1716,9 @@ function buildOperatorConsoleState({
     write_anchors: {
       context_upsert: "/api/v0a/operator/channel-context",
       repo_binding_upsert: "/api/v0a/operator/repo-binding",
+      governance_member_upsert: "/api/v0a/workspace-governance/member-upsert",
+      governance_identity_upsert: "/api/v0a/workspace-governance/github-identity-upsert",
+      governance_installation_upsert: "/api/v0a/workspace-governance/github-installation-upsert",
       agent_upsert: "/api/v0a/operator/agents/:actorId/upsert",
       assignment_enforce: "/api/v0a/operator/agents/:actorId/assignment",
       recovery_action: "/api/v0a/operator/agents/:actorId/recovery-actions",
@@ -1596,6 +1916,159 @@ function normalizeOperatorRepoBinding({ topicId, channelId, operatorId, channelR
     };
   }
   return null;
+}
+
+function resolveWorkspaceIdFromChannelContext(channelContextContract) {
+  if (!channelContextContract || typeof channelContextContract !== "object") {
+    return "";
+  }
+  const workspace = channelContextContract.workspace;
+  if (workspace && typeof workspace === "object") {
+    const fromWorkspace =
+      normalizeText(workspace.workspace_id) ||
+      normalizeText(workspace.workspaceId) ||
+      normalizeText(workspace.id);
+    if (fromWorkspace) {
+      return fromWorkspace;
+    }
+  }
+  return normalizeText(channelContextContract.workspace_id) || normalizeText(channelContextContract.workspaceId) || "";
+}
+
+function normalizeWorkspaceGovernance({ workspaceGovernance, workspaceId, operatorId, repoBinding }) {
+  const normalizedWorkspaceId = normalizeText(workspaceGovernance?.workspace_id) || normalizeText(workspaceId) || null;
+  const members = normalizeWorkspaceMembers(workspaceGovernance?.members_payload);
+  const authIdentities = normalizeWorkspaceAuthIdentities(workspaceGovernance?.identities_payload);
+  const githubInstallations = normalizeWorkspaceGithubInstallations(workspaceGovernance?.installations_payload);
+  const repoBindings = normalizeWorkspaceRepoBindings(workspaceGovernance?.repo_bindings_payload);
+  const repoBindingReady = Boolean(
+    (Array.isArray(repoBindings) && repoBindings.length > 0) || normalizeText(repoBinding?.repo_ref),
+  );
+  const installed = githubInstallations.some((installation) => {
+    const status = normalizeText(installation.status);
+    return status !== "removed" && status !== "revoked";
+  });
+  return {
+    workspace_id: normalizedWorkspaceId,
+    owner_operator_id: normalizeText(operatorId) || null,
+    status: {
+      members_status: normalizeText(workspaceGovernance?.members_status) || "missing",
+      identities_status: normalizeText(workspaceGovernance?.identities_status) || "missing",
+      installations_status: normalizeText(workspaceGovernance?.installations_status) || "missing",
+      repo_bindings_status: normalizeText(workspaceGovernance?.repo_bindings_status) || "missing",
+    },
+    source: {
+      members: normalizeText(workspaceGovernance?.members_source) || null,
+      identities: normalizeText(workspaceGovernance?.identities_source) || null,
+      installations: normalizeText(workspaceGovernance?.installations_source) || null,
+      repo_bindings: normalizeText(workspaceGovernance?.repo_bindings_source) || null,
+    },
+    chain: {
+      identity_link_status: authIdentities.length > 0 ? "ready" : "pending",
+      installation_status: installed ? "ready" : "pending",
+      repo_binding_status: repoBindingReady ? "ready" : "pending",
+    },
+    members,
+    auth_identities: authIdentities,
+    github_installations: githubInstallations,
+    repo_bindings: repoBindings,
+  };
+}
+
+function normalizeWorkspaceMembers(payload) {
+  const items = extractResourceItems(payload, ["members", "member"]);
+  return items.map((item) => ({
+    member_id:
+      normalizeText(item?.member_id) ||
+      normalizeText(item?.memberId) ||
+      normalizeText(item?.actor_id) ||
+      normalizeText(item?.user_id) ||
+      normalizeText(item?.id) ||
+      "unknown_member",
+    role: normalizeText(item?.role) || "member",
+    status: normalizeText(item?.status) || "active",
+    invited_by: normalizeText(item?.invited_by) || normalizeText(item?.invitedBy) || null,
+    invited_at: item?.invited_at || item?.invitedAt || null,
+    joined_at: item?.joined_at || item?.joinedAt || null,
+    updated_at: item?.updated_at || item?.updatedAt || null,
+  }));
+}
+
+function normalizeWorkspaceAuthIdentities(payload) {
+  const items = extractResourceItems(payload, ["auth_identities", "auth_identity", "identities"]);
+  return items.map((item) => ({
+    identity_id:
+      normalizeText(item?.identity_id) ||
+      normalizeText(item?.identityId) ||
+      normalizeText(item?.provider_identity_id) ||
+      normalizeText(item?.id) ||
+      "unknown_identity",
+    member_id: normalizeText(item?.member_id) || normalizeText(item?.memberId) || null,
+    provider: normalizeText(item?.provider) || "github",
+    github_login:
+      normalizeText(item?.github_login) ||
+      normalizeText(item?.githubLogin) ||
+      normalizeText(item?.provider_login) ||
+      normalizeText(item?.login) ||
+      null,
+    provider_user_id:
+      normalizeText(item?.provider_user_id) || normalizeText(item?.providerUserId) || normalizeText(item?.github_user_id) || null,
+    status: normalizeText(item?.status) || "linked",
+    linked_at: item?.linked_at || item?.linkedAt || null,
+    updated_at: item?.updated_at || item?.updatedAt || null,
+  }));
+}
+
+function normalizeWorkspaceGithubInstallations(payload) {
+  const items = extractResourceItems(payload, ["github_installations", "github_installation", "installations"]);
+  return items.map((item) => ({
+    installation_id:
+      normalizeText(item?.installation_id) ||
+      normalizeText(item?.installationId) ||
+      normalizeText(item?.id) ||
+      "unknown_installation",
+    workspace_id: normalizeText(item?.workspace_id) || normalizeText(item?.workspaceId) || null,
+    github_account_login:
+      normalizeText(item?.github_account_login) ||
+      normalizeText(item?.githubAccountLogin) ||
+      normalizeText(item?.account_login) ||
+      normalizeText(item?.account?.login) ||
+      null,
+    status: normalizeText(item?.status) || "installed",
+    permission_scope: normalizeText(item?.permission_scope) || normalizeText(item?.permissionScope) || null,
+    installed_at: item?.installed_at || item?.installedAt || null,
+    updated_at: item?.updated_at || item?.updatedAt || null,
+  }));
+}
+
+function normalizeWorkspaceRepoBindings(payload) {
+  const items = extractResourceItems(payload, ["repo_bindings", "repo_binding"]);
+  return items.map((item) => ({
+    binding_id: normalizeText(item?.binding_id) || normalizeText(item?.bindingId) || normalizeText(item?.id) || null,
+    provider: normalizeText(item?.provider_ref?.provider) || normalizeText(item?.provider) || "unknown",
+    repo_ref: normalizeText(item?.provider_ref?.repo_ref) || normalizeText(item?.repo_ref) || null,
+    default_branch: normalizeText(item?.default_branch) || normalizeText(item?.defaultBranch) || null,
+    status: normalizeText(item?.status) || "active",
+    updated_at: item?.updated_at || item?.updatedAt || null,
+  }));
+}
+
+function extractResourceItems(payload, preferredKeys) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+  if (Array.isArray(payload.items)) {
+    return payload.items;
+  }
+  for (const key of preferredKeys) {
+    if (Array.isArray(payload[key])) {
+      return payload[key];
+    }
+  }
+  return [];
 }
 
 function buildAuditEntries({ channelAuditTrail, controlEvents }) {

@@ -11,6 +11,15 @@ const ENDPOINTS = {
   runFollowUp: (runId) => toApiUrl(runtimeConfig.apiBaseUrl, `/api/v0a/runs/${encodeURIComponent(runId)}/follow-up`),
   operatorChannelContextUpsert: toApiUrl(runtimeConfig.apiBaseUrl, "/api/v0a/operator/channel-context"),
   operatorRepoBindingUpsert: toApiUrl(runtimeConfig.apiBaseUrl, "/api/v0a/operator/repo-binding"),
+  workspaceGovernanceMemberUpsert: toApiUrl(runtimeConfig.apiBaseUrl, "/api/v0a/workspace-governance/member-upsert"),
+  workspaceGovernanceIdentityUpsert: toApiUrl(
+    runtimeConfig.apiBaseUrl,
+    "/api/v0a/workspace-governance/github-identity-upsert",
+  ),
+  workspaceGovernanceInstallationUpsert: toApiUrl(
+    runtimeConfig.apiBaseUrl,
+    "/api/v0a/workspace-governance/github-installation-upsert",
+  ),
   operatorAgentUpsert: (actorId) =>
     toApiUrl(runtimeConfig.apiBaseUrl, `/api/v0a/operator/agents/${encodeURIComponent(actorId)}/upsert`),
   operatorAgentAssignment: (actorId) =>
@@ -35,6 +44,7 @@ const dom = {
   interventionPointsList: document.getElementById("intervention-points-list"),
   eventFeed: document.getElementById("event-feed"),
   workspaceSummaryList: document.getElementById("workspace-summary-list"),
+  workspaceGovernanceList: document.getElementById("workspace-governance-list"),
   repoBindingList: document.getElementById("repo-binding-list"),
   runtimeMachineList: document.getElementById("runtime-machine-list"),
   agentRegistryList: document.getElementById("agent-registry-list"),
@@ -368,6 +378,7 @@ function renderCloseoutPoints(points) {
 
 function renderOperatorConsole(operatorConsole, payload) {
   renderWorkspaceSummary(operatorConsole, payload);
+  renderWorkspaceGovernance(operatorConsole, payload);
   renderRepoBinding(operatorConsole, payload);
   renderRuntimeMachine(operatorConsole);
   renderAgentRegistry(operatorConsole, payload);
@@ -458,6 +469,194 @@ function renderWorkspaceSummary(operatorConsole, payload) {
   });
 
   dom.workspaceSummaryList.append(channelCard, workspaceCard);
+}
+
+function renderWorkspaceGovernance(operatorConsole, payload) {
+  dom.workspaceGovernanceList.replaceChildren();
+  if (!operatorConsole || typeof operatorConsole !== "object") {
+    dom.workspaceGovernanceList.textContent = "Workspace governance is unavailable.";
+    return;
+  }
+
+  const governance =
+    (operatorConsole.workspace_governance && typeof operatorConsole.workspace_governance === "object"
+      ? operatorConsole.workspace_governance
+      : null) ||
+    (operatorConsole.workspaceGovernance && typeof operatorConsole.workspaceGovernance === "object"
+      ? operatorConsole.workspaceGovernance
+      : null);
+  if (!governance) {
+    dom.workspaceGovernanceList.textContent = "Workspace governance truth is not projected yet.";
+    return;
+  }
+
+  const scopeDefaults = resolveOperatorScopeFromState(operatorConsole, payload);
+  const workspaceId =
+    normalizeText(governance.workspace_id) || normalizeText(operatorConsole.workspace?.workspace_id) || "workspace_default";
+  const governanceStatus = governance.status && typeof governance.status === "object" ? governance.status : {};
+  const chain = governance.chain && typeof governance.chain === "object" ? governance.chain : {};
+  const members = Array.isArray(governance.members) ? governance.members : [];
+  const identities = Array.isArray(governance.auth_identities) ? governance.auth_identities : [];
+  const installations = Array.isArray(governance.github_installations) ? governance.github_installations : [];
+
+  const chainCard = queueCard({
+    title: `Workspace ${workspaceId}`,
+    subtitle: "identity -> installation -> repo binding",
+    note: `identity=${normalizeText(chain.identity_link_status) || "pending"} · installation=${
+      normalizeText(chain.installation_status) || "pending"
+    } · repo_binding=${normalizeText(chain.repo_binding_status) || "pending"}`,
+    status: normalizeText(chain.repo_binding_status) === "ready" ? "active" : "pending",
+  });
+  const chainActions = document.createElement("div");
+  chainActions.className = "queue-actions";
+  chainActions.append(
+    queueAction("Upsert member", async () => {
+      const memberIdInput = window.prompt("Member ID", "");
+      if (memberIdInput === null) {
+        return;
+      }
+      const memberId = normalizeText(memberIdInput);
+      if (!memberId) {
+        throw new Error("member_id is required");
+      }
+      const roleInput = window.prompt("Role (owner/admin/member/viewer)", "member");
+      if (roleInput === null) {
+        return;
+      }
+      const role = normalizeText(roleInput);
+      if (!role) {
+        throw new Error("role is required");
+      }
+      const statusInput = window.prompt("Status (invited/active/suspended)", "active");
+      if (statusInput === null) {
+        return;
+      }
+      await requestJson(ENDPOINTS.workspaceGovernanceMemberUpsert, {
+        method: "POST",
+        body: {
+          workspace_id: workspaceId,
+          member_id: memberId,
+          role,
+          status: normalizeText(statusInput) || "active",
+          operator: scopeDefaults.operatorId,
+        },
+      });
+      await loadAndRender();
+    }),
+    queueAction("Link identity", async () => {
+      const loginInput = window.prompt("GitHub login", "");
+      if (loginInput === null) {
+        return;
+      }
+      const githubLogin = normalizeText(loginInput);
+      if (!githubLogin) {
+        throw new Error("github_login is required");
+      }
+      const memberIdInput = window.prompt("Member ID (optional)", "");
+      if (memberIdInput === null) {
+        return;
+      }
+      const userIdInput = window.prompt("GitHub user ID (optional)", "");
+      if (userIdInput === null) {
+        return;
+      }
+      await requestJson(ENDPOINTS.workspaceGovernanceIdentityUpsert, {
+        method: "POST",
+        body: {
+          workspace_id: workspaceId,
+          member_id: normalizeText(memberIdInput) || null,
+          provider: "github",
+          github_login: githubLogin,
+          provider_user_id: normalizeText(userIdInput) || null,
+          operator: scopeDefaults.operatorId,
+        },
+      });
+      await loadAndRender();
+    }),
+    queueAction("Upsert installation", async () => {
+      const installationInput = window.prompt("GitHub installation ID", "");
+      if (installationInput === null) {
+        return;
+      }
+      const installationId = normalizeText(installationInput);
+      if (!installationId) {
+        throw new Error("installation_id is required");
+      }
+      const accountInput = window.prompt("GitHub account login", "");
+      if (accountInput === null) {
+        return;
+      }
+      const accountLogin = normalizeText(accountInput);
+      if (!accountLogin) {
+        throw new Error("github_account_login is required");
+      }
+      await requestJson(ENDPOINTS.workspaceGovernanceInstallationUpsert, {
+        method: "POST",
+        body: {
+          workspace_id: workspaceId,
+          installation_id: installationId,
+          github_account_login: accountLogin,
+          status: "installed",
+          operator: scopeDefaults.operatorId,
+        },
+      });
+      await loadAndRender();
+    }),
+  );
+  chainCard.append(chainActions);
+  dom.workspaceGovernanceList.append(chainCard);
+
+  const memberCard = queueCard({
+    title: `Members ${members.length}`,
+    subtitle: `status=${normalizeText(governanceStatus.members_status) || "unknown"}`,
+    note:
+      members.length > 0
+        ? members
+            .slice(0, 6)
+            .map((member) => {
+              const memberId = normalizeText(member.member_id) || "unknown_member";
+              const role = normalizeText(member.role) || "unknown";
+              const status = normalizeText(member.status) || "unknown";
+              return `${memberId}:${role}/${status}`;
+            })
+            .join(" · ")
+        : "No members projected.",
+    status: members.length > 0 ? "active" : "pending",
+  });
+  dom.workspaceGovernanceList.append(memberCard);
+
+  const identityCard = queueCard({
+    title: `GitHub Identities ${identities.length}`,
+    subtitle: `status=${normalizeText(governanceStatus.identities_status) || "unknown"}`,
+    note:
+      identities.length > 0
+        ? identities
+            .slice(0, 6)
+            .map((identity) => normalizeText(identity.github_login || identity.identity_id) || "unknown_identity")
+            .join(" · ")
+        : "No linked identities projected.",
+    status: identities.length > 0 ? "active" : "pending",
+  });
+  dom.workspaceGovernanceList.append(identityCard);
+
+  const installationCard = queueCard({
+    title: `Installations ${installations.length}`,
+    subtitle: `status=${normalizeText(governanceStatus.installations_status) || "unknown"}`,
+    note:
+      installations.length > 0
+        ? installations
+            .slice(0, 6)
+            .map((installation) => {
+              const installationId = normalizeText(installation.installation_id) || "unknown_installation";
+              const account = normalizeText(installation.github_account_login) || "unknown_account";
+              const status = normalizeText(installation.status) || "unknown";
+              return `${account}#${installationId}:${status}`;
+            })
+            .join(" · ")
+        : "No installations projected.",
+    status: installations.length > 0 ? "active" : "pending",
+  });
+  dom.workspaceGovernanceList.append(installationCard);
 }
 
 function renderRepoBinding(operatorConsole, payload) {
