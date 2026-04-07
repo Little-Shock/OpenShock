@@ -4261,6 +4261,18 @@ test("v1 stage2 batch2 runtime recovery contract supports assignment enforcement
       });
       assert.equal(agentBeta.statusCode, 200);
 
+      const unassignedResume = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_beta_batch2/recovery-actions",
+        body: {
+          action: "resume",
+          operator_id: operatorId
+        }
+      });
+      assert.equal(unassignedResume.statusCode, 400);
+      assert.equal(unassignedResume.body.error.code, "invalid_channel_id");
+
       const assignAlpha = await requestJson({
         port,
         method: "PUT",

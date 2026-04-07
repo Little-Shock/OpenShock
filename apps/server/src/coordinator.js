@@ -2033,6 +2033,10 @@ export class ServerCoordinator {
     let resultAgent = null;
     let resultClaim = null;
     if (action === "resume") {
+      this.applyRuntimeAssignment(agent, input, {
+        allowOverwrite: false,
+        requireChannel: true
+      });
       this.applyRuntimeOwnershipBoundary(agent, {
         operatorId,
         channelId: input.channelId,
