@@ -165,6 +165,45 @@ function matchRoute(method, pathName) {
     };
   }
 
+  const v1ChannelWorkAssignmentsMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/work-assignments$/);
+  if (method === "GET" && v1ChannelWorkAssignmentsMatch) {
+    return {
+      route: "V1_GET_CHANNEL_WORK_ASSIGNMENTS",
+      channelId: v1ChannelWorkAssignmentsMatch[1]
+    };
+  }
+
+  const v1ChannelWorkAssignmentUpsertMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/work-assignments\/([^/]+)$/);
+  if (method === "PUT" && v1ChannelWorkAssignmentUpsertMatch) {
+    return {
+      route: "V1_PUT_CHANNEL_WORK_ASSIGNMENT",
+      channelId: v1ChannelWorkAssignmentUpsertMatch[1],
+      agentId: v1ChannelWorkAssignmentUpsertMatch[2]
+    };
+  }
+
+  const v1ChannelOperatorActionsMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/operator-actions$/);
+  if (method === "GET" && v1ChannelOperatorActionsMatch) {
+    return {
+      route: "V1_GET_CHANNEL_OPERATOR_ACTIONS",
+      channelId: v1ChannelOperatorActionsMatch[1]
+    };
+  }
+  if (method === "POST" && v1ChannelOperatorActionsMatch) {
+    return {
+      route: "V1_POST_CHANNEL_OPERATOR_ACTION",
+      channelId: v1ChannelOperatorActionsMatch[1]
+    };
+  }
+
+  const v1ChannelRecentActionsMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/recent-actions$/);
+  if (method === "GET" && v1ChannelRecentActionsMatch) {
+    return {
+      route: "V1_GET_CHANNEL_RECENT_ACTIONS",
+      channelId: v1ChannelRecentActionsMatch[1]
+    };
+  }
+
   const v1TopicCommandsMatch = pathName.match(/^\/v1\/topics\/([^/]+)\/commands$/);
   if (method === "POST" && v1TopicCommandsMatch) {
     return { route: "V1_POST_TOPIC_COMMAND", topicId: v1TopicCommandsMatch[1] };
@@ -794,6 +833,9 @@ function serializeChannelContextContract(input = {}) {
       context_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       repo_binding_upsert: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
       topic_repo_binding: "/v1/topics/:topicId/repo-binding",
+      work_assignment: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/:agentId`,
+      operator_action: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+      recent_actions: `/v1/channels/${encodeURIComponent(channelId)}/recent-actions`,
       audit_trail: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`
     },
     updated_at: input.updatedAt ?? null
@@ -830,6 +872,74 @@ function serializeChannelAuditEntry(entry) {
     at: entry.at,
     policy_snapshot: deepClone(entry.policySnapshot ?? {}),
     details: deepClone(entry.details ?? {})
+  };
+}
+
+function serializeChannelWorkAssignment(item) {
+  return {
+    channel_id: item.channelId,
+    owner_operator_id: item.ownerOperatorId ?? null,
+    agent_id: item.agentId,
+    assigned_channel_id: item.assignedChannelId ?? null,
+    assigned_thread_id: item.assignedThreadId ?? null,
+    assigned_workitem_id: item.assignedWorkitemId ?? null,
+    default_duty: item.defaultDuty ?? null,
+    assignment_note: item.assignmentNote ?? null,
+    runtime_agent_status: item.runtimeAgentStatus ?? "unknown",
+    pairing_state: item.pairingState ?? "unknown",
+    machine_id: item.machineId ?? null,
+    runtime_id: item.runtimeId ?? null,
+    active_worktree_claim: item.activeWorktreeClaim
+      ? {
+          claim_key: item.activeWorktreeClaim.claimKey,
+          repo_ref: item.activeWorktreeClaim.repoRef,
+          branch: item.activeWorktreeClaim.branch,
+          lane_id: item.activeWorktreeClaim.laneId ?? null
+        }
+      : null,
+    status: item.status ?? "unknown",
+    last_action_at: item.lastActionAt ?? null,
+    assigned_at: item.assignedAt ?? null,
+    updated_at: item.updatedAt ?? null
+  };
+}
+
+function serializeChannelOperatorAction(item) {
+  return {
+    action_id: item.actionId,
+    channel_id: item.channelId,
+    owner_operator_id: item.ownerOperatorId ?? null,
+    operator_id: item.operatorId ?? null,
+    action_type: item.actionType,
+    status: item.status ?? "accepted",
+    agent_id: item.agentId ?? null,
+    thread_id: item.threadId ?? null,
+    workitem_id: item.workitemId ?? null,
+    note: item.note ?? null,
+    payload: deepClone(item.payload ?? {}),
+    target: item.target ?? null,
+    at: item.at ?? null,
+    policy_snapshot: deepClone(item.policySnapshot ?? {})
+  };
+}
+
+function serializeChannelRecentAction(item) {
+  return {
+    recent_action_id: item.recentActionId,
+    channel_id: item.channelId,
+    owner_operator_id: item.ownerOperatorId ?? null,
+    action: item.action,
+    action_family: item.actionFamily,
+    actor_id: item.actorId ?? null,
+    target: item.target ?? null,
+    at: item.at ?? null,
+    operator_scope: {
+      agent_id: item.operatorScope?.agentId ?? null,
+      thread_id: item.operatorScope?.threadId ?? null,
+      workitem_id: item.operatorScope?.workitemId ?? null
+    },
+    policy_snapshot: deepClone(item.policySnapshot ?? {}),
+    details: deepClone(item.details ?? {})
   };
 }
 
@@ -1941,6 +2051,137 @@ export function createHttpServer(coordinator, options = {}) {
           owner_operator_id: auditTrail.ownerOperatorId,
           items: auditTrail.items.map((item) => serializeChannelAuditEntry(item)),
           next_cursor: auditTrail.nextCursor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_WORK_ASSIGNMENTS") {
+        const assignmentProjection = coordinator.listChannelWorkAssignments(route.channelId, {
+          cursor: parsedUrl.searchParams.get("cursor"),
+          limit: parsedUrl.searchParams.get("limit")
+        });
+        sendJson(response, 200, {
+          projection: "channel_work_assignment_projection",
+          contract_version: "v1.stage2.batch2",
+          channel_id: assignmentProjection.channelId,
+          owner_operator_id: assignmentProjection.ownerOperatorId,
+          items: assignmentProjection.items.map((item) => serializeChannelWorkAssignment(item)),
+          summary: {
+            total_assignments: assignmentProjection.summary.totalAssignments,
+            assigned_count: assignmentProjection.summary.assignedCount,
+            channel_assigned_count: assignmentProjection.summary.channelAssignedCount
+          },
+          next_cursor: assignmentProjection.nextCursor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_CHANNEL_WORK_ASSIGNMENT") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_work_assignment_payload", "work assignment payload must be object");
+        const allowedFields = new Set([
+          "operator_id",
+          "thread_id",
+          "workitem_id",
+          "default_duty",
+          "note",
+          "policy_snapshot"
+        ]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_work_assignment_field", `unsupported work assignment field: ${key}`);
+          }
+        }
+        const assignment = coordinator.upsertChannelWorkAssignment(route.channelId, route.agentId, {
+          operatorId: body.operator_id,
+          threadId: body.thread_id,
+          workitemId: body.workitem_id,
+          defaultDuty: body.default_duty,
+          note: body.note,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          projection: "channel_work_assignment_projection",
+          contract_version: "v1.stage2.batch2",
+          work_assignment: serializeChannelWorkAssignment(assignment),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_OPERATOR_ACTIONS") {
+        const actions = coordinator.listChannelOperatorActions(route.channelId, {
+          cursor: parsedUrl.searchParams.get("cursor"),
+          limit: parsedUrl.searchParams.get("limit")
+        });
+        sendJson(response, 200, {
+          projection: "channel_operator_action_projection",
+          contract_version: "v1.stage2.batch2",
+          channel_id: actions.channelId,
+          owner_operator_id: actions.ownerOperatorId,
+          items: actions.items.map((item) => serializeChannelOperatorAction(item)),
+          next_cursor: actions.nextCursor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_CHANNEL_OPERATOR_ACTION") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_operator_action_payload", "operator action payload must be object");
+        const allowedFields = new Set([
+          "operator_id",
+          "action_type",
+          "agent_id",
+          "thread_id",
+          "workitem_id",
+          "note",
+          "payload",
+          "policy_snapshot"
+        ]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_operator_action_field", `unsupported operator action field: ${key}`);
+          }
+        }
+        const action = coordinator.appendChannelOperatorAction(route.channelId, {
+          operatorId: body.operator_id,
+          actionType: body.action_type,
+          agentId: body.agent_id,
+          threadId: body.thread_id,
+          workitemId: body.workitem_id,
+          note: body.note,
+          payload: body.payload,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          projection: "channel_operator_action_projection",
+          contract_version: "v1.stage2.batch2",
+          action: serializeChannelOperatorAction(action),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_RECENT_ACTIONS") {
+        const recentActions = coordinator.listChannelRecentActions(route.channelId, {
+          cursor: parsedUrl.searchParams.get("cursor"),
+          limit: parsedUrl.searchParams.get("limit")
+        });
+        sendJson(response, 200, {
+          projection: "channel_recent_actions_projection",
+          contract_version: "v1.stage2.batch2",
+          channel_id: recentActions.channelId,
+          owner_operator_id: recentActions.ownerOperatorId,
+          items: recentActions.items.map((item) => serializeChannelRecentAction(item)),
+          summary: {
+            total: recentActions.summary.total,
+            operator_action_count: recentActions.summary.operatorActionCount,
+            work_assignment_count: recentActions.summary.workAssignmentCount
+          },
+          next_cursor: recentActions.nextCursor,
           request_id: requestId
         });
         return;

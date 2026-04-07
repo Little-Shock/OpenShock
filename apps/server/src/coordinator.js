@@ -175,6 +175,13 @@ function normalizeOptionalScopeId(input) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+const CHANNEL_OPERATOR_ACTION_TYPES = new Set([
+  "request_report",
+  "follow_up",
+  "intervention",
+  "recovery"
+]);
+
 function parseProviderRef(input, { requireRepoRef = true } = {}) {
   assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "provider_ref_required", "provider_ref must be an object");
   const provider = typeof input.provider === "string" ? input.provider.trim() : "";
@@ -2585,6 +2592,314 @@ export class ServerCoordinator {
       channelId: channel.channelId,
       ownerOperatorId: channel.ownerOperatorId,
       items,
+      nextCursor: nextOffset < entries.length ? `o:${nextOffset}` : null
+    };
+  }
+
+  resolveLatestChannelAssignmentAudit(channel, agentId) {
+    const normalizedAgentId = normalizeOptionalScopeId(agentId);
+    if (!normalizedAgentId) {
+      return null;
+    }
+    for (let index = channel.auditTrail.length - 1; index >= 0; index -= 1) {
+      const entry = channel.auditTrail[index];
+      if (entry.action !== "channel_work_assignment_upsert") {
+        continue;
+      }
+      const details = entry.details && typeof entry.details === "object" ? entry.details : {};
+      if (normalizeOptionalScopeId(details.agent_id) === normalizedAgentId) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  resolveLatestChannelOperatorActionAudit(channel, agentId) {
+    const normalizedAgentId = normalizeOptionalScopeId(agentId);
+    if (!normalizedAgentId) {
+      return null;
+    }
+    for (let index = channel.auditTrail.length - 1; index >= 0; index -= 1) {
+      const entry = channel.auditTrail[index];
+      if (!entry.action.startsWith("channel_operator_action_")) {
+        continue;
+      }
+      const details = entry.details && typeof entry.details === "object" ? entry.details : {};
+      if (normalizeOptionalScopeId(details.agent_id) === normalizedAgentId) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  buildChannelWorkAssignmentProjection(channel, agent) {
+    const assignmentAudit = this.resolveLatestChannelAssignmentAudit(channel, agent.agentId);
+    const operatorActionAudit = this.resolveLatestChannelOperatorActionAudit(channel, agent.agentId);
+    const assignmentDetails =
+      assignmentAudit?.details && typeof assignmentAudit.details === "object" ? assignmentAudit.details : {};
+    const activeClaim = Array.from(this.runtimeWorktreeClaims.values()).find(
+      (claim) => claim.agentId === agent.agentId && claim.claimStatus === "active"
+    );
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      agentId: agent.agentId,
+      assignedChannelId: agent.assignedChannelId ?? null,
+      assignedThreadId: agent.assignedThreadId ?? null,
+      assignedWorkitemId: agent.assignedWorkitemId ?? null,
+      defaultDuty: normalizeOptionalScopeId(assignmentDetails.default_duty),
+      assignmentNote: normalizeOptionalScopeId(assignmentDetails.note),
+      runtimeAgentStatus: agent.status,
+      pairingState: agent.pairingState ?? "unknown",
+      machineId: agent.machineId ?? null,
+      runtimeId: agent.runtimeId ?? null,
+      activeWorktreeClaim: activeClaim
+        ? {
+            claimKey: activeClaim.claimKey,
+            repoRef: activeClaim.repoRef,
+            branch: activeClaim.branch,
+            laneId: activeClaim.laneId ?? null
+          }
+        : null,
+      status:
+        agent.assignedThreadId && agent.assignedWorkitemId
+          ? "assigned"
+          : agent.assignedChannelId
+            ? "channel_assigned"
+            : "unassigned",
+      lastActionAt: operatorActionAudit?.at ?? assignmentAudit?.at ?? null,
+      assignedAt: assignmentAudit?.at ?? null,
+      updatedAt: agent.updatedAt ?? null
+    };
+  }
+
+  listChannelWorkAssignments(channelId, input = {}) {
+    const channel = this.requireChannelContext(channelId);
+    const limit = parseLimit(input.limit, { codePrefix: "channel_assignment", defaultLimit: 50, maxLimit: 500 });
+    const offset = parseOffsetCursor(input.cursor, { codePrefix: "channel_assignment" });
+    const projections = Array.from(this.runtimeAgents.values())
+      .filter((agent) => agent.assignedChannelId === channel.channelId)
+      .map((agent) => this.buildChannelWorkAssignmentProjection(channel, agent))
+      .sort(
+        (left, right) =>
+          Date.parse(right.updatedAt ?? "1970-01-01T00:00:00.000Z") -
+          Date.parse(left.updatedAt ?? "1970-01-01T00:00:00.000Z")
+      );
+    const items = projections.slice(offset, offset + limit).map((item) => deepClone(item));
+    const nextOffset = offset + items.length;
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      items,
+      summary: {
+        totalAssignments: projections.length,
+        assignedCount: projections.filter((item) => item.status === "assigned").length,
+        channelAssignedCount: projections.filter((item) => item.status === "channel_assigned").length
+      },
+      nextCursor: nextOffset < projections.length ? `o:${nextOffset}` : null
+    };
+  }
+
+  upsertChannelWorkAssignment(channelId, agentId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_work_assignment_payload",
+      "work assignment payload must be object"
+    );
+    const allowedKeys = new Set(["operatorId", "threadId", "workitemId", "defaultDuty", "note", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(allowedKeys.has(key), "invalid_work_assignment_field", `unsupported work assignment field: ${key}`);
+    }
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const normalizedAgentId = normalizeOptionalScopeId(agentId);
+    assertOrThrow(normalizedAgentId, "invalid_runtime_agent_id", "agentId is required");
+    const agent = this.runtimeAgents.get(normalizedAgentId);
+    assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${normalizedAgentId} not found`);
+    const threadId = normalizeOptionalScopeId(input.threadId);
+    const workitemId = normalizeOptionalScopeId(input.workitemId);
+    assertOrThrow(
+      threadId || agent.assignedThreadId,
+      "invalid_assignment_thread_id",
+      "thread_id is required for first assignment"
+    );
+    assertOrThrow(
+      workitemId || agent.assignedWorkitemId,
+      "invalid_assignment_workitem_id",
+      "workitem_id is required for first assignment"
+    );
+    this.applyRuntimeOwnershipBoundary(agent, {
+      operatorId,
+      channelId: channel.channelId,
+      threadId,
+      workitemId
+    });
+    agent.updatedAt = nowIso();
+    this.runtimeAgents.set(agent.agentId, agent);
+    const defaultDuty = normalizeOptionalScopeId(input.defaultDuty);
+    const note = normalizeOptionalScopeId(input.note);
+    this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: "channel_work_assignment_upsert",
+      target: `channel:${channel.channelId}:agent:${agent.agentId}`,
+      policySnapshot: input.policySnapshot,
+      details: {
+        agent_id: agent.agentId,
+        assigned_channel_id: agent.assignedChannelId ?? null,
+        assigned_thread_id: agent.assignedThreadId ?? null,
+        assigned_workitem_id: agent.assignedWorkitemId ?? null,
+        default_duty: defaultDuty,
+        note
+      }
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return this.buildChannelWorkAssignmentProjection(channel, agent);
+  }
+
+  listChannelOperatorActions(channelId, input = {}) {
+    const channel = this.requireChannelContext(channelId);
+    const limit = parseLimit(input.limit, { codePrefix: "channel_operator_action", defaultLimit: 50, maxLimit: 500 });
+    const offset = parseOffsetCursor(input.cursor, { codePrefix: "channel_operator_action" });
+    const actions = channel.auditTrail
+      .filter((entry) => entry.action.startsWith("channel_operator_action_"))
+      .map((entry) => {
+        const details = entry.details && typeof entry.details === "object" ? entry.details : {};
+        const actionType = normalizeOptionalScopeId(details.action_type) ?? entry.action.replace("channel_operator_action_", "");
+        return {
+          actionId: entry.auditId,
+          channelId: channel.channelId,
+          ownerOperatorId: channel.ownerOperatorId,
+          operatorId: entry.actorId ?? null,
+          actionType,
+          status: normalizeOptionalScopeId(details.status) ?? "accepted",
+          agentId: normalizeOptionalScopeId(details.agent_id),
+          threadId: normalizeOptionalScopeId(details.thread_id),
+          workitemId: normalizeOptionalScopeId(details.workitem_id),
+          note: normalizeOptionalScopeId(details.note),
+          payload: deepClone(details.payload ?? {}),
+          at: entry.at,
+          policySnapshot: deepClone(entry.policySnapshot ?? {}),
+          target: entry.target
+        };
+      })
+      .sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
+    const items = actions.slice(offset, offset + limit).map((item) => deepClone(item));
+    const nextOffset = offset + items.length;
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      items,
+      nextCursor: nextOffset < actions.length ? `o:${nextOffset}` : null
+    };
+  }
+
+  appendChannelOperatorAction(channelId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_operator_action_payload",
+      "operator action payload must be object"
+    );
+    const allowedKeys = new Set(["operatorId", "actionType", "agentId", "threadId", "workitemId", "note", "payload", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(allowedKeys.has(key), "invalid_operator_action_field", `unsupported operator action field: ${key}`);
+    }
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const actionType = normalizeOptionalScopeId(input.actionType);
+    assertOrThrow(actionType && CHANNEL_OPERATOR_ACTION_TYPES.has(actionType), "invalid_operator_action_type", "unsupported operator action type");
+    const agentId = normalizeOptionalScopeId(input.agentId);
+    const threadId = normalizeOptionalScopeId(input.threadId);
+    const workitemId = normalizeOptionalScopeId(input.workitemId);
+    if (agentId) {
+      const agent = this.runtimeAgents.get(agentId);
+      assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${agentId} not found`);
+      this.applyRuntimeOwnershipBoundary(agent, {
+        operatorId,
+        channelId: channel.channelId,
+        threadId,
+        workitemId
+      });
+      agent.updatedAt = nowIso();
+      this.runtimeAgents.set(agent.agentId, agent);
+    }
+    const note = normalizeOptionalScopeId(input.note);
+    const details = {
+      action_type: actionType,
+      status: "accepted",
+      agent_id: agentId,
+      thread_id: threadId,
+      workitem_id: workitemId,
+      note,
+      payload: input.payload && typeof input.payload === "object" ? deepClone(input.payload) : {}
+    };
+    const auditEntry = this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: `channel_operator_action_${actionType}`,
+      target: agentId ? `channel:${channel.channelId}:agent:${agentId}` : `channel:${channel.channelId}`,
+      policySnapshot: input.policySnapshot,
+      details
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return {
+      actionId: auditEntry.auditId,
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      operatorId,
+      actionType,
+      status: "accepted",
+      agentId,
+      threadId,
+      workitemId,
+      note,
+      payload: deepClone(details.payload),
+      at: auditEntry.at,
+      policySnapshot: deepClone(auditEntry.policySnapshot),
+      target: auditEntry.target
+    };
+  }
+
+  listChannelRecentActions(channelId, input = {}) {
+    const channel = this.requireChannelContext(channelId);
+    const limit = parseLimit(input.limit, { codePrefix: "channel_recent_action", defaultLimit: 50, maxLimit: 500 });
+    const offset = parseOffsetCursor(input.cursor, { codePrefix: "channel_recent_action" });
+    const entries = [...channel.auditTrail]
+      .sort((left, right) => Date.parse(right.at) - Date.parse(left.at))
+      .map((entry) => {
+        const details = entry.details && typeof entry.details === "object" ? entry.details : {};
+        const actionFamily = entry.action.startsWith("channel_operator_action_")
+          ? "operator_action"
+          : entry.action === "channel_work_assignment_upsert"
+            ? "work_assignment"
+            : "audit";
+        return {
+          recentActionId: entry.auditId,
+          channelId: channel.channelId,
+          ownerOperatorId: channel.ownerOperatorId,
+          action: entry.action,
+          actionFamily,
+          actorId: entry.actorId ?? null,
+          target: entry.target ?? null,
+          at: entry.at,
+          operatorScope: {
+            agentId: normalizeOptionalScopeId(details.agent_id),
+            threadId: normalizeOptionalScopeId(details.thread_id),
+            workitemId: normalizeOptionalScopeId(details.workitem_id)
+          },
+          policySnapshot: deepClone(entry.policySnapshot ?? {}),
+          details: deepClone(details)
+        };
+      });
+    const items = entries.slice(offset, offset + limit).map((item) => deepClone(item));
+    const nextOffset = offset + items.length;
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      items,
+      summary: {
+        total: entries.length,
+        operatorActionCount: entries.filter((item) => item.actionFamily === "operator_action").length,
+        workAssignmentCount: entries.filter((item) => item.actionFamily === "work_assignment").length
+      },
       nextCursor: nextOffset < entries.length ? `o:${nextOffset}` : null
     };
   }

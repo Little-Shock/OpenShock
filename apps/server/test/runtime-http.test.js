@@ -4471,3 +4471,241 @@ test("v1 stage2 batch2 runtime recovery contract supports assignment enforcement
     }
   );
 });
+
+test("v1 stage2 batch2 control-plane work assignment/operator action/recent actions stay channel-aligned", async () => {
+  const channelId = "channel_open_shock_stage2_batch2";
+  const operatorId = "human_operator_stage2_batch2";
+
+  await withRuntimeServer(
+    {
+      coordinatorOptions: {
+        runtimeLivenessMs: 1000
+      }
+    },
+    async ({ port }) => {
+      const upsertContext = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          workspace_id: "workspace_default",
+          workspace_root: "/Users/atou/.slock/agents",
+          baseline_ref: "feat/initial-implementation@05473fd",
+          fixed_directory: "/Users/atou/OpenShockSwarm",
+          doc_paths: ["/Users/atou/OpenShockSwarm/docs/open-shock-roadmap.md"],
+          runtime_entries: ["/v1/runtime/registry"],
+          rule_entries: ["/Users/atou/.slock/agents/AGENTS.md"]
+        }
+      });
+      assert.equal(upsertContext.statusCode, 200);
+
+      const machine = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/machines/machine_stage2_batch2",
+        body: {
+          runtime_id: "runtime_stage2_batch2",
+          status: "online",
+          capabilities: ["node", "git"]
+        }
+      });
+      assert.equal(machine.statusCode, 200);
+
+      const upsertAgent = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_stage2_batch2_alpha",
+        body: {
+          machine_id: "machine_stage2_batch2",
+          status: "idle",
+          operator_id: operatorId,
+          channel_id: channelId
+        }
+      });
+      assert.equal(upsertAgent.statusCode, 200);
+      assert.equal(upsertAgent.body.agent.assigned_channel_id, channelId);
+      assert.equal(upsertAgent.body.agent.assigned_thread_id, null);
+
+      const assignment = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/agent_stage2_batch2_alpha`,
+        body: {
+          operator_id: operatorId,
+          thread_id: "thread_stage2_batch2",
+          workitem_id: "workitem_stage2_batch2",
+          default_duty: "triage",
+          note: "assign from channel entry"
+        }
+      });
+      assert.equal(assignment.statusCode, 200);
+      assert.equal(assignment.body.work_assignment.channel_id, channelId);
+      assert.equal(assignment.body.work_assignment.agent_id, "agent_stage2_batch2_alpha");
+      assert.equal(assignment.body.work_assignment.assigned_thread_id, "thread_stage2_batch2");
+      assert.equal(assignment.body.work_assignment.assigned_workitem_id, "workitem_stage2_batch2");
+      assert.equal(assignment.body.work_assignment.default_duty, "triage");
+
+      const assignmentProjection = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments?limit=20`
+      });
+      assert.equal(assignmentProjection.statusCode, 200);
+      assert.equal(assignmentProjection.body.projection, "channel_work_assignment_projection");
+      assert.equal(assignmentProjection.body.summary.total_assignments, 1);
+      assert.equal(assignmentProjection.body.summary.assigned_count, 1);
+      assert.equal(assignmentProjection.body.items[0].agent_id, "agent_stage2_batch2_alpha");
+
+      const requestReport = await requestJson({
+        port,
+        method: "POST",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+        body: {
+          operator_id: operatorId,
+          action_type: "request_report",
+          agent_id: "agent_stage2_batch2_alpha",
+          thread_id: "thread_stage2_batch2",
+          workitem_id: "workitem_stage2_batch2",
+          note: "ask for update",
+          payload: {
+            report_scope: "recent_progress"
+          }
+        }
+      });
+      assert.equal(requestReport.statusCode, 200);
+      assert.equal(requestReport.body.action.action_type, "request_report");
+      assert.equal(requestReport.body.action.agent_id, "agent_stage2_batch2_alpha");
+
+      const recovery = await requestJson({
+        port,
+        method: "POST",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+        body: {
+          operator_id: operatorId,
+          action_type: "recovery",
+          agent_id: "agent_stage2_batch2_alpha",
+          thread_id: "thread_stage2_batch2",
+          workitem_id: "workitem_stage2_batch2",
+          note: "recover loop"
+        }
+      });
+      assert.equal(recovery.statusCode, 200);
+      assert.equal(recovery.body.action.action_type, "recovery");
+
+      const operatorActions = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions?limit=20`
+      });
+      assert.equal(operatorActions.statusCode, 200);
+      assert.equal(operatorActions.body.projection, "channel_operator_action_projection");
+      assert.equal(operatorActions.body.items.length >= 2, true);
+      assert.equal(
+        operatorActions.body.items.some((item) => item.action_type === "request_report" && item.agent_id === "agent_stage2_batch2_alpha"),
+        true
+      );
+      assert.equal(
+        operatorActions.body.items.some((item) => item.action_type === "recovery"),
+        true
+      );
+
+      const recentActions = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/recent-actions?limit=30`
+      });
+      assert.equal(recentActions.statusCode, 200);
+      assert.equal(recentActions.body.projection, "channel_recent_actions_projection");
+      assert.equal(recentActions.body.summary.operator_action_count >= 2, true);
+      assert.equal(recentActions.body.summary.work_assignment_count >= 1, true);
+      assert.equal(
+        recentActions.body.items.some(
+          (item) => item.action_family === "work_assignment" && item.operator_scope.agent_id === "agent_stage2_batch2_alpha"
+        ),
+        true
+      );
+
+      const invalidActionType = await requestJson({
+        port,
+        method: "POST",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+        body: {
+          operator_id: operatorId,
+          action_type: "scheduler_override"
+        }
+      });
+      assert.equal(invalidActionType.statusCode, 400);
+      assert.equal(invalidActionType.body.error.code, "invalid_operator_action_type");
+
+      const assignmentScopeMismatch = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/agent_stage2_batch2_alpha`,
+        body: {
+          operator_id: operatorId,
+          thread_id: "thread_stage2_batch2_other",
+          workitem_id: "workitem_stage2_batch2"
+        }
+      });
+      assert.equal(assignmentScopeMismatch.statusCode, 422);
+      assert.equal(assignmentScopeMismatch.body.error.code, "agent_response_scope_mismatch");
+
+      const assignmentWrongOperator = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/agent_stage2_batch2_alpha`,
+        body: {
+          operator_id: "human_operator_other",
+          thread_id: "thread_stage2_batch2",
+          workitem_id: "workitem_stage2_batch2"
+        }
+      });
+      assert.equal(assignmentWrongOperator.statusCode, 422);
+      assert.equal(assignmentWrongOperator.body.error.code, "channel_operator_mismatch");
+
+      const assignmentInvalidField = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/agent_stage2_batch2_alpha`,
+        body: {
+          operator_id: operatorId,
+          thread_id: "thread_stage2_batch2",
+          workitem_id: "workitem_stage2_batch2",
+          project_id: "project_should_not_exist"
+        }
+      });
+      assert.equal(assignmentInvalidField.statusCode, 400);
+      assert.equal(assignmentInvalidField.body.error.code, "invalid_work_assignment_field");
+
+      const auditTrail = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail?limit=40`
+      });
+      assert.equal(auditTrail.statusCode, 200);
+      assert.equal(
+        auditTrail.body.items.some(
+          (item) => item.action === "channel_work_assignment_upsert" && item.details.agent_id === "agent_stage2_batch2_alpha"
+        ),
+        true
+      );
+      assert.equal(
+        auditTrail.body.items.some((item) => item.action === "channel_operator_action_request_report"),
+        true
+      );
+      assert.equal(
+        auditTrail.body.items.some((item) => item.action === "channel_operator_action_recovery"),
+        true
+      );
+
+      const payload = JSON.stringify({
+        assignments: assignmentProjection.body,
+        operatorActions: operatorActions.body,
+        recentActions: recentActions.body
+      });
+      assert.equal(payload.includes("\"project_id\""), false);
+      assert.equal(payload.includes("\"workspace_invite\""), false);
+    }
+  );
+});
