@@ -851,6 +851,22 @@ function serializeChannelContextContract(input = {}) {
             updated_by: input.governance.githubInstallation.updatedBy ?? null
           }
         : null,
+      sandbox_profile: input.governance?.sandboxProfile
+        ? {
+            profile: input.governance.sandboxProfile.profile ?? null,
+            updated_at: input.governance.sandboxProfile.updatedAt ?? null,
+            updated_by: input.governance.sandboxProfile.updatedBy ?? null
+          }
+        : null,
+      secrets_binding: input.governance?.secretsBinding
+        ? {
+            allowed_secret_refs: deepClone(input.governance.secretsBinding.allowedSecretRefs ?? []),
+            approval_required: input.governance.secretsBinding.approvalRequired === true,
+            injection_mode: input.governance.secretsBinding.injectionMode ?? "explicit",
+            updated_at: input.governance.secretsBinding.updatedAt ?? null,
+            updated_by: input.governance.secretsBinding.updatedBy ?? null
+          }
+        : null,
       permission_matrix: deepClone(input.governance?.permissionMatrix ?? {}),
       state_graph: deepClone(input.governance?.stateGraph ?? {})
     },
@@ -900,6 +916,20 @@ function serializeChannelContextContract(input = {}) {
               audit_id: input.auditAnchor.latest.githubInstallation.auditId ?? null,
               action: input.auditAnchor.latest.githubInstallation.action ?? null,
               at: input.auditAnchor.latest.githubInstallation.at ?? null
+            }
+          : null,
+        sandbox_profile: input.auditAnchor?.latest?.sandboxProfile
+          ? {
+              audit_id: input.auditAnchor.latest.sandboxProfile.auditId ?? null,
+              action: input.auditAnchor.latest.sandboxProfile.action ?? null,
+              at: input.auditAnchor.latest.sandboxProfile.at ?? null
+            }
+          : null,
+        secrets_binding: input.auditAnchor?.latest?.secretsBinding
+          ? {
+              audit_id: input.auditAnchor.latest.secretsBinding.auditId ?? null,
+              action: input.auditAnchor.latest.secretsBinding.action ?? null,
+              at: input.auditAnchor.latest.secretsBinding.at ?? null
             }
           : null,
         repo_binding: input.auditAnchor?.latest?.repoBinding
@@ -1014,7 +1044,9 @@ function serializeChannelOperatorAction(item) {
     thread_id: item.threadId ?? null,
     workitem_id: item.workitemId ?? null,
     note: item.note ?? null,
+    approval_id: item.approvalId ?? null,
     payload: deepClone(item.payload ?? {}),
+    enforcement: deepClone(item.enforcement ?? null),
     target: item.target ?? null,
     at: item.at ?? null,
     policy_snapshot: deepClone(item.policySnapshot ?? {})
@@ -2076,6 +2108,8 @@ export function createHttpServer(coordinator, options = {}) {
           "auth_identity",
           "member",
           "github_installation",
+          "sandbox_profile",
+          "secrets_binding",
           "policy_snapshot"
         ]);
         for (const key of Object.keys(body)) {
@@ -2116,6 +2150,42 @@ export function createHttpServer(coordinator, options = {}) {
             }
           }
         }
+        if (body.sandbox_profile !== undefined) {
+          if (typeof body.sandbox_profile !== "string" || body.sandbox_profile.trim().length === 0) {
+            throw new CoordinatorError("invalid_sandbox_profile", "sandbox_profile must be non-empty string");
+          }
+        }
+        if (body.secrets_binding !== undefined) {
+          assertObjectBody(body.secrets_binding, "invalid_secrets_binding", "secrets_binding payload must be object");
+          const allowedSecretsBindingFields = new Set(["allowed_secret_refs", "approval_required", "injection_mode"]);
+          for (const key of Object.keys(body.secrets_binding)) {
+            if (!allowedSecretsBindingFields.has(key)) {
+              throw new CoordinatorError("invalid_secrets_binding_field", `unsupported secrets_binding field: ${key}`);
+            }
+          }
+          if (!Array.isArray(body.secrets_binding.allowed_secret_refs)) {
+            throw new CoordinatorError(
+              "invalid_secrets_binding_refs",
+              "secrets_binding.allowed_secret_refs must be string[]"
+            );
+          }
+          if (
+            body.secrets_binding.approval_required !== undefined &&
+            typeof body.secrets_binding.approval_required !== "boolean"
+          ) {
+            throw new CoordinatorError(
+              "invalid_secrets_binding_approval_required",
+              "secrets_binding.approval_required must be boolean"
+            );
+          }
+          if (
+            body.secrets_binding.injection_mode !== undefined &&
+            (typeof body.secrets_binding.injection_mode !== "string" ||
+              body.secrets_binding.injection_mode.trim().length === 0)
+          ) {
+            throw new CoordinatorError("invalid_secrets_injection_mode", "secrets_binding.injection_mode must be string");
+          }
+        }
         const context = coordinator.upsertChannelContextContract(route.channelId, {
           operatorId: body.operator_id,
           workspaceId: body.workspace_id,
@@ -2148,6 +2218,14 @@ export function createHttpServer(coordinator, options = {}) {
                 workspaceId: body.github_installation.workspace_id,
                 status: body.github_installation.status,
                 authorizedRepos: body.github_installation.authorized_repos
+              }
+            : undefined,
+          sandboxProfile: body.sandbox_profile,
+          secretsBinding: body.secrets_binding
+            ? {
+                allowedSecretRefs: body.secrets_binding.allowed_secret_refs,
+                approvalRequired: body.secrets_binding.approval_required,
+                injectionMode: body.secrets_binding.injection_mode
               }
             : undefined,
           policySnapshot: body.policy_snapshot

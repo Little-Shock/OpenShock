@@ -4575,6 +4575,192 @@ test("v1 stage4a1 enforcement blocks missing installation, forbidden role, stale
   );
 });
 
+test("v1 stage4a2 restricted local sandbox enforces secrets injection and approval boundary with audit anchors", async () => {
+  const channelId = "channel_stage4a2_restricted_sandbox";
+  const operatorId = "human_operator_stage4a2";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const seeded = await requestJson({
+      port,
+      method: "POST",
+      path: "/runtime/fixtures/seed",
+      body: {}
+    });
+    assert.equal(seeded.statusCode, 200);
+
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage4a2",
+        workspace_root: "/Users/atou/.slock/agents",
+        member: {
+          member_id: "member_stage4a2_owner",
+          role: "owner",
+          status: "active"
+        },
+        sandbox_profile: "restricted_local",
+        secrets_binding: {
+          allowed_secret_refs: ["OPENAI_API_KEY", "GITHUB_TOKEN"],
+          approval_required: true,
+          injection_mode: "explicit"
+        },
+        policy_snapshot: {
+          mode: "stage4a2",
+          boundary: "restricted_local_only"
+        }
+      }
+    });
+    assert.equal(context.statusCode, 200);
+    assert.equal(context.body.context.governance.sandbox_profile.profile, "restricted_local");
+    assert.equal(context.body.context.governance.secrets_binding.allowed_secret_refs.length, 2);
+    assert.equal(context.body.context.governance.secrets_binding.approval_required, true);
+    assert.equal(context.body.context.audit_anchor.latest.sandbox_profile.action, "channel_sandbox_profile_upsert");
+    assert.equal(context.body.context.audit_anchor.latest.secrets_binding.action, "channel_secrets_binding_upsert");
+
+    const acceptedAction = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+      body: {
+        operator_id: operatorId,
+        action_type: "intervention",
+        note: "stage4a2 restricted sandbox secrets test",
+        payload: {
+          sandbox_profile: "restricted_local",
+          secret_refs: ["OPENAI_API_KEY"],
+          approval_id: "approval_stage4a2_001"
+        }
+      }
+    });
+    assert.equal(acceptedAction.statusCode, 200);
+    assert.equal(acceptedAction.body.action.status, "accepted");
+    assert.equal(acceptedAction.body.action.approval_id, "approval_stage4a2_001");
+    assert.equal(acceptedAction.body.action.enforcement.sandbox_profile, "restricted_local");
+    assert.equal(acceptedAction.body.action.enforcement.secrets_injection, true);
+    assert.equal(acceptedAction.body.action.enforcement.approval_required, true);
+
+    const missingApproval = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+      body: {
+        operator_id: operatorId,
+        action_type: "intervention",
+        payload: {
+          sandbox_profile: "restricted_local",
+          secret_refs: ["OPENAI_API_KEY"]
+        }
+      }
+    });
+    assert.equal(missingApproval.statusCode, 422);
+    assert.equal(missingApproval.body.error.code, "approval_required_for_secret_injection");
+
+    const unauthorizedSecret = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+      body: {
+        operator_id: operatorId,
+        action_type: "intervention",
+        payload: {
+          sandbox_profile: "restricted_local",
+          secret_refs: ["AWS_ROOT_SECRET"],
+          approval_id: "approval_stage4a2_unauthorized"
+        }
+      }
+    });
+    assert.equal(unauthorizedSecret.statusCode, 422);
+    assert.equal(unauthorizedSecret.body.error.code, "secret_ref_not_authorized");
+
+    const cloudSandboxProfile = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
+      body: {
+        operator_id: operatorId,
+        action_type: "intervention",
+        payload: {
+          sandbox_profile: "cloud_sandbox",
+          secret_refs: ["OPENAI_API_KEY"],
+          approval_id: "approval_stage4a2_cloud"
+        }
+      }
+    });
+    assert.equal(cloudSandboxProfile.statusCode, 400);
+    assert.equal(cloudSandboxProfile.body.error.code, "invalid_sandbox_profile");
+
+    const missingSandboxChannel = await requestJson({
+      port,
+      method: "PUT",
+      path: "/v1/channels/channel_stage4a2_missing_sandbox/context",
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage4a2_missing_sandbox",
+        workspace_root: "/Users/atou/.slock/agents",
+        secrets_binding: {
+          allowed_secret_refs: ["OPENAI_API_KEY"],
+          approval_required: true,
+          injection_mode: "explicit"
+        }
+      }
+    });
+    assert.equal(missingSandboxChannel.statusCode, 422);
+    assert.equal(missingSandboxChannel.body.error.code, "sandbox_profile_required");
+
+    const invalidSecretsBindingField = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        secrets_binding: {
+          allowed_secret_refs: ["OPENAI_API_KEY"],
+          approval_required: true,
+          injection_mode: "explicit",
+          project_id: "project_should_not_exist"
+        }
+      }
+    });
+    assert.equal(invalidSecretsBindingField.statusCode, 400);
+    assert.equal(invalidSecretsBindingField.body.error.code, "invalid_secrets_binding_field");
+
+    const auditTrail = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail?limit=40`
+    });
+    assert.equal(auditTrail.statusCode, 200);
+    assert.equal(
+      auditTrail.body.items.some(
+        (item) =>
+          item.action === "channel_operator_action_intervention" &&
+          item.details.enforcement?.sandbox_profile === "restricted_local" &&
+          item.details.enforcement?.secrets_injection === true &&
+          item.details.enforcement?.approval_required === true &&
+          item.details.enforcement?.approval_id === "approval_stage4a2_001"
+      ),
+      true
+    );
+    assert.equal(
+      auditTrail.body.items.some(
+        (item) => item.action === "channel_secrets_binding_upsert" && item.details.approval_required === true
+      ),
+      true
+    );
+
+    const payload = JSON.stringify({
+      context: context.body.context,
+      acceptedAction: acceptedAction.body.action,
+      auditTrail: auditTrail.body
+    });
+    assert.equal(payload.includes("\"cloud_sandbox\""), false);
+    assert.equal(payload.includes("\"cloud_runtime\""), false);
+  });
+});
+
 test("v1 stage2 batch2 runtime recovery contract supports assignment enforcement and operator-triggered recoveries", async () => {
   const operatorId = "human_operator_stage2_batch2";
   const channelId = "channel_open_shock_batch2";

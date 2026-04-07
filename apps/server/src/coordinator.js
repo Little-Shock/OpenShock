@@ -186,6 +186,8 @@ const WORKSPACE_MEMBER_ROLES = new Set(["owner", "admin", "member", "viewer"]);
 const WORKSPACE_MEMBER_STATUSES = new Set(["invited", "active", "disabled", "removed"]);
 const AUTH_IDENTITY_STATUSES = new Set(["bound", "revoked"]);
 const GITHUB_INSTALLATION_STATUSES = new Set(["active", "removed"]);
+const SANDBOX_PROFILES = new Set(["restricted_local"]);
+const SECRETS_INJECTION_MODES = new Set(["explicit"]);
 
 const WORKSPACE_GOVERNANCE_PERMISSION_MATRIX = Object.freeze({
   owner: Object.freeze({
@@ -256,7 +258,9 @@ function createEmptyChannelGovernance() {
   return {
     authIdentity: null,
     member: null,
-    githubInstallation: null
+    githubInstallation: null,
+    sandboxProfile: null,
+    secretsBinding: null
   };
 }
 
@@ -2500,6 +2504,12 @@ export class ServerCoordinator {
     if (!Object.prototype.hasOwnProperty.call(channel.governance, "githubInstallation")) {
       channel.governance.githubInstallation = null;
     }
+    if (!Object.prototype.hasOwnProperty.call(channel.governance, "sandboxProfile")) {
+      channel.governance.sandboxProfile = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(channel.governance, "secretsBinding")) {
+      channel.governance.secretsBinding = null;
+    }
     return channel.governance;
   }
 
@@ -2528,6 +2538,8 @@ export class ServerCoordinator {
         authIdentity: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_auth_identity_upsert")),
         member: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_member_upsert")),
         githubInstallation: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_github_installation_upsert")),
+        sandboxProfile: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_sandbox_profile_upsert")),
+        secretsBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_secrets_binding_upsert")),
         repoBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_repo_binding_upsert"))
       }
     };
@@ -2679,6 +2691,109 @@ export class ServerCoordinator {
           workspace_id: workspaceId,
           status,
           authorized_repo_count: governance.githubInstallation.authorizedRepos.length
+        }
+      });
+    }
+
+    if (input.sandboxProfile !== undefined) {
+      const now = nowIso();
+      const sandboxProfile = normalizeOptionalScopeId(input.sandboxProfile);
+      assertOrThrow(
+        sandboxProfile && SANDBOX_PROFILES.has(sandboxProfile),
+        "invalid_sandbox_profile",
+        "sandbox_profile is invalid"
+      );
+      governance.sandboxProfile = {
+        profile: sandboxProfile,
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_sandbox_profile_upsert",
+        target: `channel:${channel.channelId}:sandbox_profile`,
+        policySnapshot,
+        details: {
+          sandbox_profile: governance.sandboxProfile.profile
+        }
+      });
+    }
+
+    if (input.secretsBinding !== undefined) {
+      const secretsBindingInput = input.secretsBinding;
+      assertOrThrow(
+        secretsBindingInput && typeof secretsBindingInput === "object" && !Array.isArray(secretsBindingInput),
+        "invalid_secrets_binding",
+        "secrets_binding payload must be object"
+      );
+      const allowedKeys = new Set(["allowedSecretRefs", "approvalRequired", "injectionMode"]);
+      for (const key of Object.keys(secretsBindingInput)) {
+        assertOrThrow(allowedKeys.has(key), "invalid_secrets_binding_field", `unsupported secrets_binding field: ${key}`);
+      }
+      const sandboxProfile = governance.sandboxProfile?.profile ?? null;
+      if (sandboxProfile !== "restricted_local") {
+        throw new CoordinatorError(
+          "sandbox_profile_required",
+          "sandbox_profile=restricted_local is required before secrets binding",
+          {
+            channel_id: channel.channelId,
+            workspace_id: channel.workspace.workspaceId
+          }
+        );
+      }
+      assertOrThrow(
+        Array.isArray(secretsBindingInput.allowedSecretRefs),
+        "invalid_secrets_binding_refs",
+        "secrets_binding.allowed_secret_refs must be string[]"
+      );
+      const allowedSecretRefs = Array.from(
+        new Set(
+          secretsBindingInput.allowedSecretRefs
+            .filter((item) => typeof item === "string" && item.trim().length > 0)
+            .map((item) => item.trim())
+        )
+      );
+      assertOrThrow(
+        allowedSecretRefs.length > 0,
+        "invalid_secrets_binding_refs",
+        "secrets_binding.allowed_secret_refs must include at least one secret ref"
+      );
+      if (
+        secretsBindingInput.approvalRequired !== undefined &&
+        typeof secretsBindingInput.approvalRequired !== "boolean"
+      ) {
+        throw new CoordinatorError(
+          "invalid_secrets_binding_approval_required",
+          "secrets_binding.approval_required must be boolean"
+        );
+      }
+      const approvalRequired = secretsBindingInput.approvalRequired === undefined ? true : secretsBindingInput.approvalRequired;
+      const injectionMode =
+        normalizeOptionalScopeId(secretsBindingInput.injectionMode) ??
+        governance.secretsBinding?.injectionMode ??
+        "explicit";
+      assertOrThrow(
+        SECRETS_INJECTION_MODES.has(injectionMode),
+        "invalid_secrets_injection_mode",
+        "secrets_binding.injection_mode is invalid"
+      );
+      const now = nowIso();
+      governance.secretsBinding = {
+        allowedSecretRefs,
+        approvalRequired,
+        injectionMode,
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_secrets_binding_upsert",
+        target: `channel:${channel.channelId}:secrets_binding`,
+        policySnapshot,
+        details: {
+          allowed_secret_ref_count: governance.secretsBinding.allowedSecretRefs.length,
+          approval_required: governance.secretsBinding.approvalRequired,
+          injection_mode: governance.secretsBinding.injectionMode
         }
       });
     }
@@ -2842,6 +2957,86 @@ export class ServerCoordinator {
     }
   }
 
+  enforceRestrictedSandboxPolicy(channel, actionType, payloadInput = {}) {
+    this.ensureChannelGovernance(channel);
+    const payload = payloadInput && typeof payloadInput === "object" && !Array.isArray(payloadInput) ? payloadInput : {};
+    const sandboxProfileConfigured = channel.governance.sandboxProfile?.profile ?? null;
+    const secretsBinding = channel.governance.secretsBinding ?? null;
+    const requestedSandboxProfile = normalizeOptionalScopeId(payload.sandbox_profile ?? payload.sandboxProfile);
+    const approvalId = normalizeOptionalScopeId(payload.approval_id ?? payload.approvalId);
+    let secretRefs = [];
+    if (payload.secret_refs !== undefined) {
+      assertOrThrow(Array.isArray(payload.secret_refs), "invalid_secret_refs", "payload.secret_refs must be string[]");
+      secretRefs = Array.from(
+        new Set(
+          payload.secret_refs
+            .filter((item) => typeof item === "string" && item.trim().length > 0)
+            .map((item) => item.trim())
+        )
+      );
+      assertOrThrow(secretRefs.length > 0, "invalid_secret_refs", "payload.secret_refs must include at least one secret ref");
+    }
+    if (requestedSandboxProfile) {
+      assertOrThrow(SANDBOX_PROFILES.has(requestedSandboxProfile), "invalid_sandbox_profile", "sandbox_profile is invalid");
+      if (!sandboxProfileConfigured) {
+        throw new CoordinatorError("sandbox_profile_not_configured", "sandbox_profile is not configured for this channel", {
+          channel_id: channel.channelId,
+          requested_sandbox_profile: requestedSandboxProfile
+        });
+      }
+      if (requestedSandboxProfile !== sandboxProfileConfigured) {
+        throw new CoordinatorError("sandbox_profile_mismatch", "sandbox_profile does not match channel sandbox profile", {
+          channel_id: channel.channelId,
+          expected_sandbox_profile: sandboxProfileConfigured,
+          got_sandbox_profile: requestedSandboxProfile
+        });
+      }
+    }
+    if (secretRefs.length > 0) {
+      if (sandboxProfileConfigured !== "restricted_local") {
+        throw new CoordinatorError(
+          "restricted_local_sandbox_required",
+          "restricted_local sandbox profile is required for secrets injection",
+          {
+            channel_id: channel.channelId,
+            action_type: actionType
+          }
+        );
+      }
+      if (!secretsBinding) {
+        throw new CoordinatorError("secrets_binding_required", "secrets binding is required before secrets injection", {
+          channel_id: channel.channelId,
+          action_type: actionType
+        });
+      }
+      const unauthorizedSecretRefs = secretRefs.filter((item) => !secretsBinding.allowedSecretRefs.includes(item));
+      if (unauthorizedSecretRefs.length > 0) {
+        throw new CoordinatorError("secret_ref_not_authorized", "secret ref is not authorized by channel secrets binding", {
+          channel_id: channel.channelId,
+          secret_refs: unauthorizedSecretRefs
+        });
+      }
+      if (secretsBinding.approvalRequired && !approvalId) {
+        throw new CoordinatorError(
+          "approval_required_for_secret_injection",
+          "approval_id is required before secrets injection",
+          {
+            channel_id: channel.channelId,
+            action_type: actionType
+          }
+        );
+      }
+    }
+    return {
+      sandboxProfile: requestedSandboxProfile ?? sandboxProfileConfigured,
+      secretsInjection: secretRefs.length > 0,
+      secretRefCount: secretRefs.length,
+      approvalRequired: secretsBinding?.approvalRequired === true && secretRefs.length > 0,
+      approvalId,
+      injectionMode: secretsBinding?.injectionMode ?? null
+    };
+  }
+
   getChannelContextContract(channelId) {
     const channel = this.requireChannelContext(channelId);
     this.ensureChannelGovernance(channel);
@@ -2864,6 +3059,8 @@ export class ServerCoordinator {
         authIdentity: channel.governance.authIdentity,
         member: channel.governance.member,
         githubInstallation: channel.governance.githubInstallation,
+        sandboxProfile: channel.governance.sandboxProfile,
+        secretsBinding: channel.governance.secretsBinding,
         permissionMatrix: WORKSPACE_GOVERNANCE_PERMISSION_MATRIX,
         stateGraph: WORKSPACE_GOVERNANCE_STATE_GRAPH
       },
@@ -2887,6 +3084,8 @@ export class ServerCoordinator {
       "authIdentity",
       "member",
       "githubInstallation",
+      "sandboxProfile",
+      "secretsBinding",
       "policySnapshot"
     ]);
     for (const key of Object.keys(input)) {
@@ -2962,7 +3161,9 @@ export class ServerCoordinator {
       {
         authIdentity: input.authIdentity,
         member: input.member,
-        githubInstallation: input.githubInstallation
+        githubInstallation: input.githubInstallation,
+        sandboxProfile: input.sandboxProfile,
+        secretsBinding: input.secretsBinding
       },
       operatorId,
       input.policySnapshot
@@ -2980,7 +3181,10 @@ export class ServerCoordinator {
         fixed_directory: channel.context.fixedDirectory,
         doc_path_count: channel.context.docPaths.length,
         runtime_entry_count: channel.context.runtimeEntries.length,
-        rule_entry_count: channel.context.ruleEntries.length
+        rule_entry_count: channel.context.ruleEntries.length,
+        sandbox_profile: channel.governance.sandboxProfile?.profile ?? null,
+        secrets_binding_enabled: channel.governance.secretsBinding !== null,
+        secrets_ref_count: channel.governance.secretsBinding?.allowedSecretRefs?.length ?? 0
       }
     });
     this.channelContexts.set(normalizedChannelId, channel);
@@ -3269,7 +3473,9 @@ export class ServerCoordinator {
           threadId: normalizeOptionalScopeId(details.thread_id),
           workitemId: normalizeOptionalScopeId(details.workitem_id),
           note: normalizeOptionalScopeId(details.note),
+          approvalId: normalizeOptionalScopeId(details.approval_id),
           payload: deepClone(details.payload ?? {}),
+          enforcement: deepClone(details.enforcement ?? null),
           at: entry.at,
           policySnapshot: deepClone(entry.policySnapshot ?? {}),
           target: entry.target
@@ -3316,6 +3522,8 @@ export class ServerCoordinator {
       this.runtimeAgents.set(agent.agentId, agent);
     }
     const note = normalizeOptionalScopeId(input.note);
+    const payload = input.payload && typeof input.payload === "object" ? deepClone(input.payload) : {};
+    const enforcement = this.enforceRestrictedSandboxPolicy(channel, actionType, payload);
     const details = {
       action_type: actionType,
       status: "accepted",
@@ -3323,7 +3531,16 @@ export class ServerCoordinator {
       thread_id: threadId,
       workitem_id: workitemId,
       note,
-      payload: input.payload && typeof input.payload === "object" ? deepClone(input.payload) : {}
+      approval_id: enforcement.approvalId,
+      payload,
+      enforcement: {
+        sandbox_profile: enforcement.sandboxProfile,
+        secrets_injection: enforcement.secretsInjection,
+        secret_ref_count: enforcement.secretRefCount,
+        approval_required: enforcement.approvalRequired,
+        approval_id: enforcement.approvalId,
+        injection_mode: enforcement.injectionMode
+      }
     };
     const auditEntry = this.appendChannelAuditEntry(channel, {
       actorId: operatorId,
@@ -3344,7 +3561,9 @@ export class ServerCoordinator {
       threadId,
       workitemId,
       note,
-      payload: deepClone(details.payload),
+      approvalId: enforcement.approvalId,
+      payload: deepClone(payload),
+      enforcement: deepClone(details.enforcement),
       at: auditEntry.at,
       policySnapshot: deepClone(auditEntry.policySnapshot),
       target: auditEntry.target
