@@ -90,13 +90,30 @@ async function runCommand(command, args, options = {}) {
   });
 }
 
+function resolveSpawn(command, args) {
+  if (command.endsWith(".sh")) {
+    return {
+      command: "bash",
+      args: [command, ...args],
+      printable: `bash ${command} ${args.join(" ")}`.trim(),
+    };
+  }
+
+  return {
+    command,
+    args,
+    printable: `${command} ${args.join(" ")}`.trim(),
+  };
+}
+
 function startProcess(name, command, args, options = {}) {
   const { cwd = projectRoot, env = process.env } = options;
   const logPath = path.join(logsDir, `${name}.log`);
   const logStream = createWriteStream(logPath, { flags: "a" });
-  logStream.write(`[${timestamp()}] ${command} ${args.join(" ")}\n`);
+  const resolved = resolveSpawn(command, args);
+  logStream.write(`[${timestamp()}] ${resolved.printable}\n`);
 
-  const child = spawn(command, args, {
+  const child = spawn(resolved.command, resolved.args, {
     cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -223,7 +240,7 @@ function resolveChromiumExecutable() {
 async function prepareWorkspace() {
   await runCommand("git", ["clone", "--shared", projectRoot, workspaceDir]);
   await runCommand("git", ["-C", workspaceDir, "remote", "set-url", "origin", "https://github.com/Larkspur-Wang/OpenShock.git"]);
-  await runCommand("git", ["-C", workspaceDir, "checkout", "-B", "main", "origin/main"]);
+  await runCommand("git", ["-C", workspaceDir, "checkout", "-B", "main", "HEAD"]);
   await runCommand("git", ["-C", workspaceDir, "config", "user.name", "OpenShock Headed E2E"]);
   await runCommand("git", ["-C", workspaceDir, "config", "user.email", "openshock-headed-e2e@example.com"]);
 }
@@ -330,12 +347,20 @@ async function main() {
 
   await page.getByTestId("setup-github-refresh-button").click();
   await page.waitForFunction(
-    () => (document.querySelector('[data-testid="setup-github-message"]')?.textContent || "").trim().length > 0,
+    () => {
+      const message = (document.querySelector('[data-testid="setup-github-message"]')?.textContent || "").trim();
+      const status = (document.querySelector('[data-testid="setup-github-readiness-status"]')?.textContent || "").trim();
+      return message.length > 0 && status.length > 0;
+    },
     undefined,
     { timeout: 30_000 }
   );
   const githubReadinessStatus = (await page.getByTestId("setup-github-readiness-status").textContent())?.trim() ?? "";
   const githubMessage = (await page.getByTestId("setup-github-message").textContent())?.trim() ?? "";
+  assert(
+    githubReadinessStatus === "可进远端 PR",
+    `expected GitHub readiness happy path to be 可进远端 PR, got ${githubReadinessStatus}: ${githubMessage}`
+  );
   await capture(page, "setup-binding-and-github");
 
   await page.getByTestId("setup-runtime-daemon-url").fill(daemonURL);
