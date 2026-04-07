@@ -8,11 +8,11 @@ For Stage 3 release/handoff entry, start from repo-level files:
 - `docs/stage3-delivery-ops-entry.md`
 - `docs/stage3-release-gate.md`
 
-Current stage focus is Stage 4A2 notification + restricted execution contract, with boundaries locked to:
+Current stage focus is Stage 4B memory/governance contract, with boundaries locked to:
 
-- `notification_endpoint` contract and fixed 3-layer routing (`Inbox` / `Browser Push` / `Email`)
-- approval request/decision anchors on inbox, run timeline, and channel audit trail
-- no Cloud Sandbox or 4B/4C backflow and no new backend truth source
+- `external_memory_provider` contract (`search/get/write/feedback/promote/forget`) and explicit scope/policy boundary
+- `memory_viewer` read surface with correction/forget/promote and audit traceability
+- no second local memory truth source, no 4A backflow, no 4C pre-introduction
 
 ## Run
 
@@ -34,7 +34,7 @@ Representative surfaces used by shell and gates:
 - execution plane: `/v1/runs/*`, `/v1/execution/runs/*`, `/v1/runtime/*`
 - integration projections: `/v1/compatibility/shell-adapter`, `/v1/debug/*`
 
-Stage 4A1 + 4A2 governance/notification contract is carried by:
+Stage 4A1 + 4A2 + 4B governance contract is carried by:
 
 - `GET /v1/channels/:channelId/context`
 - `PUT /v1/channels/:channelId/context`
@@ -42,10 +42,19 @@ Stage 4A1 + 4A2 governance/notification contract is carried by:
 - `PUT /v1/channels/:channelId/repo-binding`
 - `GET /v1/channels/:channelId/notification-endpoint`
 - `PUT /v1/channels/:channelId/notification-endpoint`
+- `GET /v1/channels/:channelId/external-memory-provider`
+- `PUT /v1/channels/:channelId/external-memory-provider`
+- `GET /v1/channels/:channelId/memory-viewer`
+- `POST /v1/channels/:channelId/memory/search`
+- `GET /v1/channels/:channelId/memory/:memoryId`
+- `POST /v1/channels/:channelId/memory/write`
+- `POST /v1/channels/:channelId/memory/feedback`
+- `POST /v1/channels/:channelId/memory/promote`
+- `POST /v1/channels/:channelId/memory/forget`
 
 These contract projections include `auth_identity`, `member`, `github_installation`, `repo_binding`,
-`notification_endpoint`, fixed notification routing rules, approval anchors, permission matrix,
-state graph, and channel audit anchors.
+`notification_endpoint`, `external_memory_provider`, `memory_viewer` operations and trace anchors,
+permission matrix, state graph, and channel audit anchors.
 
 ## Compatibility Alias Boundary
 

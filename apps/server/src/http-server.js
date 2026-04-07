@@ -171,6 +171,79 @@ function matchRoute(method, pathName) {
     };
   }
 
+  const v1ChannelExternalMemoryProviderMatch = pathName.match(
+    /^\/v1\/channels\/([^/]+)\/external-memory-provider$/
+  );
+  if (method === "GET" && v1ChannelExternalMemoryProviderMatch) {
+    return {
+      route: "V1_GET_CHANNEL_EXTERNAL_MEMORY_PROVIDER",
+      channelId: v1ChannelExternalMemoryProviderMatch[1]
+    };
+  }
+  if (method === "PUT" && v1ChannelExternalMemoryProviderMatch) {
+    return {
+      route: "V1_PUT_CHANNEL_EXTERNAL_MEMORY_PROVIDER",
+      channelId: v1ChannelExternalMemoryProviderMatch[1]
+    };
+  }
+
+  const v1ChannelMemoryViewerMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/memory-viewer$/);
+  if (method === "GET" && v1ChannelMemoryViewerMatch) {
+    return {
+      route: "V1_GET_CHANNEL_MEMORY_VIEWER",
+      channelId: v1ChannelMemoryViewerMatch[1]
+    };
+  }
+
+  const v1ChannelMemorySearchMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/memory\/search$/);
+  if (method === "POST" && v1ChannelMemorySearchMatch) {
+    return {
+      route: "V1_POST_CHANNEL_MEMORY_SEARCH",
+      channelId: v1ChannelMemorySearchMatch[1]
+    };
+  }
+
+  const v1ChannelMemoryWriteMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/memory\/write$/);
+  if (method === "POST" && v1ChannelMemoryWriteMatch) {
+    return {
+      route: "V1_POST_CHANNEL_MEMORY_WRITE",
+      channelId: v1ChannelMemoryWriteMatch[1]
+    };
+  }
+
+  const v1ChannelMemoryFeedbackMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/memory\/feedback$/);
+  if (method === "POST" && v1ChannelMemoryFeedbackMatch) {
+    return {
+      route: "V1_POST_CHANNEL_MEMORY_FEEDBACK",
+      channelId: v1ChannelMemoryFeedbackMatch[1]
+    };
+  }
+
+  const v1ChannelMemoryPromoteMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/memory\/promote$/);
+  if (method === "POST" && v1ChannelMemoryPromoteMatch) {
+    return {
+      route: "V1_POST_CHANNEL_MEMORY_PROMOTE",
+      channelId: v1ChannelMemoryPromoteMatch[1]
+    };
+  }
+
+  const v1ChannelMemoryForgetMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/memory\/forget$/);
+  if (method === "POST" && v1ChannelMemoryForgetMatch) {
+    return {
+      route: "V1_POST_CHANNEL_MEMORY_FORGET",
+      channelId: v1ChannelMemoryForgetMatch[1]
+    };
+  }
+
+  const v1ChannelMemoryItemMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/memory\/([^/]+)$/);
+  if (method === "GET" && v1ChannelMemoryItemMatch) {
+    return {
+      route: "V1_GET_CHANNEL_MEMORY_ITEM",
+      channelId: v1ChannelMemoryItemMatch[1],
+      memoryId: v1ChannelMemoryItemMatch[2]
+    };
+  }
+
   const v1ChannelAuditTrailMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/audit-trail$/);
   if (method === "GET" && v1ChannelAuditTrailMatch) {
     return {
@@ -984,6 +1057,19 @@ function serializeChannelContextContract(input = {}) {
           }
         }
       : null,
+    external_memory_provider: input.externalMemoryProvider
+      ? {
+          provider_id: input.externalMemoryProvider.providerId ?? null,
+          provider_type: input.externalMemoryProvider.providerType ?? null,
+          status: input.externalMemoryProvider.status ?? "disabled",
+          read_scopes: deepClone(input.externalMemoryProvider.readScopes ?? []),
+          write_scopes: deepClone(input.externalMemoryProvider.writeScopes ?? []),
+          recall_policy: deepClone(input.externalMemoryProvider.recallPolicy ?? null),
+          retention_policy: deepClone(input.externalMemoryProvider.retentionPolicy ?? null),
+          sharing_policy: deepClone(input.externalMemoryProvider.sharingPolicy ?? null),
+          capabilities: deepClone(input.externalMemoryProvider.capabilities ?? {})
+        }
+      : null,
     repo_binding: input.repoBinding
       ? {
           topic_id: input.repoBinding.topicId ?? null,
@@ -1005,6 +1091,14 @@ function serializeChannelContextContract(input = {}) {
       token_quota_context_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       repo_binding_upsert: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
       notification_endpoint_upsert: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      external_memory_provider_upsert: `/v1/channels/${encodeURIComponent(channelId)}/external-memory-provider`,
+      memory_viewer: `/v1/channels/${encodeURIComponent(channelId)}/memory-viewer`,
+      memory_search: `/v1/channels/${encodeURIComponent(channelId)}/memory/search`,
+      memory_get: `/v1/channels/${encodeURIComponent(channelId)}/memory/:memoryId`,
+      memory_write: `/v1/channels/${encodeURIComponent(channelId)}/memory/write`,
+      memory_feedback: `/v1/channels/${encodeURIComponent(channelId)}/memory/feedback`,
+      memory_promote: `/v1/channels/${encodeURIComponent(channelId)}/memory/promote`,
+      memory_forget: `/v1/channels/${encodeURIComponent(channelId)}/memory/forget`,
       topic_repo_binding: "/v1/topics/:topicId/repo-binding",
       work_assignment: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/:agentId`,
       operator_action: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
@@ -1076,6 +1170,14 @@ function serializeChannelContextContract(input = {}) {
               audit_id: input.auditAnchor.latest.notificationEndpoint.auditId ?? null,
               action: input.auditAnchor.latest.notificationEndpoint.action ?? null,
               at: input.auditAnchor.latest.notificationEndpoint.at ?? null
+            }
+          : null
+        ,
+        external_memory_provider: input.auditAnchor?.latest?.externalMemoryProvider
+          ? {
+              audit_id: input.auditAnchor.latest.externalMemoryProvider.auditId ?? null,
+              action: input.auditAnchor.latest.externalMemoryProvider.action ?? null,
+              at: input.auditAnchor.latest.externalMemoryProvider.at ?? null
             }
           : null
       }
@@ -1171,6 +1273,187 @@ function serializeChannelNotificationApprovalContract(input = {}) {
           : null
       }
     },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
+function serializeChannelExternalMemoryProviderContract(input = {}) {
+  const channelId = input.channelId;
+  return {
+    projection: "channel_external_memory_provider_contract",
+    contract_version: input.contractVersion ?? "v1.stage4b",
+    channel_id: channelId,
+    owner_operator_id: input.ownerOperatorId ?? null,
+    external_memory_provider: input.externalMemoryProvider
+      ? {
+          provider_id: input.externalMemoryProvider.providerId ?? null,
+          provider_type: input.externalMemoryProvider.providerType ?? null,
+          status: input.externalMemoryProvider.status ?? "disabled",
+          read_scopes: deepClone(input.externalMemoryProvider.readScopes ?? []),
+          write_scopes: deepClone(input.externalMemoryProvider.writeScopes ?? []),
+          recall_policy: deepClone(input.externalMemoryProvider.recallPolicy ?? null),
+          retention_policy: deepClone(input.externalMemoryProvider.retentionPolicy ?? null),
+          sharing_policy: deepClone(input.externalMemoryProvider.sharingPolicy ?? null),
+          capabilities: deepClone(input.externalMemoryProvider.capabilities ?? {})
+        }
+      : null,
+    write_anchors: {
+      provider_upsert:
+        input.writeAnchors?.providerUpsert ??
+        `/v1/channels/${encodeURIComponent(channelId)}/external-memory-provider`,
+      memory_search:
+        input.writeAnchors?.memorySearch ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/search`,
+      memory_get:
+        input.writeAnchors?.memoryGet ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/:memoryId`,
+      memory_write:
+        input.writeAnchors?.memoryWrite ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/write`,
+      memory_feedback:
+        input.writeAnchors?.memoryFeedback ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/feedback`,
+      memory_promote:
+        input.writeAnchors?.memoryPromote ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/promote`,
+      memory_forget:
+        input.writeAnchors?.memoryForget ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/forget`
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`,
+      latest: {
+        external_memory_provider: input.auditAnchor?.latest?.externalMemoryProvider
+          ? {
+              audit_id: input.auditAnchor.latest.externalMemoryProvider.auditId ?? null,
+              action: input.auditAnchor.latest.externalMemoryProvider.action ?? null,
+              at: input.auditAnchor.latest.externalMemoryProvider.at ?? null
+            }
+          : null,
+        memory_write: input.auditAnchor?.latest?.memoryWrite
+          ? {
+              audit_id: input.auditAnchor.latest.memoryWrite.auditId ?? null,
+              action: input.auditAnchor.latest.memoryWrite.action ?? null,
+              at: input.auditAnchor.latest.memoryWrite.at ?? null
+            }
+          : null,
+        memory_feedback: input.auditAnchor?.latest?.memoryFeedback
+          ? {
+              audit_id: input.auditAnchor.latest.memoryFeedback.auditId ?? null,
+              action: input.auditAnchor.latest.memoryFeedback.action ?? null,
+              at: input.auditAnchor.latest.memoryFeedback.at ?? null
+            }
+          : null,
+        memory_promote: input.auditAnchor?.latest?.memoryPromote
+          ? {
+              audit_id: input.auditAnchor.latest.memoryPromote.auditId ?? null,
+              action: input.auditAnchor.latest.memoryPromote.action ?? null,
+              at: input.auditAnchor.latest.memoryPromote.at ?? null
+            }
+          : null,
+        memory_forget: input.auditAnchor?.latest?.memoryForget
+          ? {
+              audit_id: input.auditAnchor.latest.memoryForget.auditId ?? null,
+              action: input.auditAnchor.latest.memoryForget.action ?? null,
+              at: input.auditAnchor.latest.memoryForget.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
+function serializeChannelMemoryEntry(input = {}) {
+  return {
+    memory_id: input.memoryId ?? null,
+    provider_memory_id: input.providerMemoryId ?? null,
+    scope: input.scope ?? null,
+    content: input.content ?? null,
+    source_action: input.sourceAction ?? "memory_write",
+    source_ref: input.sourceRef ?? null,
+    status: input.status ?? "active",
+    feedback: input.feedback
+      ? {
+          verdict: input.feedback.verdict ?? null,
+          note: input.feedback.note ?? null,
+          updated_at: input.feedback.updatedAt ?? null,
+          updated_by: input.feedback.updatedBy ?? null
+        }
+      : null,
+    promoted_at: input.promotedAt ?? null,
+    forgotten_at: input.forgottenAt ?? null,
+    created_at: input.createdAt ?? null,
+    created_by: input.createdBy ?? null,
+    updated_at: input.updatedAt ?? null,
+    updated_by: input.updatedBy ?? null
+  };
+}
+
+function serializeChannelMemoryViewerProjection(input = {}) {
+  const channelId = input.channelId;
+  return {
+    projection: "memory_viewer_projection",
+    contract_version: "v1.stage4b",
+    channel_id: channelId,
+    owner_operator_id: input.ownerOperatorId ?? null,
+    external_memory_provider: serializeChannelExternalMemoryProviderContract({
+      channelId,
+      ownerOperatorId: input.ownerOperatorId,
+      externalMemoryProvider: input.provider,
+      writeAnchors: input.writeAnchors,
+      auditAnchor: input.auditAnchor,
+      updatedAt: input.updatedAt
+    }).external_memory_provider,
+    items: (input.items ?? []).map((entry) => serializeChannelMemoryEntry(entry)),
+    summary: {
+      total_entries: input.summary?.totalEntries ?? 0,
+      active_entries: input.summary?.activeEntries ?? 0,
+      forgotten_entries: input.summary?.forgottenEntries ?? 0
+    },
+    write_anchors: {
+      memory_write: input.writeAnchors?.memoryWrite ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/write`,
+      memory_feedback:
+        input.writeAnchors?.memoryFeedback ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/feedback`,
+      memory_promote:
+        input.writeAnchors?.memoryPromote ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/promote`,
+      memory_forget: input.writeAnchors?.memoryForget ?? `/v1/channels/${encodeURIComponent(channelId)}/memory/forget`
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`,
+      latest: {
+        external_memory_provider: input.auditAnchor?.latest?.externalMemoryProvider
+          ? {
+              audit_id: input.auditAnchor.latest.externalMemoryProvider.auditId ?? null,
+              action: input.auditAnchor.latest.externalMemoryProvider.action ?? null,
+              at: input.auditAnchor.latest.externalMemoryProvider.at ?? null
+            }
+          : null,
+        memory_write: input.auditAnchor?.latest?.memoryWrite
+          ? {
+              audit_id: input.auditAnchor.latest.memoryWrite.auditId ?? null,
+              action: input.auditAnchor.latest.memoryWrite.action ?? null,
+              at: input.auditAnchor.latest.memoryWrite.at ?? null
+            }
+          : null,
+        memory_feedback: input.auditAnchor?.latest?.memoryFeedback
+          ? {
+              audit_id: input.auditAnchor.latest.memoryFeedback.auditId ?? null,
+              action: input.auditAnchor.latest.memoryFeedback.action ?? null,
+              at: input.auditAnchor.latest.memoryFeedback.at ?? null
+            }
+          : null,
+        memory_promote: input.auditAnchor?.latest?.memoryPromote
+          ? {
+              audit_id: input.auditAnchor.latest.memoryPromote.auditId ?? null,
+              action: input.auditAnchor.latest.memoryPromote.action ?? null,
+              at: input.auditAnchor.latest.memoryPromote.at ?? null
+            }
+          : null,
+        memory_forget: input.auditAnchor?.latest?.memoryForget
+          ? {
+              audit_id: input.auditAnchor.latest.memoryForget.auditId ?? null,
+              action: input.auditAnchor.latest.memoryForget.action ?? null,
+              at: input.auditAnchor.latest.memoryForget.at ?? null
+            }
+          : null
+      }
+    },
+    next_cursor: input.nextCursor ?? null,
     updated_at: input.updatedAt ?? null
   };
 }
@@ -2673,6 +2956,263 @@ export function createHttpServer(coordinator, options = {}) {
         });
         sendJson(response, 200, {
           notification_endpoint: serializeChannelNotificationApprovalContract(contract),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_EXTERNAL_MEMORY_PROVIDER") {
+        const contract = coordinator.getChannelExternalMemoryProviderContract(route.channelId);
+        sendJson(response, 200, {
+          external_memory_provider: serializeChannelExternalMemoryProviderContract(contract),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_CHANNEL_EXTERNAL_MEMORY_PROVIDER") {
+        const body = await readJsonBody(request);
+        assertObjectBody(
+          body,
+          "invalid_external_memory_provider",
+          "external memory provider payload must be object"
+        );
+        const allowedFields = new Set([
+          "operator_id",
+          "provider_id",
+          "provider_type",
+          "status",
+          "read_scopes",
+          "write_scopes",
+          "recall_policy",
+          "retention_policy",
+          "sharing_policy",
+          "policy_snapshot"
+        ]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError(
+              "invalid_external_memory_provider_field",
+              `unsupported external memory provider field: ${key}`
+            );
+          }
+        }
+        if (body.read_scopes !== undefined && !Array.isArray(body.read_scopes)) {
+          throw new CoordinatorError("invalid_external_memory_read_scopes", "read_scopes must be string[]");
+        }
+        if (body.write_scopes !== undefined && !Array.isArray(body.write_scopes)) {
+          throw new CoordinatorError("invalid_external_memory_write_scopes", "write_scopes must be string[]");
+        }
+        if (
+          body.recall_policy !== undefined &&
+          (!body.recall_policy || typeof body.recall_policy !== "object" || Array.isArray(body.recall_policy))
+        ) {
+          throw new CoordinatorError("invalid_memory_recall_policy", "recall_policy must be object");
+        }
+        if (
+          body.retention_policy !== undefined &&
+          (!body.retention_policy ||
+            typeof body.retention_policy !== "object" ||
+            Array.isArray(body.retention_policy))
+        ) {
+          throw new CoordinatorError("invalid_memory_retention_policy", "retention_policy must be object");
+        }
+        if (
+          body.sharing_policy !== undefined &&
+          (!body.sharing_policy || typeof body.sharing_policy !== "object" || Array.isArray(body.sharing_policy))
+        ) {
+          throw new CoordinatorError("invalid_memory_sharing_policy", "sharing_policy must be object");
+        }
+        const contract = coordinator.upsertChannelExternalMemoryProviderContract(route.channelId, {
+          operatorId: body.operator_id,
+          providerId: body.provider_id,
+          providerType: body.provider_type,
+          status: body.status,
+          readScopes: body.read_scopes,
+          writeScopes: body.write_scopes,
+          recallPolicy: body.recall_policy,
+          retentionPolicy: body.retention_policy,
+          sharingPolicy: body.sharing_policy,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          external_memory_provider: serializeChannelExternalMemoryProviderContract(contract),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_CHANNEL_MEMORY_SEARCH") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_memory_search", "memory search payload must be object");
+        const allowedFields = new Set(["scope", "query", "include_forgotten", "limit"]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_memory_search_field", `unsupported memory search field: ${key}`);
+          }
+        }
+        const projection = coordinator.searchChannelMemory(route.channelId, {
+          scope: body.scope,
+          query: body.query,
+          includeForgotten: body.include_forgotten === true,
+          limit: body.limit
+        });
+        sendJson(response, 200, {
+          memory_search: {
+            channel_id: projection.channelId,
+            owner_operator_id: projection.ownerOperatorId,
+            external_memory_provider: serializeChannelExternalMemoryProviderContract({
+              channelId: projection.channelId,
+              ownerOperatorId: projection.ownerOperatorId,
+              externalMemoryProvider: projection.provider
+            }).external_memory_provider,
+            items: projection.items.map((item) => serializeChannelMemoryEntry(item)),
+            updated_at: projection.updatedAt
+          },
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_CHANNEL_MEMORY_WRITE") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_memory_write", "memory write payload must be object");
+        const allowedFields = new Set(["operator_id", "scope", "content", "source_ref", "policy_snapshot"]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_memory_write_field", `unsupported memory write field: ${key}`);
+          }
+        }
+        const written = coordinator.writeChannelMemoryEntry(route.channelId, {
+          operatorId: body.operator_id,
+          scope: body.scope,
+          content: body.content,
+          sourceRef: body.source_ref,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          memory: serializeChannelMemoryEntry(written.memory),
+          audit_anchor: serializeChannelExternalMemoryProviderContract({
+            channelId: written.channelId,
+            ownerOperatorId: written.ownerOperatorId,
+            externalMemoryProvider: written.provider,
+            auditAnchor: written.auditAnchor
+          }).audit_anchor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_CHANNEL_MEMORY_FEEDBACK") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_memory_feedback", "memory feedback payload must be object");
+        const allowedFields = new Set(["operator_id", "memory_id", "verdict", "note", "policy_snapshot"]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_memory_feedback_field", `unsupported memory feedback field: ${key}`);
+          }
+        }
+        const feedback = coordinator.feedbackChannelMemoryEntry(route.channelId, {
+          operatorId: body.operator_id,
+          memoryId: body.memory_id,
+          verdict: body.verdict,
+          note: body.note,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          memory: serializeChannelMemoryEntry(feedback.memory),
+          audit_anchor: serializeChannelExternalMemoryProviderContract({
+            channelId: feedback.channelId,
+            ownerOperatorId: feedback.ownerOperatorId,
+            auditAnchor: feedback.auditAnchor
+          }).audit_anchor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_CHANNEL_MEMORY_PROMOTE") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_memory_promote", "memory promote payload must be object");
+        const allowedFields = new Set(["operator_id", "memory_id", "policy_snapshot"]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_memory_promote_field", `unsupported memory promote field: ${key}`);
+          }
+        }
+        const promoted = coordinator.promoteChannelMemoryEntry(route.channelId, {
+          operatorId: body.operator_id,
+          memoryId: body.memory_id,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          memory: serializeChannelMemoryEntry(promoted.memory),
+          audit_anchor: serializeChannelExternalMemoryProviderContract({
+            channelId: promoted.channelId,
+            ownerOperatorId: promoted.ownerOperatorId,
+            auditAnchor: promoted.auditAnchor
+          }).audit_anchor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_CHANNEL_MEMORY_FORGET") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_memory_forget", "memory forget payload must be object");
+        const allowedFields = new Set(["operator_id", "memory_id", "policy_snapshot"]);
+        for (const key of Object.keys(body)) {
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError("invalid_memory_forget_field", `unsupported memory forget field: ${key}`);
+          }
+        }
+        const forgotten = coordinator.forgetChannelMemoryEntry(route.channelId, {
+          operatorId: body.operator_id,
+          memoryId: body.memory_id,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          memory: serializeChannelMemoryEntry(forgotten.memory),
+          audit_anchor: serializeChannelExternalMemoryProviderContract({
+            channelId: forgotten.channelId,
+            ownerOperatorId: forgotten.ownerOperatorId,
+            auditAnchor: forgotten.auditAnchor
+          }).audit_anchor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_MEMORY_ITEM") {
+        const projection = coordinator.getChannelMemoryEntry(route.channelId, route.memoryId, {
+          scope: parsedUrl.searchParams.get("scope")
+        });
+        sendJson(response, 200, {
+          memory: serializeChannelMemoryEntry(projection.memory),
+          external_memory_provider: serializeChannelExternalMemoryProviderContract({
+            channelId: projection.channelId,
+            ownerOperatorId: projection.ownerOperatorId,
+            externalMemoryProvider: projection.provider
+          }).external_memory_provider,
+          audit_anchor: serializeChannelExternalMemoryProviderContract({
+            channelId: projection.channelId,
+            ownerOperatorId: projection.ownerOperatorId,
+            auditAnchor: projection.auditAnchor
+          }).audit_anchor,
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_MEMORY_VIEWER") {
+        const viewer = coordinator.listChannelMemoryViewerProjection(route.channelId, {
+          scope: parsedUrl.searchParams.get("scope"),
+          includeForgotten: parsedUrl.searchParams.get("include_forgotten") === "true",
+          limit: parsedUrl.searchParams.get("limit"),
+          cursor: parsedUrl.searchParams.get("cursor")
+        });
+        sendJson(response, 200, {
+          memory_viewer: serializeChannelMemoryViewerProjection(viewer),
           request_id: requestId
         });
         return;

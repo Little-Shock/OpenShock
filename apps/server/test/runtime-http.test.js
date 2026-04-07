@@ -5153,6 +5153,239 @@ test("v1 stage4b skill-policy-plugin governance and token/quota/context observab
   });
 });
 
+test("v1 stage4b external memory provider and memory viewer contract keeps provider boundary without local shadow truth", async () => {
+  const channelId = "channel_stage4b_memory_contract";
+  const operatorId = "human_operator_stage4b";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const seeded = await requestJson({
+      port,
+      method: "POST",
+      path: "/runtime/fixtures/seed",
+      body: {}
+    });
+    assert.equal(seeded.statusCode, 200);
+
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage4b",
+        workspace_root: "/Users/atou/.slock/agents",
+        baseline_ref: "feat/initial-implementation@20b929d",
+        fixed_directory: "/Users/atou/OpenShockSwarm"
+      }
+    });
+    assert.equal(context.statusCode, 200);
+
+    const memorySearchBeforeProvider = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory/search`,
+      body: {
+        scope: "channel",
+        query: "anything"
+      }
+    });
+    assert.equal(memorySearchBeforeProvider.statusCode, 422);
+    assert.equal(memorySearchBeforeProvider.body.error.code, "external_memory_provider_not_active");
+
+    const upsertProvider = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/external-memory-provider`,
+      body: {
+        operator_id: operatorId,
+        provider_id: "mem_provider_stage4b",
+        provider_type: "memos",
+        status: "active",
+        read_scopes: ["channel", "topic"],
+        write_scopes: ["channel"],
+        recall_policy: {
+          strategy: "semantic_topk",
+          top_k: 5
+        },
+        retention_policy: {
+          ttl_days: 30,
+          mode: "manual_forget"
+        },
+        sharing_policy: {
+          mode: "channel_owner_only"
+        },
+        policy_snapshot: {
+          mode: "stage4b_contract",
+          boundary: "external_provider_only"
+        }
+      }
+    });
+    assert.equal(upsertProvider.statusCode, 200);
+    assert.equal(
+      upsertProvider.body.external_memory_provider.external_memory_provider.provider_id,
+      "mem_provider_stage4b"
+    );
+    assert.equal(upsertProvider.body.external_memory_provider.external_memory_provider.status, "active");
+    assert.equal(
+      upsertProvider.body.external_memory_provider.write_anchors.memory_write,
+      `/v1/channels/${encodeURIComponent(channelId)}/memory/write`
+    );
+    assert.equal(
+      upsertProvider.body.external_memory_provider.audit_anchor.latest.external_memory_provider.action,
+      "channel_external_memory_provider_upsert"
+    );
+
+    const invalidProviderField = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/external-memory-provider`,
+      body: {
+        operator_id: operatorId,
+        provider_id: "mem_provider_stage4b",
+        provider_type: "memos",
+        status: "active",
+        read_scopes: ["channel"],
+        write_scopes: ["channel"],
+        unknown_field: true
+      }
+    });
+    assert.equal(invalidProviderField.statusCode, 400);
+    assert.equal(invalidProviderField.body.error.code, "invalid_external_memory_provider_field");
+
+    const writeForbiddenScope = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory/write`,
+      body: {
+        operator_id: operatorId,
+        scope: "workspace",
+        content: "should fail due to scope"
+      }
+    });
+    assert.equal(writeForbiddenScope.statusCode, 422);
+    assert.equal(writeForbiddenScope.body.error.code, "memory_scope_forbidden");
+
+    const writeMemory = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory/write`,
+      body: {
+        operator_id: operatorId,
+        scope: "channel",
+        content: "Memory fact stage4b contract",
+        source_ref: "run_stage4b_001"
+      }
+    });
+    assert.equal(writeMemory.statusCode, 200);
+    const memoryId = writeMemory.body.memory.memory_id;
+    assert.equal(typeof memoryId, "string");
+    assert.equal(writeMemory.body.memory.scope, "channel");
+    assert.equal(writeMemory.body.memory.status, "active");
+
+    const feedbackMemory = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory/feedback`,
+      body: {
+        operator_id: operatorId,
+        memory_id: memoryId,
+        verdict: "correct",
+        note: "validated in stage4b smoke"
+      }
+    });
+    assert.equal(feedbackMemory.statusCode, 200);
+    assert.equal(feedbackMemory.body.memory.feedback.verdict, "correct");
+
+    const promoteMemory = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory/promote`,
+      body: {
+        operator_id: operatorId,
+        memory_id: memoryId
+      }
+    });
+    assert.equal(promoteMemory.statusCode, 200);
+    assert.equal(typeof promoteMemory.body.memory.promoted_at, "string");
+
+    const getMemory = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory/${encodeURIComponent(memoryId)}`
+    });
+    assert.equal(getMemory.statusCode, 200);
+    assert.equal(getMemory.body.memory.memory_id, memoryId);
+    assert.equal(getMemory.body.memory.content, "Memory fact stage4b contract");
+
+    const viewer = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory-viewer?scope=channel&limit=20`
+    });
+    assert.equal(viewer.statusCode, 200);
+    assert.equal(viewer.body.memory_viewer.contract_version, "v1.stage4b");
+    assert.equal(viewer.body.memory_viewer.external_memory_provider.provider_id, "mem_provider_stage4b");
+    assert.equal(viewer.body.memory_viewer.summary.total_entries >= 1, true);
+    assert.equal(
+      viewer.body.memory_viewer.items.some(
+        (item) =>
+          item.memory_id === memoryId &&
+          item.feedback?.verdict === "correct" &&
+          typeof item.promoted_at === "string"
+      ),
+      true
+    );
+
+    const forgetMemory = await requestJson({
+      port,
+      method: "POST",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory/forget`,
+      body: {
+        operator_id: operatorId,
+        memory_id: memoryId
+      }
+    });
+    assert.equal(forgetMemory.statusCode, 200);
+    assert.equal(forgetMemory.body.memory.status, "forgotten");
+
+    const viewerAfterForget = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/memory-viewer?scope=channel&include_forgotten=true&limit=20`
+    });
+    assert.equal(viewerAfterForget.statusCode, 200);
+    assert.equal(
+      viewerAfterForget.body.memory_viewer.items.some(
+        (item) => item.memory_id === memoryId && item.status === "forgotten"
+      ),
+      true
+    );
+
+    const auditTrail = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail?limit=80`
+    });
+    assert.equal(auditTrail.statusCode, 200);
+    assert.equal(
+      auditTrail.body.items.some((item) => item.action === "channel_external_memory_provider_upsert"),
+      true
+    );
+    assert.equal(
+      auditTrail.body.items.some((item) => item.action === "channel_memory_forget" && item.details.memory_id === memoryId),
+      true
+    );
+
+    const payload = JSON.stringify({
+      providerContract: upsertProvider.body.external_memory_provider,
+      viewer: viewerAfterForget.body.memory_viewer,
+      auditTrail: auditTrail.body
+    });
+    assert.equal(payload.includes("\"chat_history_shadow\""), false);
+    assert.equal(payload.includes("\"local_memory_cache_truth\""), false);
+  });
+});
+
 test("v1 stage2 batch2 runtime recovery contract supports assignment enforcement and operator-triggered recoveries", async () => {
   const operatorId = "human_operator_stage2_batch2";
   const channelId = "channel_open_shock_batch2";

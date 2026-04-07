@@ -210,6 +210,16 @@ const APPROVAL_NOTIFICATION_TRIGGER_EVENTS = Object.freeze([
 ]);
 const SKILL_POLICY_PLUGIN_SCOPES = new Set(["channel", "workspace"]);
 const TOKEN_QUOTA_STATES = new Set(["healthy", "near_limit", "blocked"]);
+const EXTERNAL_MEMORY_PROVIDER_STATUSES = new Set(["active", "disabled"]);
+const EXTERNAL_MEMORY_PROVIDER_CAPABILITIES = Object.freeze({
+  memory_search: true,
+  memory_get: true,
+  memory_write: true,
+  memory_feedback: true,
+  memory_promote: true,
+  memory_forget: true
+});
+const MEMORY_ENTRY_STATUSES = new Set(["active", "forgotten"]);
 
 const WORKSPACE_GOVERNANCE_PERMISSION_MATRIX = Object.freeze({
   owner: Object.freeze({
@@ -302,6 +312,22 @@ function createEmptyChannelNotificationEndpoints() {
       updatedAt: null,
       updatedBy: null
     }
+  };
+}
+
+function createEmptyChannelExternalMemoryProvider() {
+  return {
+    providerId: null,
+    providerType: null,
+    status: "disabled",
+    readScopes: [],
+    writeScopes: [],
+    recallPolicy: null,
+    retentionPolicy: null,
+    sharingPolicy: null,
+    capabilities: deepClone(EXTERNAL_MEMORY_PROVIDER_CAPABILITIES),
+    updatedAt: null,
+    updatedBy: null
   };
 }
 
@@ -2587,6 +2613,85 @@ export class ServerCoordinator {
     return channel.notificationEndpoints;
   }
 
+  ensureChannelExternalMemoryProvider(channel) {
+    if (!channel.externalMemoryProvider || typeof channel.externalMemoryProvider !== "object") {
+      channel.externalMemoryProvider = createEmptyChannelExternalMemoryProvider();
+    }
+    const provider = channel.externalMemoryProvider;
+    provider.providerId = normalizeOptionalScopeId(provider.providerId);
+    provider.providerType = normalizeOptionalScopeId(provider.providerType);
+    provider.status = EXTERNAL_MEMORY_PROVIDER_STATUSES.has(provider.status) ? provider.status : "disabled";
+    provider.readScopes = Array.isArray(provider.readScopes)
+      ? Array.from(
+          new Set(
+            provider.readScopes
+              .filter((item) => typeof item === "string" && item.trim().length > 0)
+              .map((item) => item.trim())
+          )
+        )
+      : [];
+    provider.writeScopes = Array.isArray(provider.writeScopes)
+      ? Array.from(
+          new Set(
+            provider.writeScopes
+              .filter((item) => typeof item === "string" && item.trim().length > 0)
+              .map((item) => item.trim())
+          )
+        )
+      : [];
+    provider.recallPolicy =
+      provider.recallPolicy && typeof provider.recallPolicy === "object" && !Array.isArray(provider.recallPolicy)
+        ? deepClone(provider.recallPolicy)
+        : null;
+    provider.retentionPolicy =
+      provider.retentionPolicy && typeof provider.retentionPolicy === "object" && !Array.isArray(provider.retentionPolicy)
+        ? deepClone(provider.retentionPolicy)
+        : null;
+    provider.sharingPolicy =
+      provider.sharingPolicy && typeof provider.sharingPolicy === "object" && !Array.isArray(provider.sharingPolicy)
+        ? deepClone(provider.sharingPolicy)
+        : null;
+    provider.capabilities =
+      provider.capabilities && typeof provider.capabilities === "object" && !Array.isArray(provider.capabilities)
+        ? deepMerge(EXTERNAL_MEMORY_PROVIDER_CAPABILITIES, provider.capabilities)
+        : deepClone(EXTERNAL_MEMORY_PROVIDER_CAPABILITIES);
+    provider.updatedAt = normalizeOptionalScopeId(provider.updatedAt);
+    provider.updatedBy = normalizeOptionalScopeId(provider.updatedBy);
+    return provider;
+  }
+
+  ensureChannelMemoryLedger(channel) {
+    if (!Array.isArray(channel.memoryLedger)) {
+      channel.memoryLedger = [];
+      return channel.memoryLedger;
+    }
+    channel.memoryLedger = channel.memoryLedger
+      .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+      .map((item) => {
+        const status = MEMORY_ENTRY_STATUSES.has(item.status) ? item.status : "active";
+        return {
+          memoryId: normalizeOptionalScopeId(item.memoryId),
+          providerMemoryId: normalizeOptionalScopeId(item.providerMemoryId),
+          scope: normalizeOptionalScopeId(item.scope),
+          content: normalizeOptionalScopeId(item.content),
+          sourceAction: normalizeOptionalScopeId(item.sourceAction) ?? "memory_write",
+          sourceRef: normalizeOptionalScopeId(item.sourceRef),
+          status,
+          feedback: item.feedback && typeof item.feedback === "object" && !Array.isArray(item.feedback)
+            ? deepClone(item.feedback)
+            : null,
+          promotedAt: normalizeOptionalScopeId(item.promotedAt),
+          forgottenAt: normalizeOptionalScopeId(item.forgottenAt),
+          createdAt: normalizeOptionalScopeId(item.createdAt),
+          createdBy: normalizeOptionalScopeId(item.createdBy),
+          updatedAt: normalizeOptionalScopeId(item.updatedAt),
+          updatedBy: normalizeOptionalScopeId(item.updatedBy)
+        };
+      })
+      .filter((item) => item.memoryId && item.scope);
+    return channel.memoryLedger;
+  }
+
   findLatestChannelAuditByAction(channel, action) {
     for (let index = channel.auditTrail.length - 1; index >= 0; index -= 1) {
       const entry = channel.auditTrail[index];
@@ -2617,7 +2722,14 @@ export class ServerCoordinator {
         skillPolicyPlugin: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_skill_policy_plugin_upsert")),
         tokenQuotaContext: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_token_quota_context_upsert")),
         repoBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_repo_binding_upsert")),
-        notificationEndpoint: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_notification_endpoint_upsert"))
+        notificationEndpoint: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_notification_endpoint_upsert")),
+        externalMemoryProvider: mapEntry(
+          this.findLatestChannelAuditByAction(channel, "channel_external_memory_provider_upsert")
+        ),
+        memoryWrite: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_memory_write")),
+        memoryFeedback: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_memory_feedback")),
+        memoryPromote: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_memory_promote")),
+        memoryForget: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_memory_forget"))
       }
     };
   }
@@ -3408,6 +3520,7 @@ export class ServerCoordinator {
     const channel = this.requireChannelContext(channelId);
     this.ensureChannelGovernance(channel);
     this.ensureChannelNotificationEndpoints(channel);
+    this.ensureChannelExternalMemoryProvider(channel);
     return deepClone({
       channelId: channel.channelId,
       ownerOperatorId: channel.ownerOperatorId,
@@ -3437,6 +3550,7 @@ export class ServerCoordinator {
       notificationEndpoint: channel.notificationEndpoints,
       notificationRoutingRules: NOTIFICATION_ROUTING_RULES,
       approvalContract: this.getChannelApprovalAuditAnchors(channel),
+      externalMemoryProvider: channel.externalMemoryProvider,
       repoBinding: channel.repoBinding ?? null,
       auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt
@@ -3487,6 +3601,8 @@ export class ServerCoordinator {
         },
         governance: createEmptyChannelGovernance(),
         notificationEndpoints: createEmptyChannelNotificationEndpoints(),
+        externalMemoryProvider: createEmptyChannelExternalMemoryProvider(),
+        memoryLedger: [],
         repoBinding: null,
         auditTrail: [],
         updatedAt: nowIso()
@@ -3677,6 +3793,462 @@ export class ServerCoordinator {
     });
     this.channelContexts.set(channel.channelId, channel);
     return this.getChannelNotificationEndpointContract(channel.channelId);
+  }
+
+  assertExternalMemoryProviderActive(channel, input = {}) {
+    const provider = this.ensureChannelExternalMemoryProvider(channel);
+    if (provider.status !== "active") {
+      throw new CoordinatorError(
+        "external_memory_provider_not_active",
+        "external memory provider must be active before memory operations",
+        {
+          channel_id: channel.channelId,
+          provider_status: provider.status
+        }
+      );
+    }
+    const scope = normalizeOptionalScopeId(input.scope);
+    if (!scope) {
+      return provider;
+    }
+    const scopeSet = input.access === "write" ? provider.writeScopes : provider.readScopes;
+    if (scopeSet.length > 0 && !scopeSet.includes(scope)) {
+      throw new CoordinatorError("memory_scope_forbidden", "memory scope is not allowed by provider policy", {
+        channel_id: channel.channelId,
+        scope,
+        access: input.access ?? "read"
+      });
+    }
+    return provider;
+  }
+
+  findChannelMemoryEntry(channel, memoryId) {
+    const normalizedMemoryId = normalizeOptionalScopeId(memoryId);
+    if (!normalizedMemoryId) {
+      return null;
+    }
+    this.ensureChannelMemoryLedger(channel);
+    return channel.memoryLedger.find((item) => item.memoryId === normalizedMemoryId) ?? null;
+  }
+
+  getChannelExternalMemoryProviderContract(channelId) {
+    const channel = this.requireChannelContext(channelId);
+    const provider = this.ensureChannelExternalMemoryProvider(channel);
+    return deepClone({
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      contractVersion: "v1.stage4b",
+      externalMemoryProvider: provider,
+      writeAnchors: {
+        providerUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/external-memory-provider`,
+        memorySearch: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/search`,
+        memoryGet: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/:memoryId`,
+        memoryWrite: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/write`,
+        memoryFeedback: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/feedback`,
+        memoryPromote: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/promote`,
+        memoryForget: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/forget`
+      },
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      updatedAt: channel.updatedAt
+    });
+  }
+
+  upsertChannelExternalMemoryProviderContract(channelId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_external_memory_provider",
+      "external memory provider payload must be object"
+    );
+    const allowedKeys = new Set([
+      "operatorId",
+      "providerId",
+      "providerType",
+      "status",
+      "readScopes",
+      "writeScopes",
+      "recallPolicy",
+      "retentionPolicy",
+      "sharingPolicy",
+      "policySnapshot"
+    ]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(
+        allowedKeys.has(key),
+        "invalid_external_memory_provider_field",
+        `unsupported external memory provider field: ${key}`
+      );
+    }
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const provider = this.ensureChannelExternalMemoryProvider(channel);
+    const providerId = normalizeOptionalScopeId(input.providerId) ?? provider.providerId;
+    const providerType = normalizeOptionalScopeId(input.providerType) ?? provider.providerType;
+    assertOrThrow(providerId, "external_memory_provider_id_required", "provider_id is required");
+    assertOrThrow(providerType, "external_memory_provider_type_required", "provider_type is required");
+    const status = normalizeOptionalScopeId(input.status) ?? provider.status ?? "active";
+    assertOrThrow(
+      EXTERNAL_MEMORY_PROVIDER_STATUSES.has(status),
+      "invalid_external_memory_provider_status",
+      "provider status is invalid"
+    );
+    const normalizeScopes = (value, code, label) => {
+      if (value === undefined) {
+        return null;
+      }
+      assertOrThrow(Array.isArray(value), code, `${label} must be string[]`);
+      const scopes = Array.from(
+        new Set(
+          value.filter((item) => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+        )
+      );
+      assertOrThrow(scopes.length > 0, code, `${label} must include at least one scope`);
+      return scopes;
+    };
+    const readScopes = normalizeScopes(
+      input.readScopes,
+      "invalid_external_memory_read_scopes",
+      "read_scopes"
+    );
+    const writeScopes = normalizeScopes(
+      input.writeScopes,
+      "invalid_external_memory_write_scopes",
+      "write_scopes"
+    );
+    const validatePolicy = (value, code, label) => {
+      if (value === undefined) {
+        return null;
+      }
+      assertOrThrow(value && typeof value === "object" && !Array.isArray(value), code, `${label} must be object`);
+      return deepClone(value);
+    };
+    const recallPolicy = validatePolicy(input.recallPolicy, "invalid_memory_recall_policy", "recall_policy");
+    const retentionPolicy = validatePolicy(input.retentionPolicy, "invalid_memory_retention_policy", "retention_policy");
+    const sharingPolicy = validatePolicy(input.sharingPolicy, "invalid_memory_sharing_policy", "sharing_policy");
+    const now = nowIso();
+    channel.externalMemoryProvider = {
+      providerId,
+      providerType,
+      status,
+      readScopes: readScopes ?? provider.readScopes,
+      writeScopes: writeScopes ?? provider.writeScopes,
+      recallPolicy: recallPolicy ?? provider.recallPolicy,
+      retentionPolicy: retentionPolicy ?? provider.retentionPolicy,
+      sharingPolicy: sharingPolicy ?? provider.sharingPolicy,
+      capabilities: deepClone(EXTERNAL_MEMORY_PROVIDER_CAPABILITIES),
+      updatedAt: now,
+      updatedBy: operatorId
+    };
+    channel.updatedAt = now;
+    this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: "channel_external_memory_provider_upsert",
+      target: `channel:${channel.channelId}:external_memory_provider`,
+      policySnapshot: input.policySnapshot,
+      details: {
+        provider_id: channel.externalMemoryProvider.providerId,
+        provider_type: channel.externalMemoryProvider.providerType,
+        provider_status: channel.externalMemoryProvider.status,
+        read_scope_count: channel.externalMemoryProvider.readScopes.length,
+        write_scope_count: channel.externalMemoryProvider.writeScopes.length
+      }
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return this.getChannelExternalMemoryProviderContract(channel.channelId);
+  }
+
+  searchChannelMemory(channelId, input = {}) {
+    const channel = this.requireChannelContext(channelId);
+    const scope = normalizeOptionalScopeId(input.scope);
+    this.assertExternalMemoryProviderActive(channel, {
+      scope,
+      access: "read"
+    });
+    this.ensureChannelMemoryLedger(channel);
+    const query = normalizeOptionalScopeId(input.query)?.toLowerCase() ?? null;
+    const includeForgotten = input.includeForgotten === true;
+    const limit = parseLimit(input.limit, { codePrefix: "memory_search", defaultLimit: 20, maxLimit: 200 });
+    const items = channel.memoryLedger
+      .filter((entry) => (scope ? entry.scope === scope : true))
+      .filter((entry) => (includeForgotten ? true : entry.status !== "forgotten"))
+      .filter((entry) => (query ? String(entry.content ?? "").toLowerCase().includes(query) : true))
+      .sort((left, right) => compareTimestampDesc(left.updatedAt, right.updatedAt, left.memoryId, right.memoryId))
+      .slice(0, limit)
+      .map((entry) => deepClone(entry));
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      provider: deepClone(channel.externalMemoryProvider),
+      items,
+      updatedAt: channel.updatedAt
+    };
+  }
+
+  getChannelMemoryEntry(channelId, memoryId, input = {}) {
+    const channel = this.requireChannelContext(channelId);
+    const entry = this.findChannelMemoryEntry(channel, memoryId);
+    assertOrThrow(entry, "memory_not_found", `memory ${memoryId} not found`);
+    this.assertExternalMemoryProviderActive(channel, {
+      scope: entry.scope,
+      access: "read"
+    });
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      provider: deepClone(channel.externalMemoryProvider),
+      memory: deepClone(entry),
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      requestScope: normalizeOptionalScopeId(input.scope) ?? entry.scope,
+      updatedAt: channel.updatedAt
+    };
+  }
+
+  writeChannelMemoryEntry(channelId, input = {}) {
+    assertOrThrow(input && typeof input === "object" && !Array.isArray(input), "invalid_memory_write", "memory write payload must be object");
+    const allowedKeys = new Set(["operatorId", "scope", "content", "sourceRef", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(allowedKeys.has(key), "invalid_memory_write_field", `unsupported memory write field: ${key}`);
+    }
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const scope = normalizeOptionalScopeId(input.scope);
+    assertOrThrow(scope, "memory_scope_required", "scope is required");
+    const provider = this.assertExternalMemoryProviderActive(channel, {
+      scope,
+      access: "write"
+    });
+    const content = normalizeOptionalScopeId(input.content);
+    assertOrThrow(content, "memory_content_required", "content is required");
+    this.ensureChannelMemoryLedger(channel);
+    const now = nowIso();
+    const entry = {
+      memoryId: generateId("memory"),
+      providerMemoryId: generateId("provider_memory"),
+      scope,
+      content,
+      sourceAction: "memory_write",
+      sourceRef: normalizeOptionalScopeId(input.sourceRef),
+      status: "active",
+      feedback: null,
+      promotedAt: null,
+      forgottenAt: null,
+      createdAt: now,
+      createdBy: operatorId,
+      updatedAt: now,
+      updatedBy: operatorId
+    };
+    channel.memoryLedger.push(entry);
+    channel.updatedAt = now;
+    this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: "channel_memory_write",
+      target: `channel:${channel.channelId}:memory:${entry.memoryId}`,
+      policySnapshot: input.policySnapshot,
+      details: {
+        memory_id: entry.memoryId,
+        provider_memory_id: entry.providerMemoryId,
+        provider_id: provider.providerId,
+        scope: entry.scope,
+        source_ref: entry.sourceRef
+      }
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      provider: deepClone(provider),
+      memory: deepClone(entry),
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      updatedAt: channel.updatedAt
+    };
+  }
+
+  feedbackChannelMemoryEntry(channelId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_memory_feedback",
+      "memory feedback payload must be object"
+    );
+    const allowedKeys = new Set(["operatorId", "memoryId", "verdict", "note", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(allowedKeys.has(key), "invalid_memory_feedback_field", `unsupported memory feedback field: ${key}`);
+    }
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const memoryId = normalizeOptionalScopeId(input.memoryId);
+    assertOrThrow(memoryId, "memory_id_required", "memory_id is required");
+    const entry = this.findChannelMemoryEntry(channel, memoryId);
+    assertOrThrow(entry, "memory_not_found", `memory ${memoryId} not found`);
+    this.assertExternalMemoryProviderActive(channel, {
+      scope: entry.scope,
+      access: "write"
+    });
+    const verdict = normalizeOptionalScopeId(input.verdict);
+    assertOrThrow(verdict, "memory_feedback_verdict_required", "verdict is required");
+    const note = normalizeOptionalScopeId(input.note);
+    const now = nowIso();
+    entry.feedback = {
+      verdict,
+      note,
+      updatedAt: now,
+      updatedBy: operatorId
+    };
+    entry.sourceAction = "memory_feedback";
+    entry.updatedAt = now;
+    entry.updatedBy = operatorId;
+    channel.updatedAt = now;
+    this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: "channel_memory_feedback",
+      target: `channel:${channel.channelId}:memory:${entry.memoryId}`,
+      policySnapshot: input.policySnapshot,
+      details: {
+        memory_id: entry.memoryId,
+        verdict
+      }
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      memory: deepClone(entry),
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      updatedAt: channel.updatedAt
+    };
+  }
+
+  promoteChannelMemoryEntry(channelId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_memory_promote",
+      "memory promote payload must be object"
+    );
+    const allowedKeys = new Set(["operatorId", "memoryId", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(allowedKeys.has(key), "invalid_memory_promote_field", `unsupported memory promote field: ${key}`);
+    }
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const memoryId = normalizeOptionalScopeId(input.memoryId);
+    assertOrThrow(memoryId, "memory_id_required", "memory_id is required");
+    const entry = this.findChannelMemoryEntry(channel, memoryId);
+    assertOrThrow(entry, "memory_not_found", `memory ${memoryId} not found`);
+    this.assertExternalMemoryProviderActive(channel, {
+      scope: entry.scope,
+      access: "write"
+    });
+    if (entry.status === "forgotten") {
+      throw new CoordinatorError("memory_entry_forgotten", "forgotten memory entry cannot be promoted", {
+        memory_id: entry.memoryId
+      });
+    }
+    const now = nowIso();
+    entry.promotedAt = now;
+    entry.sourceAction = "memory_promote";
+    entry.updatedAt = now;
+    entry.updatedBy = operatorId;
+    channel.updatedAt = now;
+    this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: "channel_memory_promote",
+      target: `channel:${channel.channelId}:memory:${entry.memoryId}`,
+      policySnapshot: input.policySnapshot,
+      details: {
+        memory_id: entry.memoryId
+      }
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      memory: deepClone(entry),
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      updatedAt: channel.updatedAt
+    };
+  }
+
+  forgetChannelMemoryEntry(channelId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_memory_forget",
+      "memory forget payload must be object"
+    );
+    const allowedKeys = new Set(["operatorId", "memoryId", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(allowedKeys.has(key), "invalid_memory_forget_field", `unsupported memory forget field: ${key}`);
+    }
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const memoryId = normalizeOptionalScopeId(input.memoryId);
+    assertOrThrow(memoryId, "memory_id_required", "memory_id is required");
+    const entry = this.findChannelMemoryEntry(channel, memoryId);
+    assertOrThrow(entry, "memory_not_found", `memory ${memoryId} not found`);
+    this.assertExternalMemoryProviderActive(channel, {
+      scope: entry.scope,
+      access: "write"
+    });
+    const now = nowIso();
+    entry.status = "forgotten";
+    entry.forgottenAt = now;
+    entry.sourceAction = "memory_forget";
+    entry.updatedAt = now;
+    entry.updatedBy = operatorId;
+    channel.updatedAt = now;
+    this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: "channel_memory_forget",
+      target: `channel:${channel.channelId}:memory:${entry.memoryId}`,
+      policySnapshot: input.policySnapshot,
+      details: {
+        memory_id: entry.memoryId
+      }
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      memory: deepClone(entry),
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      updatedAt: channel.updatedAt
+    };
+  }
+
+  listChannelMemoryViewerProjection(channelId, input = {}) {
+    const channel = this.requireChannelContext(channelId);
+    const provider = this.assertExternalMemoryProviderActive(channel, {
+      scope: normalizeOptionalScopeId(input.scope),
+      access: "read"
+    });
+    this.ensureChannelMemoryLedger(channel);
+    const includeForgotten = input.includeForgotten === true;
+    const scope = normalizeOptionalScopeId(input.scope);
+    const limit = parseLimit(input.limit, { codePrefix: "memory_viewer", defaultLimit: 50, maxLimit: 500 });
+    const offset = parseOffsetCursor(input.cursor, { codePrefix: "memory_viewer" });
+    const entries = channel.memoryLedger
+      .filter((entry) => (scope ? entry.scope === scope : true))
+      .filter((entry) => (includeForgotten ? true : entry.status !== "forgotten"))
+      .sort((left, right) => compareTimestampDesc(left.updatedAt, right.updatedAt, left.memoryId, right.memoryId));
+    const items = entries.slice(offset, offset + limit).map((entry) => deepClone(entry));
+    const nextOffset = offset + items.length;
+    return {
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      provider: deepClone(provider),
+      items,
+      summary: {
+        totalEntries: entries.length,
+        activeEntries: entries.filter((entry) => entry.status === "active").length,
+        forgottenEntries: entries.filter((entry) => entry.status === "forgotten").length
+      },
+      writeAnchors: {
+        memoryWrite: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/write`,
+        memoryFeedback: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/feedback`,
+        memoryPromote: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/promote`,
+        memoryForget: `/v1/channels/${encodeURIComponent(channel.channelId)}/memory/forget`
+      },
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      nextCursor: nextOffset < entries.length ? `o:${nextOffset}` : null,
+      updatedAt: channel.updatedAt
+    };
   }
 
   getChannelRepoBindingConfig(channelId) {
@@ -4856,7 +5428,15 @@ export class ServerCoordinator {
         "/v1/compatibility/shell-adapter?topic_id=:topicId",
         "/v1/inbox/:actorId?topic_id=:topicId",
         "/v1/inbox/:actorId/acks",
-        "/v1/channels/:channelId/notification-endpoint"
+        "/v1/channels/:channelId/notification-endpoint",
+        "/v1/channels/:channelId/external-memory-provider",
+        "/v1/channels/:channelId/memory-viewer",
+        "/v1/channels/:channelId/memory/search",
+        "/v1/channels/:channelId/memory/:memoryId",
+        "/v1/channels/:channelId/memory/write",
+        "/v1/channels/:channelId/memory/feedback",
+        "/v1/channels/:channelId/memory/promote",
+        "/v1/channels/:channelId/memory/forget"
       ],
       lineage_anchors: {
         topic_status: "/v1/topics/:topicId/status",
@@ -4880,7 +5460,9 @@ export class ServerCoordinator {
         execution_events: "/v1/execution/runs/:runId/events?topic_id=:topicId",
         execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId",
         execution_inbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
-        channel_notification_endpoint: "/v1/channels/:channelId/notification-endpoint"
+        channel_notification_endpoint: "/v1/channels/:channelId/notification-endpoint",
+        channel_external_memory_provider: "/v1/channels/:channelId/external-memory-provider",
+        channel_memory_viewer: "/v1/channels/:channelId/memory-viewer"
       }
     };
     if (!topicId) {
