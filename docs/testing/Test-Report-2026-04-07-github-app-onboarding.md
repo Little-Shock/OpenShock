@@ -3,29 +3,29 @@
 **报告日期:** 2026 年 4 月 7 日
 **基线分支:** `dev/tkt-04-github-app-onboarding`
 **执行命令:** `pnpm test:headed-github-onboarding`
-**工作区:** `/home/lark/OpenShock`
+**工作区:** `/tmp/openshock-tkt04-clean-qIP6vy/repo`（`dev/tkt-04-github-app-onboarding@450d471` clean single-branch clone）
 **关联文档:** [Test Cases](./Test-Cases.md) · [Product Checklist](../product/Checklist.md)
 
 ---
 
 ## 一、执行环境
 
-- Web: `http://127.0.0.1:43698`
-- Server: `http://127.0.0.1:44444`
-- Daemon: `http://127.0.0.1:43930`
+- Web: `http://127.0.0.1:43772`
+- Server: `http://127.0.0.1:44622`
+- Daemon: `http://127.0.0.1:44920`
 - 浏览器: headed Chromium (`/snap/bin/chromium`)
-- 临时 workspace: `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/workspace`
-- 证据目录: `/tmp/openshock-tkt04-github-onboarding-u0ZNVT`
+- 临时 workspace: `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/workspace`
+- 证据目录: `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding`
 - 关键证据:
   - 截图:
-    - `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/screenshots/01-setup-shell.png`
-    - `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/screenshots/02-github-app-onboarding.png`
-    - `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/screenshots/03-repo-binding-blocked.png`
-  - Trace: `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/trace.zip`
+    - `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/screenshots/01-setup-shell.png`
+    - `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/screenshots/02-github-app-onboarding.png`
+    - `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/screenshots/03-repo-binding-blocked.png`
+  - Trace: `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/trace.zip`
   - Logs:
-    - `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/logs/daemon.log`
-    - `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/logs/server.log`
-    - `/tmp/openshock-tkt04-github-onboarding-u0ZNVT/logs/web.log`
+    - `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/logs/daemon.log`
+    - `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/logs/server.log`
+    - `/tmp/openshock-tkt04-clean-qIP6vy/artifacts-onboarding/logs/web.log`
 
 ---
 
@@ -41,6 +41,7 @@
 - `TKT-04` 已把 GitHub App installation pending 场景收成真正可操作的 Setup onboarding 体验。
 - 用户现在可以在浏览器里看到 preferred auth path、缺失字段、installation action，以及“安装后如何回来”的明确步骤。
 - repo binding 在 preferred path=`github-app` 且 installation 未完成时，会返回显式 blocked contract，而不是静默退回旧路径。
+- 同一颗 exact head 的 clean clone 上，`pnpm test:headed-setup` happy path 已可正常跑绿；`GH_CONFIG_DIR=<empty> pnpm test:headed-setup` 会按预期因 `仅本地闭环` 而失败，不再把 GitHub readiness 假绿记成 PASS。
 - 本轮故意不把 `TC-015` 写成 Pass；webhook ingest / replay / review sync 继续由 `TKT-05` 收口。
 
 ---
