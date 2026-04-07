@@ -7,6 +7,8 @@ Stage 3 release and handoff entry has moved to:
 - `docs/stage3-delivery-ops-entry.md`
 - `docs/stage3-release-gate.md`
 
+For stage3 install/recovery/upgrade/handoff operations, use `docs/open-shock-stage3-ops-runbook.md` as the long-term ops entry.
+
 Use `runtime/shared-runtime-config.example.json` as the shared config template for server, daemon, and shell bring-up.
 
 ## Paths Locked by #14
