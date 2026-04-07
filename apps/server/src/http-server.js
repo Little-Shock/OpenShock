@@ -447,6 +447,10 @@ function matchRoute(method, pathName) {
     return { route: "V1_GET_RUNTIME_AGENTS" };
   }
 
+  if (method === "GET" && pathName === "/v1/runtime/recovery-actions") {
+    return { route: "V1_GET_RUNTIME_RECOVERY_ACTIONS" };
+  }
+
   const v1RuntimeAgentMatch = pathName.match(/^\/v1\/runtime\/agents\/([^/]+)$/);
   if (method === "GET" && v1RuntimeAgentMatch) {
     return { route: "V1_GET_RUNTIME_AGENT", agentId: v1RuntimeAgentMatch[1] };
@@ -463,6 +467,16 @@ function matchRoute(method, pathName) {
   const v1RuntimeAgentHeartbeatMatch = pathName.match(/^\/v1\/runtime\/agents\/([^/]+)\/heartbeat$/);
   if (method === "POST" && v1RuntimeAgentHeartbeatMatch) {
     return { route: "V1_POST_RUNTIME_AGENT_HEARTBEAT", agentId: v1RuntimeAgentHeartbeatMatch[1] };
+  }
+
+  const v1RuntimeAgentAssignmentMatch = pathName.match(/^\/v1\/runtime\/agents\/([^/]+)\/assignment$/);
+  if (method === "PUT" && v1RuntimeAgentAssignmentMatch) {
+    return { route: "V1_PUT_RUNTIME_AGENT_ASSIGNMENT", agentId: v1RuntimeAgentAssignmentMatch[1] };
+  }
+
+  const v1RuntimeAgentRecoveryActionMatch = pathName.match(/^\/v1\/runtime\/agents\/([^/]+)\/recovery-actions$/);
+  if (method === "POST" && v1RuntimeAgentRecoveryActionMatch) {
+    return { route: "V1_POST_RUNTIME_AGENT_RECOVERY_ACTION", agentId: v1RuntimeAgentRecoveryActionMatch[1] };
   }
 
   if (method === "GET" && pathName === "/v1/runtime/worktree-claims") {
@@ -724,6 +738,25 @@ function serializeRuntimeWorktreeClaim(claim) {
     claimed_at: claim.claimedAt ?? null,
     last_heartbeat_at: claim.lastHeartbeatAt ?? null,
     updated_at: claim.updatedAt ?? null
+  };
+}
+
+function serializeRuntimeRecoveryAction(action) {
+  return {
+    action_id: action.actionId,
+    action: action.action,
+    status: action.status ?? "applied",
+    operator_id: action.operatorId ?? null,
+    agent_id: action.agentId ?? null,
+    channel_id: action.channelId ?? null,
+    thread_id: action.threadId ?? null,
+    workitem_id: action.workitemId ?? null,
+    reason: action.reason ?? null,
+    at: action.at ?? null,
+    result: {
+      agent: action.result?.agent ? serializeRuntimeAgent(action.result.agent) : null,
+      claim: action.result?.claim ? serializeRuntimeWorktreeClaim(action.result.claim) : null
+    }
   };
 }
 
@@ -3316,6 +3349,26 @@ export function createHttpServer(coordinator, options = {}) {
         return;
       }
 
+      if (route.route === "V1_GET_RUNTIME_RECOVERY_ACTIONS") {
+        const actions = coordinator.listRuntimeRecoveryActions({
+          operatorId: parsedUrl.searchParams.get("operator_id"),
+          channelId: parsedUrl.searchParams.get("channel_id"),
+          agentId: parsedUrl.searchParams.get("agent_id"),
+          cursor: parsedUrl.searchParams.get("cursor"),
+          limit: parsedUrl.searchParams.get("limit")
+        });
+        sendJson(response, 200, {
+          projection: "runtime_recovery_actions_projection",
+          mode: "single_human_multi_agent",
+          operator_id: parsedUrl.searchParams.get("operator_id") ?? null,
+          channel_id: parsedUrl.searchParams.get("channel_id") ?? null,
+          items: actions.items.map((item) => serializeRuntimeRecoveryAction(item)),
+          next_cursor: actions.nextCursor,
+          request_id: requestId
+        });
+        return;
+      }
+
       if (route.route === "V1_GET_RUNTIME_AGENT") {
         const agent = coordinator.getRuntimeAgent(route.agentId);
         sendJson(response, 200, {
@@ -3379,6 +3432,49 @@ export function createHttpServer(coordinator, options = {}) {
             agent: serializeRuntimeAgent(agent),
             heartbeat_at: agent.lastSeenAt ?? null
           },
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_RUNTIME_AGENT_ASSIGNMENT") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_runtime_assignment", "runtime assignment payload must be object");
+        const agent = coordinator.enforceRuntimeAssignment(route.agentId, {
+          operatorId: body.operator_id,
+          channelId: body.channel_id,
+          threadId: body.thread_id,
+          workitemId: body.workitem_id,
+          status: body.status
+        });
+        sendJson(response, 200, {
+          assignment: {
+            agent: serializeRuntimeAgent(agent),
+            assigned_at: agent.updatedAt ?? null
+          },
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_POST_RUNTIME_AGENT_RECOVERY_ACTION") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_runtime_recovery_action", "runtime recovery payload must be object");
+        const action = coordinator.triggerRuntimeRecoveryAction(route.agentId, {
+          action: body.action,
+          reason: body.reason,
+          operatorId: body.operator_id,
+          channelId: body.channel_id,
+          threadId: body.thread_id,
+          workitemId: body.workitem_id,
+          claimKey: body.claim_key,
+          repoRef: body.repo_ref,
+          branch: body.branch,
+          laneId: body.lane_id,
+          status: body.status
+        });
+        sendJson(response, 200, {
+          recovery_action: serializeRuntimeRecoveryAction(action),
           request_id: requestId
         });
         return;

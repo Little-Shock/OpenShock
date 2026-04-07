@@ -1384,6 +1384,7 @@ export class ServerCoordinator {
     this.runtimeMachines = new Map();
     this.runtimeAgents = new Map();
     this.runtimeWorktreeClaims = new Map();
+    this.runtimeRecoveryActions = [];
     this.escalationMs = Number(options.escalationMs ?? 120000);
     this.runtimeLivenessMs = parseRuntimeLivenessMs(options.runtimeLivenessMs);
     this.conflictSweepOnRead = options.conflictSweepOnRead ?? true;
@@ -1906,6 +1907,248 @@ export class ServerCoordinator {
       }
       agent[binding.key] = binding.value;
     }
+  }
+
+  assertRuntimeOperatorOwnership(agent, operatorId) {
+    const normalizedOperatorId = normalizeOptionalScopeId(operatorId);
+    assertOrThrow(normalizedOperatorId, "invalid_operator_id", "operator_id is required");
+    if (agent.ownerOperatorId && agent.ownerOperatorId !== normalizedOperatorId) {
+      throw new CoordinatorError(
+        "agent_operator_mismatch",
+        `runtime agent ${agent.agentId} belongs to operator ${agent.ownerOperatorId}`,
+        {
+          expected_operator_id: agent.ownerOperatorId,
+          got_operator_id: normalizedOperatorId
+        }
+      );
+    }
+    if (!agent.ownerOperatorId) {
+      agent.ownerOperatorId = normalizedOperatorId;
+    }
+    return normalizedOperatorId;
+  }
+
+  applyRuntimeAssignment(agent, input = {}, { allowOverwrite = false, requireChannel = false } = {}) {
+    const incomingScopes = {
+      assignedChannelId: normalizeOptionalScopeId(input.channelId),
+      assignedThreadId: normalizeOptionalScopeId(input.threadId),
+      assignedWorkitemId: normalizeOptionalScopeId(input.workitemId)
+    };
+    if (requireChannel) {
+      assertOrThrow(
+        incomingScopes.assignedChannelId || normalizeOptionalScopeId(agent.assignedChannelId),
+        "invalid_channel_id",
+        "channel_id is required for runtime assignment"
+      );
+    }
+    let changed = false;
+    const scopeBindings = [
+      { key: "assignedChannelId", scope: "channel_id" },
+      { key: "assignedThreadId", scope: "thread_id" },
+      { key: "assignedWorkitemId", scope: "workitem_id" }
+    ];
+    for (const binding of scopeBindings) {
+      const nextValue = incomingScopes[binding.key];
+      if (!nextValue) {
+        continue;
+      }
+      const existing = agent[binding.key] ?? null;
+      if (existing && existing !== nextValue && !allowOverwrite) {
+        throw new CoordinatorError(
+          "agent_response_scope_mismatch",
+          `runtime agent ${agent.agentId} is pinned to ${binding.scope} ${existing}`,
+          {
+            scope: binding.scope,
+            expected: existing,
+            got: nextValue
+          }
+        );
+      }
+      if (existing !== nextValue) {
+        agent[binding.key] = nextValue;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  appendRuntimeRecoveryAction(input = {}) {
+    const entry = {
+      actionId: generateId("runtime_recovery"),
+      action: input.action ?? "unknown",
+      status: input.status ?? "applied",
+      operatorId: input.operatorId ?? null,
+      agentId: input.agentId ?? null,
+      channelId: input.channelId ?? null,
+      threadId: input.threadId ?? null,
+      workitemId: input.workitemId ?? null,
+      reason: input.reason ?? null,
+      at: nowIso(),
+      result: deepClone(input.result ?? {})
+    };
+    this.runtimeRecoveryActions.push(entry);
+    if (this.runtimeRecoveryActions.length > 500) {
+      this.runtimeRecoveryActions.shift();
+    }
+    return deepClone(entry);
+  }
+
+  enforceRuntimeAssignment(agentId, input = {}) {
+    assertOrThrow(typeof agentId === "string" && agentId.trim().length > 0, "invalid_runtime_agent_id", "agentId is required");
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_runtime_assignment",
+      "runtime assignment payload must be object"
+    );
+    const normalizedAgentId = agentId.trim();
+    const agent = this.runtimeAgents.get(normalizedAgentId);
+    assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${normalizedAgentId} not found`);
+    this.assertRuntimeOperatorOwnership(agent, input.operatorId);
+    this.applyRuntimeAssignment(agent, input, {
+      allowOverwrite: false,
+      requireChannel: true
+    });
+    if (typeof input.status === "string" && input.status.trim().length > 0) {
+      agent.status = input.status.trim();
+    }
+    agent.updatedAt = nowIso();
+    return this.getRuntimeAgent(normalizedAgentId);
+  }
+
+  triggerRuntimeRecoveryAction(agentId, input = {}) {
+    assertOrThrow(typeof agentId === "string" && agentId.trim().length > 0, "invalid_runtime_agent_id", "agentId is required");
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_runtime_recovery_action",
+      "runtime recovery payload must be object"
+    );
+    const normalizedAgentId = agentId.trim();
+    const action = normalizeOptionalScopeId(input.action);
+    assertOrThrow(action, "invalid_runtime_recovery_action", "action is required");
+    const agent = this.runtimeAgents.get(normalizedAgentId);
+    assertOrThrow(agent, "runtime_agent_not_found", `runtime agent ${normalizedAgentId} not found`);
+    const operatorId = this.assertRuntimeOperatorOwnership(agent, input.operatorId);
+    const reason = normalizeOptionalScopeId(input.reason);
+
+    let resultAgent = null;
+    let resultClaim = null;
+    if (action === "resume") {
+      this.applyRuntimeOwnershipBoundary(agent, {
+        operatorId,
+        channelId: input.channelId,
+        threadId: input.threadId,
+        workitemId: input.workitemId
+      });
+      agent.status =
+        typeof input.status === "string" && input.status.trim().length > 0
+          ? input.status.trim()
+          : "running";
+      const now = nowIso();
+      agent.pairingState = "paired";
+      agent.lastSeenAt = now;
+      agent.updatedAt = now;
+      resultAgent = this.getRuntimeAgent(normalizedAgentId);
+    } else if (action === "rebind") {
+      assertOrThrow(
+        normalizeOptionalScopeId(input.channelId) ||
+          normalizeOptionalScopeId(input.threadId) ||
+          normalizeOptionalScopeId(input.workitemId),
+        "invalid_runtime_rebind",
+        "rebind requires channel_id, thread_id or workitem_id"
+      );
+      this.applyRuntimeAssignment(agent, input, {
+        allowOverwrite: true,
+        requireChannel: true
+      });
+      if (typeof input.status === "string" && input.status.trim().length > 0) {
+        agent.status = input.status.trim();
+      }
+      agent.updatedAt = nowIso();
+      resultAgent = this.getRuntimeAgent(normalizedAgentId);
+    } else if (action === "reclaim_worktree") {
+      const claimKey = normalizeOptionalScopeId(input.claimKey);
+      assertOrThrow(claimKey, "invalid_worktree_claim_key", "claimKey is required");
+      const existingClaim = this.runtimeWorktreeClaims.get(claimKey);
+      if (existingClaim?.ownerOperatorId && existingClaim.ownerOperatorId !== operatorId) {
+        throw new CoordinatorError(
+          "agent_operator_mismatch",
+          `worktree claim ${claimKey} belongs to operator ${existingClaim.ownerOperatorId}`,
+          {
+            expected_operator_id: existingClaim.ownerOperatorId,
+            got_operator_id: operatorId
+          }
+        );
+      }
+      const repoRef = normalizeOptionalScopeId(input.repoRef) ?? existingClaim?.repoRef ?? null;
+      const branch = normalizeOptionalScopeId(input.branch) ?? existingClaim?.branch ?? null;
+      const laneId = normalizeOptionalScopeId(input.laneId) ?? existingClaim?.laneId ?? null;
+      assertOrThrow(repoRef, "invalid_repo_ref", "repoRef is required for reclaim_worktree");
+      assertOrThrow(branch, "invalid_repo_branch", "branch is required for reclaim_worktree");
+      resultClaim = this.claimRuntimeWorktree(claimKey, {
+        agentId: normalizedAgentId,
+        repoRef,
+        branch,
+        laneId,
+        operatorId,
+        channelId: normalizeOptionalScopeId(input.channelId) ?? agent.assignedChannelId ?? null,
+        threadId: normalizeOptionalScopeId(input.threadId) ?? agent.assignedThreadId ?? null,
+        workitemId: normalizeOptionalScopeId(input.workitemId) ?? agent.assignedWorkitemId ?? null
+      });
+      resultAgent = this.getRuntimeAgent(normalizedAgentId);
+    } else {
+      throw new CoordinatorError(
+        "invalid_runtime_recovery_action",
+        "action must be one of resume/rebind/reclaim_worktree"
+      );
+    }
+
+    return this.appendRuntimeRecoveryAction({
+      action,
+      operatorId,
+      agentId: normalizedAgentId,
+      channelId: resultAgent?.assignedChannelId ?? agent.assignedChannelId ?? null,
+      threadId: resultAgent?.assignedThreadId ?? agent.assignedThreadId ?? null,
+      workitemId: resultAgent?.assignedWorkitemId ?? agent.assignedWorkitemId ?? null,
+      reason,
+      result: {
+        agent: resultAgent,
+        claim: resultClaim
+      }
+    });
+  }
+
+  listRuntimeRecoveryActions(input = {}) {
+    const limit = parseLimit(input.limit, {
+      codePrefix: "runtime_recovery_actions",
+      defaultLimit: 50,
+      maxLimit: 200
+    });
+    const offset = parseOffsetCursor(input.cursor, {
+      codePrefix: "runtime_recovery_actions"
+    });
+    const operatorId = normalizeOptionalScopeId(input.operatorId);
+    const channelId = normalizeOptionalScopeId(input.channelId);
+    const agentId = normalizeOptionalScopeId(input.agentId);
+    const items = this.runtimeRecoveryActions
+      .filter((item) => {
+        if (operatorId && item.operatorId !== operatorId) {
+          return false;
+        }
+        if (channelId && item.channelId !== channelId) {
+          return false;
+        }
+        if (agentId && item.agentId !== agentId) {
+          return false;
+        }
+        return true;
+      })
+      .sort((left, right) => compareTimestampDesc(left.at, right.at, left.actionId, right.actionId));
+    const pageItems = items.slice(offset, offset + limit).map((item) => deepClone(item));
+    const nextOffset = offset + pageItems.length;
+    return {
+      items: pageItems,
+      nextCursor: nextOffset < items.length ? `o:${nextOffset}` : null
+    };
   }
 
   pairRuntimeAgent(agentId, input = {}) {

@@ -4211,3 +4211,251 @@ test("v1 stage2 control-plane channel context contract keeps single-operator rep
     }
   );
 });
+
+test("v1 stage2 batch2 runtime recovery contract supports assignment enforcement and operator-triggered recoveries", async () => {
+  const operatorId = "human_operator_stage2_batch2";
+  const channelId = "channel_open_shock_batch2";
+  const threadId = "thread_batch2_main";
+  const workitemId = "issue_batch2_001";
+
+  await withRuntimeServer(
+    {
+      coordinatorOptions: {
+        runtimeLivenessMs: 1000
+      }
+    },
+    async ({ port }) => {
+      const machine = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/machines/machine_local_batch2",
+        body: {
+          runtime_id: "runtime_local_batch2",
+          status: "online",
+          capabilities: ["node", "git"]
+        }
+      });
+      assert.equal(machine.statusCode, 200);
+
+      const agentAlpha = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_alpha_batch2",
+        body: {
+          machine_id: "machine_local_batch2",
+          status: "idle",
+          operator_id: operatorId
+        }
+      });
+      assert.equal(agentAlpha.statusCode, 200);
+
+      const agentBeta = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_beta_batch2",
+        body: {
+          machine_id: "machine_local_batch2",
+          status: "idle",
+          operator_id: operatorId
+        }
+      });
+      assert.equal(agentBeta.statusCode, 200);
+
+      const assignAlpha = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_alpha_batch2/assignment",
+        body: {
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId
+        }
+      });
+      assert.equal(assignAlpha.statusCode, 200);
+      assert.equal(assignAlpha.body.assignment.agent.assigned_channel_id, channelId);
+      assert.equal(assignAlpha.body.assignment.agent.assigned_thread_id, threadId);
+
+      const assignBeta = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_beta_batch2/assignment",
+        body: {
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId
+        }
+      });
+      assert.equal(assignBeta.statusCode, 200);
+
+      const assignmentMismatch = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/agents/agent_alpha_batch2/assignment",
+        body: {
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: "thread_batch2_other",
+          workitem_id: workitemId
+        }
+      });
+      assert.equal(assignmentMismatch.statusCode, 422);
+      assert.equal(assignmentMismatch.body.error.code, "agent_response_scope_mismatch");
+
+      const alphaClaim = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/worktree-claims/topic_batch2_recover",
+        body: {
+          agent_id: "agent_alpha_batch2",
+          repo_ref: "Little-Shock/OpenShockSwarm",
+          branch: "feat/initial-implementation",
+          lane_id: "lane_batch2_alpha",
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId
+        }
+      });
+      assert.equal(alphaClaim.statusCode, 200);
+      assert.equal(alphaClaim.body.claim.agent_id, "agent_alpha_batch2");
+
+      const conflictingClaim = await requestJson({
+        port,
+        method: "PUT",
+        path: "/v1/runtime/worktree-claims/topic_batch2_recover",
+        body: {
+          agent_id: "agent_beta_batch2",
+          repo_ref: "Little-Shock/OpenShockSwarm",
+          branch: "feat/initial-implementation",
+          lane_id: "lane_batch2_beta",
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId
+        }
+      });
+      assert.equal(conflictingClaim.statusCode, 409);
+      assert.equal(conflictingClaim.body.error.code, "worktree_isolation_conflict");
+
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      const heartbeatBeta = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_beta_batch2/heartbeat",
+        body: {
+          status: "running",
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId
+        }
+      });
+      assert.equal(heartbeatBeta.statusCode, 200);
+
+      const rebindAlpha = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_alpha_batch2/recovery-actions",
+        body: {
+          action: "rebind",
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: "thread_batch2_rebound",
+          workitem_id: "issue_batch2_rebound",
+          reason: "operator_reassign_after_scope_change"
+        }
+      });
+      assert.equal(rebindAlpha.statusCode, 200);
+      assert.equal(rebindAlpha.body.recovery_action.action, "rebind");
+      assert.equal(rebindAlpha.body.recovery_action.result.agent.assigned_thread_id, "thread_batch2_rebound");
+      assert.equal(rebindAlpha.body.recovery_action.result.agent.assigned_workitem_id, "issue_batch2_rebound");
+
+      const reclaimByBeta = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_beta_batch2/recovery-actions",
+        body: {
+          action: "reclaim_worktree",
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId,
+          claim_key: "topic_batch2_recover",
+          reason: "reclaim_stuck_worktree"
+        }
+      });
+      assert.equal(reclaimByBeta.statusCode, 200);
+      assert.equal(reclaimByBeta.body.recovery_action.action, "reclaim_worktree");
+      assert.equal(reclaimByBeta.body.recovery_action.result.claim.agent_id, "agent_beta_batch2");
+      assert.equal(reclaimByBeta.body.recovery_action.result.claim.reclaimed_from_agent_id, "agent_alpha_batch2");
+
+      const resumeBeta = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_beta_batch2/recovery-actions",
+        body: {
+          action: "resume",
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId,
+          status: "running",
+          reason: "operator_resume_after_reclaim"
+        }
+      });
+      assert.equal(resumeBeta.statusCode, 200);
+      assert.equal(resumeBeta.body.recovery_action.action, "resume");
+      assert.equal(resumeBeta.body.recovery_action.result.agent.status, "running");
+      assert.equal(resumeBeta.body.recovery_action.result.agent.assigned_channel_id, channelId);
+
+      const recoveryActions = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/runtime/recovery-actions?channel_id=${encodeURIComponent(channelId)}&limit=20`
+      });
+      assert.equal(recoveryActions.statusCode, 200);
+      assert.equal(recoveryActions.body.projection, "runtime_recovery_actions_projection");
+      assert.equal(recoveryActions.body.mode, "single_human_multi_agent");
+      assert.equal(recoveryActions.body.channel_id, channelId);
+      assert.equal(
+        recoveryActions.body.items.some((item) => item.action === "rebind" && item.agent_id === "agent_alpha_batch2"),
+        true
+      );
+      assert.equal(
+        recoveryActions.body.items.some((item) => item.action === "reclaim_worktree" && item.agent_id === "agent_beta_batch2"),
+        true
+      );
+      assert.equal(
+        recoveryActions.body.items.some((item) => item.action === "resume" && item.agent_id === "agent_beta_batch2"),
+        true
+      );
+
+      const invalidRecoveryAction = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_beta_batch2/recovery-actions",
+        body: {
+          action: "reboot_cluster",
+          operator_id: operatorId
+        }
+      });
+      assert.equal(invalidRecoveryAction.statusCode, 400);
+      assert.equal(invalidRecoveryAction.body.error.code, "invalid_runtime_recovery_action");
+
+      const wrongOperatorRecovery = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/runtime/agents/agent_beta_batch2/recovery-actions",
+        body: {
+          action: "resume",
+          operator_id: "human_operator_other"
+        }
+      });
+      assert.equal(wrongOperatorRecovery.statusCode, 422);
+      assert.equal(wrongOperatorRecovery.body.error.code, "agent_operator_mismatch");
+    }
+  );
+});
