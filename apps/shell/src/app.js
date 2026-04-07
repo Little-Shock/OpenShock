@@ -498,6 +498,11 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
   const members = Array.isArray(governance.members) ? governance.members : [];
   const identities = Array.isArray(governance.auth_identities) ? governance.auth_identities : [];
   const installations = Array.isArray(governance.github_installations) ? governance.github_installations : [];
+  const stage4a2 =
+    (governance.stage4a2 && typeof governance.stage4a2 === "object" ? governance.stage4a2 : null) ||
+    (governance.stage4a2_governance && typeof governance.stage4a2_governance === "object"
+      ? governance.stage4a2_governance
+      : null);
 
   const chainCard = queueCard({
     title: `Workspace ${workspaceId}`,
@@ -661,6 +666,68 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
     status: installations.length > 0 ? "active" : "pending",
   });
   dom.workspaceGovernanceList.append(installationCard);
+
+  if (stage4a2) {
+    const notification = stage4a2.notification && typeof stage4a2.notification === "object" ? stage4a2.notification : {};
+    const approval = stage4a2.approval && typeof stage4a2.approval === "object" ? stage4a2.approval : {};
+    const restrictedExecution =
+      stage4a2.restricted_execution && typeof stage4a2.restricted_execution === "object"
+        ? stage4a2.restricted_execution
+        : {};
+    const stage4a2Status = stage4a2.status && typeof stage4a2.status === "object" ? stage4a2.status : {};
+
+    const notificationCard = queueCard({
+      title: "Stage4A2 Notification Routing",
+      subtitle:
+        `endpoints=${normalizeText(stage4a2Status.notification_endpoints_status) || "pending"} · ` +
+        `rules=${normalizeText(stage4a2Status.routing_rules_status) || "pending"}`,
+      note:
+        `${formatStage4a2NotificationEndpoints(notification.endpoints)} · ` +
+        `${formatStage4a2RoutingRules(notification.routing_rules)} · ` +
+        `${formatStage4a2AuditAnchor(notification.audit_anchor)}`,
+      status:
+        normalizeText(stage4a2Status.notification_endpoints_status) === "ok" &&
+        normalizeText(stage4a2Status.routing_rules_status) === "ok"
+          ? "active"
+          : "pending",
+    });
+    dom.workspaceGovernanceList.append(notificationCard);
+
+    const approvalCard = queueCard({
+      title: "Stage4A2 Approval Chain",
+      subtitle:
+        `status=${normalizeText(approval.status) || normalizeText(stage4a2Status.approval_status) || "pending"} · ` +
+        `pending=${Number(approval.pending_count || 0)}`,
+      note: `${formatStage4a2ApprovalContract(approval.contract)} · ${formatStage4a2AuditAnchor(approval.audit_anchor)}`,
+      status: normalizeText(approval.status) === "ready" ? "active" : "pending",
+    });
+    dom.workspaceGovernanceList.append(approvalCard);
+
+    const restrictedCard = queueCard({
+      title: "Restricted Local Sandbox",
+      subtitle:
+        `sandbox=${normalizeText(stage4a2Status.sandbox_profile_status) || "pending"} · ` +
+        `secrets=${normalizeText(stage4a2Status.secrets_bindings_status) || "pending"}`,
+      note:
+        `${formatStage4a2SandboxProfile(restrictedExecution.sandbox_profile)} · ` +
+        `${formatStage4a2SecretsBindings(restrictedExecution.secrets_bindings)} · ` +
+        `${formatStage4a2Enforcement(restrictedExecution.latest_enforcement)}`,
+      status:
+        normalizeText(stage4a2Status.sandbox_profile_status) === "ok" &&
+        normalizeText(stage4a2Status.secrets_bindings_status) === "ok"
+          ? "active"
+          : "pending",
+    });
+    dom.workspaceGovernanceList.append(restrictedCard);
+
+    const usageCard = queueCard({
+      title: "Sandbox / Secrets Usage",
+      subtitle: `status=${normalizeText(stage4a2Status.usage_notes_status) || "pending"}`,
+      note: formatStage4a2UsageNotes(restrictedExecution.usage_notes),
+      status: normalizeText(stage4a2Status.usage_notes_status) === "ok" ? "active" : "pending",
+    });
+    dom.workspaceGovernanceList.append(usageCard);
+  }
 }
 
 function renderRepoBinding(operatorConsole, payload) {
@@ -1204,6 +1271,99 @@ function renderEvents(events) {
     row.textContent = `${formatTime(event.at)} · ${event.topicId} · ${event.message}`;
     dom.eventFeed.append(row);
   }
+}
+
+function formatStage4a2NotificationEndpoints(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return "no notification endpoints projected";
+  }
+  return raw
+    .slice(0, 6)
+    .map((item) => {
+      const channel = normalizeText(item?.channel) || "unknown";
+      const enabled = item?.enabled === false ? "disabled" : "enabled";
+      const target = normalizeText(item?.target);
+      return `${channel}:${enabled}${target ? `(${target})` : ""}`;
+    })
+    .join(" · ");
+}
+
+function formatStage4a2RoutingRules(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return "no routing rules projected";
+  }
+  return raw
+    .slice(0, 6)
+    .map((item) => {
+      const channel = normalizeText(item?.channel) || "unknown";
+      const enabled = item?.enabled === false ? "off" : "on";
+      const events = Array.isArray(item?.events) ? item.events : [];
+      const delivery = normalizeText(item?.delivery);
+      return `${channel}:${enabled}${delivery ? `/${delivery}` : ""}[${events.slice(0, 4).join(",")}]`;
+    })
+    .join(" · ");
+}
+
+function formatStage4a2ApprovalContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "approval contract pending";
+  }
+  const source = normalizeText(raw.source) || "v1_approval_hold_truth";
+  const triggers = Array.isArray(raw.trigger_events) ? raw.trigger_events : [];
+  return `source=${source} · triggers=${triggers.slice(0, 4).join(",") || "n/a"}`;
+}
+
+function formatStage4a2AuditAnchor(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "approval audit anchor pending";
+  }
+  const action = normalizeText(raw.action) || "unknown_action";
+  const auditId = normalizeText(raw.audit_id) || "n/a";
+  const at = raw.at ? formatTime(raw.at) : "n/a";
+  return `audit=${auditId} · action=${action} · at=${at}`;
+}
+
+function formatStage4a2SandboxProfile(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "sandbox profile pending";
+  }
+  const profileId = normalizeText(raw.profile_id) || "unknown_profile";
+  const mode = normalizeText(raw.mode) || "restricted_local";
+  const secretClasses = Array.isArray(raw.allowed_secret_classes) ? raw.allowed_secret_classes : [];
+  return `profile=${profileId} · mode=${mode} · secret_classes=${secretClasses.join(",") || "n/a"}`;
+}
+
+function formatStage4a2SecretsBindings(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return "secrets bindings pending";
+  }
+  return raw
+    .slice(0, 6)
+    .map((item) => {
+      const secretClass = normalizeText(item?.secret_class) || "unknown";
+      const status = normalizeText(item?.status) || "bound";
+      const injectionMode = normalizeText(item?.injection_mode);
+      return `${secretClass}:${status}${injectionMode ? `(${injectionMode})` : ""}`;
+    })
+    .join(" · ");
+}
+
+function formatStage4a2Enforcement(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "no enforcement evidence projected";
+  }
+  const profile = normalizeText(raw.sandbox_profile) || "n/a";
+  const secretRefs = Number(raw.secret_ref_count || 0);
+  const approvalRequired = raw.approval_required === true ? "yes" : "no";
+  const approvalId = normalizeText(raw.approval_id) || "n/a";
+  return `enforcement profile=${profile} · secret_refs=${secretRefs} · approval_required=${approvalRequired} · approval_id=${approvalId}`;
+}
+
+function formatStage4a2UsageNotes(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return "usage notes pending";
+  }
+  return raw.slice(0, 6).join(" · ");
 }
 
 function queueCard({ title, subtitle, note, status = "pending" }) {

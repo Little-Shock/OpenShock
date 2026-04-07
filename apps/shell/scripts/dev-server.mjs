@@ -39,6 +39,12 @@ const FIXED_INTERVENTION_POINTS = [
   { id: "merge_closeout", name: "Merge Closeout", owner: "human" },
 ];
 
+const STAGE4A2_NOTIFICATION_RULE_REFERENCE = {
+  inbox: "all_events",
+  browser_push: ["blocked", "approval_required", "mention", "pr_pending_review"],
+  email: ["invite", "verify", "reset_password", "high_priority_escalation"],
+};
+
 const server = http.createServer(async (req, res) => {
   try {
     const route = matchRoute(req.url || "/");
@@ -241,6 +247,7 @@ async function writeShellState(res) {
       holdsRead,
       messages,
       runHistory,
+      topicNotificationsRead,
       runtimeConfigRead,
       runtimeSmokeRead,
       repoBindingRead,
@@ -258,6 +265,7 @@ async function writeShellState(res) {
         fetchUpstreamJson(`/v1/topics/${encodedTopicId}/approval-holds?status=pending&limit=50`),
         fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages?route=topic`),
         fetchUpstreamJson(`/v1/topics/${encodedTopicId}/run-history?limit=20`),
+        fetchOptionalUpstreamJson(`/v1/topics/${encodedTopicId}/notifications?limit=50`),
         fetchUpstreamJson("/runtime/config"),
         fetchUpstreamJson("/runtime/smoke"),
         fetchUpstreamJson(`/v1/topics/${encodedTopicId}/repo-binding`),
@@ -291,6 +299,7 @@ async function writeShellState(res) {
     const encodedChannelId = channelId ? encodeURIComponent(channelId) : "";
     const [
       channelRepoBindingRead,
+      channelNotificationEndpointRead,
       channelAuditTrailRead,
       channelWorkAssignmentsRead,
       channelOperatorActionsRead,
@@ -298,6 +307,7 @@ async function writeShellState(res) {
       recoveryActionsRead,
     ] = await Promise.all([
       fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/repo-binding` : ""),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/notification-endpoint` : ""),
       fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/audit-trail?limit=50` : ""),
       fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/work-assignments?limit=100` : ""),
       fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/operator-actions?limit=100` : ""),
@@ -322,10 +332,12 @@ async function writeShellState(res) {
       approvalHolds: Array.isArray(holdsRead?.items) ? holdsRead.items : [],
       messages: Array.isArray(messages) ? messages : [],
       runHistory: Array.isArray(runHistory?.items) ? runHistory.items : [],
+      topicNotifications: Array.isArray(topicNotificationsRead.payload?.items) ? topicNotificationsRead.payload.items : [],
       runtimeConfig: runtimeConfigRead ?? null,
       runtimeSmoke: runtimeSmokeRead ?? null,
       repoBindingProjection: repoBindingRead?.repo_binding ?? null,
       channelContextContract: channelContextRead.payload?.context ?? null,
+      channelNotificationEndpointContract: channelNotificationEndpointRead.payload?.notification_endpoint ?? null,
       channelRepoBindingConfig: channelRepoBindingRead.payload?.repo_binding ?? null,
       channelAuditTrail: Array.isArray(channelAuditTrailRead.payload?.items) ? channelAuditTrailRead.payload.items : [],
       channelWorkAssignments: Array.isArray(channelWorkAssignmentsRead.payload?.items)
@@ -345,6 +357,7 @@ async function writeShellState(res) {
       scope: effectiveScope,
       channelSurface: {
         context_status: channelContextRead.status,
+        notification_endpoint_status: channelNotificationEndpointRead.status,
         repo_binding_status: channelRepoBindingRead.status,
         audit_trail_status: channelAuditTrailRead.status,
         work_assignments_status: channelWorkAssignmentsRead.status,
@@ -1274,10 +1287,12 @@ function buildShellStatePayload({
   approvalHolds,
   messages,
   runHistory,
+  topicNotifications,
   runtimeConfig,
   runtimeSmoke,
   repoBindingProjection,
   channelContextContract,
+  channelNotificationEndpointContract,
   channelRepoBindingConfig,
   channelAuditTrail,
   channelWorkAssignments,
@@ -1301,6 +1316,7 @@ function buildShellStatePayload({
   const normalizedApprovals = normalizeApprovalHolds(approvalHolds);
   const normalizedMessages = normalizeMessages(messages);
   const normalizedRunHistory = normalizeRunHistory(runHistory);
+  const normalizedTopicNotifications = normalizeTopicNotifications(topicNotifications);
   const actors = normalizeTopicActors(topic);
   const normalizedActorRegistry = normalizeActorRegistry(actorRegistry);
   const normalizedControlEvents = normalizeControlEvents(controlEvents);
@@ -1317,6 +1333,7 @@ function buildShellStatePayload({
     runtimeSmoke,
     topicRepoBindingProjection: repoBindingProjection,
     channelContextContract,
+    channelNotificationEndpointContract,
     channelRepoBindingConfig,
     channelAuditTrail: normalizedChannelAuditTrail,
     channelWorkAssignments: normalizedChannelWorkAssignments,
@@ -1324,6 +1341,8 @@ function buildShellStatePayload({
     channelRecentActions: normalizedChannelRecentActions,
     runtimeRecoveryActions: normalizedRuntimeRecoveryActions,
     workspaceGovernance,
+    approvalHolds: normalizedApprovals,
+    topicNotifications: normalizedTopicNotifications,
     runtimeRegistry,
     runtimeAgents: normalizedRuntimeAgents,
     runtimeWorktreeClaims: normalizedRuntimeWorktreeClaims,
@@ -1502,6 +1521,19 @@ function normalizeRunHistory(runHistory) {
   }));
 }
 
+function normalizeTopicNotifications(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    notification_id: normalizeText(item?.notification_id || item?.notificationId) || null,
+    kind: normalizeText(item?.kind) || "unknown",
+    severity: normalizeText(item?.severity) || "info",
+    summary: normalizeText(item?.summary) || null,
+    at: item?.at || null,
+  }));
+}
+
 function normalizeActorRegistry(items) {
   if (!Array.isArray(items)) {
     return [];
@@ -1536,6 +1568,7 @@ function buildOperatorConsoleState({
   runtimeSmoke,
   topicRepoBindingProjection,
   channelContextContract,
+  channelNotificationEndpointContract,
   channelRepoBindingConfig,
   channelAuditTrail,
   channelWorkAssignments,
@@ -1561,15 +1594,59 @@ function buildOperatorConsoleState({
   const sampleTopicReady = Boolean(runtimeSmoke?.sampleTopicReady);
   const sampleTopicAgentCount = Number(runtimeSmoke?.sampleTopicAgentCount || runtimeAgents.length || actorRegistry.length || 0);
 
+  const contextWriteAnchors =
+    channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+      ? channelContextContract.write_anchors
+      : {};
+  const notificationWriteAnchors =
+    channelNotificationEndpointContract?.write_anchors &&
+    typeof channelNotificationEndpointContract.write_anchors === "object"
+      ? channelNotificationEndpointContract.write_anchors
+      : {};
+  const mergedWriteAnchors = {
+    ...contextWriteAnchors,
+    ...notificationWriteAnchors,
+  };
+  const contextAuditAnchor =
+    channelContextContract?.audit_anchor && typeof channelContextContract.audit_anchor === "object"
+      ? channelContextContract.audit_anchor
+      : null;
+  const notificationAuditAnchor =
+    channelNotificationEndpointContract?.audit_anchor &&
+    typeof channelNotificationEndpointContract.audit_anchor === "object"
+      ? channelNotificationEndpointContract.audit_anchor
+      : null;
   const channelContract =
-    channelContextContract && typeof channelContextContract === "object"
+    (channelContextContract && typeof channelContextContract === "object") ||
+    (channelNotificationEndpointContract && typeof channelNotificationEndpointContract === "object")
       ? {
-          channel_id: normalizeText(channelContextContract.channel_id) || channelId,
-          owner_operator_id: normalizeText(channelContextContract.owner_operator_id) || operatorId,
-          project_aligned_entry: Boolean(channelContextContract.project_aligned_entry),
-          workspace: channelContextContract.workspace || null,
-          context: channelContextContract.context || null,
-          updated_at: channelContextContract.updated_at || null,
+          channel_id:
+            normalizeText(channelContextContract?.channel_id) ||
+            normalizeText(channelNotificationEndpointContract?.channel_id) ||
+            channelId,
+          owner_operator_id:
+            normalizeText(channelContextContract?.owner_operator_id) ||
+            normalizeText(channelNotificationEndpointContract?.owner_operator_id) ||
+            operatorId,
+          project_aligned_entry: Boolean(channelContextContract?.project_aligned_entry),
+          workspace: channelContextContract?.workspace || null,
+          context: channelContextContract?.context || null,
+          governance: channelContextContract?.governance || null,
+          notification_endpoint:
+            channelContextContract?.notification_endpoint ||
+            channelNotificationEndpointContract?.notification_endpoint ||
+            null,
+          notification_routing_rules:
+            channelContextContract?.notification_routing_rules ||
+            channelNotificationEndpointContract?.routing_rules ||
+            null,
+          approval_contract:
+            channelContextContract?.approval_contract ||
+            channelNotificationEndpointContract?.approval_contract ||
+            null,
+          write_anchors: mergedWriteAnchors,
+          audit_anchor: contextAuditAnchor || notificationAuditAnchor,
+          updated_at: channelContextContract?.updated_at || channelNotificationEndpointContract?.updated_at || null,
         }
       : null;
 
@@ -1586,11 +1663,23 @@ function buildOperatorConsoleState({
     operatorId,
     repoBinding: normalizedRepoBinding,
   });
+  normalizedWorkspaceGovernance.stage4a2 = buildStage4a2GovernanceProjection({
+    channelContextContract: channelContract,
+    channelAuditTrail,
+    approvalHolds,
+    topicNotifications,
+    channelOperatorActions,
+  });
+  normalizedWorkspaceGovernance.stage4a2_governance = normalizedWorkspaceGovernance.stage4a2;
 
   const auditEntries = buildAuditEntries({
     channelAuditTrail,
     controlEvents,
   });
+  const contractWriteAnchors =
+    channelContract?.write_anchors && typeof channelContract.write_anchors === "object"
+      ? channelContract.write_anchors
+      : {};
 
   return {
     scope: "single_human_multi_agent",
@@ -1640,12 +1729,559 @@ function buildOperatorConsoleState({
       governance_member_upsert: "/api/v0a/workspace-governance/member-upsert",
       governance_identity_upsert: "/api/v0a/workspace-governance/github-identity-upsert",
       governance_installation_upsert: "/api/v0a/workspace-governance/github-installation-upsert",
+      notification_endpoint_upsert:
+        normalizeText(contractWriteAnchors.notification_endpoint_upsert) ||
+        normalizeText(contractWriteAnchors.context_upsert) ||
+        null,
+      sandbox_profile_upsert:
+        normalizeText(contractWriteAnchors.sandbox_profile_upsert) ||
+        normalizeText(contractWriteAnchors.context_upsert) ||
+        null,
+      secrets_binding_upsert:
+        normalizeText(contractWriteAnchors.secrets_binding_upsert) ||
+        normalizeText(contractWriteAnchors.context_upsert) ||
+        null,
+      approval_anchor: normalizeText(contractWriteAnchors.approval_decision) || null,
       agent_upsert: "/api/v0a/operator/agents/:actorId/upsert",
       assignment_enforce: "/api/v0a/operator/agents/:actorId/assignment",
       recovery_action: "/api/v0a/operator/agents/:actorId/recovery-actions",
       operator_action: "/api/v0a/operator/actions",
+      contract: contractWriteAnchors,
     },
   };
+}
+
+function buildStage4a2GovernanceProjection({
+  channelContextContract,
+  channelAuditTrail,
+  approvalHolds,
+  topicNotifications,
+  channelOperatorActions,
+}) {
+  const context = channelContextContract?.context && typeof channelContextContract.context === "object"
+    ? channelContextContract.context
+    : {};
+  const governance = channelContextContract?.governance && typeof channelContextContract.governance === "object"
+    ? channelContextContract.governance
+    : {};
+  const writeAnchors = channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+    ? channelContextContract.write_anchors
+    : {};
+  const notificationEndpoints = normalizeStage4a2NotificationEndpoints(
+    pickFirstDefinedValue([
+      channelContextContract?.notification_endpoint,
+      governance.notification_endpoints,
+      governance.notificationEndpoints,
+      governance.notification_endpoint,
+      governance.notificationEndpoint,
+      context.notification_endpoints,
+      context.notificationEndpoints,
+      context.notification_endpoint,
+      context.notificationEndpoint,
+    ]),
+  );
+  const routingRules = normalizeStage4a2RoutingRules(
+    pickFirstDefinedValue([
+      channelContextContract?.notification_routing_rules,
+      governance.notification_routing,
+      governance.notificationRouting,
+      governance.notification_rules,
+      governance.notificationRules,
+      context.notification_routing,
+      context.notificationRouting,
+      context.notification_rules,
+      context.notificationRules,
+    ]),
+  );
+  const sandboxProfile = normalizeStage4a2SandboxProfile(
+    pickFirstDefinedValue([
+      governance.sandbox_profile,
+      governance.sandboxProfile,
+      context.sandbox_profile,
+      context.sandboxProfile,
+    ]),
+  );
+  const secretsBindings = normalizeStage4a2SecretsBindings(
+    pickFirstDefinedValue([
+      governance.secrets_bindings,
+      governance.secretsBindings,
+      governance.secrets_binding,
+      governance.secretsBinding,
+      context.secrets_bindings,
+      context.secretsBindings,
+      context.secrets_binding,
+      context.secretsBinding,
+    ]),
+  );
+  const usageNotes = buildStage4a2UsageNotes({
+    context,
+    sandboxProfile,
+    secretsBindings,
+  });
+  const approvalContract = normalizeStage4a2ApprovalContract(
+    pickFirstDefinedValue([
+      channelContextContract?.approval_contract,
+      governance.approval_contract,
+      governance.approvalContract,
+      context.approval_contract,
+      context.approvalContract,
+    ]),
+  );
+  const pendingApprovals = Array.isArray(approvalHolds)
+    ? approvalHolds.filter((item) => normalizeText(item?.status) === "pending")
+    : [];
+  const latestEnforcement = findLatestStage4a2Enforcement(channelOperatorActions);
+  const approvalStatus = pendingApprovals.length > 0 ? "approval_required" : "ready";
+  const auditSummary = buildStage4a2AuditSummary({
+    auditAnchor: channelContextContract?.audit_anchor,
+    channelAuditTrail,
+  });
+
+  return {
+    status: {
+      notification_endpoints_status: notificationEndpoints.length > 0 ? "ok" : "pending",
+      routing_rules_status: routingRules.length > 0 ? "ok" : "pending",
+      approval_status: approvalStatus,
+      sandbox_profile_status: sandboxProfile ? "ok" : "pending",
+      secrets_bindings_status: secretsBindings.length > 0 ? "ok" : "pending",
+      usage_notes_status: usageNotes.length > 0 ? "ok" : "pending",
+    },
+    notification: {
+      endpoints: notificationEndpoints,
+      routing_rules: routingRules,
+      default_rule_matrix: STAGE4A2_NOTIFICATION_RULE_REFERENCE,
+      recent_signal_summary: summarizeStage4a2NotificationSignals(topicNotifications),
+      audit_anchor: auditSummary.notification,
+      write_anchor:
+        normalizeText(writeAnchors.notification_endpoint_upsert) ||
+        normalizeText(writeAnchors.context_upsert) ||
+        null,
+    },
+    approval: {
+      status: approvalStatus,
+      pending_count: pendingApprovals.length,
+      pending_hold_ids: pendingApprovals
+        .map((item) => normalizeText(item?.holdId || item?.hold_id))
+        .filter((item) => item.length > 0),
+      contract: approvalContract,
+      audit_anchor: auditSummary.approval,
+      write_anchor: normalizeText(writeAnchors.approval_decision) || null,
+    },
+    restricted_execution: {
+      sandbox_profile: sandboxProfile,
+      secrets_bindings: secretsBindings,
+      usage_notes: usageNotes,
+      latest_enforcement: latestEnforcement,
+      cloud_sandbox: "not_in_scope",
+      audit_anchor: auditSummary.restricted_execution,
+      write_anchors: {
+        sandbox_profile_upsert:
+          normalizeText(writeAnchors.sandbox_profile_upsert) ||
+          normalizeText(writeAnchors.context_upsert) ||
+          null,
+        secrets_binding_upsert:
+          normalizeText(writeAnchors.secrets_binding_upsert) ||
+          normalizeText(writeAnchors.context_upsert) ||
+          null,
+      },
+    },
+  };
+}
+
+function pickFirstDefinedValue(values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function normalizeStage4a2NotificationEndpoints(raw) {
+  const list = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const normalized = normalizeStage4a2NotificationEndpoint(item);
+      if (normalized) {
+        list.push(normalized);
+      }
+    }
+    return list;
+  }
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  if (Array.isArray(raw.items)) {
+    return normalizeStage4a2NotificationEndpoints(raw.items);
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value) || (value && typeof value === "object")) {
+      const normalized = normalizeStage4a2NotificationEndpoint(value, key);
+      if (normalized) {
+        list.push(normalized);
+      }
+      continue;
+    }
+    if (typeof value === "boolean") {
+      const channel = normalizeStage4a2ChannelName(key);
+      if (!channel) {
+        continue;
+      }
+      list.push({
+        channel,
+        enabled: value,
+        target: null,
+        status: value ? "enabled" : "disabled",
+      });
+    }
+  }
+  return list;
+}
+
+function normalizeStage4a2NotificationEndpoint(raw, fallbackChannel = "") {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const channel = normalizeStage4a2ChannelName(
+    raw.channel || raw.endpoint || raw.type || raw.kind || fallbackChannel,
+  );
+  if (!channel) {
+    return null;
+  }
+  const status = normalizeText(raw.status);
+  const enabled = typeof raw.enabled === "boolean" ? raw.enabled : status !== "disabled";
+  return {
+    channel,
+    enabled,
+    target:
+      normalizeText(
+        raw.target ||
+          raw.address ||
+          raw.endpoint_ref ||
+          raw.endpointRef ||
+          raw.endpoint_id ||
+          raw.endpointId ||
+          raw.uri ||
+          raw.url,
+      ) || null,
+    status: status || (enabled ? "enabled" : "disabled"),
+  };
+}
+
+function normalizeStage4a2RoutingRules(raw) {
+  const list = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const channel = normalizeStage4a2ChannelName(item?.channel || item?.endpoint || item?.kind);
+      if (!channel) {
+        continue;
+      }
+      list.push({
+        channel,
+        enabled: item?.enabled !== false,
+        events: normalizeStringArray(item?.events || item?.triggers || item?.kinds),
+        delivery: normalizeText(item?.delivery) || null,
+      });
+    }
+    return list;
+  }
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  if (Array.isArray(raw.items)) {
+    return normalizeStage4a2RoutingRules(raw.items);
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    const channel = normalizeStage4a2ChannelName(key);
+    if (!channel) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      list.push({
+        channel,
+        enabled: true,
+        events: normalizeStringArray(value),
+        delivery: null,
+      });
+      continue;
+    }
+    if (value && typeof value === "object") {
+      list.push({
+        channel,
+        enabled: value.enabled !== false,
+        events: normalizeStringArray(value.events || value.triggers || value.kinds),
+        delivery: normalizeText(value.delivery) || null,
+      });
+      continue;
+    }
+  }
+  return list;
+}
+
+function normalizeStage4a2ApprovalContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const anchors = raw.anchors && typeof raw.anchors === "object" ? raw.anchors : {};
+  return {
+    source: normalizeText(raw.source) || null,
+    trigger_events: normalizeStringArray(raw.trigger_events || raw.triggerEvents),
+    anchors: {
+      inbox: normalizeText(anchors.inbox) || null,
+      approval_holds: normalizeText(anchors.approval_holds || anchors.approvalHolds) || null,
+      approval_decisions: normalizeText(anchors.approval_decisions || anchors.approvalDecisions) || null,
+      run_timeline: normalizeText(anchors.run_timeline || anchors.runTimeline) || null,
+      channel_audit_trail: normalizeText(anchors.channel_audit_trail || anchors.channelAuditTrail) || null,
+    },
+  };
+}
+
+function normalizeStage4a2SandboxProfile(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const profileId =
+    normalizeText(raw.profile_id || raw.profileId || raw.profile || raw.id || raw.name) || null;
+  const mode = normalizeText(raw.mode || raw.scope) || null;
+  const commandAllow = normalizeStringArray(raw.allowed_commands || raw.command_allowlist || raw.commandAllowlist);
+  const networkAllow = normalizeStringArray(raw.allowed_network || raw.network_allowlist || raw.networkAllowlist);
+  const toolAllow = normalizeStringArray(raw.allowed_tools || raw.tool_allowlist || raw.toolAllowlist);
+  const secretClasses = normalizeStringArray(raw.allowed_secret_classes || raw.secret_classes || raw.secretClasses);
+  const approvalTriggers = normalizeStringArray(raw.approval_triggers || raw.approval_required_actions);
+  if (
+    !profileId &&
+    !mode &&
+    commandAllow.length === 0 &&
+    networkAllow.length === 0 &&
+    toolAllow.length === 0 &&
+    secretClasses.length === 0 &&
+    approvalTriggers.length === 0
+  ) {
+    return null;
+  }
+  return {
+    profile_id: profileId,
+    mode: mode || "restricted_local",
+    allowed_commands: commandAllow,
+    allowed_network: networkAllow,
+    allowed_tools: toolAllow,
+    allowed_secret_classes: secretClasses,
+    approval_triggers: approvalTriggers,
+  };
+}
+
+function normalizeStage4a2SecretsBindings(raw) {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => normalizeStage4a2SecretsBindingItem(item))
+      .filter((item) => item !== null);
+  }
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  if (Array.isArray(raw.items)) {
+    return normalizeStage4a2SecretsBindings(raw.items);
+  }
+  if (Array.isArray(raw.allowed_secret_refs)) {
+    const approvalRequired = raw.approval_required === true;
+    const injectionMode = normalizeText(raw.injection_mode) || null;
+    return raw.allowed_secret_refs
+      .filter((item) => typeof item === "string" && item.trim().length > 0)
+      .map((item) => ({
+        secret_class: item.trim(),
+        status: approvalRequired ? "approval_required" : "bound",
+        source: injectionMode,
+        approval_required: approvalRequired,
+        injection_mode: injectionMode,
+      }));
+  }
+  const classes = normalizeStringArray(raw.secret_classes || raw.classes);
+  if (classes.length > 0) {
+    return classes.map((secretClass) => ({
+      secret_class: secretClass,
+      status: "bound",
+      source: normalizeText(raw.source || raw.binding_source) || null,
+    }));
+  }
+  return [];
+}
+
+function normalizeStage4a2SecretsBindingItem(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const secretClass =
+    normalizeText(raw.secret_class || raw.secretClass || raw.class || raw.key) || null;
+  if (!secretClass) {
+    return null;
+  }
+  return {
+    secret_class: secretClass,
+    status: normalizeText(raw.status) || "bound",
+    source: normalizeText(raw.source || raw.binding_source) || null,
+    approval_required: raw.approval_required === true,
+    injection_mode: normalizeText(raw.injection_mode) || null,
+  };
+}
+
+function buildStage4a2UsageNotes({ context, sandboxProfile, secretsBindings }) {
+  const notes = [];
+  const ruleEntries = normalizeStringArray(context?.rule_entries || context?.ruleEntries);
+  const runtimeEntries = normalizeStringArray(context?.runtime_entries || context?.runtimeEntries);
+  for (const entry of ruleEntries) {
+    notes.push(`rule:${entry}`);
+  }
+  for (const entry of runtimeEntries) {
+    notes.push(`runtime:${entry}`);
+  }
+  if (sandboxProfile?.profile_id) {
+    notes.push(`sandbox_profile:${sandboxProfile.profile_id}`);
+  }
+  if (secretsBindings.length > 0) {
+    notes.push(
+      `secrets:${secretsBindings.map((item) => item.secret_class).join(",")}`,
+    );
+  }
+  return Array.from(new Set(notes));
+}
+
+function summarizeStage4a2NotificationSignals(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return {
+      total: 0,
+      blocked: 0,
+      approval_required: 0,
+      mention: 0,
+      pr_pending_review: 0,
+    };
+  }
+  const summary = {
+    total: items.length,
+    blocked: 0,
+    approval_required: 0,
+    mention: 0,
+    pr_pending_review: 0,
+  };
+  for (const item of items) {
+    const kind = normalizeText(item?.kind);
+    if (!kind) {
+      continue;
+    }
+    if (kind.includes("blocked")) {
+      summary.blocked += 1;
+    }
+    if (kind.includes("approval")) {
+      summary.approval_required += 1;
+    }
+    if (kind.includes("mention")) {
+      summary.mention += 1;
+    }
+    if (kind.includes("pr") && kind.includes("review")) {
+      summary.pr_pending_review += 1;
+    }
+  }
+  return summary;
+}
+
+function findLatestStage4a2Enforcement(items) {
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  for (const item of items) {
+    const payload = item?.payload && typeof item.payload === "object" ? item.payload : {};
+    const enforcement = payload?.enforcement && typeof payload.enforcement === "object" ? payload.enforcement : null;
+    if (!enforcement) {
+      continue;
+    }
+    return {
+      sandbox_profile: normalizeText(enforcement.sandbox_profile) || null,
+      secrets_injection: enforcement.secrets_injection === true,
+      secret_ref_count: Number(enforcement.secret_ref_count || 0),
+      approval_required: enforcement.approval_required === true,
+      approval_id: normalizeText(enforcement.approval_id) || null,
+      injection_mode: normalizeText(enforcement.injection_mode) || null,
+    };
+  }
+  return null;
+}
+
+function buildStage4a2AuditSummary({ auditAnchor, channelAuditTrail }) {
+  const latest = auditAnchor?.latest && typeof auditAnchor.latest === "object" ? auditAnchor.latest : {};
+  const notification =
+    normalizeStage4a2AuditAnchor(latest.notification_endpoint) ||
+    normalizeStage4a2AuditAnchor(latest.notification_routing) ||
+    normalizeStage4a2AuditEntry(findLatestChannelAuditByKeyword(channelAuditTrail, ["notification"]));
+  const approval =
+    normalizeStage4a2AuditAnchor(latest.approval) ||
+    normalizeStage4a2AuditAnchor(latest.approval_chain) ||
+    normalizeStage4a2AuditEntry(findLatestChannelAuditByKeyword(channelAuditTrail, ["approval"]));
+  const restrictedExecution =
+    normalizeStage4a2AuditAnchor(latest.sandbox_profile) ||
+    normalizeStage4a2AuditAnchor(latest.secrets_binding) ||
+    normalizeStage4a2AuditEntry(findLatestChannelAuditByKeyword(channelAuditTrail, ["sandbox", "secret"]));
+  return {
+    notification,
+    approval,
+    restricted_execution: restrictedExecution,
+  };
+}
+
+function findLatestChannelAuditByKeyword(items, keywords) {
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  for (const item of items) {
+    const action = normalizeText(item?.action);
+    if (!action) {
+      continue;
+    }
+    if (keywords.some((keyword) => action.includes(keyword))) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function normalizeStage4a2AuditAnchor(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const auditId = normalizeText(raw.audit_id || raw.auditId);
+  const action = normalizeText(raw.action);
+  const at = raw.at || null;
+  if (!auditId && !action && !at) {
+    return null;
+  }
+  return {
+    audit_id: auditId || null,
+    action: action || null,
+    at,
+  };
+}
+
+function normalizeStage4a2AuditEntry(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const auditId = normalizeText(raw.audit_id || raw.auditId);
+  const action = normalizeText(raw.action);
+  const at = raw.at || null;
+  if (!auditId && !action && !at) {
+    return null;
+  }
+  return {
+    audit_id: auditId || null,
+    action: action || null,
+    at,
+  };
+}
+
+function normalizeStage4a2ChannelName(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.replaceAll("-", "_").replaceAll(" ", "_");
 }
 
 function normalizeRuntimeAgents(items, runtimeRegistry) {
