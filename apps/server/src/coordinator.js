@@ -188,6 +188,26 @@ const AUTH_IDENTITY_STATUSES = new Set(["bound", "revoked"]);
 const GITHUB_INSTALLATION_STATUSES = new Set(["active", "removed"]);
 const SANDBOX_PROFILES = new Set(["restricted_local"]);
 const SECRETS_INJECTION_MODES = new Set(["explicit"]);
+const NOTIFICATION_ROUTING_RULES = Object.freeze({
+  inbox: Object.freeze({
+    delivery: "always",
+    events: Object.freeze(["all"])
+  }),
+  browserPush: Object.freeze({
+    delivery: "allowlist",
+    events: Object.freeze(["blocked", "approval_required", "mention", "pr_review_pending"])
+  }),
+  email: Object.freeze({
+    delivery: "allowlist_with_high_priority_fallback",
+    events: Object.freeze(["invite", "verify", "reset_password", "high_priority_escalation"])
+  })
+});
+const APPROVAL_NOTIFICATION_TRIGGER_EVENTS = Object.freeze([
+  "approval_required",
+  "blocked",
+  "mention",
+  "pr_review_pending"
+]);
 
 const WORKSPACE_GOVERNANCE_PERMISSION_MATRIX = Object.freeze({
   owner: Object.freeze({
@@ -261,6 +281,23 @@ function createEmptyChannelGovernance() {
     githubInstallation: null,
     sandboxProfile: null,
     secretsBinding: null
+  };
+}
+
+function createEmptyChannelNotificationEndpoints() {
+  return {
+    browserPush: {
+      enabled: false,
+      endpointRef: null,
+      updatedAt: null,
+      updatedBy: null
+    },
+    email: {
+      enabled: false,
+      endpointRef: null,
+      updatedAt: null,
+      updatedBy: null
+    }
   };
 }
 
@@ -2513,6 +2550,33 @@ export class ServerCoordinator {
     return channel.governance;
   }
 
+  ensureChannelNotificationEndpoints(channel) {
+    if (!channel.notificationEndpoints || typeof channel.notificationEndpoints !== "object") {
+      channel.notificationEndpoints = createEmptyChannelNotificationEndpoints();
+    }
+    const ensureLayer = (layerKey) => {
+      const entry = channel.notificationEndpoints[layerKey];
+      if (!entry || typeof entry !== "object") {
+        channel.notificationEndpoints[layerKey] = {
+          enabled: false,
+          endpointRef: null,
+          updatedAt: null,
+          updatedBy: null
+        };
+        return;
+      }
+      channel.notificationEndpoints[layerKey] = {
+        enabled: Boolean(entry.enabled),
+        endpointRef: normalizeOptionalScopeId(entry.endpointRef),
+        updatedAt: normalizeOptionalScopeId(entry.updatedAt),
+        updatedBy: normalizeOptionalScopeId(entry.updatedBy)
+      };
+    };
+    ensureLayer("browserPush");
+    ensureLayer("email");
+    return channel.notificationEndpoints;
+  }
+
   findLatestChannelAuditByAction(channel, action) {
     for (let index = channel.auditTrail.length - 1; index >= 0; index -= 1) {
       const entry = channel.auditTrail[index];
@@ -2540,7 +2604,22 @@ export class ServerCoordinator {
         githubInstallation: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_github_installation_upsert")),
         sandboxProfile: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_sandbox_profile_upsert")),
         secretsBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_secrets_binding_upsert")),
-        repoBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_repo_binding_upsert"))
+        repoBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_repo_binding_upsert")),
+        notificationEndpoint: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_notification_endpoint_upsert"))
+      }
+    };
+  }
+
+  getChannelApprovalAuditAnchors(channel) {
+    return {
+      source: "v1_approval_hold_truth",
+      triggerEvents: deepClone(APPROVAL_NOTIFICATION_TRIGGER_EVENTS),
+      anchors: {
+        inbox: "/v1/inbox/:actorId?topic_id=:topicId",
+        approvalHolds: "/v1/topics/:topicId/approval-holds?status=:status",
+        approvalDecisions: "/v1/topics/:topicId/approval-holds/:holdId/decisions",
+        runTimeline: "/v1/runs/:runId/timeline?topic_id=:topicId",
+        channelAuditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`
       }
     };
   }
@@ -3040,6 +3119,7 @@ export class ServerCoordinator {
   getChannelContextContract(channelId) {
     const channel = this.requireChannelContext(channelId);
     this.ensureChannelGovernance(channel);
+    this.ensureChannelNotificationEndpoints(channel);
     return deepClone({
       channelId: channel.channelId,
       ownerOperatorId: channel.ownerOperatorId,
@@ -3064,6 +3144,9 @@ export class ServerCoordinator {
         permissionMatrix: WORKSPACE_GOVERNANCE_PERMISSION_MATRIX,
         stateGraph: WORKSPACE_GOVERNANCE_STATE_GRAPH
       },
+      notificationEndpoint: channel.notificationEndpoints,
+      notificationRoutingRules: NOTIFICATION_ROUTING_RULES,
+      approvalContract: this.getChannelApprovalAuditAnchors(channel),
       repoBinding: channel.repoBinding ?? null,
       auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt
@@ -3111,6 +3194,7 @@ export class ServerCoordinator {
           ruleEntries: []
         },
         governance: createEmptyChannelGovernance(),
+        notificationEndpoints: createEmptyChannelNotificationEndpoints(),
         repoBinding: null,
         auditTrail: [],
         updatedAt: nowIso()
@@ -3189,6 +3273,110 @@ export class ServerCoordinator {
     });
     this.channelContexts.set(normalizedChannelId, channel);
     return this.getChannelContextContract(normalizedChannelId);
+  }
+
+  getChannelNotificationEndpointContract(channelId) {
+    const channel = this.requireChannelContext(channelId);
+    this.ensureChannelNotificationEndpoints(channel);
+    return deepClone({
+      channelId: channel.channelId,
+      ownerOperatorId: channel.ownerOperatorId,
+      notificationEndpoint: channel.notificationEndpoints,
+      routingRules: NOTIFICATION_ROUTING_RULES,
+      approvalContract: this.getChannelApprovalAuditAnchors(channel),
+      writeAnchors: {
+        notificationEndpointUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`,
+        approvalDecision: "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+      },
+      auditAnchor: this.buildChannelAuditAnchor(channel),
+      updatedAt: channel.updatedAt
+    });
+  }
+
+  upsertChannelNotificationEndpointContract(channelId, input = {}) {
+    assertOrThrow(
+      input && typeof input === "object" && !Array.isArray(input),
+      "invalid_notification_endpoint",
+      "notification endpoint payload must be object"
+    );
+    const allowedKeys = new Set(["operatorId", "browserPush", "email", "policySnapshot"]);
+    for (const key of Object.keys(input)) {
+      assertOrThrow(
+        allowedKeys.has(key),
+        "invalid_notification_endpoint_field",
+        `unsupported notification endpoint field: ${key}`
+      );
+    }
+    assertOrThrow(
+      input.browserPush !== undefined || input.email !== undefined,
+      "invalid_notification_endpoint",
+      "notification endpoint payload must include browserPush or email"
+    );
+    const channel = this.requireChannelContext(channelId);
+    const operatorId = this.assertChannelOwner(channel, input.operatorId);
+    const notificationEndpoint = this.ensureChannelNotificationEndpoints(channel);
+
+    const applyLayer = (layerName, entryInput, currentEntry) => {
+      assertOrThrow(
+        entryInput && typeof entryInput === "object" && !Array.isArray(entryInput),
+        "invalid_notification_endpoint_layer",
+        `${layerName} endpoint payload must be object`
+      );
+      const allowedLayerFields = new Set(["enabled", "endpointRef"]);
+      for (const key of Object.keys(entryInput)) {
+        assertOrThrow(
+          allowedLayerFields.has(key),
+          "invalid_notification_endpoint_layer_field",
+          `unsupported ${layerName} endpoint field: ${key}`
+        );
+      }
+      const enabled =
+        entryInput.enabled === undefined ? Boolean(currentEntry.enabled) : entryInput.enabled;
+      assertOrThrow(
+        typeof enabled === "boolean",
+        "invalid_notification_endpoint_enabled",
+        `${layerName}.enabled must be boolean`
+      );
+      const endpointRef =
+        entryInput.endpointRef === undefined ? normalizeOptionalScopeId(currentEntry.endpointRef) : normalizeOptionalScopeId(entryInput.endpointRef);
+      if (enabled) {
+        assertOrThrow(
+          endpointRef,
+          "invalid_notification_endpoint_target",
+          `${layerName}.endpoint_ref is required when enabled=true`
+        );
+      }
+      const now = nowIso();
+      return {
+        enabled,
+        endpointRef,
+        updatedAt: now,
+        updatedBy: operatorId
+      };
+    };
+
+    if (input.browserPush !== undefined) {
+      notificationEndpoint.browserPush = applyLayer("browser_push", input.browserPush, notificationEndpoint.browserPush);
+    }
+    if (input.email !== undefined) {
+      notificationEndpoint.email = applyLayer("email", input.email, notificationEndpoint.email);
+    }
+
+    channel.updatedAt = nowIso();
+    this.appendChannelAuditEntry(channel, {
+      actorId: operatorId,
+      action: "channel_notification_endpoint_upsert",
+      target: `channel:${channel.channelId}:notification_endpoint`,
+      policySnapshot: input.policySnapshot,
+      details: {
+        browser_push_enabled: notificationEndpoint.browserPush.enabled,
+        browser_push_endpoint_ref: notificationEndpoint.browserPush.endpointRef,
+        email_enabled: notificationEndpoint.email.enabled,
+        email_endpoint_ref: notificationEndpoint.email.endpointRef
+      }
+    });
+    this.channelContexts.set(channel.channelId, channel);
+    return this.getChannelNotificationEndpointContract(channel.channelId);
   }
 
   getChannelRepoBindingConfig(channelId) {
@@ -4367,7 +4555,8 @@ export class ServerCoordinator {
         "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
         "/v1/compatibility/shell-adapter?topic_id=:topicId",
         "/v1/inbox/:actorId?topic_id=:topicId",
-        "/v1/inbox/:actorId/acks"
+        "/v1/inbox/:actorId/acks",
+        "/v1/channels/:channelId/notification-endpoint"
       ],
       lineage_anchors: {
         topic_status: "/v1/topics/:topicId/status",
@@ -4390,7 +4579,8 @@ export class ServerCoordinator {
         debug_history: "/v1/debug/history?topic_id=:topicId&run_id=:runId",
         execution_events: "/v1/execution/runs/:runId/events?topic_id=:topicId",
         execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId",
-        execution_inbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+        execution_inbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
+        channel_notification_endpoint: "/v1/channels/:channelId/notification-endpoint"
       }
     };
     if (!topicId) {

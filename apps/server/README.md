@@ -8,11 +8,11 @@ For Stage 3 release/handoff entry, start from repo-level files:
 - `docs/stage3-delivery-ops-entry.md`
 - `docs/stage3-release-gate.md`
 
-Current stage focus is Stage 4A1 governance foundation, with boundaries locked to:
+Current stage focus is Stage 4A2 notification + restricted execution contract, with boundaries locked to:
 
-- account identity/member/workspace-installation/repo-binding control-plane contract
-- installation bound to workspace scope (not personal install scope)
-- no 4A2/4B/4C backflow and no new backend truth source
+- `notification_endpoint` contract and fixed 3-layer routing (`Inbox` / `Browser Push` / `Email`)
+- approval request/decision anchors on inbox, run timeline, and channel audit trail
+- no Cloud Sandbox or 4B/4C backflow and no new backend truth source
 
 ## Run
 
@@ -34,15 +34,18 @@ Representative surfaces used by shell and gates:
 - execution plane: `/v1/runs/*`, `/v1/execution/runs/*`, `/v1/runtime/*`
 - integration projections: `/v1/compatibility/shell-adapter`, `/v1/debug/*`
 
-Stage 4A1 governance contract is carried by:
+Stage 4A1 + 4A2 governance/notification contract is carried by:
 
 - `GET /v1/channels/:channelId/context`
 - `PUT /v1/channels/:channelId/context`
 - `GET /v1/channels/:channelId/repo-binding`
 - `PUT /v1/channels/:channelId/repo-binding`
+- `GET /v1/channels/:channelId/notification-endpoint`
+- `PUT /v1/channels/:channelId/notification-endpoint`
 
 These contract projections include `auth_identity`, `member`, `github_installation`, `repo_binding`,
-permission matrix, state graph, and channel audit anchors.
+`notification_endpoint`, fixed notification routing rules, approval anchors, permission matrix,
+state graph, and channel audit anchors.
 
 ## Compatibility Alias Boundary
 

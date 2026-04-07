@@ -4340,6 +4340,197 @@ test("v1 stage4a1 control-plane governance contract keeps identity/member/instal
   );
 });
 
+test("v1 stage4a2 notification and approval contract keeps three-layer routing with timeline/audit anchors", async () => {
+  const channelId = "channel_open_shock_stage4a2_notification";
+  const topicId = "topic_stage4a2_notification_contract";
+  const operatorId = "human_operator_stage4a2";
+  const workspaceId = "workspace_stage4a2";
+
+  await withRuntimeServer(
+    {
+      fixture: {
+        topicId
+      }
+    },
+    async ({ port }) => {
+      const seeded = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/fixtures/seed",
+        body: {}
+      });
+      assert.equal(seeded.statusCode, 200);
+
+      const context = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          workspace_id: workspaceId,
+          workspace_root: "/Users/atou/.slock/agents",
+          baseline_ref: "feat/initial-implementation@8bc9403",
+          fixed_directory: "/Users/atou/OpenShockSwarm"
+        }
+      });
+      assert.equal(context.statusCode, 200);
+      assert.equal(
+        context.body.context.write_anchors.notification_endpoint_upsert,
+        `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`
+      );
+
+      const defaultContract = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`
+      });
+      assert.equal(defaultContract.statusCode, 200);
+      assert.equal(defaultContract.body.notification_endpoint.contract_version, "v1.stage4a2");
+      assert.equal(defaultContract.body.notification_endpoint.notification_endpoint.browser_push.enabled, false);
+      assert.equal(defaultContract.body.notification_endpoint.notification_endpoint.email.enabled, false);
+      assert.equal(defaultContract.body.notification_endpoint.routing_rules.inbox.events.includes("all"), true);
+      assert.equal(
+        defaultContract.body.notification_endpoint.routing_rules.browser_push.events.includes("approval_required"),
+        true
+      );
+      assert.equal(defaultContract.body.notification_endpoint.routing_rules.email.events.includes("invite"), true);
+      assert.equal(
+        defaultContract.body.notification_endpoint.routing_rules.email.events.includes("run_completed"),
+        false
+      );
+      assert.equal(
+        defaultContract.body.notification_endpoint.approval_contract.anchors.run_timeline,
+        "/v1/runs/:runId/timeline?topic_id=:topicId"
+      );
+      assert.equal(
+        defaultContract.body.notification_endpoint.approval_contract.anchors.channel_audit_trail,
+        `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`
+      );
+
+      const upsertContract = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+        body: {
+          operator_id: operatorId,
+          browser_push: {
+            enabled: true,
+            endpoint_ref: "webpush://atou/open-shock"
+          },
+          email: {
+            enabled: true,
+            endpoint_ref: "mailto:ops@openshock.dev"
+          },
+          policy_snapshot: {
+            mode: "stage4a2_notification_contract",
+            boundary: "restricted_local_sandbox_only"
+          }
+        }
+      });
+      assert.equal(upsertContract.statusCode, 200);
+      assert.equal(upsertContract.body.notification_endpoint.notification_endpoint.browser_push.enabled, true);
+      assert.equal(
+        upsertContract.body.notification_endpoint.notification_endpoint.browser_push.endpoint_ref,
+        "webpush://atou/open-shock"
+      );
+      assert.equal(upsertContract.body.notification_endpoint.notification_endpoint.email.enabled, true);
+      assert.equal(
+        upsertContract.body.notification_endpoint.notification_endpoint.email.endpoint_ref,
+        "mailto:ops@openshock.dev"
+      );
+      assert.equal(
+        upsertContract.body.notification_endpoint.write_anchors.notification_endpoint_upsert,
+        `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`
+      );
+      assert.equal(
+        upsertContract.body.notification_endpoint.write_anchors.approval_decision,
+        "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+      );
+      assert.equal(
+        upsertContract.body.notification_endpoint.audit_anchor.latest.notification_endpoint.action,
+        "channel_notification_endpoint_upsert"
+      );
+
+      const contextAfterUpsert = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`
+      });
+      assert.equal(contextAfterUpsert.statusCode, 200);
+      assert.equal(
+        contextAfterUpsert.body.context.audit_anchor.latest.notification_endpoint.action,
+        "channel_notification_endpoint_upsert"
+      );
+      assert.equal(contextAfterUpsert.body.context.notification_routing_rules.inbox.events.includes("all"), true);
+      assert.equal(
+        contextAfterUpsert.body.context.approval_contract.anchors.approval_decisions,
+        "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+      );
+
+      const auditTrail = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail?limit=20`
+      });
+      assert.equal(auditTrail.statusCode, 200);
+      assert.equal(
+        auditTrail.body.items.some(
+          (item) =>
+            item.action === "channel_notification_endpoint_upsert" &&
+            item.details.browser_push_enabled === true &&
+            item.details.email_enabled === true
+        ),
+        true
+      );
+
+      const invalidInboxLayer = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+        body: {
+          operator_id: operatorId,
+          inbox: {
+            enabled: false
+          }
+        }
+      });
+      assert.equal(invalidInboxLayer.statusCode, 400);
+      assert.equal(invalidInboxLayer.body.error.code, "invalid_notification_endpoint_layer");
+
+      const missingPushTarget = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+        body: {
+          operator_id: operatorId,
+          browser_push: {
+            enabled: true,
+            endpoint_ref: ""
+          }
+        }
+      });
+      assert.equal(missingPushTarget.statusCode, 400);
+      assert.equal(missingPushTarget.body.error.code, "invalid_notification_endpoint_target");
+
+      const unsupportedEmailField = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+        body: {
+          operator_id: operatorId,
+          email: {
+            enabled: true,
+            endpoint_ref: "mailto:ops@openshock.dev",
+            smtp_profile: "custom"
+          }
+        }
+      });
+      assert.equal(unsupportedEmailField.statusCode, 400);
+      assert.equal(unsupportedEmailField.body.error.code, "invalid_notification_endpoint_layer_field");
+    }
+  );
+});
+
 test("v1 stage4a1 enforcement blocks missing installation, forbidden role, stale binding usage and wrong workspace scope", async () => {
   const channelId = "channel_open_shock_stage4a1_enforcement";
   const topicId = "topic_stage4a1_enforcement";

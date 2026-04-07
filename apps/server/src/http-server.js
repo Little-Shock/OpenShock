@@ -157,6 +157,20 @@ function matchRoute(method, pathName) {
     };
   }
 
+  const v1ChannelNotificationEndpointMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/notification-endpoint$/);
+  if (method === "GET" && v1ChannelNotificationEndpointMatch) {
+    return {
+      route: "V1_GET_CHANNEL_NOTIFICATION_ENDPOINT",
+      channelId: v1ChannelNotificationEndpointMatch[1]
+    };
+  }
+  if (method === "PUT" && v1ChannelNotificationEndpointMatch) {
+    return {
+      route: "V1_PUT_CHANNEL_NOTIFICATION_ENDPOINT",
+      channelId: v1ChannelNotificationEndpointMatch[1]
+    };
+  }
+
   const v1ChannelAuditTrailMatch = pathName.match(/^\/v1\/channels\/([^/]+)\/audit-trail$/);
   if (method === "GET" && v1ChannelAuditTrailMatch) {
     return {
@@ -870,6 +884,71 @@ function serializeChannelContextContract(input = {}) {
       permission_matrix: deepClone(input.governance?.permissionMatrix ?? {}),
       state_graph: deepClone(input.governance?.stateGraph ?? {})
     },
+    notification_endpoint: input.notificationEndpoint
+      ? {
+          browser_push: {
+            enabled: Boolean(input.notificationEndpoint.browserPush?.enabled),
+            endpoint_ref: input.notificationEndpoint.browserPush?.endpointRef ?? null,
+            updated_at: input.notificationEndpoint.browserPush?.updatedAt ?? null,
+            updated_by: input.notificationEndpoint.browserPush?.updatedBy ?? null
+          },
+          email: {
+            enabled: Boolean(input.notificationEndpoint.email?.enabled),
+            endpoint_ref: input.notificationEndpoint.email?.endpointRef ?? null,
+            updated_at: input.notificationEndpoint.email?.updatedAt ?? null,
+            updated_by: input.notificationEndpoint.email?.updatedBy ?? null
+          }
+        }
+      : null,
+    notification_routing_rules: {
+      inbox: {
+        delivery: input.notificationRoutingRules?.inbox?.delivery ?? "always",
+        events: deepClone(input.notificationRoutingRules?.inbox?.events ?? ["all"])
+      },
+      browser_push: {
+        delivery: input.notificationRoutingRules?.browserPush?.delivery ?? "allowlist",
+        events: deepClone(
+          input.notificationRoutingRules?.browserPush?.events ?? [
+            "blocked",
+            "approval_required",
+            "mention",
+            "pr_review_pending"
+          ]
+        )
+      },
+      email: {
+        delivery: input.notificationRoutingRules?.email?.delivery ?? "allowlist_with_high_priority_fallback",
+        events: deepClone(
+          input.notificationRoutingRules?.email?.events ?? [
+            "invite",
+            "verify",
+            "reset_password",
+            "high_priority_escalation"
+          ]
+        )
+      }
+    },
+    approval_contract: input.approvalContract
+      ? {
+          source: input.approvalContract.source ?? "v1_approval_hold_truth",
+          trigger_events: deepClone(input.approvalContract.triggerEvents ?? []),
+          anchors: {
+            inbox: input.approvalContract.anchors?.inbox ?? "/v1/inbox/:actorId?topic_id=:topicId",
+            approval_holds:
+              input.approvalContract.anchors?.approvalHolds ??
+              "/v1/topics/:topicId/approval-holds?status=:status",
+            approval_decisions:
+              input.approvalContract.anchors?.approvalDecisions ??
+              "/v1/topics/:topicId/approval-holds/:holdId/decisions",
+            run_timeline:
+              input.approvalContract.anchors?.runTimeline ??
+              "/v1/runs/:runId/timeline?topic_id=:topicId",
+            channel_audit_trail:
+              input.approvalContract.anchors?.channelAuditTrail ??
+              `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`
+          }
+        }
+      : null,
     repo_binding: input.repoBinding
       ? {
           topic_id: input.repoBinding.topicId ?? null,
@@ -888,6 +967,7 @@ function serializeChannelContextContract(input = {}) {
       member_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       github_installation_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       repo_binding_upsert: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
+      notification_endpoint_upsert: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
       topic_repo_binding: "/v1/topics/:topicId/repo-binding",
       work_assignment: `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/:agentId`,
       operator_action: `/v1/channels/${encodeURIComponent(channelId)}/operator-actions`,
@@ -937,6 +1017,105 @@ function serializeChannelContextContract(input = {}) {
               audit_id: input.auditAnchor.latest.repoBinding.auditId ?? null,
               action: input.auditAnchor.latest.repoBinding.action ?? null,
               at: input.auditAnchor.latest.repoBinding.at ?? null
+            }
+          : null
+        ,
+        notification_endpoint: input.auditAnchor?.latest?.notificationEndpoint
+          ? {
+              audit_id: input.auditAnchor.latest.notificationEndpoint.auditId ?? null,
+              action: input.auditAnchor.latest.notificationEndpoint.action ?? null,
+              at: input.auditAnchor.latest.notificationEndpoint.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
+function serializeChannelNotificationApprovalContract(input = {}) {
+  const channelId = input.channelId;
+  return {
+    projection: "channel_notification_approval_contract",
+    contract_version: "v1.stage4a2",
+    channel_id: channelId,
+    owner_operator_id: input.ownerOperatorId ?? null,
+    notification_endpoint: {
+      browser_push: {
+        enabled: Boolean(input.notificationEndpoint?.browserPush?.enabled),
+        endpoint_ref: input.notificationEndpoint?.browserPush?.endpointRef ?? null,
+        updated_at: input.notificationEndpoint?.browserPush?.updatedAt ?? null,
+        updated_by: input.notificationEndpoint?.browserPush?.updatedBy ?? null
+      },
+      email: {
+        enabled: Boolean(input.notificationEndpoint?.email?.enabled),
+        endpoint_ref: input.notificationEndpoint?.email?.endpointRef ?? null,
+        updated_at: input.notificationEndpoint?.email?.updatedAt ?? null,
+        updated_by: input.notificationEndpoint?.email?.updatedBy ?? null
+      }
+    },
+    routing_rules: {
+      inbox: {
+        delivery: input.routingRules?.inbox?.delivery ?? "always",
+        events: deepClone(input.routingRules?.inbox?.events ?? ["all"])
+      },
+      browser_push: {
+        delivery: input.routingRules?.browserPush?.delivery ?? "allowlist",
+        events: deepClone(
+          input.routingRules?.browserPush?.events ?? [
+            "blocked",
+            "approval_required",
+            "mention",
+            "pr_review_pending"
+          ]
+        )
+      },
+      email: {
+        delivery: input.routingRules?.email?.delivery ?? "allowlist_with_high_priority_fallback",
+        events: deepClone(
+          input.routingRules?.email?.events ?? [
+            "invite",
+            "verify",
+            "reset_password",
+            "high_priority_escalation"
+          ]
+        )
+      }
+    },
+    approval_contract: {
+      source: input.approvalContract?.source ?? "v1_approval_hold_truth",
+      trigger_events: deepClone(input.approvalContract?.triggerEvents ?? []),
+      anchors: {
+        inbox: input.approvalContract?.anchors?.inbox ?? "/v1/inbox/:actorId?topic_id=:topicId",
+        approval_holds:
+          input.approvalContract?.anchors?.approvalHolds ??
+          "/v1/topics/:topicId/approval-holds?status=:status",
+        approval_decisions:
+          input.approvalContract?.anchors?.approvalDecisions ??
+          "/v1/topics/:topicId/approval-holds/:holdId/decisions",
+        run_timeline:
+          input.approvalContract?.anchors?.runTimeline ??
+          "/v1/runs/:runId/timeline?topic_id=:topicId",
+        channel_audit_trail:
+          input.approvalContract?.anchors?.channelAuditTrail ??
+          `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`
+      }
+    },
+    write_anchors: {
+      notification_endpoint_upsert:
+        input.writeAnchors?.notificationEndpointUpsert ??
+        `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      approval_decision:
+        input.writeAnchors?.approvalDecision ?? "/v1/topics/:topicId/approval-holds/:holdId/decisions"
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodeURIComponent(channelId)}/audit-trail`,
+      latest: {
+        notification_endpoint: input.auditAnchor?.latest?.notificationEndpoint
+          ? {
+              audit_id: input.auditAnchor.latest.notificationEndpoint.auditId ?? null,
+              action: input.auditAnchor.latest.notificationEndpoint.action ?? null,
+              at: input.auditAnchor.latest.notificationEndpoint.at ?? null
             }
           : null
       }
@@ -2232,6 +2411,84 @@ export function createHttpServer(coordinator, options = {}) {
         });
         sendJson(response, 200, {
           context: serializeChannelContextContract(context),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_GET_CHANNEL_NOTIFICATION_ENDPOINT") {
+        const contract = coordinator.getChannelNotificationEndpointContract(route.channelId);
+        sendJson(response, 200, {
+          notification_endpoint: serializeChannelNotificationApprovalContract(contract),
+          request_id: requestId
+        });
+        return;
+      }
+
+      if (route.route === "V1_PUT_CHANNEL_NOTIFICATION_ENDPOINT") {
+        const body = await readJsonBody(request);
+        assertObjectBody(body, "invalid_notification_endpoint", "notification endpoint payload must be object");
+        const allowedFields = new Set(["operator_id", "browser_push", "email", "policy_snapshot"]);
+        for (const key of Object.keys(body)) {
+          if (key === "inbox") {
+            throw new CoordinatorError(
+              "invalid_notification_endpoint_layer",
+              "inbox is server-owned truth and cannot be configured as endpoint"
+            );
+          }
+          if (!allowedFields.has(key)) {
+            throw new CoordinatorError(
+              "invalid_notification_endpoint_field",
+              `unsupported notification endpoint field: ${key}`
+            );
+          }
+        }
+        if (body.browser_push !== undefined) {
+          assertObjectBody(
+            body.browser_push,
+            "invalid_notification_endpoint_layer",
+            "browser_push payload must be object"
+          );
+          const allowedBrowserPushFields = new Set(["enabled", "endpoint_ref"]);
+          for (const key of Object.keys(body.browser_push)) {
+            if (!allowedBrowserPushFields.has(key)) {
+              throw new CoordinatorError(
+                "invalid_notification_endpoint_layer_field",
+                `unsupported browser_push field: ${key}`
+              );
+            }
+          }
+        }
+        if (body.email !== undefined) {
+          assertObjectBody(body.email, "invalid_notification_endpoint_layer", "email payload must be object");
+          const allowedEmailFields = new Set(["enabled", "endpoint_ref"]);
+          for (const key of Object.keys(body.email)) {
+            if (!allowedEmailFields.has(key)) {
+              throw new CoordinatorError(
+                "invalid_notification_endpoint_layer_field",
+                `unsupported email field: ${key}`
+              );
+            }
+          }
+        }
+        const contract = coordinator.upsertChannelNotificationEndpointContract(route.channelId, {
+          operatorId: body.operator_id,
+          browserPush: body.browser_push
+            ? {
+                enabled: body.browser_push.enabled,
+                endpointRef: body.browser_push.endpoint_ref
+              }
+            : undefined,
+          email: body.email
+            ? {
+                enabled: body.email.enabled,
+                endpointRef: body.email.endpoint_ref
+              }
+            : undefined,
+          policySnapshot: body.policy_snapshot
+        });
+        sendJson(response, 200, {
+          notification_endpoint: serializeChannelNotificationApprovalContract(contract),
           request_id: requestId
         });
         return;
