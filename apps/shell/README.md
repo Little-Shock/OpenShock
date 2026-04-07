@@ -53,9 +53,13 @@ The shell does not own local mock truth. `dev-server.mjs` serves shell assets an
 - `GET /v1/channels/:channelId/repo-binding`
 - `PUT /v1/channels/:channelId/repo-binding`
 - `GET /v1/channels/:channelId/audit-trail?limit=50`
+- `GET /v1/channels/:channelId/work-assignments?limit=100`
+- `PUT /v1/channels/:channelId/work-assignments/:agentId`
+- `GET /v1/channels/:channelId/operator-actions?limit=100`
+- `POST /v1/channels/:channelId/operator-actions`
+- `GET /v1/channels/:channelId/recent-actions?limit=100`
 - `GET /v1/runtime/registry`
 - `GET /v1/runtime/agents?limit=200`
-- `PUT /v1/runtime/agents/:agentId/assignment`
 - `POST /v1/runtime/agents/:agentId/recovery-actions`
 - `GET /v1/runtime/recovery-actions?limit=50`
 - `GET /v1/runtime/worktree-claims?limit=200`
@@ -85,8 +89,8 @@ Adapter routes:
 - `POST /api/v0a/operator/agents/:actorId/upsert`
   - Body: `{ "role": "lead" | "worker" | "human" | "system", "status": "<string>", "lane_id": "<string|null>" }`
 - `POST /api/v0a/operator/agents/:actorId/assignment`
-  - Body: `{ "operator": "<string>", "channel_id": "<string>", "thread_id": "<string|null>", "workitem_id": "<string|null>", "status": "<string|null>" }`
+  - Body: `{ "operator": "<string>", "channel_id": "<string>", "thread_id": "<string|null>", "workitem_id": "<string|null>", "default_duty": "<string|null>", "note": "<string|null>" }`
 - `POST /api/v0a/operator/agents/:actorId/recovery-actions`
   - Body: `{ "action": "resume" | "rebind" | "reclaim_worktree", "operator": "<string>", "channel_id": "<string|null>", "thread_id": "<string|null>", "workitem_id": "<string|null>", "claim_key": "<string|null>", "reason": "<string|null>" }`
 - `POST /api/v0a/operator/actions`
-  - Body: `{ "action": "<string>", "operator": "<string>", "channel_id": "<string|null>", "thread_id": "<string|null>", "workitem_id": "<string|null>", "run_id": "<string|null>", "target_agent_id": "<string|null>", "note": "<string|null>" }`
+  - Body: `{ "action_type": "request_report" | "follow_up" | "intervention" | "recovery", "operator": "<string>", "channel_id": "<string>", "thread_id": "<string|null>", "workitem_id": "<string|null>", "agent_id": "<string|null>", "run_id": "<string|null>", "note": "<string|null>" }`

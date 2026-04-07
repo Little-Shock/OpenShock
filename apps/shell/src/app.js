@@ -672,24 +672,47 @@ function renderAssignmentRecovery(operatorConsole, payload) {
 
   const scopeDefaults = resolveOperatorScopeFromState(operatorConsole, payload);
   const runtimeAgents = Array.isArray(operatorConsole.runtime_agents) ? operatorConsole.runtime_agents : [];
-  if (runtimeAgents.length === 0) {
+  const runtimeAgentById = new Map();
+  for (const runtimeAgent of runtimeAgents) {
+    const runtimeAgentId = normalizeText(runtimeAgent.agent_id);
+    if (runtimeAgentId) {
+      runtimeAgentById.set(runtimeAgentId, runtimeAgent);
+    }
+  }
+  const assignments = Array.isArray(operatorConsole.work_assignments) ? operatorConsole.work_assignments : [];
+  const sourceItems =
+    assignments.length > 0
+      ? assignments
+      : runtimeAgents.map((runtimeAgent) => ({
+          agent_id: runtimeAgent.agent_id,
+          assigned_channel_id: runtimeAgent.assigned_channel_id,
+          assigned_thread_id: runtimeAgent.assigned_thread_id,
+          assigned_workitem_id: runtimeAgent.assigned_workitem_id,
+          status: runtimeAgent.status,
+          runtime_agent_status: runtimeAgent.status,
+        }));
+
+  if (sourceItems.length === 0) {
     dom.assignmentRecoveryList.textContent = "No runtime agents available for assignment.";
     return;
   }
 
-  for (const runtimeAgent of runtimeAgents) {
-    const agentId = normalizeText(runtimeAgent.agent_id);
+  for (const assignment of sourceItems) {
+    const agentId = normalizeText(assignment.agent_id);
     if (!agentId) {
       continue;
     }
-    const assignedChannel = normalizeText(runtimeAgent.assigned_channel_id) || "unassigned";
-    const assignedThread = normalizeText(runtimeAgent.assigned_thread_id) || "n/a";
-    const assignedWorkitem = normalizeText(runtimeAgent.assigned_workitem_id) || "n/a";
-    const status = normalizeText(runtimeAgent.status) || "unknown";
+    const runtimeAgent = runtimeAgentById.get(agentId) || {};
+    const assignedChannel = normalizeText(assignment.assigned_channel_id) || "unassigned";
+    const assignedThread = normalizeText(assignment.assigned_thread_id) || "n/a";
+    const assignedWorkitem = normalizeText(assignment.assigned_workitem_id) || "n/a";
+    const status = normalizeText(assignment.status || assignment.runtime_agent_status || runtimeAgent.status) || "unknown";
+    const liveness = normalizeText(runtimeAgent.liveness) || "unknown";
+    const duty = normalizeText(assignment.default_duty) || "n/a";
     const card = queueCard({
       title: agentId,
       subtitle: `${assignedChannel} · ${assignedThread} · ${assignedWorkitem}`,
-      note: `status=${status} · liveness=${normalizeText(runtimeAgent.liveness) || "unknown"}`,
+      note: `status=${status} · duty=${duty} · liveness=${liveness}`,
       status,
     });
     const actions = document.createElement("div");
@@ -722,6 +745,7 @@ function renderAssignmentRecovery(operatorConsole, payload) {
             channel_id: channelId,
             thread_id: normalizeText(threadInput) || null,
             workitem_id: normalizeText(workitemInput) || null,
+            note: "assignment from operator console",
           },
         });
         await loadAndRender();
@@ -732,9 +756,9 @@ function renderAssignmentRecovery(operatorConsole, payload) {
           body: {
             action: "resume",
             operator: scopeDefaults.operatorId,
-            channel_id: normalizeText(runtimeAgent.assigned_channel_id) || scopeDefaults.channelId,
-            thread_id: normalizeText(runtimeAgent.assigned_thread_id) || scopeDefaults.threadId || null,
-            workitem_id: normalizeText(runtimeAgent.assigned_workitem_id) || scopeDefaults.workitemId || null,
+            channel_id: normalizeText(assignment.assigned_channel_id) || scopeDefaults.channelId,
+            thread_id: normalizeText(assignment.assigned_thread_id) || scopeDefaults.threadId || null,
+            workitem_id: normalizeText(assignment.assigned_workitem_id) || scopeDefaults.workitemId || null,
             status: "running",
             reason: "operator_resume_from_console",
           },
@@ -744,14 +768,14 @@ function renderAssignmentRecovery(operatorConsole, payload) {
       queueAction("Rebind", async () => {
         const threadInput = window.prompt(
           "New thread ID",
-          normalizeText(runtimeAgent.assigned_thread_id) || scopeDefaults.threadId,
+          normalizeText(assignment.assigned_thread_id) || scopeDefaults.threadId,
         );
         if (threadInput === null) {
           return;
         }
         const workitemInput = window.prompt(
           "New workitem ID",
-          normalizeText(runtimeAgent.assigned_workitem_id) || scopeDefaults.workitemId,
+          normalizeText(assignment.assigned_workitem_id) || scopeDefaults.workitemId,
         );
         if (workitemInput === null) {
           return;
@@ -761,7 +785,7 @@ function renderAssignmentRecovery(operatorConsole, payload) {
           body: {
             action: "rebind",
             operator: scopeDefaults.operatorId,
-            channel_id: normalizeText(runtimeAgent.assigned_channel_id) || scopeDefaults.channelId,
+            channel_id: normalizeText(assignment.assigned_channel_id) || scopeDefaults.channelId,
             thread_id: normalizeText(threadInput) || null,
             workitem_id: normalizeText(workitemInput) || null,
             reason: "operator_rebind_from_console",
@@ -783,9 +807,9 @@ function renderAssignmentRecovery(operatorConsole, payload) {
           body: {
             action: "reclaim_worktree",
             operator: scopeDefaults.operatorId,
-            channel_id: normalizeText(runtimeAgent.assigned_channel_id) || scopeDefaults.channelId,
-            thread_id: normalizeText(runtimeAgent.assigned_thread_id) || scopeDefaults.threadId || null,
-            workitem_id: normalizeText(runtimeAgent.assigned_workitem_id) || scopeDefaults.workitemId || null,
+            channel_id: normalizeText(assignment.assigned_channel_id) || scopeDefaults.channelId,
+            thread_id: normalizeText(assignment.assigned_thread_id) || scopeDefaults.threadId || null,
+            workitem_id: normalizeText(assignment.assigned_workitem_id) || scopeDefaults.workitemId || null,
             claim_key: claimKey,
             reason: "operator_reclaim_from_console",
           },
@@ -811,7 +835,7 @@ function renderOperatorActionLoop(operatorConsole, payload) {
     subtitle: `${scopeDefaults.channelId || "unbound_channel"} · ${scopeDefaults.threadId || "n/a"} · ${
       scopeDefaults.workitemId || "n/a"
     }`,
-    note: "Actions are written through stable topic message contract",
+    note: "Actions are written through stable channel operator-action contract",
     status: "active",
   });
   const actions = document.createElement("div");
@@ -822,8 +846,13 @@ function renderOperatorActionLoop(operatorConsole, payload) {
       if (runInput === null) {
         return;
       }
+      const agentInput = window.prompt("Agent ID (optional)", "");
+      if (agentInput === null) {
+        return;
+      }
       await sendOperatorAction(scopeDefaults, "request_report", {
         run_id: normalizeText(runInput) || null,
+        agent_id: normalizeText(agentInput) || null,
         note: "request report from operator console",
       });
     }),
@@ -845,13 +874,40 @@ function renderOperatorActionLoop(operatorConsole, payload) {
   );
   loopCard.append(actions);
   dom.operatorActionList.append(loopCard);
+
+  const operatorActions = Array.isArray(operatorConsole.operator_actions) ? operatorConsole.operator_actions : [];
+  if (operatorActions.length === 0) {
+    dom.operatorActionList.append(
+      queueCard({
+        title: "No operator actions",
+        subtitle: "channel operator-action projection",
+        note: "No action recorded yet.",
+        status: "idle",
+      }),
+    );
+    return;
+  }
+  for (const item of operatorActions.slice(0, 8)) {
+    const scope = [
+      normalizeText(item.agent_id) || "n/a",
+      normalizeText(item.thread_id) || "n/a",
+      normalizeText(item.workitem_id) || "n/a",
+    ].join(" · ");
+    const card = queueCard({
+      title: normalizeText(item.action_type) || "action",
+      subtitle: `${scope} · operator=${normalizeText(item.operator_id) || "unknown"}`,
+      note: `${normalizeText(item.note) || "no note"} · ${item.at ? formatTime(item.at) : "n/a"}`,
+      status: normalizeText(item.status) || "accepted",
+    });
+    dom.operatorActionList.append(card);
+  }
 }
 
 async function sendOperatorAction(scopeDefaults, action, extraBody = {}) {
   await requestJson(ENDPOINTS.operatorAction, {
     method: "POST",
     body: {
-      action,
+      action_type: action,
       operator: scopeDefaults.operatorId,
       channel_id: scopeDefaults.channelId || null,
       thread_id: scopeDefaults.threadId || null,
@@ -874,11 +930,17 @@ function renderRecentActions(operatorConsole) {
     return;
   }
   for (const entry of entries) {
+    const scope = entry.operator_scope || {};
+    const scopeText = [
+      normalizeText(scope.agent_id) || "n/a",
+      normalizeText(scope.thread_id) || "n/a",
+      normalizeText(scope.workitem_id) || "n/a",
+    ].join(" · ");
     const card = queueCard({
       title: normalizeText(entry.action) || "action",
-      subtitle: `${normalizeText(entry.source) || "source"} · ${normalizeText(entry.target) || "target"}`,
-      note: `${entry.note ? `${entry.note} · ` : ""}${entry.at ? formatTime(entry.at) : "n/a"}`,
-      status: normalizeText(entry.status) || "idle",
+      subtitle: `${normalizeText(entry.action_family) || "unknown"} · ${normalizeText(entry.target) || "target"}`,
+      note: `${scopeText} · ${entry.at ? formatTime(entry.at) : "n/a"}`,
+      status: normalizeText(entry.action_family) || "idle",
     });
     dom.recentActionList.append(card);
   }
@@ -886,6 +948,8 @@ function renderRecentActions(operatorConsole) {
 
 function resolveOperatorScopeFromState(operatorConsole, payload) {
   const workspace = operatorConsole?.workspace || {};
+  const workAssignments = Array.isArray(operatorConsole?.work_assignments) ? operatorConsole.work_assignments : [];
+  const primaryAssignment = workAssignments[0] || {};
   const runtimeAgents = Array.isArray(operatorConsole?.runtime_agents) ? operatorConsole.runtime_agents : [];
   const primaryRuntimeAgent = runtimeAgents[0] || {};
   const topic = Array.isArray(payload?.topics) && payload.topics.length > 0 ? payload.topics[0] : null;
@@ -894,10 +958,12 @@ function resolveOperatorScopeFromState(operatorConsole, payload) {
     operatorId: normalizeText(workspace.operator_id) || "shell-operator",
     channelId:
       normalizeText(operatorConsole?.channel?.channel_id) ||
+      normalizeText(primaryAssignment.assigned_channel_id) ||
       normalizeText(primaryRuntimeAgent.assigned_channel_id) ||
       "",
-    threadId: normalizeText(primaryRuntimeAgent.assigned_thread_id) || "",
-    workitemId: normalizeText(primaryRuntimeAgent.assigned_workitem_id) || "",
+    threadId: normalizeText(primaryAssignment.assigned_thread_id) || normalizeText(primaryRuntimeAgent.assigned_thread_id) || "",
+    workitemId:
+      normalizeText(primaryAssignment.assigned_workitem_id) || normalizeText(primaryRuntimeAgent.assigned_workitem_id) || "",
   };
 }
 
