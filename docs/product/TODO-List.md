@@ -26,7 +26,7 @@
 - issue -> room -> run -> session -> worktree lane 主链已存在
 - daemon bridge 可执行本地 prompt
 - memory 列表/详情、version/governance contract 和文件写回已存在
-- auth session / workspace members 基础读取面已存在
+- auth session / workspace members / owner-side roster mutation surface 已存在
 - state SSE 初始快照已存在
 
 这些能力的详细验收见 [Product Checklist](./Checklist.md) 中的 `CHK-01/03/05/10/13/15`。
@@ -63,8 +63,10 @@
 ### GAP-03 完整身份、成员、角色与设备授权
 
 - 现状:
-  - session / members 读取面可见
-  - 邮箱登录、邀请、角色、权限、设备授权未完成
+  - login / logout / session persistence foundation 已站住，`/access` 已消费 live auth/member/role truth
+  - owner-side invite、member role/status mutation 已接进 `/access`
+  - 跨 issue / room / run / inbox / repo / runtime 的 action-level authz matrix 已收平
+  - 设备授权与完整邮箱验证流程仍未完成
 - 相关合同:
   - `CHK-12`
   - `CHK-13`
@@ -74,7 +76,9 @@
 
 - 现状:
   - notifications 对象存在
-  - 浏览器 push、邮件通知、完整 approval center 未完成
+  - approval center lifecycle 已落到 `/inbox`
+  - `/settings` 已接上 browser push / email policy、subscriber model、fanout receipts 与 retry truth
+  - 邀请 / verify / reset password mail template 仍未接到同一 delivery chain
 - 相关合同:
   - `CHK-08`
   - `CHK-11`
@@ -83,21 +87,20 @@
 ### GAP-05 多 Runtime 调度与 Failover
 
 - 现状:
-  - registry / pairing / selection 已出现
-  - scheduler、lease、failover、offline handling 未完成
+  - registry / pairing / selection / scheduler / lease / failover handling 已落地
+  - 当前剩余的 runtime 风险已收敛到 `GAP-01` 的 pairing 冷启动一致性，不再是独立的 scheduler blocker
 - 相关合同:
   - `CHK-14`
 - 优先级: P1
 
-### GAP-06 Stop / Resume / Skill Promotion
+### GAP-06 Long-term Memory Hardening
 
 - 现状:
-  - 当前已有 run 可见性和 memory contract
-  - stop/resume/follow-thread、skill/policy 提升闭环未完成
+  - 当前已有 run stop/resume/follow-thread 人类接管闭环，以及 memory contract、injection preview 与 skill/policy promotion flow
+  - 更重的长期记忆整理引擎、TTL、去重压缩与外部 provider 编排仍未完成
 - 相关合同:
-  - `CHK-09`
   - `CHK-10`
-- 优先级: P1/P2
+- 优先级: P2
 
 ---
 
@@ -106,7 +109,7 @@
 1. 先修 `GAP-01`，同时补 `ops:smoke`，把 Setup 主链和回归门收稳。
 2. 再推进 `GAP-02`，把 GitHub 线从“探测/本地状态”升级到“远端闭环”。
 3. 然后处理 `GAP-03` 与 `GAP-04`，补团队级身份与通知能力。
-4. 最后推进 `GAP-05` 与 `GAP-06`，扩到多 runtime 调度和更完整的人类接管能力。
+4. 最后推进 `GAP-05` 与 `GAP-06`，扩到多 runtime 调度和更重的长期记忆增强。
 
 ---
 

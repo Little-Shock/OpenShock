@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 
+import { usePhaseZeroState } from "@/lib/live-phase0";
+import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
+
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "http://127.0.0.1:8080";
 
 type RepoBindingSnapshot = {
@@ -11,7 +14,6 @@ type RepoBindingSnapshot = {
   provider: string;
   bindingStatus: string;
   authMode: string;
-  preferredAuthMode?: string;
   detectedAt?: string;
   connectionReady: boolean;
   appConfigured: boolean;
@@ -44,16 +46,14 @@ function githubAppLabel(snapshot: RepoBindingSnapshot | null) {
   return "未配置";
 }
 
-function bindingActionLabel(snapshot: RepoBindingSnapshot | null, loading: boolean) {
-  if (loading) return "同步中...";
-  if (snapshot?.preferredAuthMode === "github-app") return "按 GitHub App 同步 Repo Binding";
-  return "同步 Repo Binding";
-}
-
 export function RepoBindingConsole() {
+  const { state } = usePhaseZeroState();
   const [binding, setBinding] = useState<RepoBindingSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canBindRepo = hasSessionPermission(state.auth.session, "repo.admin");
+  const bindStatus = permissionStatus(state.auth.session, "repo.admin");
+  const bindBoundary = permissionBoundaryCopy(state.auth.session, "repo.admin");
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +84,9 @@ export function RepoBindingConsole() {
   }, []);
 
   async function handleBindRepo() {
+    if (!canBindRepo) {
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -115,10 +118,7 @@ export function RepoBindingConsole() {
   const badge = bindingBadge(binding);
 
   return (
-    <section
-      data-testid="setup-repo-binding"
-      className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white p-5 shadow-[6px_6px_0_0_var(--shock-lime)]"
-    >
+    <section data-testid="setup-repo-binding" className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white p-5 shadow-[6px_6px_0_0_var(--shock-lime)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">
@@ -145,12 +145,12 @@ export function RepoBindingConsole() {
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">仓库</p>
           <p className="mt-2 font-display text-xl font-semibold break-all">
-            {valueOrFallback(binding?.repo, "等待扫描")}
+            <span data-testid="setup-repo-binding-repo">{valueOrFallback(binding?.repo, "等待扫描")}</span>
           </p>
         </div>
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">分支</p>
-          <p className="mt-2 font-display text-xl font-semibold">
+          <p data-testid="setup-repo-binding-branch" className="mt-2 font-display text-xl font-semibold">
             {valueOrFallback(binding?.branch, "等待扫描")}
           </p>
         </div>
@@ -164,12 +164,6 @@ export function RepoBindingConsole() {
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">绑定模式</p>
           <p className="mt-2 font-display text-xl font-semibold">
             {valueOrFallback(binding?.authMode, "待扫描")}
-          </p>
-        </div>
-        <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">推荐路径</p>
-          <p className="mt-2 font-display text-xl font-semibold">
-            {valueOrFallback(binding?.preferredAuthMode, "待扫描")}
           </p>
         </div>
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
@@ -245,25 +239,28 @@ export function RepoBindingConsole() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-          当前按钮会重新同步 repo binding 与 GitHub 安装态；如果 server 返回 blocked contract，这里直接展示，不再退回旧文案。
-        </p>
+        <div className="space-y-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+            当前按钮会重新同步 repo binding 与 GitHub 安装态；如果 server 返回 blocked contract，这里直接展示，不再退回旧文案。
+          </p>
+          <p data-testid="setup-repo-binding-authz" className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+            {bindStatus}
+          </p>
+          {!canBindRepo ? <p className="text-sm leading-6 text-[var(--shock-pink)]">{bindBoundary}</p> : null}
+        </div>
         <button
           data-testid="setup-repo-bind-button"
           type="button"
           onClick={handleBindRepo}
-          disabled={loading}
+          disabled={loading || !canBindRepo}
           className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {bindingActionLabel(binding, loading)}
+          {loading ? "同步中..." : "同步 Repo Binding"}
         </button>
       </div>
 
       {error ? (
-        <div
-          data-testid="setup-repo-binding-error"
-          className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white"
-        >
+        <div data-testid="setup-repo-binding-error" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
           {error}
         </div>
       ) : null}

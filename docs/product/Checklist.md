@@ -27,23 +27,25 @@
   - chat-first 壳的主要路由
   - issue -> room -> run -> session -> worktree lane 基线
   - daemon bridge 同步执行
+  - Setup 初始化主链与 headed 浏览器回放
+  - 冷启动 pairing 回落与 smoke gate 拦截
+  - 真实远端 PR browser loop 与 signed webhook replay
   - 文件级记忆 scaffold 与 API 读取
-  - auth/session/member 基础读取面
+  - auth/session/member 基础读取与 invite/member role lifecycle
   - state SSE 初始快照
 - 部分完成主链:
-  - Setup 初始化链路
   - Agent 一等公民模型
-  - Run/PR/Inbox 真相收口
   - Blocked / approval 决策面
-  - runtime 注册与 pairing
+  - 通知与恢复触达
+  - 记忆治理与 skill/policy 提升
+  - 多 runtime 调度与 failover
   - 执行隔离与权限控制
 - 主要 GAP:
-  - runtime pairing 冷启动一致性缺口
-  - GitHub App / webhook / 真实远端 PR 同步
-  - 邮箱登录 / 完整成员角色权限
-  - 生产级通知与恢复触达
-  - 多 runtime 调度器与 failover
-  - stop / resume / follow-thread / skill promotion
+  - GitHub App installation-complete 后的 live webhook / repo 持续同步
+  - 设备授权 / 完整邮箱验证 / 更完整成员权限链路
+  - 更细粒度通知策略与跨设备恢复触达
+  - destructive action approval、secrets 分层、越界写保护
+  - 更重的长期记忆整理与外部 provider 编排
 
 ---
 
@@ -58,9 +60,10 @@
   - [x] `Chat / Board / Inbox / Issues / Rooms / Runs / Agents / Setup / Settings` 已有真实页面
   - [x] OpenShock 已经是 chat-first 壳，而不是单页看板
   - [x] 主要页面可在浏览器走查中打开
+  - [x] room / run 现在已有真实的 `stop / resume / follow-thread` 控制面，不再只停在协作文案
 - 当前 GAP:
   - [ ] `DM / Machine / Topic` 仍未形成完整的一等入口
-  - [ ] Slock 式 presence、暂停/恢复、follow thread 还未产品化
+  - [ ] Slock 式 presence 与跨 channel/room 的 follow-thread 编排还未完整产品化
 - 对应 Test Cases: `TC-001` `TC-007` `TC-018`
 
 ### CHK-02 Agent 一等公民模型
@@ -129,9 +132,10 @@
 - 已落地:
   - [x] run detail 能展示 runtime、branch/worktree、执行日志等信息
   - [x] bridge 执行链已能跑通同步 prompt
+  - [x] room / run 已能真实 stop / resume / follow-thread，并把 paused state 回写到同一条执行真相
 - 当前 GAP:
   - [ ] Topic 仍主要隐含在 room/run 中，未形成明确产品对象
-  - [ ] stop / resume / follow-thread / token-quota 可观测性尚未完成
+  - [ ] token-quota 与更细粒度执行可观测性尚未完成
 - 对应 Test Cases: `TC-006` `TC-007` `TC-018`
 
 ### CHK-07 工作流 D: PR 与 Review 闭环
@@ -146,10 +150,11 @@
   - [x] GitHub App-backed create / sync / merge 与 review-decision failure path 已有 contract tests
   - [x] Setup 已能展示 GitHub App preferred auth path、missing fields、installation URL 与“安装后如何回来”的 onboarding 提示
   - [x] repo binding 在 preferred path=`github-app` 且 installation 未完成时会返回显式 blocked contract，而不是静默退回旧路径
+  - [x] signed webhook replay harness 已可通过真实 HTTP 请求回放 review / comment / check / merge，并验证 failure-path observability
+  - [x] headed browser harness 已在安全 sandbox base branch 上完成真实远端 PR create / sync / merge 闭环，并验证 no-auth failure path 的 UI / inbox / room blocked 可见性
 - 当前 GAP:
-  - [ ] GitHub App onboarding 的 blocked-path 浏览器回放已补齐，但 installation 完成后的 webhook / live repo 持续同步仍未实机验证
-  - [ ] webhook / live repo 环境下的持续同步仍缺少本轮实机验证
-- 对应 Test Cases: `TC-010` `TC-015` `TC-016`
+  - [ ] GitHub App installation-complete 回跳后的 live webhook / repo 持续同步仍缺少本轮实机验证
+- 对应 Test Cases: `TC-010` `TC-015` `TC-016` `TC-022` `TC-025` `TC-026`
 
 ### CHK-08 工作流 E: Blocked 与人工纠偏
 
@@ -158,9 +163,9 @@
 - 当前状态: 部分完成
 - 已落地:
   - [x] Inbox 已能展示 blocked / approval / review 类卡片
+  - [x] `/inbox` 已升级成 approval center，直接消费 `/v1/approval-center` 的 filter / unread / recent lifecycle，并能跳回 Room / Run / PR context
   - [x] 未登录与 viewer 权限已验证 401/403 保护
 - 当前 GAP:
-  - [ ] 本轮没有完整回放 Inbox 决策 mutation
   - [ ] review change-request / merge 仍需避免远端副作用并补充安全测试
 - 对应 Test Cases: `TC-010` `TC-012`
 
@@ -168,11 +173,14 @@
 
 - PRD 来源: 十.工作流 F
 - 优先级: P1
-- 当前状态: 未完成
+- 当前状态: 已完成
 - 已落地:
-  - [ ] 暂无可验收的完整 stop / resume / recover 产品闭环
+  - [x] `POST /v1/runs/:id/control` 已支持 `stop / resume / follow_thread`
+  - [x] room / run 控制面会把 run / session / issue / room / inbox 同步写回同一条状态链
+  - [x] paused run 会冻结普通 room composer，避免普通消息把暂停态悄悄恢复
+  - [x] `pnpm test:headed-stop-resume-follow-thread` 已完成 browser exact replay，并验证 `/inbox` recent ledger 写回
 - 当前 GAP:
-  - [ ] 缺少 stop / resume 控制面、UI 入口、状态事件和恢复语义
+  - [ ] 更重的 multi-runtime scheduler / failover / recover 继续留在 `CHK-14`，不回灌当前 stop/resume contract
 - 对应 Test Cases: `TC-018`
 
 ### CHK-10 工作流 G: 记忆回收、注入与提升
@@ -184,21 +192,25 @@
   - [x] `MEMORY.md`、`notes/`、`decisions/` 与 `.openshock/agents` 已进入写回路径
   - [x] memory 列表与详情接口可读
   - [x] memory artifact 已有 version / governance / detail contract，并有 store/api tests
+  - [x] `/memory` 现在直接消费 `/v1/memory-center`，可展示 injection policy、next-run preview、promotion queue 与 governed ledgers
+  - [x] 高价值 memory item 已可经人工 review 提升为 `Skill` / `Policy`，并回写 `notes/skills.md`、`notes/policies.md`
 - 当前 GAP:
-  - [ ] 记忆注入策略、整理策略、skill/policy 提升流程未完成
-  - [ ] 长期记忆引擎仍停留在设计层
-- 对应 Test Cases: `TC-013` `TC-019`
+  - [ ] 更重的后台整理任务（去重、压缩、打标签、TTL）仍未完成
+  - [ ] 长期记忆引擎与外部 provider 编排仍停留在设计层
+- 对应 Test Cases: `TC-019` `TC-023`
 
 ### CHK-11 工作流 H: 邀请、通知与恢复触达
 
 - PRD 来源: 十.工作流 H、十三.5
 - 优先级: P1
-- 当前状态: 未完成
+- 当前状态: 部分完成
 - 已落地:
   - [x] notifications 基础对象和接口已经出现
+  - [x] `/settings` 现在直接消费 `/v1/notifications`，可写 workspace browser/email policy、current browser subscriber、email subscriber，并展示 latest worker receipts
+  - [x] browser push / email fanout 已能把 blocked / review / approval 信号主动推出去，失败 / retry 也有 explicit `lastError` / receipt truth
 - 当前 GAP:
-  - [ ] 邀请、邮箱验证、密码重置、Browser Push、邮件通知都未成产品闭环
-  - [ ] 高优先级升级和恢复触达机制缺少真实发送链
+  - [ ] 邀请、邮箱验证、密码重置仍未接到同一 notification template / delivery chain
+  - [ ] @提及、mailbox 新消息、跨设备恢复触达等更细粒度通知策略仍未补齐
 - 对应 Test Cases: `TC-017`
 
 ### CHK-12 工作流 I: 执行隔离与权限控制
@@ -210,22 +222,28 @@
   - [x] worktree 是当前默认隔离单元
   - [x] 本地 CLI 通过 daemon bridge 执行
   - [x] issue 创建类操作具备基本 401/403 权限防护
+  - [x] issue / room / run / inbox / repo / runtime 的关键写入口已按 live session permission 进入 allow / disable split
 - 当前 GAP:
   - [ ] destructive action approval、secrets 分层、越界写保护还未系统化产品化
   - [ ] 沙盒能力目前仍主要继承本地环境
-- 对应 Test Cases: `TC-012` `TC-020`
+- 对应 Test Cases: `TC-011` `TC-024` `TC-027`
 
 ### CHK-13 身份、成员、角色与仓库授权
 
 - PRD 来源: 十三.5、十八.8
 - 优先级: P1
-- 当前状态: 未完成
+- 当前状态: 部分完成
 - 已落地:
   - [x] auth session 与 workspace members API 可读取
+  - [x] `/access` 已消费 live auth session / members / roles truth，并提供 email login / logout 入口
+  - [x] auth session persistence 已有 store test 与 browser reload evidence
+  - [x] owner 已可在 `/access` 直接 invite 成员，并 live 调整 member role / status
+  - [x] invited member 首次登录会转成 `active`，role 变化会同步反映到 session / permissions / browser probes
+  - [x] Board / Room / Inbox / Setup 关键动作已和 `issue.create` / `room.reply` / `run.execute` / `inbox.review` / `inbox.decide` / `repo.admin` / `runtime.manage` / `pull_request.*` 真值对齐
 - 当前 GAP:
-  - [ ] 邮箱登录、邀请、成员管理、角色权限、设备授权都未站住
+  - [ ] 设备授权与完整邮箱验证流程仍未产品化
   - [ ] GitHub 仍主要是 readiness probe，不是完整授权模型
-- 对应 Test Cases: `TC-014` `TC-016`
+- 对应 Test Cases: `TC-014` `TC-016` `TC-024`
 
 ### CHK-14 Runtime 注册、心跳与调度
 
@@ -236,8 +254,11 @@
   - [x] runtime registry、selection、pairing 接口存在
   - [x] daemon heartbeat 已接入 server 状态
   - [x] pairing 冷启动一致性已覆盖 `offline` 与 `stale` 窗口
+  - [x] server 现在会按 active lease 压力给出显式 runtime scheduler 决策，并把 next-lane truth 带进 `/v1/state` 与 `/v1/runtime/registry`
+  - [x] `/setup` 与 `/agents` 现在会直接消费 runtime scheduler / lease / failover truth，不再停在旧的 placeholder 注释窗口
+  - [x] offline selected runtime 现在会显式 failover 到可调度的 least-loaded runtime，并把 failover reason 回写到 run / session truth
 - 当前 GAP:
-  - [ ] 多 runtime 调度、failover、lease/conflict guard 尚未完成
+  - [ ] lease/conflict guard 与更细粒度 scheduler policy 仍需继续加强
 - 对应 Test Cases: `TC-003` `TC-004` `TC-020`
 
 ### CHK-15 成功指标、验收门与观测
@@ -262,7 +283,7 @@
 1. 先修 `CHK-04/CHK-14` 的 runtime pairing 冷启动一致性。
 2. 再把 `CHK-15` 的 smoke gate 补到能识别 pairing 漂移。
 3. 然后按 `CHK-07/CHK-13/CHK-11` 推进 GitHub 授权、成员权限、通知链。
-4. 最后再做 `CHK-09/CHK-10` 这类 stop/resume、skill promotion、长期记忆增强。
+4. 最后再做 `CHK-14/CHK-15` 这类多 runtime 调度与安全 guard，以及更重的长期记忆增强。
 
 ---
 

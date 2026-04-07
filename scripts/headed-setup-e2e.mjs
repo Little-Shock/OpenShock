@@ -364,7 +364,7 @@ async function main() {
   await capture(page, "setup-binding-and-github");
 
   await page.getByTestId("setup-runtime-daemon-url").fill(daemonURL);
-  await page.getByTestId("setup-runtime-pair-button").click();
+  await page.getByTestId("setup-runtime-pair").click();
   await page.waitForFunction(
     () => document.querySelector('[data-testid="setup-runtime-pairing-value"]')?.textContent?.includes("已配对"),
     undefined,
@@ -407,7 +407,7 @@ async function main() {
   await page.getByTestId("setup-bridge-provider").selectOption(selectedProvider);
 
   await page.getByTestId("setup-bridge-prompt").fill("Please reply with one short sentence confirming the setup bridge is online.");
-  await page.getByTestId("setup-bridge-submit").click();
+  await page.getByTestId("setup-runtime-exec-submit").click();
   const bridgeResultHandle = await page.waitForFunction(
     () => {
       const value = document.querySelector('[data-testid="setup-bridge-output"]')?.textContent?.trim();

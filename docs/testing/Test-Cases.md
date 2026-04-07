@@ -1,7 +1,7 @@
 # OpenShock Test Cases
 
 **版本:** 1.0
-**更新日期:** 2026 年 4 月 7 日
+**更新日期:** 2026 年 4 月 6 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
 ---
@@ -135,7 +135,7 @@
 ## TC-010 Inbox 决策与 PR 收口
 
 - 业务目标: 确认 blocked / approval / review 卡片可以成为人类收口面。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-07` `CHK-08`
 - 前置条件: 系统中存在 inbox 卡片，且不会触发真实远端 GitHub 变更。
 - 测试步骤:
@@ -143,7 +143,7 @@
   2. 对本地安全的卡片执行 `Approve`、`Defer` 或 `Resolve`。
   3. 检查状态是否回写到相关对象。
 - 预期结果: Inbox 能完成本地决策闭环，并能跳回上下文。
-- 业务结论: 需要下一轮安全自动化回放。
+- 业务结论: 2026 年 4 月 7 日 `TKT-10` 新增 `pnpm test:headed-approval-center-lifecycle`，在本地安全 state 上完成 approval / blocked / review lifecycle 的浏览器级回放；报告记录了 `/inbox` 直接消费 `/v1/approval-center`、Room / Run / PR back-link、recent resolution ledger，以及 `run_runtime_01`、`run_memory_01`、`pr-inbox-22` / `OPS-19` 的状态回写，因此这条本地决策闭环当前已可独立复核并通过。
 
 ## TC-011 未登录/低权限写入保护
 
@@ -168,7 +168,7 @@
   1. 访问 `/access`。
   2. 请求 `/v1/auth/session` 与 `/v1/workspace/members`。
 - 预期结果: 页面和 API 都能返回当前会话与成员基线数据。
-- 业务结论: 读取面已具备，但完整身份系统仍是 GAP。
+- 业务结论: 2026 年 4 月 7 日 `TKT-07` 已把 auth session / member / role truth 正式接进 `/access` 前台；页面不再停在静态边界说明，而会直接显示当前 session、member roster、role definitions 与权限差异。基础读取面继续保持 Pass。
 
 ## TC-013 Memory 列表与详情
 
@@ -185,15 +185,15 @@
 ## TC-014 邮箱登录、成员角色、邀请
 
 - 业务目标: 确认团队级身份体系已经产品化。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-02` `CHK-13`
-- 前置条件: 存在完整 auth / invite / role management 实现。
+- 前置条件: server 在线，当前 session 具备 owner 身份。
 - 测试步骤:
-  1. 邀请成员加入 workspace。
-  2. 走邮箱验证与登录。
-  3. 调整角色并验证访问权限。
-- 预期结果: 团队成员身份链路完整闭环。
-- 业务结论: 当前仓库无可验收闭环，属于明确 GAP。
+  1. 在 `/access` 以 owner 邀请成员加入 workspace。
+  2. 调整其 role / status，并用 quick login 验证首次登录激活。
+  3. 验证 suspended 成员会被 fail-closed 挡回，而不是静默放行。
+- 预期结果: 团队成员 invite / role / status / login 生命周期形成真实闭环。
+- 业务结论: 2026 年 4 月 7 日 `TKT-08` 新增 `pnpm test:headed-workspace-member-role`，在浏览器里完成 `invite -> role change -> member login activation -> suspend blocked` 回放；owner-side `/access` roster mutation 已直接接到 live API，invited member 首次登录会转成 `active`，suspended login 会显式返回 `workspace member is suspended`。设备授权与完整邮箱验证流程继续留在后续范围，但这条团队成员基础生命周期当前已可独立复核并通过。
 
 ## TC-015 GitHub App 安装与 Webhook
 
@@ -206,12 +206,12 @@
   2. 触发 webhook 事件。
   3. 检查 state / inbox / room / PR 是否同步更新。
 - 预期结果: GitHub 事件可以持续同步回 OpenShock。
-- 业务结论: 2026 年 4 月 7 日已补齐 Setup 中 installation pending 的 missing fields、installation action、回流步骤和 repo binding blocked contract 的浏览器级验收；但 webhook ingest / 签名校验 / 事件回流仍未收口，所以这条完整安装 + webhook 用例继续保持 Blocked。
+- 业务结论: 2026 年 4 月 7 日已同时补齐 installation pending 的 blocked-path 浏览器验收，以及 `TKT-05` 的 signed webhook exact replay harness；但它们仍不是 installation-complete 后的真实 GitHub callback，所以这条完整安装 + webhook 用例继续保持 Blocked。
 
 ## TC-016 真实远端 PR 创建、同步与合并
 
 - 业务目标: 确认 PR 真相不止停留在本地状态对象。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-07`
 - 前置条件: 存在真实远端仓库与安全测试环境。
 - 测试步骤:
@@ -219,24 +219,25 @@
   2. 观察远端 PR 是否创建。
   3. 执行 review / merge 并检查状态回流。
 - 预期结果: PR 生命周期能在 OpenShock 与 GitHub 间双向同步。
-- 业务结论: 当前不具备可安全验收的闭环。
+- 业务结论: 2026 年 4 月 7 日 `TKT-06` 新增 `pnpm test:headed-remote-pr-loop`，在安全 sandbox base branch 上完成 `/setup -> issue -> room -> remote PR create -> merge` 的浏览器级实机回放；报告已记录真实远端 PR `#9` 从 `OPEN -> MERGED`，且 safe base / remote head 清理通过，因此这条真实远端 PR 闭环当前已可独立复核并通过。
 
 ## TC-017 浏览器 Push / 邮件通知
 
 - 业务目标: 确认高时效事件能主动触达，而不是等人刷新页面。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-11`
 - 前置条件: 存在通知发送器、模板与订阅模型。
 - 测试步骤:
-  1. 触发 blocked 或 approval 事件。
-  2. 检查浏览器 Push 或邮件是否送达。
-- 预期结果: 高优先级事件有可靠通知。
-- 业务结论: 当前仍停留在对象与文档层。
+  1. 在 `/settings` 写入 workspace browser/email policy，并接入 current browser / email subscribers。
+  2. 先用 invalid email target 执行一次 fanout，确认 failed receipts 与 subscriber `lastError` 显式可见。
+  3. 修正 email target 后重跑 fanout，确认 browser push / email receipts 转成 delivered。
+- 预期结果: 高时效事件有可靠通知，失败和重试状态也能被人类显式看到。
+- 业务结论: 2026 年 4 月 7 日 `TKT-11` 新增 `pnpm test:headed-notification-preference-delivery`，在 headed browser 里把 `/settings` 上的 workspace policy、current browser subscriber、email subscriber、fanout receipts 与 retry contract 串成同一条 exact replay。invalid email target 会 fail closed 并留下 `lastError` / failed receipts，修正为 `ops@openshock.dev` 后 same-page retry 会转成 delivered；current browser subscriber 也会把 sent browser receipts 落成 local notification。当前这条 browser push / email delivery loop 已可独立复核并通过；invite / verify / reset password 继续留在后续身份链路范围。
 
 ## TC-018 Stop / Resume / Follow Thread
 
 - 业务目标: 确认人类可以在执行中真正接管、暂停和恢复。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-01` `CHK-06` `CHK-09`
 - 前置条件: 存在 stop / resume / follow-thread UI 与后端状态机。
 - 测试步骤:
@@ -244,12 +245,12 @@
   2. 执行暂停、恢复、接续线程。
   3. 检查 room、run、inbox 是否同步更新。
 - 预期结果: 人类纠偏能力成为产品能力，而不是文案。
-- 业务结论: 当前尚无完整闭环。
+- 业务结论: 2026 年 4 月 7 日 `TKT-13` 新增 `POST /v1/runs/:id/control`、room / run 控制面与 `pnpm test:headed-stop-resume-follow-thread`。当前浏览器 exact replay 已在 `/rooms/room-runtime` 和 `/runs/run_runtime_01` 上独立验证 `stop -> follow_thread -> resume`，并确认 paused run 会冻结普通 room composer、follow-thread 会跨 resume 保持、`/inbox` recent ledger 会按顺序写回 `Run 已暂停` / `已锁定当前线程` / `Run 已恢复`。这条人类接管闭环当前已可独立复核并通过。
 
 ## TC-019 记忆注入与 Skill / Policy 提升
 
 - 业务目标: 确认记忆不仅可写回，也能被检索、提升和治理。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-10`
 - 前置条件: 存在 memory injection、promotion、review 机制。
 - 测试步骤:
@@ -257,12 +258,12 @@
   2. 在下一条任务中验证记忆注入。
   3. 将高价值经验提升为 skill 或 policy。
 - 预期结果: 记忆形成可治理的增强循环。
-- 业务结论: 当前只站住写回 scaffold。
+- 业务结论: 2026 年 4 月 7 日 `TKT-12` 新增 `/v1/memory-center`、`pnpm test:headed-memory-governance` 和对应浏览器级 report；当前 `memory` 页已能直接展示 session-level injection preview、policy mutation、skill/policy promotion queue，并把 approve 后的 `notes/skills.md`、`notes/policies.md` 重新带回 next-run preview，所以这条 memory injection / governance / promotion loop 当前已可独立复核并通过。
 
 ## TC-020 多 Runtime 调度与 Failover
 
 - 业务目标: 确认系统可以管理多个 runtime，而不是只有单机配对。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-12` `CHK-14`
 - 前置条件: 存在多个活跃 runtime、scheduler 与 selection 策略。
 - 测试步骤:
@@ -270,7 +271,7 @@
   2. 创建 run 并观察调度决策。
   3. 模拟一个 runtime offline，检查 failover。
 - 预期结果: 调度、离线态、切换都可见且可验证。
-- 业务结论: 当前仅有 registry/pairing 基线，离完整调度还有距离。
+- 业务结论: 2026 年 4 月 7 日 `TKT-14` 新增 lease-aware runtime scheduler、显式 failover summary，以及 `pnpm test:headed-multi-runtime-scheduler-failover` 浏览器级回放；当前 `/setup` 与 `/agents` 已能直接展示 next-lane、active leases、scheduler strategy，selected runtime offline 时也会显式 failover 到 least-loaded runtime，并把 failover reason 回写到 run detail truth，所以这条 multi-runtime scheduler / failover 验证当前已可独立复核并通过。
 
 ## TC-021 Release Gate 对 pairing 漂移的拦截
 
@@ -313,26 +314,26 @@
 ## TC-024 Role / Permission Action Matrix
 
 - 业务目标: 确认不同角色对 issue、room、run、repo binding、PR、inbox 的动作边界清楚。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-12` `CHK-13`
 - 前置条件: 存在 admin / reviewer / viewer 三种角色。
 - 测试步骤:
   1. 分别以三种角色访问关键写接口和对应前端入口。
   2. 检查允许、拒绝、禁用状态是否一致。
 - 预期结果: 权限矩阵在 UI 和 API 两侧一致，不存在越权写入。
-- 业务结论: 作为 `TKT-08/TKT-09` 的 gate，当前还未执行。
+- 业务结论: 2026 年 4 月 7 日 `TKT-09` 把 Board / Room / Inbox / Setup 的关键 mutation 入口正式接到 live auth session permission truth，并新增 `pnpm test:headed-action-authz-matrix` 独立回放 owner / member / viewer / signed-out 四个窗口下的前台 enable / disable / deny state；同次还用 targeted `go test ./internal/api -run 'TestMutationRoutesRequireActiveAuthSession|TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations|TestViewerRoleCannotMutateProtectedSurfaces' -count=1` 锁住 `/v1/issues`、`/v1/rooms/:id/messages`、`/v1/exec`、`/v1/inbox/:id`、`/v1/repo/binding`、`/v1/runtime/*`、`/v1/pull-requests/:id` 的 allow/deny contract。当前这条跨 issue / room / run / inbox / repo / runtime 的 action matrix 已可独立复核并通过。
 
 ## TC-025 GitHub Webhook Replay / Review Sync
 
 - 业务目标: 确认 webhook 事件可以把 review / comment / merge 状态同步回 OpenShock。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-07`
 - 前置条件: 存在 webhook fixture 或可控 replay 环境。
 - 测试步骤:
   1. 回放 pull request、review、comment、merge 事件。
   2. 检查 state / inbox / room / pull request 是否更新。
 - 预期结果: webhook 事件被规范化、验签、写回，且失败态可见。
-- 业务结论: 作为 `TKT-05/TKT-06` 的 gate，当前还未执行实机验证。
+- 业务结论: 2026 年 4 月 7 日新增 `pnpm test:webhook-replay`，会起临时 `openshock-server` 并对 `/v1/github/webhook` 回放 signed review / comment / check / merge 事件，同时验证 bad-signature 与 untracked PR failure contract。当前这条 replay / review-sync 用例已可独立复核并通过。
 
 ## TC-026 Headed Setup 到 PR Journey
 
@@ -345,7 +346,7 @@
   2. 创建一条 issue，进入 room / run。
   3. 验证 PR 入口处于可继续推进状态。
 - 预期结果: Setup 到执行 lane 的用户旅程可稳定自动化回放。
-- 业务结论: 2026 年 4 月 7 日的 headed Chromium harness 已稳定回放 `Setup -> Issue -> Room`，并验证 room 里的 PR 入口保持 `发起 PR / 未创建 / enabled` 的可继续推进状态；同日新增的 GitHub App onboarding 场景也已验证 Setup 在 installation 未完成时能展示 missing fields / installation action，并把 repo binding 保持在 blocked contract。真实远端 PR create/sync/merge 仍由 `TKT-05/TKT-06` 继续收口。
+- 业务结论: 2026 年 4 月 7 日已先用 headed Chromium harness 稳定回放 `Setup -> Issue -> Room`，验证 room 内 PR 入口保持可继续推进状态；同日 `TKT-06` 又把 `/setup -> issue -> room -> remote PR create -> merge` 接成真实远端浏览器闭环，并把 no-auth failure path 显式打到 room / inbox / blocked surface。这条 Setup 到 PR journey 的 headed 回放当前已可独立复核并通过；`TC-015` 的 installation-complete live callback 仍留在后续远端范围。
 
 ## TC-027 Sandbox / Destructive Approval Guard
 
@@ -357,4 +358,4 @@
   1. 触发 destructive git 或越界写入动作。
   2. 检查系统是否拦截并生成 approval item。
 - 预期结果: 高风险动作不会直接执行，系统产生显式审批记录。
-- 业务结论: 作为 `TKT-09/TKT-15` 的安全 gate，当前还未建立。
+- 业务结论: 2026 年 4 月 7 日 `TKT-09` 已把 role / permission action matrix 收进真实前台与后端 guard，但 destructive git、越界写入、敏感凭证使用的 approval-required contract 仍未系统化产品化；因此这条安全 gate 继续保留 `Not Run`，留给 `TKT-15` 继续吸收。

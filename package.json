@@ -18,11 +18,21 @@
     "verify:go": "pnpm verify:server && pnpm verify:daemon",
     "verify:release": "bash ./scripts/release-gate.sh repo",
     "verify:release:full": "bash ./scripts/release-gate.sh all",
+    "test:headed-setup": "node ./scripts/headed-setup-e2e.mjs",
+    "test:headed-github-onboarding": "node ./scripts/headed-github-app-onboarding.mjs",
+    "test:headed-session-foundation": "node ./scripts/headed-session-foundation.mjs",
+    "test:headed-workspace-member-role": "node ./scripts/headed-workspace-member-role.mjs",
+    "test:headed-action-authz-matrix": "node ./scripts/headed-action-authz-matrix.mjs",
+    "test:headed-approval-center-lifecycle": "node ./scripts/headed-approval-center-lifecycle.mjs",
+    "test:headed-memory-governance": "node ./scripts/headed-memory-governance.mjs",
+    "test:headed-notification-preference-delivery": "node ./scripts/headed-notification-preference-delivery.mjs",
+    "test:headed-stop-resume-follow-thread": "node ./scripts/headed-stop-resume-follow-thread.mjs",
+    "test:headed-multi-runtime-scheduler-failover": "node ./scripts/headed-multi-runtime-scheduler-failover.mjs",
+    "test:headed-remote-pr-loop": "node ./scripts/headed-remote-pr-browser-loop.mjs",
+    "test:webhook-replay": "node ./scripts/github-webhook-replay.mjs",
     "verify:server": "bash -lc 'root=$(pwd); cd apps/server && OPENSHOCK_WORKSPACE_ROOT=\"${OPENSHOCK_WORKSPACE_ROOT:-$root}\" \"$root/scripts/go.sh\" test ./...'",
     "verify:daemon": "bash -lc 'root=$(pwd); cd apps/daemon && \"$root/scripts/go.sh\" test ./...'",
-    "ops:smoke": "bash ./scripts/ops-smoke.sh",
-    "test:headed-setup": "node ./scripts/headed-setup-e2e.mjs",
-    "test:headed-github-onboarding": "node ./scripts/headed-github-app-onboarding.mjs"
+    "ops:smoke": "bash ./scripts/ops-smoke.sh"
   },
   "devDependencies": {
     "playwright-core": "^1.59.1"

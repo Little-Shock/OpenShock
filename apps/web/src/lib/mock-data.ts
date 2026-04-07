@@ -1,7 +1,7 @@
 export type AppTab = "chat" | "rooms" | "inbox" | "board";
 
 export type Priority = "critical" | "high" | "medium";
-export type RunStatus = "queued" | "running" | "blocked" | "review" | "done";
+export type RunStatus = "queued" | "running" | "paused" | "blocked" | "review" | "done";
 export type PresenceState = "running" | "idle" | "blocked";
 export type MachineState = "online" | "busy" | "offline";
 export type InboxKind = "blocked" | "approval" | "review" | "status";
@@ -23,6 +23,44 @@ export type WorkspaceSnapshot = {
   lastPairedAt: string;
   browserPush: string;
   memoryMode: string;
+};
+
+export type AuthSession = {
+  id: string;
+  memberId?: string;
+  email?: string;
+  name?: string;
+  role?: string;
+  status: string;
+  authMethod?: string;
+  signedInAt?: string;
+  lastSeenAt?: string;
+  permissions: string[];
+};
+
+export type WorkspaceRole = {
+  id: string;
+  label: string;
+  summary: string;
+  permissions: string[];
+};
+
+export type WorkspaceMember = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  source?: string;
+  addedAt?: string;
+  lastSeenAt?: string;
+  permissions: string[];
+};
+
+export type AuthSnapshot = {
+  session: AuthSession;
+  roles: WorkspaceRole[];
+  members: WorkspaceMember[];
 };
 
 export type Channel = {
@@ -96,6 +134,8 @@ export type Run = {
   roomId: string;
   topicId: string;
   status: RunStatus;
+  followThread?: boolean;
+  controlNote?: string;
   runtime: string;
   machine: string;
   provider: string;
@@ -160,6 +200,47 @@ export type RuntimeRegistryRecord = {
   heartbeatTimeoutSeconds?: number;
 };
 
+export type RuntimeLeaseRecord = {
+  leaseId: string;
+  sessionId?: string;
+  runId?: string;
+  roomId?: string;
+  runtime: string;
+  machine: string;
+  owner?: string;
+  provider?: string;
+  status?: string;
+  branch?: string;
+  worktreeName?: string;
+  worktreePath?: string;
+  cwd?: string;
+  summary?: string;
+};
+
+export type RuntimeSchedulerCandidate = {
+  runtime: string;
+  machine: string;
+  state: string;
+  pairingState: string;
+  schedulable: boolean;
+  selected: boolean;
+  preferred: boolean;
+  assigned: boolean;
+  activeLeaseCount: number;
+  reason?: string;
+};
+
+export type RuntimeScheduler = {
+  selectedRuntime: string;
+  preferredRuntime: string;
+  assignedRuntime: string;
+  assignedMachine: string;
+  strategy: string;
+  failoverFrom?: string;
+  summary: string;
+  candidates: RuntimeSchedulerCandidate[];
+};
+
 export type InboxItem = {
   id: string;
   title: string;
@@ -169,6 +250,49 @@ export type InboxItem = {
   summary: string;
   action: string;
   href: string;
+};
+
+export type InboxDecision =
+  | "approved"
+  | "deferred"
+  | "resolved"
+  | "merged"
+  | "changes_requested";
+
+export type ApprovalCenterDeliveryStatus =
+  | "ready"
+  | "suppressed"
+  | "blocked"
+  | "unrouted";
+
+export type ApprovalCenterItem = {
+  id: string;
+  kind: InboxKind;
+  priority: "critical" | "high" | "info";
+  room: string;
+  roomId?: string;
+  runId?: string;
+  title: string;
+  summary: string;
+  action: string;
+  href: string;
+  time: string;
+  unread: boolean;
+  decisionOptions: InboxDecision[];
+  deliveryStatus: ApprovalCenterDeliveryStatus;
+  deliveryTargets: number;
+  blockedDeliveries: number;
+};
+
+export type ApprovalCenterState = {
+  openCount: number;
+  approvalCount: number;
+  blockedCount: number;
+  reviewCount: number;
+  unreadCount: number;
+  recentCount: number;
+  signals: ApprovalCenterItem[];
+  recent: ApprovalCenterItem[];
 };
 
 export type PullRequest = {
@@ -181,7 +305,11 @@ export type PullRequest = {
   roomId: string;
   runId: string;
   branch: string;
+  baseBranch?: string;
   author: string;
+  provider?: string;
+  url?: string;
+  reviewDecision?: string;
   reviewSummary: string;
   updatedAt: string;
 };
@@ -193,6 +321,8 @@ export type Session = {
   topicId: string;
   activeRunId: string;
   status: RunStatus;
+  followThread?: boolean;
+  controlNote?: string;
   runtime: string;
   machine: string;
   provider: string;
@@ -244,6 +374,7 @@ export type SettingsSection = {
 
 export type PhaseZeroState = {
   workspace: WorkspaceSnapshot;
+  auth: AuthSnapshot;
   channels: Channel[];
   channelMessages: Record<string, Message[]>;
   issues: Issue[];
@@ -256,6 +387,8 @@ export type PhaseZeroState = {
   inbox: InboxItem[];
   pullRequests: PullRequest[];
   sessions: Session[];
+  runtimeLeases: RuntimeLeaseRecord[];
+  runtimeScheduler: RuntimeScheduler;
   memory: MemoryArtifact[];
 };
 
@@ -275,6 +408,137 @@ export const workspace: WorkspaceSnapshot = {
   lastPairedAt: "刚刚",
   browserPush: "只推高优先级",
   memoryMode: "MEMORY.md + notes/ + decisions/",
+};
+
+export const auth: AuthSnapshot = {
+  session: {
+    id: "auth-session-current",
+    memberId: "member-larkspur",
+    email: "larkspur@openshock.dev",
+    name: "Larkspur",
+    role: "owner",
+    status: "active",
+    authMethod: "email-link",
+    signedInAt: "2026-04-07T04:12:00Z",
+    lastSeenAt: "2026-04-07T05:35:00Z",
+    permissions: [
+      "workspace.manage",
+      "members.manage",
+      "repo.admin",
+      "runtime.manage",
+      "issue.create",
+      "room.reply",
+      "run.execute",
+      "inbox.review",
+      "inbox.decide",
+      "memory.read",
+      "memory.write",
+      "pull_request.read",
+      "pull_request.review",
+      "pull_request.merge",
+    ],
+  },
+  roles: [
+    {
+      id: "owner",
+      label: "Owner",
+      summary: "可以管理 workspace、成员、repo/runtime 绑定，并批准或合并关键动作。",
+      permissions: [
+        "workspace.manage",
+        "members.manage",
+        "repo.admin",
+        "runtime.manage",
+        "issue.create",
+        "room.reply",
+        "run.execute",
+        "inbox.review",
+        "inbox.decide",
+        "memory.read",
+        "memory.write",
+        "pull_request.read",
+        "pull_request.review",
+        "pull_request.merge",
+      ],
+    },
+    {
+      id: "member",
+      label: "Member",
+      summary: "可以参与 issue / room / run / review，但不能改 roster 或 workspace 级配置。",
+      permissions: [
+        "issue.create",
+        "room.reply",
+        "run.execute",
+        "inbox.review",
+        "memory.read",
+        "pull_request.read",
+        "pull_request.review",
+      ],
+    },
+    {
+      id: "viewer",
+      label: "Viewer",
+      summary: "只读查看控制面和历史真值，不做破坏性变更。",
+      permissions: ["room.read", "run.read", "inbox.read", "memory.read", "pull_request.read"],
+    },
+  ],
+  members: [
+    {
+      id: "member-larkspur",
+      email: "larkspur@openshock.dev",
+      name: "Larkspur",
+      role: "owner",
+      status: "active",
+      source: "seed",
+      addedAt: "2026-04-07T04:10:00Z",
+      lastSeenAt: "2026-04-07T05:35:00Z",
+      permissions: [
+        "workspace.manage",
+        "members.manage",
+        "repo.admin",
+        "runtime.manage",
+        "issue.create",
+        "room.reply",
+        "run.execute",
+        "inbox.review",
+        "inbox.decide",
+        "memory.read",
+        "memory.write",
+        "pull_request.read",
+        "pull_request.review",
+        "pull_request.merge",
+      ],
+    },
+    {
+      id: "member-mina",
+      email: "mina@openshock.dev",
+      name: "Mina",
+      role: "member",
+      status: "active",
+      source: "seed",
+      addedAt: "2026-04-07T04:10:00Z",
+      lastSeenAt: "2026-04-07T05:18:00Z",
+      permissions: [
+        "issue.create",
+        "room.reply",
+        "run.execute",
+        "inbox.review",
+        "memory.read",
+        "pull_request.read",
+        "pull_request.review",
+      ],
+    },
+    {
+      id: "member-longwen",
+      email: "longwen@openshock.dev",
+      name: "Longwen",
+      role: "viewer",
+      status: "active",
+      source: "seed",
+      addedAt: "2026-04-07T04:10:00Z",
+      lastSeenAt: "2026-04-07T05:05:00Z",
+      permissions: ["room.read", "run.read", "inbox.read", "memory.read", "pull_request.read"],
+    },
+  ],
 };
 
 export const tabs: Array<{ id: AppTab; label: string; href: string }> = [
@@ -808,6 +1072,7 @@ export const pullRequests: PullRequest[] = [
     runId: "run_runtime_01",
     branch: "feat/runtime-state-shell",
     author: "Codex Dockmaster",
+    url: "https://github.com/Larkspur-Wang/OpenShock/pull/18",
     reviewSummary: "等待产品确认 destructive git cleanup 的审批边界。",
     updatedAt: "2 分钟前",
   },
@@ -822,6 +1087,7 @@ export const pullRequests: PullRequest[] = [
     runId: "run_inbox_01",
     branch: "feat/inbox-decision-cards",
     author: "Claude Review Runner",
+    url: "https://github.com/Larkspur-Wang/OpenShock/pull/22",
     reviewSummary: "等待人类确认卡片语气和默认动作。",
     updatedAt: "12 分钟前",
   },
@@ -836,6 +1102,7 @@ export const pullRequests: PullRequest[] = [
     runId: "run_memory_01",
     branch: "feat/memory-writeback",
     author: "Memory Clerk",
+    url: "https://github.com/Larkspur-Wang/OpenShock/pull/27",
     reviewSummary: "等待记忆优先级规则敲定后再进入评审。",
     updatedAt: "7 分钟前",
   },
@@ -925,6 +1192,7 @@ export function buildBoardColumns(issueList: Issue[]) {
     { title: "Backlog", accent: "var(--shock-paper)", cards: issueList.filter((issue) => issue.state === "blocked") },
     { title: "Todo", accent: "var(--shock-paper)", cards: issueList.filter((issue) => issue.state === "queued") },
     { title: "In Progress", accent: "var(--shock-yellow)", cards: issueList.filter((issue) => issue.state === "running") },
+    { title: "Paused", accent: "var(--shock-paper)", cards: issueList.filter((issue) => issue.state === "paused") },
     { title: "In Review", accent: "var(--shock-lime)", cards: issueList.filter((issue) => issue.state === "review") },
     { title: "Done", accent: "white", cards: issueList.filter((issue) => issue.state === "done") },
   ];
@@ -940,7 +1208,7 @@ export function getGlobalStats() {
 
 export function buildGlobalStats(state: PhaseZeroState) {
   const activeRuns = state.runs.filter((run) => run.status === "running" || run.status === "review").length;
-  const blockedCount = state.runs.filter((run) => run.status === "blocked").length;
+  const blockedCount = state.runs.filter((run) => run.status === "blocked" || run.status === "paused").length;
   return [
     { label: "活跃 Run", value: String(activeRuns).padStart(2, "0"), tone: "yellow" as const },
     { label: "阻塞", value: String(blockedCount).padStart(2, "0"), tone: "pink" as const },
@@ -950,6 +1218,7 @@ export function buildGlobalStats(state: PhaseZeroState) {
 
 export const fallbackState: PhaseZeroState = {
   workspace,
+  auth,
   channels,
   channelMessages,
   issues,
@@ -962,5 +1231,15 @@ export const fallbackState: PhaseZeroState = {
   inbox: inboxItems,
   pullRequests,
   sessions: [],
+  runtimeLeases: [],
+  runtimeScheduler: {
+    selectedRuntime: workspace.pairedRuntime,
+    preferredRuntime: workspace.pairedRuntime,
+    assignedRuntime: workspace.pairedRuntime,
+    assignedMachine: workspace.pairedRuntime,
+    strategy: "selected_runtime",
+    summary: "当前 fallback state 仍按 workspace selection 指向 shock-main。",
+    candidates: [],
+  },
   memory: [],
 };

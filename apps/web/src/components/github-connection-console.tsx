@@ -79,10 +79,7 @@ export function GitHubConnectionConsole() {
   }, []);
 
   return (
-    <section
-      data-testid="setup-github-connection"
-      className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white p-5 shadow-[6px_6px_0_0_var(--shock-yellow)]"
-    >
+    <section data-testid="setup-github-connection" className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white p-5 shadow-[6px_6px_0_0_var(--shock-yellow)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">
@@ -168,7 +165,7 @@ export function GitHubConnectionConsole() {
             </div>
             <div>
               <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">分支</dt>
-              <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
+              <dd data-testid="setup-github-branch" className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
                 {valueOrFallback(status?.branch, "当前未返回 branch")}
               </dd>
             </div>
@@ -229,7 +226,7 @@ export function GitHubConnectionConsole() {
       </div>
 
       {error ? (
-        <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
+        <div data-testid="setup-github-error" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
           {error}
         </div>
       ) : null}
