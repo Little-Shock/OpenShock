@@ -1481,6 +1481,107 @@ function serializeWorkspaceCheckoutPaymentSubscriptionActivationContract(input =
   };
 }
 
+function serializeWorkspaceInvoiceTaxReceiptContract(input = {}, channelId = null) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const encodedChannelId = channelId ? encodeURIComponent(channelId) : ":channelId";
+  const latest = input.auditAnchor?.latest ?? {};
+  return {
+    contract_version: input.contractVersion ?? "v1.stage7b",
+    truth_family: deepClone(input.truthFamily ?? ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"]),
+    status: {
+      workspace_invoice_tax_receipt_status: input.status?.workspaceInvoiceTaxReceiptStatus ?? "pending",
+      workspace_access_status: input.status?.workspaceAccessStatus ?? "pending",
+      paid_conversion_status: input.status?.paidConversionStatus ?? "pending",
+      plan_contract_status: input.status?.planContractStatus ?? "pending",
+      subscription_status: input.status?.subscriptionStatus ?? "pending",
+      usage_quota_readiness_status: input.status?.usageQuotaReadinessStatus ?? "pending",
+      quota_state: input.status?.quotaState ?? "pending",
+      billing_profile_status: input.status?.billingProfileStatus ?? "pending",
+      invoice_tax_status: input.status?.invoiceTaxStatus ?? "pending",
+      receipt_export_status: input.status?.receiptExportStatus ?? "pending",
+      notification_access_status: input.status?.notificationAccessStatus ?? "pending"
+    },
+    refs: {
+      workspace_id: input.refs?.workspaceId ?? null,
+      plan_ref: input.refs?.planRef ?? null,
+      subscription_ref: input.refs?.subscriptionRef ?? null,
+      billing_profile_ref: input.refs?.billingProfileRef ?? null,
+      invoice_profile_ref: input.refs?.invoiceProfileRef ?? null,
+      tax_profile_ref: input.refs?.taxProfileRef ?? null,
+      receipt_export_ref: input.refs?.receiptExportRef ?? null
+    },
+    quota: {
+      remaining_capacity: {
+        token_remaining: input.quota?.remainingCapacity?.tokenRemaining ?? null,
+        context_remaining: input.quota?.remainingCapacity?.contextRemaining ?? null,
+        unit: input.quota?.remainingCapacity?.unit ?? "tokens"
+      },
+      block_reason: {
+        code: input.quota?.blockReason?.code ?? null,
+        source: input.quota?.blockReason?.source ?? null,
+        detail: input.quota?.blockReason?.detail ?? null
+      }
+    },
+    write_anchors: {
+      token_quota_context_upsert:
+        input.writeAnchors?.tokenQuotaContextUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      notification_endpoint_upsert:
+        input.writeAnchors?.notificationEndpointUpsert ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`
+    },
+    read_anchors: {
+      channel_context: input.readAnchors?.channelContext ?? `/v1/channels/${encodedChannelId}/context`,
+      channel_notification_endpoint:
+        input.readAnchors?.channelNotificationEndpoint ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`,
+      channel_audit_trail: input.readAnchors?.channelAuditTrail ?? `/v1/channels/${encodedChannelId}/audit-trail`
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      latest: {
+        auth_identity: latest.authIdentity
+          ? {
+              audit_id: latest.authIdentity.auditId ?? null,
+              action: latest.authIdentity.action ?? null,
+              at: latest.authIdentity.at ?? null
+            }
+          : null,
+        member: latest.member
+          ? {
+              audit_id: latest.member.auditId ?? null,
+              action: latest.member.action ?? null,
+              at: latest.member.at ?? null
+            }
+          : null,
+        github_installation: latest.githubInstallation
+          ? {
+              audit_id: latest.githubInstallation.auditId ?? null,
+              action: latest.githubInstallation.action ?? null,
+              at: latest.githubInstallation.at ?? null
+            }
+          : null,
+        token_quota_context: latest.tokenQuotaContext
+          ? {
+              audit_id: latest.tokenQuotaContext.auditId ?? null,
+              action: latest.tokenQuotaContext.action ?? null,
+              at: latest.tokenQuotaContext.at ?? null
+            }
+          : null,
+        notification_endpoint: latest.notificationEndpoint
+          ? {
+              audit_id: latest.notificationEndpoint.auditId ?? null,
+              action: latest.notificationEndpoint.action ?? null,
+              at: latest.notificationEndpoint.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
 function serializeSubscriptionLifecycleRecoveryContract(input = {}, channelId = null) {
   if (!input || typeof input !== "object") {
     return null;
@@ -1717,6 +1818,10 @@ function serializeChannelContextContract(input = {}) {
         input.workspaceCheckoutPaymentSubscriptionActivationContract,
         channelId
       ),
+    workspace_invoice_tax_receipt_contract: serializeWorkspaceInvoiceTaxReceiptContract(
+      input.workspaceInvoiceTaxReceiptContract,
+      channelId
+    ),
     subscription_lifecycle_recovery_contract: serializeSubscriptionLifecycleRecoveryContract(
       input.subscriptionLifecycleRecoveryContract,
       channelId
@@ -1849,6 +1954,13 @@ function serializeChannelContextContract(input = {}) {
             ...(input.governance.tokenQuotaContext.billingCurrency !== undefined
               ? { billing_currency: input.governance.tokenQuotaContext.billingCurrency ?? null }
               : {}),
+            billing_profile_status: input.governance.tokenQuotaContext.billingProfileStatus ?? "pending",
+            billing_profile_ref: input.governance.tokenQuotaContext.billingProfileRef ?? null,
+            invoice_tax_status: input.governance.tokenQuotaContext.invoiceTaxStatus ?? "pending",
+            invoice_profile_ref: input.governance.tokenQuotaContext.invoiceProfileRef ?? null,
+            tax_profile_ref: input.governance.tokenQuotaContext.taxProfileRef ?? null,
+            receipt_export_status: input.governance.tokenQuotaContext.receiptExportStatus ?? "pending",
+            receipt_export_ref: input.governance.tokenQuotaContext.receiptExportRef ?? null,
             updated_at: input.governance.tokenQuotaContext.updatedAt ?? null,
             updated_by: input.governance.tokenQuotaContext.updatedBy ?? null
           }
@@ -3982,7 +4094,14 @@ export function createHttpServer(coordinator, options = {}) {
             "subtotal_amount_cents",
             "discount_amount_cents",
             "total_amount_cents",
-            "billing_currency"
+            "billing_currency",
+            "billing_profile_status",
+            "billing_profile_ref",
+            "invoice_tax_status",
+            "invoice_profile_ref",
+            "tax_profile_ref",
+            "receipt_export_status",
+            "receipt_export_ref"
           ]);
           for (const key of Object.keys(body.token_quota_context)) {
             if (!allowedTokenQuotaContextFields.has(key)) {
@@ -4292,7 +4411,14 @@ export function createHttpServer(coordinator, options = {}) {
                 subtotalAmountCents: body.token_quota_context.subtotal_amount_cents,
                 discountAmountCents: body.token_quota_context.discount_amount_cents,
                 totalAmountCents: body.token_quota_context.total_amount_cents,
-                billingCurrency: body.token_quota_context.billing_currency
+                billingCurrency: body.token_quota_context.billing_currency,
+                billingProfileStatus: body.token_quota_context.billing_profile_status,
+                billingProfileRef: body.token_quota_context.billing_profile_ref,
+                invoiceTaxStatus: body.token_quota_context.invoice_tax_status,
+                invoiceProfileRef: body.token_quota_context.invoice_profile_ref,
+                taxProfileRef: body.token_quota_context.tax_profile_ref,
+                receiptExportStatus: body.token_quota_context.receipt_export_status,
+                receiptExportRef: body.token_quota_context.receipt_export_ref
               }
             : undefined,
           hostedAccess: body.hosted_access

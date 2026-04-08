@@ -7458,6 +7458,145 @@ test("v1 stage7b coupon/promotion/discount application contract keeps price adju
   });
 });
 
+test("v1 stage7b workspace invoice/tax/receipt contract keeps billing artifacts on stage7a + stage6c + stage6a truths and existing notification truth", async () => {
+  const channelId = "channel_stage7b_invoice_tax_receipt";
+  const operatorId = "human_operator_stage7b_invoice_tax_receipt";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage7b_invoice_tax_receipt",
+        workspace_root: "/Users/atou/.slock/agents",
+        auth_identity: {
+          identity_id: "identity_stage7b_invoice_tax_receipt",
+          provider: "github",
+          subject_ref: "github_user_stage7b_invoice_tax_receipt",
+          github_login: "atou",
+          status: "bound"
+        },
+        member: {
+          member_id: "member_stage7b_invoice_tax_receipt_owner",
+          role: "owner",
+          status: "active"
+        },
+        github_installation: {
+          installation_id: "gh_ins_stage7b_invoice_tax_receipt",
+          provider: "github_app",
+          workspace_id: "workspace_stage7b_invoice_tax_receipt",
+          status: "active",
+          authorized_repos: ["Little-Shock/OpenShockSwarm"]
+        },
+        token_quota_context: {
+          token_used: 1200,
+          token_limit: 10000,
+          context_tokens: 2400,
+          context_window_tokens: 32000,
+          quota_state: "healthy",
+          plan_ref: "workspace_plan/pro",
+          subscription_status: "active",
+          checkout_session_status: "completed",
+          checkout_session_ref: "checkout_session/cs_stage7b_001",
+          payment_method_status: "ready",
+          payment_method_ref: "payment_method/pm_stage7b_001",
+          subscription_activation_status: "active",
+          subscription_ref: "subscription/sub_stage7b_001",
+          billing_profile_status: "ready",
+          billing_profile_ref: "billing_profile/bp_stage7b_001",
+          invoice_tax_status: "ready",
+          invoice_profile_ref: "invoice_profile/ip_stage7b_001",
+          tax_profile_ref: "tax_profile/tx_stage7b_001",
+          receipt_export_status: "ready",
+          receipt_export_ref: "receipt_export/re_stage7b_001"
+        }
+      }
+    });
+    assert.equal(context.statusCode, 200);
+    assert.equal(context.body.context.workspace_invoice_tax_receipt_contract.contract_version, "v1.stage7b");
+    assert.equal(
+      context.body.context.workspace_invoice_tax_receipt_contract.status.workspace_invoice_tax_receipt_status,
+      "pending"
+    );
+    assert.equal(
+      context.body.context.workspace_invoice_tax_receipt_contract.status.notification_access_status,
+      "pending"
+    );
+    assert.equal(
+      context.body.context.workspace_invoice_tax_receipt_contract.refs.billing_profile_ref,
+      "billing_profile/bp_stage7b_001"
+    );
+
+    const notificationEndpoint = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        email: {
+          enabled: true,
+          endpoint_ref: "mailto:billing-owner@openshock.dev"
+        }
+      }
+    });
+    assert.equal(notificationEndpoint.statusCode, 200);
+
+    const contextReady = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`
+    });
+    assert.equal(contextReady.statusCode, 200);
+    assert.equal(
+      contextReady.body.context.workspace_invoice_tax_receipt_contract.status.workspace_invoice_tax_receipt_status,
+      "ready"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_invoice_tax_receipt_contract.status.paid_conversion_status,
+      "ready"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_invoice_tax_receipt_contract.status.subscription_status,
+      "active"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_invoice_tax_receipt_contract.status.billing_profile_status,
+      "ready"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_invoice_tax_receipt_contract.status.invoice_tax_status,
+      "ready"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_invoice_tax_receipt_contract.status.receipt_export_status,
+      "ready"
+    );
+
+    const invalidBillingProfileStatus = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        token_quota_context: {
+          billing_profile_status: "collecting"
+        }
+      }
+    });
+    assert.equal(invalidBillingProfileStatus.statusCode, 400);
+    assert.equal(invalidBillingProfileStatus.body.error.code, "invalid_token_billing_profile_status");
+
+    const payload = JSON.stringify({
+      context: contextReady.body.context
+    });
+    assert.equal(payload.includes("stage7b"), true);
+    assert.equal(payload.includes("\"token_resale\""), false);
+    assert.equal(payload.includes("\"cross_workspace_cost\""), false);
+  });
+});
+
 test("v1 stage5b inbox attention contract keeps unified inbox/follow-up/mention routing under /v1/inbox truth family", async () => {
   const topicId = "topic_stage5b_inbox_contract";
   const actorId = "human_sample_01";

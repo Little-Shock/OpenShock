@@ -248,11 +248,15 @@ const WORKSPACE_PLAN_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]
 const TOKEN_CHECKOUT_SESSION_STATUSES = new Set(["pending", "open", "completed", "expired", "failed"]);
 const TOKEN_PAYMENT_METHOD_STATUSES = new Set(["pending", "ready", "blocked"]);
 const TOKEN_SUBSCRIPTION_ACTIVATION_STATUSES = new Set(["pending", "active", "blocked"]);
+const TOKEN_BILLING_PROFILE_STATUSES = new Set(["pending", "ready", "blocked"]);
+const TOKEN_INVOICE_TAX_STATUSES = new Set(["pending", "ready", "blocked"]);
+const TOKEN_RECEIPT_EXPORT_STATUSES = new Set(["pending", "ready", "blocked"]);
 const WORKSPACE_PAID_CONVERSION_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
 const TOKEN_COUPON_STATUSES = new Set(["pending", "applied", "ineligible", "expired", "blocked"]);
 const TOKEN_PROMOTION_STATUSES = new Set(["pending", "applied", "ineligible", "expired", "blocked"]);
 const TOKEN_DISCOUNT_STATES = new Set(["pending", "eligible", "applied", "ineligible", "expired", "blocked"]);
 const WORKSPACE_DISCOUNT_APPLICATION_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
+const WORKSPACE_INVOICE_TAX_RECEIPT_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
 const SUBSCRIPTION_LIFECYCLE_RECOVERY_STATUSES = new Set(["pending", "ready", "blocked"]);
 const INBOX_ATTENTION_CHANNELS = new Set(["inbox", "browser_push", "email"]);
 const INBOX_FOLLOW_UP_PRIORITIES = new Set(["normal", "high", "urgent"]);
@@ -4447,6 +4451,164 @@ export class ServerCoordinator {
     };
   }
 
+  buildWorkspaceInvoiceTaxReceiptContract(channel) {
+    this.ensureChannelGovernance(channel);
+    const tokenQuotaContext = channel.governance.tokenQuotaContext;
+    if (!tokenQuotaContext || typeof tokenQuotaContext !== "object") {
+      return null;
+    }
+    // Keep stage7b behind stage7a contract input so billing artifacts do not backfill earlier stages.
+    const checkoutPaymentActivation = this.buildWorkspaceCheckoutPaymentSubscriptionActivationContract(channel);
+    if (!checkoutPaymentActivation) {
+      return null;
+    }
+    const workspacePlanContract = this.buildWorkspacePlanSubscriptionLimitContract(channel);
+    if (!workspacePlanContract) {
+      return null;
+    }
+    const usageQuotaReadiness = this.buildUsageQuotaReadinessContract(channel);
+    const notificationAccess = this.buildNotificationRecoveryAccessContract(channel);
+
+    const workspaceAccessStatus = checkoutPaymentActivation.status?.workspaceAccessStatus ?? "pending";
+    const paidConversionStatus = checkoutPaymentActivation.status?.paidConversionStatus ?? "pending";
+    const planContractStatus = workspacePlanContract.status?.workspacePlanContractStatus ?? "pending";
+    const subscriptionStatus = workspacePlanContract.status?.subscriptionStatus ?? "pending";
+    const usageQuotaReadinessStatus = usageQuotaReadiness.status?.usageQuotaReadinessStatus ?? "pending";
+    const quotaState = usageQuotaReadiness.status?.quotaState ?? "pending";
+    const notificationAccessStatus = notificationAccess.status?.notificationAccessStatus ?? "pending";
+    assertOrThrow(
+      WORKSPACE_PLAN_SUBSCRIPTION_STATUSES.has(subscriptionStatus),
+      "invalid_workspace_invoice_tax_receipt_subscription_status",
+      "workspace invoice/tax/receipt contract requires valid subscription status"
+    );
+    assertOrThrow(
+      USAGE_QUOTA_READINESS_STATUSES.has(usageQuotaReadinessStatus),
+      "invalid_workspace_invoice_tax_receipt_usage_quota_readiness_status",
+      "workspace invoice/tax/receipt usage quota readiness status is invalid"
+    );
+    assertOrThrow(
+      USAGE_QUOTA_READINESS_STATES.has(quotaState),
+      "invalid_workspace_invoice_tax_receipt_quota_state",
+      "workspace invoice/tax/receipt quota state is invalid"
+    );
+    assertOrThrow(
+      NOTIFICATION_ACCESS_STATUSES.has(notificationAccessStatus),
+      "invalid_notification_access_status",
+      "notification access status is invalid"
+    );
+
+    const billingProfileStatus = tokenQuotaContext.billingProfileStatus ?? "pending";
+    assertOrThrow(
+      TOKEN_BILLING_PROFILE_STATUSES.has(billingProfileStatus),
+      "invalid_token_billing_profile_status",
+      "token_quota_context.billing_profile_status is invalid"
+    );
+    const invoiceTaxStatus = tokenQuotaContext.invoiceTaxStatus ?? "pending";
+    assertOrThrow(
+      TOKEN_INVOICE_TAX_STATUSES.has(invoiceTaxStatus),
+      "invalid_token_invoice_tax_status",
+      "token_quota_context.invoice_tax_status is invalid"
+    );
+    const receiptExportStatus = tokenQuotaContext.receiptExportStatus ?? "pending";
+    assertOrThrow(
+      TOKEN_RECEIPT_EXPORT_STATUSES.has(receiptExportStatus),
+      "invalid_token_receipt_export_status",
+      "token_quota_context.receipt_export_status is invalid"
+    );
+
+    const toSignal = (status) => {
+      if (status === "ready") {
+        return "ready";
+      }
+      if (status === "blocked") {
+        return "blocked";
+      }
+      return "pending";
+    };
+    const quotaSignal = quotaState === "blocked" ? "blocked" : quotaState === "healthy" || quotaState === "near_limit" ? "ready" : "pending";
+    const signals = [
+      toSignal(workspaceAccessStatus),
+      toSignal(paidConversionStatus),
+      toSignal(planContractStatus),
+      quotaSignal,
+      toSignal(billingProfileStatus),
+      toSignal(invoiceTaxStatus),
+      toSignal(receiptExportStatus),
+      toSignal(notificationAccessStatus)
+    ];
+    const workspaceInvoiceTaxReceiptStatus =
+      signals.some((item) => item === "blocked")
+        ? "blocked"
+        : signals.every((item) => item === "ready")
+          ? "ready"
+          : "pending";
+    assertOrThrow(
+      WORKSPACE_INVOICE_TAX_RECEIPT_CONTRACT_STATUSES.has(workspaceInvoiceTaxReceiptStatus),
+      "invalid_workspace_invoice_tax_receipt_contract_status",
+      "workspace invoice/tax/receipt contract status is invalid"
+    );
+
+    const auditAnchor = this.buildChannelAuditAnchor(channel);
+    return {
+      contractVersion: "v1.stage7b",
+      truthFamily: ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"],
+      status: {
+        workspaceInvoiceTaxReceiptStatus,
+        workspaceAccessStatus,
+        paidConversionStatus,
+        planContractStatus,
+        subscriptionStatus,
+        usageQuotaReadinessStatus,
+        quotaState,
+        billingProfileStatus,
+        invoiceTaxStatus,
+        receiptExportStatus,
+        notificationAccessStatus
+      },
+      refs: {
+        workspaceId: channel.workspace?.workspaceId ?? "workspace_default",
+        planRef: tokenQuotaContext.planRef ?? null,
+        subscriptionRef: tokenQuotaContext.subscriptionRef ?? null,
+        billingProfileRef: tokenQuotaContext.billingProfileRef ?? null,
+        invoiceProfileRef: tokenQuotaContext.invoiceProfileRef ?? null,
+        taxProfileRef: tokenQuotaContext.taxProfileRef ?? null,
+        receiptExportRef: tokenQuotaContext.receiptExportRef ?? null
+      },
+      quota: {
+        remainingCapacity: {
+          tokenRemaining: usageQuotaReadiness.remainingCapacity?.tokenRemaining ?? null,
+          contextRemaining: usageQuotaReadiness.remainingCapacity?.contextRemaining ?? null,
+          unit: usageQuotaReadiness.remainingCapacity?.unit ?? "tokens"
+        },
+        blockReason: {
+          code: usageQuotaReadiness.blockReason?.code ?? null,
+          source: usageQuotaReadiness.blockReason?.source ?? null,
+          detail: usageQuotaReadiness.blockReason?.detail ?? null
+        }
+      },
+      writeAnchors: {
+        tokenQuotaContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        notificationEndpointUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`
+      },
+      readAnchors: {
+        channelContext: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        channelNotificationEndpoint: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`,
+        channelAuditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`
+      },
+      auditAnchor: {
+        trail: auditAnchor.trail,
+        latest: {
+          authIdentity: auditAnchor.latest?.authIdentity ?? null,
+          member: auditAnchor.latest?.member ?? null,
+          githubInstallation: auditAnchor.latest?.githubInstallation ?? null,
+          tokenQuotaContext: auditAnchor.latest?.tokenQuotaContext ?? null,
+          notificationEndpoint: auditAnchor.latest?.notificationEndpoint ?? null
+        }
+      },
+      updatedAt: channel.updatedAt
+    };
+  }
+
   buildSubscriptionLifecycleRecoveryContract(channel) {
     this.ensureChannelGovernance(channel);
     const workspacePlanContract = this.buildWorkspacePlanSubscriptionLimitContract(channel);
@@ -5236,7 +5398,14 @@ export class ServerCoordinator {
         "subtotalAmountCents",
         "discountAmountCents",
         "totalAmountCents",
-        "billingCurrency"
+        "billingCurrency",
+        "billingProfileStatus",
+        "billingProfileRef",
+        "invoiceTaxStatus",
+        "invoiceProfileRef",
+        "taxProfileRef",
+        "receiptExportStatus",
+        "receiptExportRef"
       ]);
       for (const key of Object.keys(tokenQuotaContextInput)) {
         assertOrThrow(allowedKeys.has(key), "invalid_token_quota_context_field", `unsupported token_quota_context field: ${key}`);
@@ -5466,6 +5635,55 @@ export class ServerCoordinator {
           "token_quota_context.billing_currency must be ISO 4217 code"
         );
       }
+      const billingProfileStatus =
+        tokenQuotaContextInput.billingProfileStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.billingProfileStatus) ??
+            existing?.billingProfileStatus ??
+            "pending";
+      assertOrThrow(
+        TOKEN_BILLING_PROFILE_STATUSES.has(billingProfileStatus),
+        "invalid_token_billing_profile_status",
+        "token_quota_context.billing_profile_status is invalid"
+      );
+      const billingProfileRef =
+        tokenQuotaContextInput.billingProfileRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.billingProfileRef) ?? existing?.billingProfileRef ?? null;
+      const invoiceTaxStatus =
+        tokenQuotaContextInput.invoiceTaxStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.invoiceTaxStatus) ??
+            existing?.invoiceTaxStatus ??
+            "pending";
+      assertOrThrow(
+        TOKEN_INVOICE_TAX_STATUSES.has(invoiceTaxStatus),
+        "invalid_token_invoice_tax_status",
+        "token_quota_context.invoice_tax_status is invalid"
+      );
+      const invoiceProfileRef =
+        tokenQuotaContextInput.invoiceProfileRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.invoiceProfileRef) ?? existing?.invoiceProfileRef ?? null;
+      const taxProfileRef =
+        tokenQuotaContextInput.taxProfileRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.taxProfileRef) ?? existing?.taxProfileRef ?? null;
+      const receiptExportStatus =
+        tokenQuotaContextInput.receiptExportStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.receiptExportStatus) ??
+            existing?.receiptExportStatus ??
+            "pending";
+      assertOrThrow(
+        TOKEN_RECEIPT_EXPORT_STATUSES.has(receiptExportStatus),
+        "invalid_token_receipt_export_status",
+        "token_quota_context.receipt_export_status is invalid"
+      );
+      const receiptExportRef =
+        tokenQuotaContextInput.receiptExportRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.receiptExportRef) ?? existing?.receiptExportRef ?? null;
 
       const now = nowIso();
       governance.tokenQuotaContext = {
@@ -5494,6 +5712,13 @@ export class ServerCoordinator {
         discountAmountCents,
         totalAmountCents,
         billingCurrency,
+        billingProfileStatus,
+        billingProfileRef,
+        invoiceTaxStatus,
+        invoiceProfileRef,
+        taxProfileRef,
+        receiptExportStatus,
+        receiptExportRef,
         updatedAt: now,
         updatedBy: operatorId
       };
@@ -5527,7 +5752,14 @@ export class ServerCoordinator {
           subtotal_amount_cents: governance.tokenQuotaContext.subtotalAmountCents ?? null,
           discount_amount_cents: governance.tokenQuotaContext.discountAmountCents ?? null,
           total_amount_cents: governance.tokenQuotaContext.totalAmountCents ?? null,
-          billing_currency: governance.tokenQuotaContext.billingCurrency ?? null
+          billing_currency: governance.tokenQuotaContext.billingCurrency ?? null,
+          billing_profile_status: governance.tokenQuotaContext.billingProfileStatus,
+          billing_profile_ref: governance.tokenQuotaContext.billingProfileRef,
+          invoice_tax_status: governance.tokenQuotaContext.invoiceTaxStatus,
+          invoice_profile_ref: governance.tokenQuotaContext.invoiceProfileRef,
+          tax_profile_ref: governance.tokenQuotaContext.taxProfileRef,
+          receipt_export_status: governance.tokenQuotaContext.receiptExportStatus,
+          receipt_export_ref: governance.tokenQuotaContext.receiptExportRef
         }
       });
     }
@@ -6020,6 +6252,7 @@ export class ServerCoordinator {
       workspacePlanSubscriptionLimitContract: this.buildWorkspacePlanSubscriptionLimitContract(channel),
       workspaceCheckoutPaymentSubscriptionActivationContract:
         this.buildWorkspaceCheckoutPaymentSubscriptionActivationContract(channel),
+      workspaceInvoiceTaxReceiptContract: this.buildWorkspaceInvoiceTaxReceiptContract(channel),
       subscriptionLifecycleRecoveryContract: this.buildSubscriptionLifecycleRecoveryContract(channel),
       couponPromotionDiscountApplicationContract: this.buildCouponPromotionDiscountApplicationContract(channel),
       repoBinding: channel.repoBinding ?? null,
