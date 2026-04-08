@@ -249,6 +249,7 @@ const TOKEN_CHECKOUT_SESSION_STATUSES = new Set(["pending", "open", "completed",
 const TOKEN_PAYMENT_METHOD_STATUSES = new Set(["pending", "ready", "blocked"]);
 const TOKEN_SUBSCRIPTION_ACTIVATION_STATUSES = new Set(["pending", "active", "blocked"]);
 const WORKSPACE_PAID_CONVERSION_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
+const SUBSCRIPTION_LIFECYCLE_RECOVERY_STATUSES = new Set(["pending", "ready", "blocked"]);
 const INBOX_ATTENTION_CHANNELS = new Set(["inbox", "browser_push", "email"]);
 const INBOX_FOLLOW_UP_PRIORITIES = new Set(["normal", "high", "urgent"]);
 const CHANNEL_AGENT_MAILBOX_ROUTING_KEYS = Object.freeze([
@@ -4442,6 +4443,186 @@ export class ServerCoordinator {
     };
   }
 
+  buildSubscriptionLifecycleRecoveryContract(channel) {
+    this.ensureChannelGovernance(channel);
+    const workspacePlanContract = this.buildWorkspacePlanSubscriptionLimitContract(channel);
+    if (!workspacePlanContract) {
+      return null;
+    }
+    const usageQuotaReadiness = this.buildUsageQuotaReadinessContract(channel);
+    const notificationAccess = this.buildNotificationRecoveryAccessContract(channel);
+    const notificationEndpoints = this.ensureChannelNotificationEndpoints(channel);
+    const agentMailboxRouting = this.ensureChannelAgentMailboxRouting(channel);
+    const auditAnchor = this.buildChannelAuditAnchor(channel);
+    const subscriptionStatus = workspacePlanContract.status?.subscriptionStatus ?? "pending";
+    assertOrThrow(
+      WORKSPACE_PLAN_SUBSCRIPTION_STATUSES.has(subscriptionStatus),
+      "invalid_subscription_lifecycle_subscription_status",
+      "subscription lifecycle recovery contract requires valid subscription status"
+    );
+    const usageQuotaReadinessStatus = usageQuotaReadiness.status?.usageQuotaReadinessStatus ?? "pending";
+    const quotaState = usageQuotaReadiness.status?.quotaState ?? "pending";
+    const upgradeReadinessStatus = usageQuotaReadiness.upgradeReadiness?.status ?? "pending";
+    const notificationAccessStatus = notificationAccess.status?.notificationAccessStatus ?? "pending";
+
+    const renewalFailureStatus =
+      subscriptionStatus === "past_due" || subscriptionStatus === "blocked"
+        ? "blocked"
+        : subscriptionStatus === "active" || subscriptionStatus === "trialing"
+          ? "ready"
+          : "pending";
+
+    const cancelStatus = subscriptionStatus === "pending" ? "pending" : "ready";
+
+    const resumeStatus =
+      subscriptionStatus === "canceled"
+        ? notificationAccessStatus === "ready"
+          ? "pending"
+          : "blocked"
+        : subscriptionStatus === "past_due" || subscriptionStatus === "blocked"
+          ? "pending"
+          : subscriptionStatus === "active" || subscriptionStatus === "trialing"
+            ? "ready"
+            : "pending";
+
+    const paymentRecoveryStatus =
+      subscriptionStatus === "past_due" || subscriptionStatus === "blocked"
+        ? notificationAccessStatus === "ready"
+          ? "pending"
+          : "blocked"
+        : subscriptionStatus === "canceled"
+          ? "blocked"
+          : subscriptionStatus === "pending"
+            ? "pending"
+            : "ready";
+
+    const graceRecoveryStatus =
+      subscriptionStatus === "past_due" || subscriptionStatus === "blocked"
+        ? paymentRecoveryStatus === "blocked" || quotaState === "blocked" || upgradeReadinessStatus === "blocked"
+          ? "blocked"
+          : "pending"
+        : subscriptionStatus === "canceled"
+          ? "blocked"
+          : subscriptionStatus === "active" || subscriptionStatus === "trialing"
+            ? usageQuotaReadinessStatus === "ready"
+              ? "ready"
+              : "pending"
+            : "pending";
+
+    const blockedRecovery = [paymentRecoveryStatus, graceRecoveryStatus, resumeStatus].some((status) => status === "blocked");
+    const subscriptionLifecycleStatus = blockedRecovery
+      ? "blocked"
+      : subscriptionStatus === "active" || subscriptionStatus === "trialing"
+        ? usageQuotaReadinessStatus === "ready"
+          ? "ready"
+          : "pending"
+        : "pending";
+
+    const statusEntries = [
+      subscriptionLifecycleStatus,
+      renewalFailureStatus,
+      cancelStatus,
+      resumeStatus,
+      paymentRecoveryStatus,
+      graceRecoveryStatus
+    ];
+    for (const status of statusEntries) {
+      assertOrThrow(
+        SUBSCRIPTION_LIFECYCLE_RECOVERY_STATUSES.has(status),
+        "invalid_subscription_lifecycle_recovery_status",
+        "subscription lifecycle recovery status is invalid"
+      );
+    }
+
+    return {
+      contractVersion: "v1.stage7a",
+      truthFamily: ["/v1/channels/*", "/v1/inbox/*", "/v1/topics/*", "/v1/runtime/*"],
+      status: {
+        subscriptionLifecycleStatus,
+        subscriptionStatus,
+        renewalFailureStatus,
+        cancelStatus,
+        resumeStatus,
+        paymentRecoveryStatus,
+        graceRecoveryStatus
+      },
+      subscription: {
+        planRef: workspacePlanContract.refs?.planRef ?? null,
+        workspacePlanContractStatus: workspacePlanContract.status?.workspacePlanContractStatus ?? "pending",
+        usageQuotaReadinessStatus,
+        quotaState
+      },
+      recovery: {
+        remainingCapacity: {
+          tokenRemaining: usageQuotaReadiness.remainingCapacity?.tokenRemaining ?? null,
+          contextRemaining: usageQuotaReadiness.remainingCapacity?.contextRemaining ?? null,
+          unit: usageQuotaReadiness.remainingCapacity?.unit ?? "tokens"
+        },
+        blockReason: {
+          code: usageQuotaReadiness.blockReason?.code ?? null,
+          source: usageQuotaReadiness.blockReason?.source ?? null,
+          detail: usageQuotaReadiness.blockReason?.detail ?? null
+        },
+        upgradeReadiness: {
+          status: upgradeReadinessStatus,
+          missingSignals: deepClone(usageQuotaReadiness.upgradeReadiness?.missingSignals ?? [])
+        }
+      },
+      notification: {
+        accessStatus: notificationAccessStatus,
+        endpointStatus: {
+          inbox: "server_owned",
+          browserPush:
+            notificationAccess.endpointStatus?.browserPush ??
+            (notificationEndpoints.browserPush?.enabled ? "ready" : "pending"),
+          email: notificationAccess.endpointStatus?.email ?? (notificationEndpoints.email?.enabled ? "ready" : "pending")
+        },
+        renewalFailed: {
+          requiredChannels: deepClone(agentMailboxRouting.blockedEscalation?.channels ?? ["inbox", "browser_push", "email"]),
+          mailboxRef: agentMailboxRouting.blockedEscalation?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+        },
+        cancel: {
+          requiredChannels: deepClone(agentMailboxRouting.approvalRequired?.channels ?? ["inbox", "browser_push"]),
+          mailboxRef: agentMailboxRouting.approvalRequired?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+        },
+        resume: {
+          requiredChannels: deepClone(agentMailboxRouting.agentMailbox?.channels ?? ["inbox"]),
+          mailboxRef:
+            agentMailboxRouting.agentMailbox?.mailboxRef ??
+            "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+        },
+        graceRecovery: {
+          requiredChannels: deepClone(agentMailboxRouting.blockedEscalation?.channels ?? ["inbox", "browser_push", "email"]),
+          mailboxRef: agentMailboxRouting.blockedEscalation?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+        }
+      },
+      refs: {
+        workspaceId: channel.workspace?.workspaceId ?? "workspace_default",
+        channelId: channel.channelId,
+        planRef: workspacePlanContract.refs?.planRef ?? null
+      },
+      writeAnchors: {
+        tokenQuotaContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        notificationEndpointUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`
+      },
+      readAnchors: {
+        channelContext: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        channelNotificationEndpoint: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`,
+        channelAuditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`,
+        runtimeDeployRuntime: "/v1/runtime/deploy-runtime"
+      },
+      auditAnchor: {
+        trail: auditAnchor.trail,
+        latest: {
+          tokenQuotaContext: auditAnchor.latest?.tokenQuotaContext ?? null,
+          notificationEndpoint: auditAnchor.latest?.notificationEndpoint ?? null,
+          agentMailboxRouting: auditAnchor.latest?.agentMailboxRouting ?? null
+        }
+      },
+      updatedAt: channel.updatedAt
+    };
+  }
+
   upsertChannelGovernance(channel, input = {}, operatorId, policySnapshot) {
     const governance = this.ensureChannelGovernance(channel);
     if (input.authIdentity !== undefined) {
@@ -5545,6 +5726,7 @@ export class ServerCoordinator {
       workspacePlanSubscriptionLimitContract: this.buildWorkspacePlanSubscriptionLimitContract(channel),
       workspaceCheckoutPaymentSubscriptionActivationContract:
         this.buildWorkspaceCheckoutPaymentSubscriptionActivationContract(channel),
+      subscriptionLifecycleRecoveryContract: this.buildSubscriptionLifecycleRecoveryContract(channel),
       repoBinding: channel.repoBinding ?? null,
       auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt

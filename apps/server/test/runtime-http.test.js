@@ -7145,6 +7145,173 @@ test("v1 stage7a workspace checkout/payment/subscription activation contract kee
   });
 });
 
+test("v1 stage7a subscription renewal failure/cancel/resume/grace recovery contract keeps lifecycle recovery on stage6c + notification truths", async () => {
+  const channelId = "channel_stage7a_subscription_lifecycle";
+  const operatorId = "human_operator_stage7a_subscription";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage7a_subscription",
+        workspace_root: "/Users/atou/.slock/agents",
+        baseline_ref: "feat/initial-implementation@9c8c645",
+        fixed_directory: "/Users/atou/OpenShockSwarm",
+        token_quota_context: {
+          token_used: 8200,
+          token_limit: 10000,
+          quota_state: "healthy",
+          context_tokens: 4000,
+          context_window_tokens: 12000,
+          plan_ref: "workspace_plan/pro",
+          subscription_status: "active"
+        }
+      }
+    });
+    assert.equal(context.statusCode, 200);
+    assert.equal(context.body.context.subscription_lifecycle_recovery_contract.contract_version, "v1.stage7a");
+    assert.equal(
+      context.body.context.subscription_lifecycle_recovery_contract.status.subscription_status,
+      "active"
+    );
+    assert.equal(
+      context.body.context.subscription_lifecycle_recovery_contract.status.subscription_lifecycle_status,
+      "pending"
+    );
+    assert.equal(
+      context.body.context.subscription_lifecycle_recovery_contract.status.renewal_failure_status,
+      "ready"
+    );
+
+    const notificationReady = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        email: {
+          enabled: true,
+          endpoint_ref: "mailto:stage7a@openshock.dev"
+        },
+        agent_mailbox_routing: {
+          blocked_escalation: {
+            channels: ["inbox", "email"]
+          },
+          approval_required: {
+            channels: ["inbox", "browser_push"]
+          },
+          agent_mailbox: {
+            channels: ["inbox", "browser_push"]
+          }
+        }
+      }
+    });
+    assert.equal(notificationReady.statusCode, 200);
+
+    const pastDueContext = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        token_quota_context: {
+          subscription_status: "past_due",
+          token_used: 9500,
+          token_limit: 10000,
+          quota_state: "near_limit",
+          context_tokens: 5500,
+          context_window_tokens: 12000
+        }
+      }
+    });
+    assert.equal(pastDueContext.statusCode, 200);
+    assert.equal(
+      pastDueContext.body.context.subscription_lifecycle_recovery_contract.status.renewal_failure_status,
+      "blocked"
+    );
+    assert.equal(
+      pastDueContext.body.context.subscription_lifecycle_recovery_contract.status.payment_recovery_status,
+      "pending"
+    );
+    assert.equal(
+      pastDueContext.body.context.subscription_lifecycle_recovery_contract.status.grace_recovery_status,
+      "pending"
+    );
+    assert.equal(
+      pastDueContext.body.context.subscription_lifecycle_recovery_contract.recovery.remaining_capacity.token_remaining,
+      500
+    );
+    assert.equal(
+      pastDueContext.body.context.subscription_lifecycle_recovery_contract.notification.renewal_failed.required_channels.includes(
+        "email"
+      ),
+      true
+    );
+
+    const canceledContext = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        token_quota_context: {
+          subscription_status: "canceled"
+        }
+      }
+    });
+    assert.equal(canceledContext.statusCode, 200);
+    assert.equal(
+      canceledContext.body.context.subscription_lifecycle_recovery_contract.status.cancel_status,
+      "ready"
+    );
+    assert.equal(
+      canceledContext.body.context.subscription_lifecycle_recovery_contract.status.resume_status,
+      "pending"
+    );
+    assert.equal(
+      canceledContext.body.context.subscription_lifecycle_recovery_contract.status.subscription_lifecycle_status,
+      "blocked"
+    );
+
+    const notificationPending = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        email: {
+          enabled: false,
+          endpoint_ref: null
+        }
+      }
+    });
+    assert.equal(notificationPending.statusCode, 200);
+
+    const contextAfterNotificationPending = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`
+    });
+    assert.equal(contextAfterNotificationPending.statusCode, 200);
+    assert.equal(
+      contextAfterNotificationPending.body.context.subscription_lifecycle_recovery_contract.status.resume_status,
+      "blocked"
+    );
+
+    const payload = JSON.stringify({
+      context: contextAfterNotificationPending.body.context,
+      notificationEndpoint: notificationPending.body.notification_endpoint
+    });
+    assert.equal(payload.includes("stage7a"), true);
+    assert.equal(payload.includes("\"invoice\""), false);
+    assert.equal(payload.includes("\"coupon\""), false);
+    assert.equal(payload.includes("\"token_resale\""), false);
+  });
+});
+
 test("v1 stage5b inbox attention contract keeps unified inbox/follow-up/mention routing under /v1/inbox truth family", async () => {
   const topicId = "topic_stage5b_inbox_contract";
   const actorId = "human_sample_01";

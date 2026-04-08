@@ -1481,6 +1481,123 @@ function serializeWorkspaceCheckoutPaymentSubscriptionActivationContract(input =
   };
 }
 
+function serializeSubscriptionLifecycleRecoveryContract(input = {}, channelId = null) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const encodedChannelId = channelId ? encodeURIComponent(channelId) : ":channelId";
+  const latest = input.auditAnchor?.latest ?? {};
+  return {
+    contract_version: input.contractVersion ?? "v1.stage7a",
+    truth_family: deepClone(input.truthFamily ?? ["/v1/channels/*", "/v1/inbox/*", "/v1/topics/*", "/v1/runtime/*"]),
+    status: {
+      subscription_lifecycle_status: input.status?.subscriptionLifecycleStatus ?? "pending",
+      subscription_status: input.status?.subscriptionStatus ?? "pending",
+      renewal_failure_status: input.status?.renewalFailureStatus ?? "pending",
+      cancel_status: input.status?.cancelStatus ?? "pending",
+      resume_status: input.status?.resumeStatus ?? "pending",
+      payment_recovery_status: input.status?.paymentRecoveryStatus ?? "pending",
+      grace_recovery_status: input.status?.graceRecoveryStatus ?? "pending"
+    },
+    subscription: {
+      plan_ref: input.subscription?.planRef ?? null,
+      workspace_plan_contract_status: input.subscription?.workspacePlanContractStatus ?? "pending",
+      usage_quota_readiness_status: input.subscription?.usageQuotaReadinessStatus ?? "pending",
+      quota_state: input.subscription?.quotaState ?? "pending"
+    },
+    recovery: {
+      remaining_capacity: {
+        token_remaining: input.recovery?.remainingCapacity?.tokenRemaining ?? null,
+        context_remaining: input.recovery?.remainingCapacity?.contextRemaining ?? null,
+        unit: input.recovery?.remainingCapacity?.unit ?? "tokens"
+      },
+      block_reason: {
+        code: input.recovery?.blockReason?.code ?? null,
+        source: input.recovery?.blockReason?.source ?? null,
+        detail: input.recovery?.blockReason?.detail ?? null
+      },
+      upgrade_readiness: {
+        status: input.recovery?.upgradeReadiness?.status ?? "pending",
+        missing_signals: deepClone(input.recovery?.upgradeReadiness?.missingSignals ?? [])
+      }
+    },
+    notification: {
+      access_status: input.notification?.accessStatus ?? "pending",
+      endpoint_status: {
+        inbox: input.notification?.endpointStatus?.inbox ?? "server_owned",
+        browser_push: input.notification?.endpointStatus?.browserPush ?? "pending",
+        email: input.notification?.endpointStatus?.email ?? "pending"
+      },
+      renewal_failed: {
+        required_channels: deepClone(input.notification?.renewalFailed?.requiredChannels ?? ["inbox", "browser_push", "email"]),
+        mailbox_ref:
+          input.notification?.renewalFailed?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+      },
+      cancel: {
+        required_channels: deepClone(input.notification?.cancel?.requiredChannels ?? ["inbox", "browser_push"]),
+        mailbox_ref: input.notification?.cancel?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+      },
+      resume: {
+        required_channels: deepClone(input.notification?.resume?.requiredChannels ?? ["inbox"]),
+        mailbox_ref:
+          input.notification?.resume?.mailboxRef ?? "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+      },
+      grace_recovery: {
+        required_channels: deepClone(input.notification?.graceRecovery?.requiredChannels ?? ["inbox", "browser_push", "email"]),
+        mailbox_ref:
+          input.notification?.graceRecovery?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+      }
+    },
+    refs: {
+      workspace_id: input.refs?.workspaceId ?? null,
+      channel_id: input.refs?.channelId ?? channelId ?? null,
+      plan_ref: input.refs?.planRef ?? null
+    },
+    write_anchors: {
+      token_quota_context_upsert:
+        input.writeAnchors?.tokenQuotaContextUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      notification_endpoint_upsert:
+        input.writeAnchors?.notificationEndpointUpsert ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`
+    },
+    read_anchors: {
+      channel_context: input.readAnchors?.channelContext ?? `/v1/channels/${encodedChannelId}/context`,
+      channel_notification_endpoint:
+        input.readAnchors?.channelNotificationEndpoint ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`,
+      channel_audit_trail: input.readAnchors?.channelAuditTrail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      runtime_deploy_runtime: input.readAnchors?.runtimeDeployRuntime ?? "/v1/runtime/deploy-runtime"
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      latest: {
+        token_quota_context: latest.tokenQuotaContext
+          ? {
+              audit_id: latest.tokenQuotaContext.auditId ?? null,
+              action: latest.tokenQuotaContext.action ?? null,
+              at: latest.tokenQuotaContext.at ?? null
+            }
+          : null,
+        notification_endpoint: latest.notificationEndpoint
+          ? {
+              audit_id: latest.notificationEndpoint.auditId ?? null,
+              action: latest.notificationEndpoint.action ?? null,
+              at: latest.notificationEndpoint.at ?? null
+            }
+          : null,
+        agent_mailbox_routing: latest.agentMailboxRouting
+          ? {
+              audit_id: latest.agentMailboxRouting.auditId ?? null,
+              action: latest.agentMailboxRouting.action ?? null,
+              at: latest.agentMailboxRouting.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
 function serializeChannelContextContract(input = {}) {
   const channelId = input.channelId;
   return {
@@ -1526,6 +1643,10 @@ function serializeChannelContextContract(input = {}) {
         input.workspaceCheckoutPaymentSubscriptionActivationContract,
         channelId
       ),
+    subscription_lifecycle_recovery_contract: serializeSubscriptionLifecycleRecoveryContract(
+      input.subscriptionLifecycleRecoveryContract,
+      channelId
+    ),
     governance: {
       auth_identity: input.governance?.authIdentity
         ? {
