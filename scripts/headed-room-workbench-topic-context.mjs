@@ -234,7 +234,7 @@ try {
   await waitForVisible(page.locator('[data-testid="room-workbench-tab-chat"]'), "room workbench tabs did not render");
   await waitForVisible(page.locator("text=Runtime 讨论间"), "room title did not render");
   await waitForVisible(page.locator('[data-testid="room-message-list"]'), "chat message list did not render");
-  await page.locator("aside").getByRole("button", { name: "Thread" }).click();
+  await page.locator('[data-testid="room-rail-mode-thread"]').click();
   await waitForVisible(page.locator('[data-testid="room-thread-follow-current"]'), "chat thread rail action did not render");
   await capture(page, "room-chat");
   results.push("- Chat tab loads room-first shell and keeps thread rail available.");

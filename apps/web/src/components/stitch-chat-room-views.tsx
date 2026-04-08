@@ -2559,6 +2559,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                       <button
                         type="button"
                         key={tab}
+                        data-testid={`room-rail-mode-${tab.toLowerCase()}`}
                         onClick={() => setRailMode(tab === "Thread" ? "thread" : "context")}
                         className={cn(
                           "min-h-[44px] border-r-2 border-[var(--shock-ink)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--shock-ink)] last:border-r-0",
