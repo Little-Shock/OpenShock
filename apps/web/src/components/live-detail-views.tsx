@@ -20,11 +20,7 @@ import {
 import { RunControlSurface } from "@/components/run-control-surface";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
-import {
-  type Issue,
-  type Room,
-  type Run,
-} from "@/lib/mock-data";
+import type { Issue, Room, Run } from "@/lib/phase-zero-types";
 
 type PanelTone = "white" | "paper" | "yellow" | "lime" | "pink" | "ink";
 
@@ -264,7 +260,7 @@ export function LiveIssuesListView() {
     return (
       <LiveStateNotice
         title="正在同步 Issue 真值"
-        message="等待 server 返回当前 issue / room / run 绑定关系，前端不再先拿本地 issue mock 顶上。"
+        message="等待 server 返回当前 issue / room / run 绑定关系，前端不再先拿本地 seed issue 顶上。"
       />
     );
   }
@@ -317,7 +313,7 @@ export function LiveRoomsPageContent() {
       {loading ? (
         <LiveStateNotice
           title="正在同步讨论间真值"
-          message="等待 server 返回最新的 room / run / issue 状态，前端不再先拿本地 mock 卡片顶上。"
+          message="等待 server 返回最新的 room / run / issue 状态，前端不再先拿本地 seed 卡片顶上。"
         />
       ) : error ? (
         <LiveStateNotice title="讨论间同步失败" message={error} />
@@ -420,7 +416,7 @@ export function LiveAgentPageContent({ agentId }: { agentId: string }) {
         title="正在同步 Agent"
         description="等待 server 返回当前公民详情。"
         contextTitle="Agent Sync"
-        contextDescription="这页现在只读 live state，不再回退到本地 mock agent。"
+        contextDescription="这页现在只读 live state，不再回退到旧的本地 seed agent。"
       >
         <LiveStateNotice title="同步中" message="正在拉取 Agent 详情和最近 Run。" />
       </OpenShockShell>
@@ -558,7 +554,7 @@ export function LiveIssuePageContent({ issueKey }: { issueKey: string }) {
         title="正在同步 Issue"
         description="等待 server 返回当前 issue 详情。"
         contextTitle="Issue Sync"
-        contextDescription="这页现在只读 live state，不再回退到本地 mock issue。"
+        contextDescription="这页现在只读 live state，不再回退到旧的本地 seed issue。"
       >
         <LiveStateNotice title="同步中" message="正在拉取 Issue 详情和对应的 room / run 关系。" />
       </OpenShockShell>
@@ -646,7 +642,7 @@ export function LiveRunPageContent({
         description="等待 server 返回当前 run 详情。"
         selectedRoomId={roomId}
         contextTitle="Run Sync"
-        contextDescription="这页现在只读 live state，不再回退到本地 mock run。"
+        contextDescription="这页现在只读 live state，不再回退到旧的本地 seed run。"
       >
         <LiveStateNotice title="同步中" message="正在拉取 Run 详情和对应的 room 关系。" />
       </OpenShockShell>

@@ -7,7 +7,8 @@ import type {
   AuthSession,
   InboxDecision,
   PhaseZeroState,
-} from "@/lib/mock-data";
+} from "@/lib/phase-zero-types";
+import { sanitizePhaseZeroState } from "@/lib/phase-zero-helpers";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 const STATE_STREAM_PATH = "/v1/state/stream";
@@ -258,8 +259,9 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   const [approvalCenterError, setApprovalCenterError] = useState<string | null>(null);
 
   const commitState = useCallback((next: PhaseZeroState) => {
+    const sanitized = sanitizePhaseZeroState(next);
     startTransition(() => {
-      setState(next);
+      setState(sanitized);
       setError(null);
       setLoading(false);
     });

@@ -200,7 +200,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot())
+	writeJSON(w, http.StatusOK, sanitizeLiveState(s.store.Snapshot()))
 }
 
 func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {

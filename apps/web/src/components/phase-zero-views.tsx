@@ -5,8 +5,6 @@ import { ClaudeAgentConsole } from "@/components/claude-agent-console";
 import { DestructiveGuardCard } from "@/components/destructive-guard-views";
 import {
   agents,
-  type AgentStatus,
-  type DestructiveGuard,
   getBoardColumns,
   getIssueByRoomId,
   getRunById,
@@ -14,16 +12,20 @@ import {
   settingsSections,
   setupSteps,
   workspace,
-  type InboxItem,
-  type Issue,
-  type Message,
-  type Priority,
-  type Room,
-  type Run,
-  type RunStatus,
-  type SettingsSection,
-  type SetupStep,
 } from "@/lib/mock-data";
+import type {
+  AgentStatus,
+  DestructiveGuard,
+  InboxItem,
+  Issue,
+  Message,
+  Priority,
+  Room,
+  Run,
+  RunStatus,
+  SettingsSection,
+  SetupStep,
+} from "@/lib/phase-zero-types";
 import { buildProfileHref } from "@/lib/profile-surface";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -508,7 +510,7 @@ export function RunDetailView({
         <Panel tone="white">
           <h3 className="font-display text-2xl font-bold">PR 收口</h3>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-            每个 Run 都必须落到一个可见的收口对象上。Phase 0 里 PR 还在 mock，但房间、Run 和收件箱已经指向同一个收口目标。
+            每个 Run 都必须落到一个可见的收口对象上。现在 PR、房间、Run 和收件箱都已经指向同一个收口目标。
           </p>
           <div className="mt-4 grid gap-3">
             <Metric label="Pull Request" value={run.pullRequest} />

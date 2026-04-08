@@ -17,7 +17,7 @@ import {
   type Room,
   type Run,
   type Session,
-} from "@/lib/mock-data";
+} from "@/lib/phase-zero-types";
 import { type RoomStreamEvent, usePhaseZeroState } from "@/lib/live-phase0";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
 import { Panel, RunDetailView } from "@/components/phase-zero-views";
@@ -2595,7 +2595,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
               </div>
               {loading ? (
                 <div className="p-4">
-                  <DiscussionStateMessage title="正在同步讨论间真值" message="等待 server 返回当前 room / run / message 状态，前端不再自动退回另一间 mock room。" />
+                  <DiscussionStateMessage title="正在同步讨论间真值" message="等待 server 返回当前 room / run / message 状态，前端不再自动退回另一间旧的 seed room。" />
                 </div>
               ) : error ? (
                 <div className="p-4">

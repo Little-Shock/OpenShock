@@ -84,6 +84,7 @@ func (s *Server) handleStateStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func buildStateStreamEvent(snapshot store.State, sequence int) StateStreamEvent {
+	snapshot = sanitizeLiveState(snapshot)
 	return StateStreamEvent{
 		Type:     "snapshot",
 		Sequence: sequence,

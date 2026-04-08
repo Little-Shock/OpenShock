@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { Issue, Message, PhaseZeroState, Room, Run, Session, PullRequest } from "@/lib/mock-data";
+import type { Issue, Message, PhaseZeroState, PullRequest, Room, Run, Session } from "@/lib/phase-zero-types";
 import { readControlJSON } from "@/lib/server-api";
 
 type RoomDetailResponse = {

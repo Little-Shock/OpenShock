@@ -7,10 +7,10 @@ import type {
   PullRequest,
   Room,
   Run,
-  Session,
   RuntimeLeaseRecord,
   RuntimeScheduler,
-} from "@/lib/mock-data";
+  Session,
+} from "@/lib/phase-zero-types";
 
 type RuntimeProviderRecord = {
   label: string;
@@ -343,7 +343,7 @@ export function LiveOrchestrationBoard({
         <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Orchestration Board</p>
         <h2 className="mt-3 font-display text-4xl font-bold">把公民、运行队列和 merge guard 收进同一个前台</h2>
         <p className="mt-3 max-w-4xl text-base leading-7">
-          这层只消费当前 live `agents / runs / runtimes / leases / inbox / pullRequests / sessions` 真值，把调度态、failover、人工闸门和 auto-merge 候选摆清楚，不再回退到旧的 placeholder 注释窗口。
+          这层只消费当前 live `agents / runs / runtimes / leases / inbox / pullRequests / sessions` 真值，把调度态、failover、人工闸门和 auto-merge 候选摆清楚，不再回退到旧的静态说明窗口。
         </p>
         <div className="mt-5 grid gap-3 md:grid-cols-5">
           <MetricTile label="Running Agents" value={String(runningAgents.length)} detail="当前正在占用调度泳道的公民数" />

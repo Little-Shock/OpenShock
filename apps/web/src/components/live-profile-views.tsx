@@ -16,7 +16,7 @@ import type {
   Run,
   RuntimeRegistryRecord,
   WorkspaceMember,
-} from "@/lib/mock-data";
+} from "@/lib/phase-zero-types";
 import { buildProfileHref, isProfileKind, type ProfileKind } from "@/lib/profile-surface";
 
 const PROFILE_MEMORY_SPACE_OPTIONS = [

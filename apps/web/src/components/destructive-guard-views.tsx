@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import type { DestructiveGuard } from "@/lib/mock-data";
+import type { DestructiveGuard } from "@/lib/phase-zero-types";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");

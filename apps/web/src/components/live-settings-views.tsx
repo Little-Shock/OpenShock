@@ -17,7 +17,7 @@ import {
   useLiveNotifications,
 } from "@/lib/live-notifications";
 import { usePhaseZeroState } from "@/lib/live-phase0";
-import type { AgentStatus, InboxItem, WorkspaceMember } from "@/lib/mock-data";
+import type { AgentStatus, InboxItem, WorkspaceMember } from "@/lib/phase-zero-types";
 
 type LiveNotificationsModel = ReturnType<typeof useLiveNotifications>;
 
@@ -905,7 +905,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Current Split</p>
           <h2 className="mt-3 font-display text-3xl font-bold">默认策略、当前浏览器与 fanout 最新真值</h2>
           <div className="mt-4 space-y-3 text-sm leading-6 text-white/82">
-            <p>browser push / email 默认值已经不再是文案占位，而是 server policy。</p>
+            <p>browser push / email 默认值已经不再只是静态文案，而是 server policy。</p>
             <p>fanout 最近一拍的 attempted / delivered / failed 与 explicit receipts 也都直接从 contract surface 读取。</p>
           </div>
           <div className="mt-5 grid gap-3">

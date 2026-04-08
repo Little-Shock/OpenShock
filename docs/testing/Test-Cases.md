@@ -541,3 +541,16 @@
   3. 检查 review / test / blocked escalation 与 human override 是否可见。
 - 预期结果: 多 Agent 分工和最终响应被治理，而不是只有一串不可解释的自动消息。
 - 业务结论: 当前 repo 还没有多 Agent team topology、mailbox 和 reviewer-tester loop，所以这条用例保持 `Blocked`，留给 `TKT-36`。
+
+## TC-042 Live Truth Hygiene / Placeholder Leak Guard
+
+- 业务目标: 确认 `/v1/state`、`/v1/state/stream` 与前台 state adapter 不会把 placeholder、乱码、fixture / test residue 或内部 worktree 路径直接漏到用户可见面。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-03` `CHK-15`
+- 前置条件: 存在 dirty live-state copy，且前台通过 Phase Zero state / SSE 消费当前真相。
+- 测试步骤:
+  1. 用带 placeholder / E2E residue / internal path 的 dirty state copy 启动临时 server。
+  2. 读取 `/v1/state` 与 `/v1/state/stream`，只围用户可见字段做 negative scan。
+  3. 运行 `pnpm check:live-truth-hygiene` 与 `pnpm verify:release`，确认 release gate 会拦脏 truth 回灌。
+- 预期结果: 用户可见字段全部 fail-closed；release gate 对 placeholder wording、direct mock-data import 和 tracked live-truth residue 给出硬失败。
+- 业务结论: 2026 年 4 月 9 日 `TKT-38` 已把 state / SSE visible truth sanitization、client-side state adapter guard、copy cleanup 与 `check:live-truth-hygiene` release gate 接成同一条验证链。当前 `docs/testing/Test-Report-2026-04-09-live-truth-hygiene.md` 已记录 dirty-state adversarial probe、targeted go tests 和 `verify:release` 结果，因此这条用例转为 `Pass`。

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import type { QuickSearchEntry, QuickSearchEntryKind } from "@/lib/quick-search";
-import type { AgentStatus, Channel, MachineStatus, Room } from "@/lib/mock-data";
+import type { AgentStatus, Channel, MachineStatus, Room } from "@/lib/phase-zero-types";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");

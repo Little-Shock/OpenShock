@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthSession } from "@/lib/mock-data";
+import type { AuthSession } from "@/lib/phase-zero-types";
 
 export type PermissionStatus = "allowed" | "blocked" | "signed_out";
 

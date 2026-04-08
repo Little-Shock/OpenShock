@@ -1,4 +1,4 @@
-import type { AgentStatus, WorkspaceMember } from "@/lib/mock-data";
+import type { AgentStatus, WorkspaceMember } from "@/lib/phase-zero-types";
 
 export type ProfileKind = "agent" | "machine" | "human";
 

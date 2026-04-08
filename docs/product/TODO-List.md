@@ -1,7 +1,7 @@
 # OpenShock To Do List
 
-**版本:** 0.6
-**更新日期:** 2026 年 4 月 8 日
+**版本:** 0.7
+**更新日期:** 2026 年 4 月 9 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -178,6 +178,18 @@
   - `CHK-14`
   - `CHK-15`
 - 优先级: P1
+
+### GAP-20 Live Truth Hygiene / Placeholder Leak Guard
+
+- 现状:
+  - 当前 live state 已不再只漏一两条 copy，而是会把 placeholder、E2E residue、内部 worktree path 和 seed fallback 直接带进用户面
+  - 这不是单页 polish，而是 truth layer / release hygiene 问题
+- 影响:
+  - 在继续对外讲“产品真相可信”之前，这条必须收平
+- 相关合同:
+  - `CHK-03`
+  - `CHK-15`
+- 优先级: P0
 
 ---
 

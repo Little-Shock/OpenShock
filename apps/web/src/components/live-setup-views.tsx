@@ -275,7 +275,7 @@ export function LiveSetupOverview() {
     return (
       <SetupStateNotice
         title="正在同步工作区真值"
-        message="等待 server 返回当前 repo binding、runtime registry、heartbeat 与 selection；这页不再先摆一套本地 mock workspace。"
+        message="等待 server 返回当前 repo binding、runtime registry、heartbeat 与 selection；这页不再先摆一套本地 seed workspace。"
         tone="yellow"
       />
     );

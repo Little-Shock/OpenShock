@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { PhaseZeroState } from "@/lib/mock-data";
+import type { PhaseZeroState } from "@/lib/phase-zero-types";
 
 export type QuickSearchEntryKind = "channel" | "room" | "issue" | "run" | "agent";
 

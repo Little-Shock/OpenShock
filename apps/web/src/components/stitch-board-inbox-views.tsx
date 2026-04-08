@@ -6,12 +6,12 @@ import { useRouter } from "next/navigation";
 
 import { DestructiveGuardCard } from "@/components/destructive-guard-views";
 import { QuickSearchSurface, StitchSidebar, StitchTopBar, WorkspaceStatusStrip } from "@/components/stitch-shell-primitives";
+import { buildBoardColumns } from "@/lib/phase-zero-helpers";
 import {
-  buildBoardColumns,
   type ApprovalCenterItem,
   type InboxDecision,
   type InboxItem,
-} from "@/lib/mock-data";
+} from "@/lib/phase-zero-types";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { useQuickSearchController } from "@/lib/quick-search";
 import { hasSessionPermission, permissionStatus } from "@/lib/session-authz";
@@ -237,7 +237,7 @@ export function StitchBoardView() {
               {loading ? (
                 <SurfaceStateMessage
                   title="正在同步任务板"
-                  message="等待 server 返回当前 issue / room / run 真值，任务板不再先渲染本地 mock 卡片。"
+                  message="等待 server 返回当前 issue / room / run 真值，任务板不再先渲染本地 seed 卡片。"
                 />
               ) : error ? (
                 <SurfaceStateMessage title="任务板同步失败" message={error} />

@@ -13,7 +13,7 @@ import {
   type MemoryPromotionStatus,
   useLiveMemoryCenter,
 } from "@/lib/live-memory";
-import type { AuthSession, MemoryGovernance } from "@/lib/mock-data";
+import type { AuthSession, MemoryGovernance } from "@/lib/phase-zero-types";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 const POLICY_MAX_ITEM_OPTIONS = [4, 6, 8, 10, 12] as const;
