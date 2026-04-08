@@ -1831,8 +1831,12 @@ function buildOperatorConsoleState({
             channelContextContract?.usage_quota_readiness ||
             null,
           workspace_checkout_payment_method_subscription_activation_contract:
+            channelContextContract?.workspace_checkout_payment_subscription_activation_contract ||
+            channelContextContract?.workspace_checkout_payment_subscription_activation ||
             channelContextContract?.workspace_checkout_payment_method_subscription_activation_contract ||
             channelContextContract?.workspace_checkout_payment_method_subscription_activation ||
+            channelContextContract?.checkout_payment_subscription_activation_contract ||
+            channelContextContract?.checkout_payment_subscription_activation ||
             channelContextContract?.checkout_payment_method_subscription_activation_contract ||
             channelContextContract?.checkout_payment_method_subscription_activation ||
             null,
@@ -4245,17 +4249,37 @@ function buildStage7aHostedBillingSubscriptionProjection({
   const checkoutPaymentActivationContract = normalizeStage7aCheckoutPaymentActivationContract(
     pickFirstDefinedValue([
       channelContextContract?.workspace_checkout_payment_method_subscription_activation_contract,
+      channelContextContract?.workspace_checkout_payment_subscription_activation_contract,
+      channelContextContract?.workspace_checkout_payment_subscription_activation,
       channelContextContract?.workspace_checkout_payment_method_subscription_activation,
+      channelContextContract?.checkout_payment_subscription_activation_contract,
+      channelContextContract?.checkout_payment_subscription_activation,
       channelContextContract?.checkout_payment_method_subscription_activation_contract,
       channelContextContract?.checkout_payment_method_subscription_activation,
+      governance.workspace_checkout_payment_subscription_activation_contract,
+      governance.workspaceCheckoutPaymentSubscriptionActivationContract,
+      governance.workspace_checkout_payment_subscription_activation,
+      governance.workspaceCheckoutPaymentSubscriptionActivation,
       governance.workspace_checkout_payment_method_subscription_activation_contract,
       governance.workspaceCheckoutPaymentMethodSubscriptionActivationContract,
       governance.checkout_payment_method_subscription_activation_contract,
       governance.checkoutPaymentMethodSubscriptionActivationContract,
+      governance.checkout_payment_subscription_activation_contract,
+      governance.checkoutPaymentSubscriptionActivationContract,
+      governance.checkout_payment_subscription_activation,
+      governance.checkoutPaymentSubscriptionActivation,
+      context.workspace_checkout_payment_subscription_activation_contract,
+      context.workspaceCheckoutPaymentSubscriptionActivationContract,
+      context.workspace_checkout_payment_subscription_activation,
+      context.workspaceCheckoutPaymentSubscriptionActivation,
       context.workspace_checkout_payment_method_subscription_activation_contract,
       context.workspaceCheckoutPaymentMethodSubscriptionActivationContract,
       context.checkout_payment_method_subscription_activation_contract,
       context.checkoutPaymentMethodSubscriptionActivationContract,
+      context.checkout_payment_subscription_activation_contract,
+      context.checkoutPaymentSubscriptionActivationContract,
+      context.checkout_payment_subscription_activation,
+      context.checkoutPaymentSubscriptionActivation,
     ]),
   );
   const subscriptionLifecycleRecoveryContract = normalizeStage7aSubscriptionLifecycleRecoveryContract(
@@ -4302,8 +4326,10 @@ function buildStage7aHostedBillingSubscriptionProjection({
   const paymentMethodStatus = normalizeText(checkoutPaymentActivationContract?.payment_method_status) || "pending";
   const subscriptionActivationStatus =
     normalizeText(checkoutPaymentActivationContract?.subscription_activation_status) || "pending";
+  const paidConversionStatus = normalizeText(checkoutPaymentActivationContract?.paid_conversion_status) || null;
   const checkoutActivationAggregateStatus =
     normalizeText(checkoutPaymentActivationContract?.checkout_activation_status) ||
+    normalizeText(checkoutPaymentActivationContract?.paid_conversion_status) ||
     normalizeText(checkoutPaymentActivationContract?.status) ||
     null;
 
@@ -4334,16 +4360,20 @@ function buildStage7aHostedBillingSubscriptionProjection({
   const upgradeReadiness = normalizeText(stage6cUsageQuotaReadiness.upgrade_readiness) || "pending";
   const upgradeCtaRef =
     normalizeText(checkoutPaymentActivationContract?.upgrade_cta_ref) ||
+    normalizeText(checkoutPaymentActivationContract?.checkout_session_ref) ||
     normalizeText(subscriptionLifecycleRecoveryContract?.upgrade_cta_ref) ||
     normalizeText(stage6cUsageQuotaReadiness.upgrade_path_ref) ||
     normalizeText(checkoutPaymentActivationContract?.checkout_url) ||
     null;
   const planManageUrl =
     normalizeText(checkoutPaymentActivationContract?.plan_manage_url) ||
+    normalizeText(checkoutPaymentActivationContract?.subscription_ref) ||
     normalizeText(subscriptionLifecycleRecoveryContract?.plan_manage_url) ||
     null;
 
   const notificationDeliveryStatus =
+    normalizeText(checkoutPaymentActivationContract?.notification_access_status) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.notification_access_status) ||
     normalizeText(stage6bStatus.hosted_notification_recovery_status) ||
     normalizeText(stage6bNotificationDelivery.status) ||
     normalizeText(stage4a2Status.notification_endpoints_status) ||
@@ -4352,6 +4382,8 @@ function buildStage7aHostedBillingSubscriptionProjection({
 
   const checkoutActivationReady = checkoutActivationAggregateStatus
     ? isStage7aReadyStatus(checkoutActivationAggregateStatus)
+    : paidConversionStatus
+      ? isStage7aReadyStatus(paidConversionStatus)
     : isStage7aReadyStatus(checkoutStatus) &&
       isStage7aReadyStatus(paymentMethodStatus) &&
       isStage7aReadyStatus(subscriptionActivationStatus);
@@ -4580,11 +4612,13 @@ function isStage7aReadyStatus(value) {
     normalized === "ready" ||
     normalized === "ok" ||
     normalized === "active" ||
+    normalized === "completed" ||
     normalized === "configured" ||
     normalized === "confirmed" ||
     normalized === "available" ||
     normalized === "enabled" ||
     normalized === "allowed" ||
+    normalized === "server_owned" ||
     normalized === "recovered" ||
     normalized === "resumed" ||
     normalized === "within_grace" ||
@@ -5445,8 +5479,12 @@ function normalizeStage7aCheckoutPaymentActivationContract(raw) {
       normalizeText(
         raw.checkout_status ||
           raw.checkoutStatus ||
+          raw.checkout_session_status ||
+          raw.checkoutSessionStatus ||
           statusSource.checkout_status ||
           statusSource.checkoutStatus ||
+          statusSource.checkout_session_status ||
+          statusSource.checkoutSessionStatus ||
           statusSource.paid_conversion_status ||
           statusSource.paidConversionStatus,
       ) || null,
@@ -5473,13 +5511,65 @@ function normalizeStage7aCheckoutPaymentActivationContract(raw) {
           statusSource.checkout_activation_status ||
           statusSource.checkoutActivationStatus,
       ) || null,
+    paid_conversion_status:
+      normalizeText(
+        raw.paid_conversion_status ||
+          raw.paidConversionStatus ||
+          statusSource.paid_conversion_status ||
+          statusSource.paidConversionStatus,
+      ) || null,
+    workspace_access_status:
+      normalizeText(
+        raw.workspace_access_status ||
+          raw.workspaceAccessStatus ||
+          statusSource.workspace_access_status ||
+          statusSource.workspaceAccessStatus,
+      ) || null,
+    plan_contract_status:
+      normalizeText(
+        raw.plan_contract_status ||
+          raw.planContractStatus ||
+          statusSource.plan_contract_status ||
+          statusSource.planContractStatus,
+      ) || null,
+    notification_access_status:
+      normalizeText(
+        raw.notification_access_status ||
+          raw.notificationAccessStatus ||
+          statusSource.notification_access_status ||
+          statusSource.notificationAccessStatus,
+      ) || null,
     status:
       normalizeText(raw.status_value || statusSource.status || statusSource.contract_status || statusSource.contractStatus) ||
       null,
     checkout_url:
-      normalizeText(raw.checkout_url || raw.checkoutUrl || checkout.url || checkout.checkout_url || checkout.checkoutUrl) || null,
+      normalizeText(
+        raw.checkout_url ||
+          raw.checkoutUrl ||
+          raw.checkout_session_ref ||
+          raw.checkoutSessionRef ||
+          refs.checkout_session_ref ||
+          refs.checkoutSessionRef ||
+          checkout.url ||
+          checkout.checkout_url ||
+          checkout.checkoutUrl,
+      ) || null,
+    checkout_session_ref:
+      normalizeText(
+        raw.checkout_session_ref || raw.checkoutSessionRef || refs.checkout_session_ref || refs.checkoutSessionRef,
+      ) || null,
     payment_method_ref:
-      normalizeText(raw.payment_method_ref || raw.paymentMethodRef || paymentMethod.method_ref || paymentMethod.methodRef) || null,
+      normalizeText(
+        raw.payment_method_ref ||
+          raw.paymentMethodRef ||
+          refs.payment_method_ref ||
+          refs.paymentMethodRef ||
+          paymentMethod.method_ref ||
+          paymentMethod.methodRef,
+      ) || null,
+    subscription_ref:
+      normalizeText(raw.subscription_ref || raw.subscriptionRef || refs.subscription_ref || refs.subscriptionRef) || null,
+    plan_ref: normalizeText(raw.plan_ref || raw.planRef || refs.plan_ref || refs.planRef) || null,
     plan_manage_url:
       normalizeText(raw.plan_manage_url || raw.planManageUrl || planManage.url || planManage.manage_url || planManage.manageUrl) ||
       null,
@@ -5529,7 +5619,16 @@ function normalizeStage7aSubscriptionLifecycleRecoveryContract(raw) {
   return {
     contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
     renewal_status:
-      normalizeText(raw.renewal_status || raw.renewalStatus || renewal.status || statusSource.renewal_status) || null,
+      normalizeText(
+        raw.renewal_status ||
+          raw.renewalStatus ||
+          raw.renewal_failure_status ||
+          raw.renewalFailureStatus ||
+          renewal.status ||
+          statusSource.renewal_status ||
+          statusSource.renewal_failure_status ||
+          statusSource.renewalFailureStatus,
+      ) || null,
     cancel_status:
       normalizeText(raw.cancel_status || raw.cancelStatus || cancellation.status || statusSource.cancel_status) || null,
     resume_status:
@@ -5572,6 +5671,10 @@ function normalizeStage7aSubscriptionLifecycleRecoveryContract(raw) {
           statusSource.payment_recovery_status ||
           statusSource.paymentRecoveryStatus,
       ) || null,
+    subscription_status:
+      normalizeText(raw.subscription_status || raw.subscriptionStatus || statusSource.subscription_status) || null,
+    notification_access_status:
+      normalizeText(raw.notification_access_status || raw.notificationAccessStatus || raw.notification?.access_status) || null,
     recovery_status: normalizeText(raw.recovery_status || raw.recoveryStatus || statusSource.recovery_status) || null,
     status: normalizeText(statusSource.status || statusSource.contract_status || statusSource.contractStatus) || null,
     upgrade_cta_ref:
