@@ -249,6 +249,10 @@ const TOKEN_CHECKOUT_SESSION_STATUSES = new Set(["pending", "open", "completed",
 const TOKEN_PAYMENT_METHOD_STATUSES = new Set(["pending", "ready", "blocked"]);
 const TOKEN_SUBSCRIPTION_ACTIVATION_STATUSES = new Set(["pending", "active", "blocked"]);
 const WORKSPACE_PAID_CONVERSION_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
+const TOKEN_COUPON_STATUSES = new Set(["pending", "applied", "ineligible", "expired", "blocked"]);
+const TOKEN_PROMOTION_STATUSES = new Set(["pending", "applied", "ineligible", "expired", "blocked"]);
+const TOKEN_DISCOUNT_STATES = new Set(["pending", "eligible", "applied", "ineligible", "expired", "blocked"]);
+const WORKSPACE_DISCOUNT_APPLICATION_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
 const SUBSCRIPTION_LIFECYCLE_RECOVERY_STATUSES = new Set(["pending", "ready", "blocked"]);
 const INBOX_ATTENTION_CHANNELS = new Set(["inbox", "browser_push", "email"]);
 const INBOX_FOLLOW_UP_PRIORITIES = new Set(["normal", "high", "urgent"]);
@@ -4623,6 +4627,162 @@ export class ServerCoordinator {
     };
   }
 
+  buildCouponPromotionDiscountApplicationContract(channel) {
+    this.ensureChannelGovernance(channel);
+    const tokenQuotaContext = channel.governance.tokenQuotaContext;
+    if (!tokenQuotaContext || typeof tokenQuotaContext !== "object") {
+      return null;
+    }
+    const checkoutActivationContract = this.buildWorkspaceCheckoutPaymentSubscriptionActivationContract(channel);
+    const subscriptionLifecycleRecoveryContract = this.buildSubscriptionLifecycleRecoveryContract(channel);
+    if (!checkoutActivationContract || !subscriptionLifecycleRecoveryContract) {
+      return null;
+    }
+    const hasStage7bSignals =
+      tokenQuotaContext.couponStatus !== undefined ||
+      tokenQuotaContext.promotionStatus !== undefined ||
+      tokenQuotaContext.discountState !== undefined ||
+      tokenQuotaContext.couponRef !== undefined ||
+      tokenQuotaContext.promotionRef !== undefined ||
+      tokenQuotaContext.subtotalAmountCents !== undefined ||
+      tokenQuotaContext.discountAmountCents !== undefined ||
+      tokenQuotaContext.totalAmountCents !== undefined ||
+      tokenQuotaContext.billingCurrency !== undefined;
+    // Keep stage7b opt-in so stage7a contexts do not grow stage7b nouns before this stage is explicitly in use.
+    if (!hasStage7bSignals) {
+      return null;
+    }
+    const workspacePlanContract = this.buildWorkspacePlanSubscriptionLimitContract(channel);
+    const usageQuotaReadinessContract = this.buildUsageQuotaReadinessContract(channel);
+    const onboardingAccessContract = this.buildWorkspaceOnboardingAccessContract(channel);
+    const notificationAccessContract = this.buildNotificationRecoveryAccessContract(channel);
+    if (!workspacePlanContract || !usageQuotaReadinessContract || !onboardingAccessContract || !notificationAccessContract) {
+      return null;
+    }
+    const workspaceAccessStatus =
+      onboardingAccessContract.status?.repoBindingAccessStatus === "blocked"
+        ? "blocked"
+        : onboardingAccessContract.status?.repoBindingAccessStatus === "ready"
+          ? "ready"
+          : "pending";
+    const planContractStatus = workspacePlanContract.status?.workspacePlanContractStatus ?? "pending";
+    const usageQuotaReadinessStatus = usageQuotaReadinessContract.status?.usageQuotaReadinessStatus ?? "pending";
+    const paidConversionStatus = checkoutActivationContract.status?.paidConversionStatus ?? "pending";
+    const subscriptionLifecycleStatus =
+      subscriptionLifecycleRecoveryContract.status?.subscriptionLifecycleStatus ?? "pending";
+    const notificationAccessStatus = notificationAccessContract.status?.notificationAccessStatus ?? "pending";
+    assertOrThrow(
+      NOTIFICATION_ACCESS_STATUSES.has(notificationAccessStatus),
+      "invalid_notification_access_status",
+      "notification access status is invalid"
+    );
+
+    const couponStatus = tokenQuotaContext.couponStatus ?? "pending";
+    assertOrThrow(TOKEN_COUPON_STATUSES.has(couponStatus), "invalid_token_coupon_status", "token_quota_context.coupon_status is invalid");
+    const promotionStatus = tokenQuotaContext.promotionStatus ?? "pending";
+    assertOrThrow(
+      TOKEN_PROMOTION_STATUSES.has(promotionStatus),
+      "invalid_token_promotion_status",
+      "token_quota_context.promotion_status is invalid"
+    );
+    const discountState =
+      tokenQuotaContext.discountState ??
+      (couponStatus === "applied" || promotionStatus === "applied"
+        ? "applied"
+        : couponStatus === "ineligible" && promotionStatus === "ineligible"
+          ? "ineligible"
+          : "pending");
+    assertOrThrow(
+      TOKEN_DISCOUNT_STATES.has(discountState),
+      "invalid_token_discount_state",
+      "token_quota_context.discount_state is invalid"
+    );
+    const subtotalAmountCents =
+      Number.isInteger(tokenQuotaContext.subtotalAmountCents) && tokenQuotaContext.subtotalAmountCents >= 0
+        ? tokenQuotaContext.subtotalAmountCents
+        : null;
+    const discountAmountCents =
+      Number.isInteger(tokenQuotaContext.discountAmountCents) && tokenQuotaContext.discountAmountCents >= 0
+        ? tokenQuotaContext.discountAmountCents
+        : null;
+    const totalAmountCents =
+      Number.isInteger(tokenQuotaContext.totalAmountCents) && tokenQuotaContext.totalAmountCents >= 0
+        ? tokenQuotaContext.totalAmountCents
+        : null;
+    const billingCurrency = tokenQuotaContext.billingCurrency ?? "USD";
+
+    const blockSignals = [
+      workspaceAccessStatus,
+      planContractStatus,
+      usageQuotaReadinessStatus,
+      paidConversionStatus,
+      subscriptionLifecycleStatus,
+      notificationAccessStatus
+    ];
+    const readySignals = [workspaceAccessStatus, planContractStatus, paidConversionStatus, notificationAccessStatus];
+    const readyDiscountStates = new Set(["applied", "eligible", "ineligible", "expired"]);
+    const discountApplicationContractStatus =
+      blockSignals.some((item) => item === "blocked") || discountState === "blocked"
+        ? "blocked"
+        : readySignals.every((item) => item === "ready") && readyDiscountStates.has(discountState)
+          ? "ready"
+          : "pending";
+    assertOrThrow(
+      WORKSPACE_DISCOUNT_APPLICATION_CONTRACT_STATUSES.has(discountApplicationContractStatus),
+      "invalid_workspace_discount_application_contract_status",
+      "workspace discount application contract status is invalid"
+    );
+    const auditAnchor = this.buildChannelAuditAnchor(channel);
+    return {
+      contractVersion: "v1.stage7b",
+      truthFamily: ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*", "/v1/runtime/*"],
+      status: {
+        discountApplicationContractStatus,
+        workspaceAccessStatus,
+        planContractStatus,
+        usageQuotaReadinessStatus,
+        paidConversionStatus,
+        subscriptionLifecycleStatus,
+        notificationAccessStatus,
+        couponStatus,
+        promotionStatus,
+        discountState
+      },
+      pricing: {
+        subtotalAmountCents,
+        discountAmountCents,
+        totalAmountCents,
+        billingCurrency
+      },
+      refs: {
+        workspaceId: channel.workspace?.workspaceId ?? "workspace_default",
+        planRef: tokenQuotaContext.planRef ?? null,
+        subscriptionRef: tokenQuotaContext.subscriptionRef ?? null,
+        couponRef: tokenQuotaContext.couponRef ?? null,
+        promotionRef: tokenQuotaContext.promotionRef ?? null
+      },
+      writeAnchors: {
+        workspaceContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        tokenQuotaContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        notificationEndpointUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`
+      },
+      readAnchors: {
+        channelContext: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        channelNotificationEndpoint: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`,
+        channelAuditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`,
+        runtimeDeployRuntime: "/v1/runtime/deploy-runtime"
+      },
+      auditAnchor: {
+        trail: auditAnchor.trail,
+        latest: {
+          tokenQuotaContext: auditAnchor.latest?.tokenQuotaContext ?? null,
+          notificationEndpoint: auditAnchor.latest?.notificationEndpoint ?? null
+        }
+      },
+      updatedAt: channel.updatedAt
+    };
+  }
+
   upsertChannelGovernance(channel, input = {}, operatorId, policySnapshot) {
     const governance = this.ensureChannelGovernance(channel);
     if (input.authIdentity !== undefined) {
@@ -5067,7 +5227,16 @@ export class ServerCoordinator {
         "paymentMethodStatus",
         "paymentMethodRef",
         "subscriptionActivationStatus",
-        "subscriptionRef"
+        "subscriptionRef",
+        "couponStatus",
+        "couponRef",
+        "promotionStatus",
+        "promotionRef",
+        "discountState",
+        "subtotalAmountCents",
+        "discountAmountCents",
+        "totalAmountCents",
+        "billingCurrency"
       ]);
       for (const key of Object.keys(tokenQuotaContextInput)) {
         assertOrThrow(allowedKeys.has(key), "invalid_token_quota_context_field", `unsupported token_quota_context field: ${key}`);
@@ -5190,6 +5359,113 @@ export class ServerCoordinator {
         tokenQuotaContextInput.subscriptionRef === null
           ? null
           : normalizeOptionalScopeId(tokenQuotaContextInput.subscriptionRef) ?? existing?.subscriptionRef ?? null;
+      const couponStatus =
+        tokenQuotaContextInput.couponStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.couponStatus) ?? existing?.couponStatus ?? undefined;
+      if (couponStatus !== undefined) {
+        assertOrThrow(
+          TOKEN_COUPON_STATUSES.has(couponStatus),
+          "invalid_token_coupon_status",
+          "token_quota_context.coupon_status is invalid"
+        );
+      }
+      const couponRef =
+        tokenQuotaContextInput.couponRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.couponRef) ?? existing?.couponRef ?? undefined;
+      const promotionStatus =
+        tokenQuotaContextInput.promotionStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.promotionStatus) ?? existing?.promotionStatus ?? undefined;
+      if (promotionStatus !== undefined) {
+        assertOrThrow(
+          TOKEN_PROMOTION_STATUSES.has(promotionStatus),
+          "invalid_token_promotion_status",
+          "token_quota_context.promotion_status is invalid"
+        );
+      }
+      const promotionRef =
+        tokenQuotaContextInput.promotionRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.promotionRef) ?? existing?.promotionRef ?? undefined;
+      const discountState =
+        tokenQuotaContextInput.discountState === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.discountState) ?? existing?.discountState ?? undefined;
+      if (discountState !== undefined) {
+        assertOrThrow(
+          TOKEN_DISCOUNT_STATES.has(discountState),
+          "invalid_token_discount_state",
+          "token_quota_context.discount_state is invalid"
+        );
+      }
+      const subtotalAmountInput =
+        tokenQuotaContextInput.subtotalAmountCents !== undefined
+          ? tokenQuotaContextInput.subtotalAmountCents
+          : existing?.subtotalAmountCents;
+      const subtotalAmountCents =
+        subtotalAmountInput === undefined || subtotalAmountInput === null ? subtotalAmountInput ?? undefined : Number(subtotalAmountInput);
+      if (subtotalAmountCents !== undefined) {
+        assertOrThrow(
+          Number.isInteger(subtotalAmountCents) && subtotalAmountCents >= 0,
+          "invalid_token_subtotal_amount_cents",
+          "token_quota_context.subtotal_amount_cents must be non-negative integer"
+        );
+      }
+      const discountAmountInput =
+        tokenQuotaContextInput.discountAmountCents !== undefined
+          ? tokenQuotaContextInput.discountAmountCents
+          : existing?.discountAmountCents;
+      const discountAmountCents =
+        discountAmountInput === undefined || discountAmountInput === null ? discountAmountInput ?? undefined : Number(discountAmountInput);
+      if (discountAmountCents !== undefined) {
+        assertOrThrow(
+          Number.isInteger(discountAmountCents) && discountAmountCents >= 0,
+          "invalid_token_discount_amount_cents",
+          "token_quota_context.discount_amount_cents must be non-negative integer"
+        );
+      }
+      const totalAmountInput =
+        tokenQuotaContextInput.totalAmountCents !== undefined
+          ? tokenQuotaContextInput.totalAmountCents
+          : existing?.totalAmountCents;
+      const totalAmountCents =
+        totalAmountInput === undefined || totalAmountInput === null ? totalAmountInput ?? undefined : Number(totalAmountInput);
+      if (totalAmountCents !== undefined) {
+        assertOrThrow(
+          Number.isInteger(totalAmountCents) && totalAmountCents >= 0,
+          "invalid_token_total_amount_cents",
+          "token_quota_context.total_amount_cents must be non-negative integer"
+        );
+      }
+      if (subtotalAmountCents !== undefined && discountAmountCents !== undefined) {
+        assertOrThrow(
+          discountAmountCents <= subtotalAmountCents,
+          "invalid_token_discount_amount_cents",
+          "token_quota_context.discount_amount_cents must not exceed subtotal_amount_cents"
+        );
+      }
+      if (subtotalAmountCents !== undefined && totalAmountCents !== undefined) {
+        assertOrThrow(
+          totalAmountCents <= subtotalAmountCents,
+          "invalid_token_total_amount_cents",
+          "token_quota_context.total_amount_cents must not exceed subtotal_amount_cents"
+        );
+      }
+      const billingCurrencyRaw =
+        tokenQuotaContextInput.billingCurrency === null
+          ? null
+          : tokenQuotaContextInput.billingCurrency ?? existing?.billingCurrency ?? undefined;
+      const billingCurrency =
+        billingCurrencyRaw === undefined || billingCurrencyRaw === null ? billingCurrencyRaw ?? undefined : String(billingCurrencyRaw).trim().toUpperCase();
+      if (billingCurrency !== undefined) {
+        assertOrThrow(
+          /^[A-Z]{3}$/.test(billingCurrency),
+          "invalid_token_billing_currency",
+          "token_quota_context.billing_currency must be ISO 4217 code"
+        );
+      }
 
       const now = nowIso();
       governance.tokenQuotaContext = {
@@ -5209,6 +5485,15 @@ export class ServerCoordinator {
         paymentMethodRef,
         subscriptionActivationStatus,
         subscriptionRef,
+        couponStatus,
+        couponRef,
+        promotionStatus,
+        promotionRef,
+        discountState,
+        subtotalAmountCents,
+        discountAmountCents,
+        totalAmountCents,
+        billingCurrency,
         updatedAt: now,
         updatedBy: operatorId
       };
@@ -5233,7 +5518,16 @@ export class ServerCoordinator {
           payment_method_status: governance.tokenQuotaContext.paymentMethodStatus,
           payment_method_ref: governance.tokenQuotaContext.paymentMethodRef,
           subscription_activation_status: governance.tokenQuotaContext.subscriptionActivationStatus,
-          subscription_ref: governance.tokenQuotaContext.subscriptionRef
+          subscription_ref: governance.tokenQuotaContext.subscriptionRef,
+          coupon_status: governance.tokenQuotaContext.couponStatus ?? null,
+          coupon_ref: governance.tokenQuotaContext.couponRef ?? null,
+          promotion_status: governance.tokenQuotaContext.promotionStatus ?? null,
+          promotion_ref: governance.tokenQuotaContext.promotionRef ?? null,
+          discount_state: governance.tokenQuotaContext.discountState ?? null,
+          subtotal_amount_cents: governance.tokenQuotaContext.subtotalAmountCents ?? null,
+          discount_amount_cents: governance.tokenQuotaContext.discountAmountCents ?? null,
+          total_amount_cents: governance.tokenQuotaContext.totalAmountCents ?? null,
+          billing_currency: governance.tokenQuotaContext.billingCurrency ?? null
         }
       });
     }
@@ -5727,6 +6021,7 @@ export class ServerCoordinator {
       workspaceCheckoutPaymentSubscriptionActivationContract:
         this.buildWorkspaceCheckoutPaymentSubscriptionActivationContract(channel),
       subscriptionLifecycleRecoveryContract: this.buildSubscriptionLifecycleRecoveryContract(channel),
+      couponPromotionDiscountApplicationContract: this.buildCouponPromotionDiscountApplicationContract(channel),
       repoBinding: channel.repoBinding ?? null,
       auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt

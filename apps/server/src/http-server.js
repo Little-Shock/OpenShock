@@ -1598,6 +1598,80 @@ function serializeSubscriptionLifecycleRecoveryContract(input = {}, channelId = 
   };
 }
 
+function serializeCouponPromotionDiscountApplicationContract(input = {}, channelId = null) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const encodedChannelId = channelId ? encodeURIComponent(channelId) : ":channelId";
+  const latest = input.auditAnchor?.latest ?? {};
+  return {
+    contract_version: input.contractVersion ?? "v1.stage7b",
+    truth_family: deepClone(input.truthFamily ?? ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*", "/v1/runtime/*"]),
+    status: {
+      discount_application_contract_status: input.status?.discountApplicationContractStatus ?? "pending",
+      workspace_access_status: input.status?.workspaceAccessStatus ?? "pending",
+      plan_contract_status: input.status?.planContractStatus ?? "pending",
+      usage_quota_readiness_status: input.status?.usageQuotaReadinessStatus ?? "pending",
+      paid_conversion_status: input.status?.paidConversionStatus ?? "pending",
+      subscription_lifecycle_status: input.status?.subscriptionLifecycleStatus ?? "pending",
+      notification_access_status: input.status?.notificationAccessStatus ?? "pending",
+      coupon_status: input.status?.couponStatus ?? "pending",
+      promotion_status: input.status?.promotionStatus ?? "pending",
+      discount_state: input.status?.discountState ?? "pending"
+    },
+    pricing: {
+      subtotal_amount_cents: input.pricing?.subtotalAmountCents ?? null,
+      discount_amount_cents: input.pricing?.discountAmountCents ?? null,
+      total_amount_cents: input.pricing?.totalAmountCents ?? null,
+      billing_currency: input.pricing?.billingCurrency ?? "USD"
+    },
+    refs: {
+      workspace_id: input.refs?.workspaceId ?? null,
+      plan_ref: input.refs?.planRef ?? null,
+      subscription_ref: input.refs?.subscriptionRef ?? null,
+      coupon_ref: input.refs?.couponRef ?? null,
+      promotion_ref: input.refs?.promotionRef ?? null
+    },
+    write_anchors: {
+      workspace_context_upsert:
+        input.writeAnchors?.workspaceContextUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      token_quota_context_upsert:
+        input.writeAnchors?.tokenQuotaContextUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      notification_endpoint_upsert:
+        input.writeAnchors?.notificationEndpointUpsert ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`
+    },
+    read_anchors: {
+      channel_context: input.readAnchors?.channelContext ?? `/v1/channels/${encodedChannelId}/context`,
+      channel_notification_endpoint:
+        input.readAnchors?.channelNotificationEndpoint ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`,
+      channel_audit_trail: input.readAnchors?.channelAuditTrail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      runtime_deploy_runtime: input.readAnchors?.runtimeDeployRuntime ?? "/v1/runtime/deploy-runtime"
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      latest: {
+        token_quota_context: latest.tokenQuotaContext
+          ? {
+              audit_id: latest.tokenQuotaContext.auditId ?? null,
+              action: latest.tokenQuotaContext.action ?? null,
+              at: latest.tokenQuotaContext.at ?? null
+            }
+          : null,
+        notification_endpoint: latest.notificationEndpoint
+          ? {
+              audit_id: latest.notificationEndpoint.auditId ?? null,
+              action: latest.notificationEndpoint.action ?? null,
+              at: latest.notificationEndpoint.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
 function serializeChannelContextContract(input = {}) {
   const channelId = input.channelId;
   return {
@@ -1647,6 +1721,15 @@ function serializeChannelContextContract(input = {}) {
       input.subscriptionLifecycleRecoveryContract,
       channelId
     ),
+    ...(input.couponPromotionDiscountApplicationContract
+      ? {
+          coupon_promotion_discount_application_contract:
+            serializeCouponPromotionDiscountApplicationContract(
+              input.couponPromotionDiscountApplicationContract,
+              channelId
+            )
+        }
+      : {}),
     governance: {
       auth_identity: input.governance?.authIdentity
         ? {
@@ -1739,6 +1822,33 @@ function serializeChannelContextContract(input = {}) {
             subscription_activation_status:
               input.governance.tokenQuotaContext.subscriptionActivationStatus ?? "pending",
             subscription_ref: input.governance.tokenQuotaContext.subscriptionRef ?? null,
+            ...(input.governance.tokenQuotaContext.couponStatus !== undefined
+              ? { coupon_status: input.governance.tokenQuotaContext.couponStatus ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.couponRef !== undefined
+              ? { coupon_ref: input.governance.tokenQuotaContext.couponRef ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.promotionStatus !== undefined
+              ? { promotion_status: input.governance.tokenQuotaContext.promotionStatus ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.promotionRef !== undefined
+              ? { promotion_ref: input.governance.tokenQuotaContext.promotionRef ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.discountState !== undefined
+              ? { discount_state: input.governance.tokenQuotaContext.discountState ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.subtotalAmountCents !== undefined
+              ? { subtotal_amount_cents: input.governance.tokenQuotaContext.subtotalAmountCents ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.discountAmountCents !== undefined
+              ? { discount_amount_cents: input.governance.tokenQuotaContext.discountAmountCents ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.totalAmountCents !== undefined
+              ? { total_amount_cents: input.governance.tokenQuotaContext.totalAmountCents ?? null }
+              : {}),
+            ...(input.governance.tokenQuotaContext.billingCurrency !== undefined
+              ? { billing_currency: input.governance.tokenQuotaContext.billingCurrency ?? null }
+              : {}),
             updated_at: input.governance.tokenQuotaContext.updatedAt ?? null,
             updated_by: input.governance.tokenQuotaContext.updatedBy ?? null
           }
@@ -3863,7 +3973,16 @@ export function createHttpServer(coordinator, options = {}) {
             "payment_method_status",
             "payment_method_ref",
             "subscription_activation_status",
-            "subscription_ref"
+            "subscription_ref",
+            "coupon_status",
+            "coupon_ref",
+            "promotion_status",
+            "promotion_ref",
+            "discount_state",
+            "subtotal_amount_cents",
+            "discount_amount_cents",
+            "total_amount_cents",
+            "billing_currency"
           ]);
           for (const key of Object.keys(body.token_quota_context)) {
             if (!allowedTokenQuotaContextFields.has(key)) {
@@ -4164,7 +4283,16 @@ export function createHttpServer(coordinator, options = {}) {
                 paymentMethodStatus: body.token_quota_context.payment_method_status,
                 paymentMethodRef: body.token_quota_context.payment_method_ref,
                 subscriptionActivationStatus: body.token_quota_context.subscription_activation_status,
-                subscriptionRef: body.token_quota_context.subscription_ref
+                subscriptionRef: body.token_quota_context.subscription_ref,
+                couponStatus: body.token_quota_context.coupon_status,
+                couponRef: body.token_quota_context.coupon_ref,
+                promotionStatus: body.token_quota_context.promotion_status,
+                promotionRef: body.token_quota_context.promotion_ref,
+                discountState: body.token_quota_context.discount_state,
+                subtotalAmountCents: body.token_quota_context.subtotal_amount_cents,
+                discountAmountCents: body.token_quota_context.discount_amount_cents,
+                totalAmountCents: body.token_quota_context.total_amount_cents,
+                billingCurrency: body.token_quota_context.billing_currency
               }
             : undefined,
           hostedAccess: body.hosted_access

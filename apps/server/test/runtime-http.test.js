@@ -7312,6 +7312,152 @@ test("v1 stage7a subscription renewal failure/cancel/resume/grace recovery contr
   });
 });
 
+test("v1 stage7b coupon/promotion/discount application contract keeps price adjustment on stage7a + stage6c + notification truths", async () => {
+  const channelId = "channel_stage7b_discount_application";
+  const operatorId = "human_operator_stage7b_discount";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage7b_discount",
+        workspace_root: "/Users/atou/.slock/agents",
+        auth_identity: {
+          identity_id: "identity_stage7b_discount",
+          provider: "github",
+          subject_ref: "github_user_stage7b_discount",
+          github_login: "atou",
+          status: "bound"
+        },
+        member: {
+          member_id: "member_stage7b_discount_owner",
+          role: "owner",
+          status: "active"
+        },
+        github_installation: {
+          installation_id: "gh_ins_stage7b_discount",
+          provider: "github_app",
+          workspace_id: "workspace_stage7b_discount",
+          status: "active",
+          authorized_repos: ["Little-Shock/OpenShockSwarm"]
+        },
+        token_quota_context: {
+          token_used: 3000,
+          token_limit: 12000,
+          context_tokens: 2400,
+          context_window_tokens: 32000,
+          quota_state: "healthy",
+          plan_ref: "workspace_plan/pro",
+          subscription_status: "active",
+          checkout_session_status: "completed",
+          checkout_session_ref: "checkout_session/cs_stage7b_001",
+          payment_method_status: "ready",
+          payment_method_ref: "payment_method/pm_stage7b_001",
+          subscription_activation_status: "active",
+          subscription_ref: "subscription/sub_stage7b_001",
+          coupon_status: "applied",
+          coupon_ref: "coupon/cpn_stage7b_001",
+          promotion_status: "applied",
+          promotion_ref: "promotion/prm_stage7b_001",
+          discount_state: "applied",
+          subtotal_amount_cents: 10000,
+          discount_amount_cents: 1500,
+          total_amount_cents: 8500,
+          billing_currency: "usd"
+        }
+      }
+    });
+    assert.equal(context.statusCode, 200);
+    assert.equal(
+      context.body.context.coupon_promotion_discount_application_contract.contract_version,
+      "v1.stage7b"
+    );
+    assert.equal(
+      context.body.context.coupon_promotion_discount_application_contract.status
+        .discount_application_contract_status,
+      "pending"
+    );
+    assert.equal(
+      context.body.context.coupon_promotion_discount_application_contract.status.notification_access_status,
+      "pending"
+    );
+    assert.equal(
+      context.body.context.coupon_promotion_discount_application_contract.pricing.billing_currency,
+      "USD"
+    );
+
+    const notificationEndpoint = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        email: {
+          enabled: true,
+          endpoint_ref: "mailto:workspace-owner-stage7b@openshock.dev"
+        }
+      }
+    });
+    assert.equal(notificationEndpoint.statusCode, 200);
+
+    const contextReady = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`
+    });
+    assert.equal(contextReady.statusCode, 200);
+    assert.equal(
+      contextReady.body.context.coupon_promotion_discount_application_contract.status
+        .discount_application_contract_status,
+      "ready"
+    );
+    assert.equal(
+      contextReady.body.context.coupon_promotion_discount_application_contract.status.coupon_status,
+      "applied"
+    );
+    assert.equal(
+      contextReady.body.context.coupon_promotion_discount_application_contract.status.promotion_status,
+      "applied"
+    );
+    assert.equal(
+      contextReady.body.context.coupon_promotion_discount_application_contract.status.discount_state,
+      "applied"
+    );
+    assert.equal(
+      contextReady.body.context.coupon_promotion_discount_application_contract.pricing.total_amount_cents,
+      8500
+    );
+    assert.equal(
+      contextReady.body.context.coupon_promotion_discount_application_contract.refs.coupon_ref,
+      "coupon/cpn_stage7b_001"
+    );
+
+    const invalidCouponStatus = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        token_quota_context: {
+          coupon_status: "flash_sale"
+        }
+      }
+    });
+    assert.equal(invalidCouponStatus.statusCode, 400);
+    assert.equal(invalidCouponStatus.body.error.code, "invalid_token_coupon_status");
+
+    const payload = JSON.stringify({
+      context: contextReady.body.context
+    });
+    assert.equal(payload.includes("stage7b"), true);
+    assert.equal(payload.includes("\"token_resale\""), false);
+    assert.equal(payload.includes("\"enterprise_settlement\""), false);
+  });
+});
+
 test("v1 stage5b inbox attention contract keeps unified inbox/follow-up/mention routing under /v1/inbox truth family", async () => {
   const topicId = "topic_stage5b_inbox_contract";
   const actorId = "human_sample_01";
