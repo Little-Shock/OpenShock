@@ -483,8 +483,13 @@ export function StitchInboxView() {
                   filteredSignals.map((item, index) => {
                     const pullRequest = findPullRequestForItem(item);
                     const room = findRoomForItem(item);
-                    const roomHref = room ? `/rooms/${room.id}` : item.roomId ? `/rooms/${item.roomId}` : item.href;
-                    const runHref = item.roomId && item.runId ? `/rooms/${item.roomId}/runs/${item.runId}` : item.runId ? `/runs/${item.runId}` : null;
+                    const preferredRoomTab = item.kind === "review" ? "pr" : "context";
+                    const roomHref = room
+                      ? `/rooms/${room.id}?tab=${preferredRoomTab}`
+                      : item.roomId
+                        ? `/rooms/${item.roomId}?tab=${preferredRoomTab}`
+                        : item.href;
+                    const runHref = item.roomId && item.runId ? `/rooms/${item.roomId}?tab=run` : item.runId ? `/runs/${item.runId}` : null;
 
                     return (
                     <article
