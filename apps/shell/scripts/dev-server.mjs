@@ -1830,6 +1830,18 @@ function buildOperatorConsoleState({
             channelContextContract?.usage_quota_readiness_contract ||
             channelContextContract?.usage_quota_readiness ||
             null,
+          workspace_checkout_payment_method_subscription_activation_contract:
+            channelContextContract?.workspace_checkout_payment_method_subscription_activation_contract ||
+            channelContextContract?.workspace_checkout_payment_method_subscription_activation ||
+            channelContextContract?.checkout_payment_method_subscription_activation_contract ||
+            channelContextContract?.checkout_payment_method_subscription_activation ||
+            null,
+          subscription_lifecycle_recovery_contract:
+            channelContextContract?.subscription_lifecycle_recovery_contract ||
+            channelContextContract?.subscription_renewal_recovery_contract ||
+            channelContextContract?.subscription_renewal_failure_cancel_resume_grace_recovery_contract ||
+            channelContextContract?.subscription_recovery_contract ||
+            null,
           write_anchors: mergedWriteAnchors,
           audit_anchor: contextAuditAnchor || notificationAuditAnchor,
           updated_at: channelContextContract?.updated_at || channelNotificationEndpointContract?.updated_at || null,
@@ -1933,6 +1945,15 @@ function buildOperatorConsoleState({
     stage6a: normalizedWorkspaceGovernance.stage6a,
   });
   normalizedWorkspaceGovernance.stage6c_hosted_plan_quota = normalizedWorkspaceGovernance.stage6c;
+  normalizedWorkspaceGovernance.stage7a = buildStage7aHostedBillingSubscriptionProjection({
+    scope,
+    workspaceGovernance: normalizedWorkspaceGovernance,
+    stage6a: normalizedWorkspaceGovernance.stage6a,
+    stage6b: normalizedWorkspaceGovernance.stage6b,
+    stage6c: normalizedWorkspaceGovernance.stage6c,
+    channelContextContract: channelContract,
+  });
+  normalizedWorkspaceGovernance.stage7a_hosted_billing_subscription = normalizedWorkspaceGovernance.stage7a;
 
   const auditEntries = buildAuditEntries({
     channelAuditTrail,
@@ -4176,6 +4197,300 @@ function buildStage6cHostedPlanQuotaProjection({ scope, workspaceGovernance, sta
   };
 }
 
+function buildStage7aHostedBillingSubscriptionProjection({
+  scope,
+  workspaceGovernance,
+  stage6a,
+  stage6b,
+  stage6c,
+  channelContextContract,
+}) {
+  const stage4a2 =
+    workspaceGovernance?.stage4a2 && typeof workspaceGovernance.stage4a2 === "object" ? workspaceGovernance.stage4a2 : {};
+  const stage4a2Status = stage4a2.status && typeof stage4a2.status === "object" ? stage4a2.status : {};
+
+  const stage6aStatus = stage6a?.status && typeof stage6a.status === "object" ? stage6a.status : {};
+  const stage6aHostedOnboardingAccess =
+    stage6a?.hosted_onboarding_access && typeof stage6a.hosted_onboarding_access === "object"
+      ? stage6a.hosted_onboarding_access
+      : {};
+  const stage6aWorkbenchHandoff =
+    stage6a?.stage5_workbench_handoff && typeof stage6a.stage5_workbench_handoff === "object"
+      ? stage6a.stage5_workbench_handoff
+      : {};
+
+  const stage6bStatus = stage6b?.status && typeof stage6b.status === "object" ? stage6b.status : {};
+  const stage6bNotificationDelivery =
+    stage6b?.notification_delivery && typeof stage6b.notification_delivery === "object" ? stage6b.notification_delivery : {};
+
+  const stage6cStatus = stage6c?.status && typeof stage6c.status === "object" ? stage6c.status : {};
+  const stage6cHostedPlanQuota =
+    stage6c?.hosted_plan_quota && typeof stage6c.hosted_plan_quota === "object" ? stage6c.hosted_plan_quota : {};
+  const stage6cPlanSubscriptionLimit =
+    stage6c?.workspace_plan_subscription_limit && typeof stage6c.workspace_plan_subscription_limit === "object"
+      ? stage6c.workspace_plan_subscription_limit
+      : {};
+  const stage6cUsageQuotaReadiness =
+    stage6c?.usage_quota_readiness && typeof stage6c.usage_quota_readiness === "object" ? stage6c.usage_quota_readiness : {};
+
+  const context =
+    channelContextContract?.context && typeof channelContextContract.context === "object"
+      ? channelContextContract.context
+      : {};
+  const governance =
+    channelContextContract?.governance && typeof channelContextContract.governance === "object"
+      ? channelContextContract.governance
+      : {};
+
+  const checkoutPaymentActivationContract = normalizeStage7aCheckoutPaymentActivationContract(
+    pickFirstDefinedValue([
+      channelContextContract?.workspace_checkout_payment_method_subscription_activation_contract,
+      channelContextContract?.workspace_checkout_payment_method_subscription_activation,
+      channelContextContract?.checkout_payment_method_subscription_activation_contract,
+      channelContextContract?.checkout_payment_method_subscription_activation,
+      governance.workspace_checkout_payment_method_subscription_activation_contract,
+      governance.workspaceCheckoutPaymentMethodSubscriptionActivationContract,
+      governance.checkout_payment_method_subscription_activation_contract,
+      governance.checkoutPaymentMethodSubscriptionActivationContract,
+      context.workspace_checkout_payment_method_subscription_activation_contract,
+      context.workspaceCheckoutPaymentMethodSubscriptionActivationContract,
+      context.checkout_payment_method_subscription_activation_contract,
+      context.checkoutPaymentMethodSubscriptionActivationContract,
+    ]),
+  );
+  const subscriptionLifecycleRecoveryContract = normalizeStage7aSubscriptionLifecycleRecoveryContract(
+    pickFirstDefinedValue([
+      channelContextContract?.subscription_lifecycle_recovery_contract,
+      channelContextContract?.subscription_renewal_recovery_contract,
+      channelContextContract?.subscription_renewal_failure_cancel_resume_grace_recovery_contract,
+      channelContextContract?.subscription_recovery_contract,
+      governance.subscription_lifecycle_recovery_contract,
+      governance.subscriptionLifecycleRecoveryContract,
+      governance.subscription_renewal_recovery_contract,
+      governance.subscriptionRenewalRecoveryContract,
+      governance.subscription_renewal_failure_cancel_resume_grace_recovery_contract,
+      governance.subscriptionRenewalFailureCancelResumeGraceRecoveryContract,
+      context.subscription_lifecycle_recovery_contract,
+      context.subscriptionLifecycleRecoveryContract,
+      context.subscription_renewal_recovery_contract,
+      context.subscriptionRenewalRecoveryContract,
+      context.subscription_renewal_failure_cancel_resume_grace_recovery_contract,
+      context.subscriptionRenewalFailureCancelResumeGraceRecoveryContract,
+    ]),
+  );
+
+  const hostedEntryUrl =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_entry_url) ||
+    normalizeText(stage6aWorkbenchHandoff.hosted_workbench_url) ||
+    normalizeText(stage6cHostedPlanQuota.hosted_entry_url) ||
+    null;
+  let hostedAccessStatus =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_access_status) ||
+    normalizeText(stage6aStatus.hosted_onboarding_access_status) ||
+    normalizeText(stage6cHostedPlanQuota.hosted_access_status);
+  if (!hostedAccessStatus) {
+    if (isNonLocalHttpUrl(hostedEntryUrl)) {
+      hostedAccessStatus = "ok";
+    } else if (hostedEntryUrl) {
+      hostedAccessStatus = "local_only";
+    } else {
+      hostedAccessStatus = "pending";
+    }
+  }
+
+  const checkoutStatus = normalizeText(checkoutPaymentActivationContract?.checkout_status) || "pending";
+  const paymentMethodStatus = normalizeText(checkoutPaymentActivationContract?.payment_method_status) || "pending";
+  const subscriptionActivationStatus =
+    normalizeText(checkoutPaymentActivationContract?.subscription_activation_status) || "pending";
+  const checkoutActivationAggregateStatus =
+    normalizeText(checkoutPaymentActivationContract?.checkout_activation_status) ||
+    normalizeText(checkoutPaymentActivationContract?.status) ||
+    null;
+
+  const renewalStatus = normalizeText(subscriptionLifecycleRecoveryContract?.renewal_status) || "pending";
+  const cancelStatus = normalizeText(subscriptionLifecycleRecoveryContract?.cancel_status) || "pending";
+  const resumeStatus = normalizeText(subscriptionLifecycleRecoveryContract?.resume_status) || "pending";
+  const graceRecoveryStatus = normalizeText(subscriptionLifecycleRecoveryContract?.grace_recovery_status) || "pending";
+  const subscriptionLifecycleAggregateStatus =
+    normalizeText(subscriptionLifecycleRecoveryContract?.subscription_lifecycle_status) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.status) ||
+    null;
+
+  const paymentPendingStatus = normalizeText(subscriptionLifecycleRecoveryContract?.payment_pending_status) || "pending";
+  const paymentFailedStatus = normalizeText(subscriptionLifecycleRecoveryContract?.payment_failed_status) || "pending";
+  const paymentRecoveryAggregateStatus =
+    normalizeText(subscriptionLifecycleRecoveryContract?.payment_recovery_status) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.recovery_status) ||
+    null;
+
+  const planRef = normalizeText(stage6cPlanSubscriptionLimit.plan_ref) || null;
+  const subscriptionStatus = normalizeText(stage6cPlanSubscriptionLimit.subscription_status) || "pending";
+  const quotaState = normalizeText(stage6cUsageQuotaReadiness.quota_state) || "pending";
+  const blockReason = normalizeText(stage6cUsageQuotaReadiness.block_reason) || "none";
+  const remainingCapacity =
+    stage6cUsageQuotaReadiness.remaining_capacity === null || stage6cUsageQuotaReadiness.remaining_capacity === undefined
+      ? null
+      : Number(stage6cUsageQuotaReadiness.remaining_capacity);
+  const upgradeReadiness = normalizeText(stage6cUsageQuotaReadiness.upgrade_readiness) || "pending";
+  const upgradeCtaRef =
+    normalizeText(checkoutPaymentActivationContract?.upgrade_cta_ref) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.upgrade_cta_ref) ||
+    normalizeText(stage6cUsageQuotaReadiness.upgrade_path_ref) ||
+    normalizeText(checkoutPaymentActivationContract?.checkout_url) ||
+    null;
+  const planManageUrl =
+    normalizeText(checkoutPaymentActivationContract?.plan_manage_url) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.plan_manage_url) ||
+    null;
+
+  const notificationDeliveryStatus =
+    normalizeText(stage6bStatus.hosted_notification_recovery_status) ||
+    normalizeText(stage6bNotificationDelivery.status) ||
+    normalizeText(stage4a2Status.notification_endpoints_status) ||
+    "pending";
+  const notificationReady = isHostedReadyStatus(notificationDeliveryStatus) || isStage7aReadyStatus(notificationDeliveryStatus);
+
+  const checkoutActivationReady = checkoutActivationAggregateStatus
+    ? isStage7aReadyStatus(checkoutActivationAggregateStatus)
+    : isStage7aReadyStatus(checkoutStatus) &&
+      isStage7aReadyStatus(paymentMethodStatus) &&
+      isStage7aReadyStatus(subscriptionActivationStatus);
+
+  const lifecycleStatusSignalsPresent = Boolean(
+    subscriptionLifecycleAggregateStatus || renewalStatus !== "pending" || cancelStatus !== "pending" ||
+    resumeStatus !== "pending" || graceRecoveryStatus !== "pending",
+  );
+  const subscriptionLifecycleReady = subscriptionLifecycleAggregateStatus
+    ? isStage7aReadyStatus(subscriptionLifecycleAggregateStatus)
+    : lifecycleStatusSignalsPresent &&
+      isStage7aReadyStatus(renewalStatus) &&
+      isStage7aReadyStatus(cancelStatus) &&
+      isStage7aReadyStatus(resumeStatus) &&
+      isStage7aReadyStatus(graceRecoveryStatus);
+
+  const paymentRecoveryReady = paymentRecoveryAggregateStatus
+    ? isStage7aReadyStatus(paymentRecoveryAggregateStatus)
+    : isStage7aReadyStatus(paymentPendingStatus) &&
+      isStage7aReadyStatus(paymentFailedStatus) &&
+      isStage7aReadyStatus(graceRecoveryStatus);
+
+  const planManageReady =
+    Boolean(planRef) &&
+    isStage7aPlanManageStatus(subscriptionStatus) &&
+    (Boolean(planManageUrl) || normalizeText(stage6cPlanSubscriptionLimit.plan_truth_surface));
+  const upgradeCtaReady =
+    Boolean(upgradeCtaRef) &&
+    isStage6cReadyStatus(upgradeReadiness) &&
+    (normalizeText(stage6cStatus.usage_quota_readiness_status) === "ok" ||
+      normalizeText(stage6cStatus.usage_quota_readiness_status) === "local_only");
+  const stage6cBaselineReady =
+    normalizeText(stage6cStatus.hosted_plan_quota_status) === "ok" ||
+    normalizeText(stage6cStatus.hosted_plan_quota_status) === "local_only";
+
+  const hostedBillingSubscriptionReady =
+    checkoutActivationReady &&
+    subscriptionLifecycleReady &&
+    upgradeCtaReady &&
+    planManageReady &&
+    paymentRecoveryReady &&
+    notificationReady &&
+    stage6cBaselineReady;
+
+  const hostedBillingSubscriptionStatus = resolveStage7aHostedStatus(hostedBillingSubscriptionReady, hostedAccessStatus);
+  const checkoutActivationStatus = resolveStage7aHostedStatus(checkoutActivationReady, hostedAccessStatus);
+  const subscriptionLifecycleStatus = resolveStage7aHostedStatus(subscriptionLifecycleReady, hostedAccessStatus);
+  const upgradeCtaStatus = resolveStage7aHostedStatus(upgradeCtaReady, hostedAccessStatus);
+  const planManageStatus = resolveStage7aHostedStatus(planManageReady, hostedAccessStatus);
+  const paymentRecoveryStatus = resolveStage7aHostedStatus(paymentRecoveryReady, hostedAccessStatus);
+
+  const resolvedChannelId =
+    normalizeText(stage6cPlanSubscriptionLimit.channel_id) || normalizeText(scope?.channelId) || null;
+  const resolvedTopicId = normalizeText(stage6cPlanSubscriptionLimit.topic_id) || normalizeText(scope?.topicId) || null;
+  const resolvedWorkspaceId =
+    normalizeText(checkoutPaymentActivationContract?.workspace_id) ||
+    normalizeText(stage6cPlanSubscriptionLimit.workspace_id) ||
+    normalizeText(stage6aHostedOnboardingAccess.workspace_id) ||
+    null;
+
+  return {
+    status: {
+      hosted_billing_subscription_status: hostedBillingSubscriptionStatus,
+      checkout_payment_subscription_activation_status: checkoutActivationStatus,
+      subscription_lifecycle_recovery_status: subscriptionLifecycleStatus,
+      upgrade_cta_status: upgradeCtaStatus,
+      plan_manage_status: planManageStatus,
+      payment_pending_failed_recovery_status: paymentRecoveryStatus,
+    },
+    hosted_billing_subscription: {
+      status: hostedBillingSubscriptionStatus,
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      source: "stage7a_truth_fan_in",
+      no_shadow_truth: true,
+      truth_family: ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"],
+      read_surfaces: [
+        "/v1/channels/:channelId/context",
+        "/v1/topics/:topicId/notifications",
+        "/v1/inbox/:actorId?topic_id=:topicId",
+      ],
+    },
+    checkout_payment_subscription_activation: {
+      status: checkoutActivationStatus,
+      contract_version: normalizeText(checkoutPaymentActivationContract?.contract_version) || null,
+      workspace_id: resolvedWorkspaceId,
+      plan_ref: planRef,
+      checkout_status: checkoutStatus,
+      payment_method_status: paymentMethodStatus,
+      subscription_activation_status: subscriptionActivationStatus,
+      checkout_url: normalizeText(checkoutPaymentActivationContract?.checkout_url) || null,
+      payment_method_ref: normalizeText(checkoutPaymentActivationContract?.payment_method_ref) || null,
+      notification_policy_ref: normalizeText(checkoutPaymentActivationContract?.notification_policy_ref) || null,
+      write_anchor: normalizeText(checkoutPaymentActivationContract?.write_anchor) || null,
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+    },
+    upgrade_plan_manage: {
+      status: resolveStage7aHostedStatus(upgradeCtaReady && planManageReady, hostedAccessStatus),
+      upgrade_cta_status: upgradeCtaStatus,
+      plan_manage_status: planManageStatus,
+      upgrade_cta_ref: upgradeCtaRef,
+      plan_manage_url: planManageUrl,
+      plan_ref: planRef,
+      subscription_status: subscriptionStatus,
+      quota_state: quotaState,
+      remaining_capacity: remainingCapacity,
+      block_reason: blockReason,
+      upgrade_readiness: upgradeReadiness,
+      notification_delivery_status: notificationDeliveryStatus,
+      plan_truth_surface:
+        normalizeText(stage6cPlanSubscriptionLimit.plan_truth_surface) || "/v1/channels/:channelId/context",
+      usage_truth_surface:
+        normalizeText(stage6cUsageQuotaReadiness.usage_truth_surface) || "/v1/channels/:channelId/context",
+    },
+    payment_recovery: {
+      status: paymentRecoveryStatus,
+      contract_version: normalizeText(subscriptionLifecycleRecoveryContract?.contract_version) || null,
+      renewal_status: renewalStatus,
+      cancel_status: cancelStatus,
+      resume_status: resumeStatus,
+      grace_recovery_status: graceRecoveryStatus,
+      payment_pending_status: paymentPendingStatus,
+      payment_failed_status: paymentFailedStatus,
+      recovery_status: paymentRecoveryAggregateStatus || "pending",
+      notification_delivery_status: notificationDeliveryStatus,
+      topic_notification_truth_surface:
+        normalizeText(subscriptionLifecycleRecoveryContract?.read_anchors?.topic_notifications) ||
+        "/v1/topics/:topicId/notifications",
+      inbox_truth_surface:
+        normalizeText(subscriptionLifecycleRecoveryContract?.read_anchors?.inbox) ||
+        "/v1/inbox/:actorId?topic_id=:topicId",
+      write_anchor: normalizeText(subscriptionLifecycleRecoveryContract?.write_anchor) || null,
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+    },
+  };
+}
+
 function resolveStage5cHostedStatus(truthReady, hostedAccessStatus) {
   if (!truthReady) {
     return "pending";
@@ -4228,6 +4543,19 @@ function resolveStage6cHostedStatus(truthReady, hostedAccessStatus) {
   return "pending";
 }
 
+function resolveStage7aHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
+}
+
 function isHostedReadyStatus(value) {
   return value === "ok" || value === "local_only";
 }
@@ -4243,6 +4571,37 @@ function isStage6cReadyStatus(value) {
     normalized === "within_limit" ||
     normalized === "available" ||
     normalized === "allowed"
+  );
+}
+
+function isStage7aReadyStatus(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "ready" ||
+    normalized === "ok" ||
+    normalized === "active" ||
+    normalized === "configured" ||
+    normalized === "confirmed" ||
+    normalized === "available" ||
+    normalized === "enabled" ||
+    normalized === "allowed" ||
+    normalized === "recovered" ||
+    normalized === "resumed" ||
+    normalized === "within_grace" ||
+    normalized === "auto_renewing"
+  );
+}
+
+function isStage7aPlanManageStatus(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "active" ||
+    normalized === "trialing" ||
+    normalized === "past_due" ||
+    normalized === "canceled" ||
+    normalized === "paused" ||
+    normalized === "grace_period" ||
+    normalized === "auto_renewing"
   );
 }
 
@@ -5063,6 +5422,181 @@ function normalizeStage6cUsageQuotaReadinessContract(raw) {
           writeAnchors.tokenQuotaContextUpsert ||
           writeAnchors.runtime_deploy_runtime_upsert ||
           writeAnchors.runtimeDeployRuntimeUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage7aCheckoutPaymentActivationContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const refs = raw.refs && typeof raw.refs === "object" ? raw.refs : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const checkout = raw.checkout && typeof raw.checkout === "object" ? raw.checkout : {};
+  const paymentMethod = raw.payment_method && typeof raw.payment_method === "object" ? raw.payment_method : {};
+  const planManage = raw.plan_manage && typeof raw.plan_manage === "object" ? raw.plan_manage : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    workspace_id: normalizeText(raw.workspace_id || raw.workspaceId || refs.workspace_id || refs.workspaceId) || null,
+    checkout_status:
+      normalizeText(
+        raw.checkout_status ||
+          raw.checkoutStatus ||
+          statusSource.checkout_status ||
+          statusSource.checkoutStatus ||
+          statusSource.paid_conversion_status ||
+          statusSource.paidConversionStatus,
+      ) || null,
+    payment_method_status:
+      normalizeText(
+        raw.payment_method_status ||
+          raw.paymentMethodStatus ||
+          statusSource.payment_method_status ||
+          statusSource.paymentMethodStatus,
+      ) || null,
+    subscription_activation_status:
+      normalizeText(
+        raw.subscription_activation_status ||
+          raw.subscriptionActivationStatus ||
+          statusSource.subscription_activation_status ||
+          statusSource.subscriptionActivationStatus ||
+          statusSource.activation_status ||
+          statusSource.activationStatus,
+      ) || null,
+    checkout_activation_status:
+      normalizeText(
+        raw.checkout_activation_status ||
+          raw.checkoutActivationStatus ||
+          statusSource.checkout_activation_status ||
+          statusSource.checkoutActivationStatus,
+      ) || null,
+    status:
+      normalizeText(raw.status_value || statusSource.status || statusSource.contract_status || statusSource.contractStatus) ||
+      null,
+    checkout_url:
+      normalizeText(raw.checkout_url || raw.checkoutUrl || checkout.url || checkout.checkout_url || checkout.checkoutUrl) || null,
+    payment_method_ref:
+      normalizeText(raw.payment_method_ref || raw.paymentMethodRef || paymentMethod.method_ref || paymentMethod.methodRef) || null,
+    plan_manage_url:
+      normalizeText(raw.plan_manage_url || raw.planManageUrl || planManage.url || planManage.manage_url || planManage.manageUrl) ||
+      null,
+    upgrade_cta_ref:
+      normalizeText(raw.upgrade_cta_ref || raw.upgradeCtaRef || raw.upgrade_path_ref || raw.upgradePathRef || raw.upgrade_ref) ||
+      null,
+    notification_policy_ref:
+      normalizeText(raw.notification_policy_ref || raw.notificationPolicyRef || refs.notification_policy_ref) || null,
+    read_anchors: {
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context || readAnchors.channelContext || readAnchors.workspace_context || readAnchors.workspaceContext,
+        ) || null,
+      workspace_member_access:
+        normalizeText(readAnchors.workspace_member_access || readAnchors.workspaceMemberAccess) || null,
+      notification:
+        normalizeText(readAnchors.notification || readAnchors.topic_notifications || readAnchors.topicNotifications) || null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.checkout_create ||
+          writeAnchors.checkoutCreate ||
+          writeAnchors.payment_method_upsert ||
+          writeAnchors.paymentMethodUpsert ||
+          writeAnchors.subscription_activation_upsert ||
+          writeAnchors.subscriptionActivationUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage7aSubscriptionLifecycleRecoveryContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const renewal = raw.renewal && typeof raw.renewal === "object" ? raw.renewal : {};
+  const cancellation = raw.cancel && typeof raw.cancel === "object" ? raw.cancel : {};
+  const resume = raw.resume && typeof raw.resume === "object" ? raw.resume : {};
+  const graceRecovery = raw.grace_recovery && typeof raw.grace_recovery === "object" ? raw.grace_recovery : {};
+  const paymentPending = raw.payment_pending && typeof raw.payment_pending === "object" ? raw.payment_pending : {};
+  const paymentFailed = raw.payment_failed && typeof raw.payment_failed === "object" ? raw.payment_failed : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    renewal_status:
+      normalizeText(raw.renewal_status || raw.renewalStatus || renewal.status || statusSource.renewal_status) || null,
+    cancel_status:
+      normalizeText(raw.cancel_status || raw.cancelStatus || cancellation.status || statusSource.cancel_status) || null,
+    resume_status:
+      normalizeText(raw.resume_status || raw.resumeStatus || resume.status || statusSource.resume_status) || null,
+    grace_recovery_status:
+      normalizeText(
+        raw.grace_recovery_status ||
+          raw.graceRecoveryStatus ||
+          graceRecovery.status ||
+          statusSource.grace_recovery_status ||
+          statusSource.graceRecoveryStatus,
+      ) || null,
+    payment_pending_status:
+      normalizeText(
+        raw.payment_pending_status ||
+          raw.paymentPendingStatus ||
+          paymentPending.status ||
+          statusSource.payment_pending_status ||
+          statusSource.paymentPendingStatus,
+      ) || null,
+    payment_failed_status:
+      normalizeText(
+        raw.payment_failed_status ||
+          raw.paymentFailedStatus ||
+          paymentFailed.status ||
+          statusSource.payment_failed_status ||
+          statusSource.paymentFailedStatus,
+      ) || null,
+    subscription_lifecycle_status:
+      normalizeText(
+        raw.subscription_lifecycle_status ||
+          raw.subscriptionLifecycleStatus ||
+          statusSource.subscription_lifecycle_status ||
+          statusSource.subscriptionLifecycleStatus,
+      ) || null,
+    payment_recovery_status:
+      normalizeText(
+        raw.payment_recovery_status ||
+          raw.paymentRecoveryStatus ||
+          statusSource.payment_recovery_status ||
+          statusSource.paymentRecoveryStatus,
+      ) || null,
+    recovery_status: normalizeText(raw.recovery_status || raw.recoveryStatus || statusSource.recovery_status) || null,
+    status: normalizeText(statusSource.status || statusSource.contract_status || statusSource.contractStatus) || null,
+    upgrade_cta_ref:
+      normalizeText(raw.upgrade_cta_ref || raw.upgradeCtaRef || raw.upgrade_path_ref || raw.upgradePathRef) || null,
+    plan_manage_url: normalizeText(raw.plan_manage_url || raw.planManageUrl) || null,
+    read_anchors: {
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context || readAnchors.channelContext || readAnchors.workspace_context || readAnchors.workspaceContext,
+        ) || null,
+      topic_notifications:
+        normalizeText(readAnchors.topic_notifications || readAnchors.topicNotifications || readAnchors.notification) || null,
+      inbox:
+        normalizeText(readAnchors.inbox || readAnchors.inbox_attention || readAnchors.inboxAttention) || null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.subscription_update ||
+          writeAnchors.subscriptionUpdate ||
+          writeAnchors.recovery_retry ||
+          writeAnchors.recoveryRetry ||
+          writeAnchors.payment_method_upsert ||
+          writeAnchors.paymentMethodUpsert,
       ) || null,
     audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
   };

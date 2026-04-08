@@ -543,6 +543,12 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
     (governance.stage6c_hosted_plan_quota && typeof governance.stage6c_hosted_plan_quota === "object"
       ? governance.stage6c_hosted_plan_quota
       : null);
+  const stage7a =
+    (governance.stage7a && typeof governance.stage7a === "object" ? governance.stage7a : null) ||
+    (governance.stage7a_hosted_billing_subscription &&
+    typeof governance.stage7a_hosted_billing_subscription === "object"
+      ? governance.stage7a_hosted_billing_subscription
+      : null);
 
   const chainCard = queueCard({
     title: `Workspace ${workspaceId}`,
@@ -1208,6 +1214,72 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
         `block_reason=${normalizeText(usageQuotaReadiness.block_reason) || "none"} · ` +
         `upgrade_path=${normalizeText(usageQuotaReadiness.upgrade_path_ref) || "n/a"}`,
       status: hostedPlanQuota.no_shadow_truth === true ? "active" : "pending",
+    });
+    dom.workspaceGovernanceList.append(guardrailCard);
+  }
+
+  if (stage7a) {
+    const stage7aStatus = stage7a.status && typeof stage7a.status === "object" ? stage7a.status : {};
+    const hostedBillingSubscription =
+      stage7a.hosted_billing_subscription && typeof stage7a.hosted_billing_subscription === "object"
+        ? stage7a.hosted_billing_subscription
+        : {};
+    const checkoutPaymentSubscriptionActivation =
+      stage7a.checkout_payment_subscription_activation &&
+      typeof stage7a.checkout_payment_subscription_activation === "object"
+        ? stage7a.checkout_payment_subscription_activation
+        : {};
+    const upgradePlanManage =
+      stage7a.upgrade_plan_manage && typeof stage7a.upgrade_plan_manage === "object" ? stage7a.upgrade_plan_manage : {};
+    const paymentRecovery = stage7a.payment_recovery && typeof stage7a.payment_recovery === "object" ? stage7a.payment_recovery : {};
+
+    const billingCard = queueCard({
+      title: "Stage7A Hosted Billing / Subscription Reachability",
+      subtitle:
+        `entry=${normalizeText(stage7aStatus.hosted_billing_subscription_status) || "pending"} · ` +
+        `checkout=${normalizeText(stage7aStatus.checkout_payment_subscription_activation_status) || "pending"} · ` +
+        `lifecycle=${normalizeText(stage7aStatus.subscription_lifecycle_recovery_status) || "pending"}`,
+      note:
+        `${formatStage7aHostedBillingSubscription(hostedBillingSubscription)} · ` +
+        `${formatStage7aCheckoutActivation(checkoutPaymentSubscriptionActivation)}`,
+      status: normalizeText(stage7aStatus.hosted_billing_subscription_status) === "ok" ? "active" : "pending",
+    });
+    dom.workspaceGovernanceList.append(billingCard);
+
+    const upgradePlanManageCard = queueCard({
+      title: "Stage7A Upgrade CTA / Plan Manage",
+      subtitle:
+        `upgrade=${normalizeText(stage7aStatus.upgrade_cta_status) || "pending"} · ` +
+        `plan_manage=${normalizeText(stage7aStatus.plan_manage_status) || "pending"}`,
+      note: formatStage7aUpgradePlanManage(upgradePlanManage),
+      status:
+        normalizeText(stage7aStatus.upgrade_cta_status) === "ok" &&
+        normalizeText(stage7aStatus.plan_manage_status) === "ok"
+          ? "active"
+          : "pending",
+    });
+    dom.workspaceGovernanceList.append(upgradePlanManageCard);
+
+    const paymentRecoveryCard = queueCard({
+      title: "Stage7A Payment Pending / Failed Recovery",
+      subtitle:
+        `recovery=${normalizeText(stage7aStatus.payment_pending_failed_recovery_status) || "pending"} · ` +
+        `lifecycle=${normalizeText(stage7aStatus.subscription_lifecycle_recovery_status) || "pending"}`,
+      note: formatStage7aPaymentRecovery(paymentRecovery),
+      status: normalizeText(stage7aStatus.payment_pending_failed_recovery_status) === "ok" ? "active" : "pending",
+    });
+    dom.workspaceGovernanceList.append(paymentRecoveryCard);
+
+    const guardrailCard = queueCard({
+      title: "Stage7A No Shadow Billing / Notification Truth",
+      subtitle:
+        `no_shadow_truth=${hostedBillingSubscription.no_shadow_truth === true ? "ok" : "pending"} · ` +
+        `notify=${normalizeText(paymentRecovery.notification_delivery_status) || "pending"}`,
+      note:
+        `truth_family=${formatStage6cTruthFamily(hostedBillingSubscription.truth_family)} · ` +
+        `block_reason=${normalizeText(upgradePlanManage.block_reason) || "none"} · ` +
+        `remaining=${formatStage7aRemainingCapacity(upgradePlanManage.remaining_capacity)}`,
+      status: hostedBillingSubscription.no_shadow_truth === true ? "active" : "pending",
     });
     dom.workspaceGovernanceList.append(guardrailCard);
   }
@@ -2402,6 +2474,77 @@ function formatStage6cTruthFamily(raw) {
     return "pending";
   }
   return raw.join(",");
+}
+
+function formatStage7aHostedBillingSubscription(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "hosted billing/subscription pending";
+  }
+  const entryUrl = normalizeText(raw.hosted_entry_url) || "n/a";
+  const hostedStatus = normalizeText(raw.hosted_access_status) || "pending";
+  const source = normalizeText(raw.source) || "stage7a_truth_fan_in";
+  return `entry=${entryUrl} · hosted=${hostedStatus} · source=${source}`;
+}
+
+function formatStage7aCheckoutActivation(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "checkout/payment/subscription activation pending";
+  }
+  const workspaceId = normalizeText(raw.workspace_id) || "n/a";
+  const planRef = normalizeText(raw.plan_ref) || "n/a";
+  const checkoutStatus = normalizeText(raw.checkout_status) || "pending";
+  const paymentMethodStatus = normalizeText(raw.payment_method_status) || "pending";
+  const activationStatus = normalizeText(raw.subscription_activation_status) || "pending";
+  const checkoutUrl = normalizeText(raw.checkout_url) || "n/a";
+  const paymentMethodRef = normalizeText(raw.payment_method_ref) || "n/a";
+  return (
+    `workspace=${workspaceId} · plan=${planRef} · checkout=${checkoutStatus} · ` +
+    `payment_method=${paymentMethodStatus} · activation=${activationStatus} · ` +
+    `checkout_url=${checkoutUrl} · method_ref=${paymentMethodRef}`
+  );
+}
+
+function formatStage7aUpgradePlanManage(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "upgrade CTA / plan manage pending";
+  }
+  const upgradeStatus = normalizeText(raw.upgrade_cta_status) || "pending";
+  const planManageStatus = normalizeText(raw.plan_manage_status) || "pending";
+  const upgradeRef = normalizeText(raw.upgrade_cta_ref) || "n/a";
+  const planManageUrl = normalizeText(raw.plan_manage_url) || "n/a";
+  const planRef = normalizeText(raw.plan_ref) || "n/a";
+  const subscriptionStatus = normalizeText(raw.subscription_status) || "pending";
+  const quotaState = normalizeText(raw.quota_state) || "pending";
+  const remaining = formatStage7aRemainingCapacity(raw.remaining_capacity);
+  const blockReason = normalizeText(raw.block_reason) || "none";
+  return (
+    `upgrade=${upgradeStatus} ref=${upgradeRef} · plan_manage=${planManageStatus} url=${planManageUrl} · ` +
+    `plan=${planRef} subscription=${subscriptionStatus} · quota=${quotaState} remaining=${remaining} block=${blockReason}`
+  );
+}
+
+function formatStage7aPaymentRecovery(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "payment pending/failed recovery pending";
+  }
+  const renewal = normalizeText(raw.renewal_status) || "pending";
+  const cancelStatus = normalizeText(raw.cancel_status) || "pending";
+  const resumeStatus = normalizeText(raw.resume_status) || "pending";
+  const graceRecovery = normalizeText(raw.grace_recovery_status) || "pending";
+  const paymentPending = normalizeText(raw.payment_pending_status) || "pending";
+  const paymentFailed = normalizeText(raw.payment_failed_status) || "pending";
+  const notify = normalizeText(raw.notification_delivery_status) || "pending";
+  return (
+    `renewal=${renewal} · cancel=${cancelStatus} · resume=${resumeStatus} · grace=${graceRecovery} · ` +
+    `payment_pending=${paymentPending} · payment_failed=${paymentFailed} · notify=${notify}`
+  );
+}
+
+function formatStage7aRemainingCapacity(raw) {
+  if (raw === null || raw === undefined) {
+    return "n/a";
+  }
+  return String(Number(raw));
 }
 
 function queueCard({ title, subtitle, note, status = "pending" }) {
