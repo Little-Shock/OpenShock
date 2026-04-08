@@ -4239,6 +4239,7 @@ function isStage6cReadyStatus(value) {
     normalized === "ok" ||
     normalized === "active" ||
     normalized === "healthy" ||
+    normalized === "near_limit" ||
     normalized === "within_limit" ||
     normalized === "available" ||
     normalized === "allowed"
