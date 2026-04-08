@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { QuickSearchSurface, StitchSidebar, StitchTopBar, WorkspaceStatusStrip } from "@/components/stitch-shell-primitives";
@@ -119,6 +120,168 @@ type ReplyTarget = {
 };
 
 type ThreadMap = Record<string, Message[]>;
+type ChannelWorkbenchTab = "chat" | "followed" | "saved";
+type SidebarDirectMessage = {
+  id: string;
+  name: string;
+  summary: string;
+  purpose: string;
+  unread: number;
+  presence: "running" | "idle" | "blocked";
+  counterpart: string;
+};
+type MessageSurfaceEntry = {
+  id: string;
+  channelId: string;
+  messageId: string;
+  channelLabel: string;
+  title: string;
+  summary: string;
+  note: string;
+  updatedAt: string;
+  unread: number;
+};
+type MessageChannelSurface = {
+  id: string;
+  name: string;
+  summary: string;
+  purpose: string;
+  unread: number;
+  kind: "channel" | "dm";
+  counterpart?: string;
+  presence?: "running" | "idle" | "blocked";
+};
+
+const CHANNEL_WORKBENCH_TAB_LABEL: Record<ChannelWorkbenchTab, string> = {
+  chat: "Chat",
+  followed: "Followed",
+  saved: "Saved Later",
+};
+
+function parseChannelWorkbenchTab(value?: string | null): ChannelWorkbenchTab {
+  switch (value) {
+    case "followed":
+    case "saved":
+      return value;
+    default:
+      return "chat";
+  }
+}
+
+function buildChannelWorkbenchHref(channelId: string, tab: ChannelWorkbenchTab, threadId?: string) {
+  const params = new URLSearchParams();
+  if (tab !== "chat") {
+    params.set("tab", tab);
+  }
+  if (threadId) {
+    params.set("thread", threadId);
+  }
+  const query = params.toString();
+  return query ? `/chat/${channelId}?${query}` : `/chat/${channelId}`;
+}
+
+function buildThreadReopenHref(channelId: string, threadId: string) {
+  return buildChannelWorkbenchHref(channelId, "chat", threadId);
+}
+
+const DIRECT_MESSAGES: SidebarDirectMessage[] = [
+  {
+    id: "dm-codex-dockmaster",
+    name: "@Codex Dockmaster",
+    summary: "room-first UI、thread reopen 和消息工作流的快速对齐面。",
+    purpose: "这条 DM 用来快速对齐前台壳层和 thread reopen，不需要立刻升级成 room。",
+    unread: 2,
+    presence: "running",
+    counterpart: "Codex Dockmaster",
+  },
+  {
+    id: "dm-mina",
+    name: "@Mina",
+    summary: "copy、saved later 队列和人类回访习惯的收口面。",
+    purpose: "产品文案和 saved-later 队列先在这条 DM 里收紧，再决定是否升级为正式 room。",
+    unread: 1,
+    presence: "idle",
+    counterpart: "Mina",
+  },
+];
+
+const DIRECT_MESSAGE_MESSAGES: Record<string, Message[]> = {
+  "dm-codex-dockmaster": [
+    {
+      id: "msg-dm-codex-1",
+      speaker: "Codex Dockmaster",
+      role: "agent",
+      tone: "agent",
+      message: "我先不把这条抬成 room。等 thread follow / reopen 真闭环了，再升级。",
+      time: "11:12",
+    },
+    {
+      id: "msg-dm-codex-2",
+      speaker: "Larkspur",
+      role: "human",
+      tone: "human",
+      message: "可以。DM 先承担快速澄清，真正需要 run / PR / approval 时再升房间。",
+      time: "11:14",
+    },
+  ],
+  "dm-mina": [
+    {
+      id: "msg-dm-mina-1",
+      speaker: "Mina",
+      role: "human",
+      tone: "human",
+      message: "saved later 不应该像任务板，它更像“我晚点回来看这条 thread”。",
+      time: "11:22",
+    },
+    {
+      id: "msg-dm-mina-2",
+      speaker: "System",
+      role: "system",
+      tone: "system",
+      message: "已记录：Later surface 用于 revisit，不伪装成新一层 backlog。",
+      time: "11:24",
+    },
+  ],
+};
+
+const DEFAULT_FOLLOWED_THREADS: MessageSurfaceEntry[] = [
+  {
+    id: "followed-all-runtime",
+    channelId: "all",
+    messageId: "msg-all-2",
+    channelLabel: "#all",
+    title: "Codex Dockmaster runtime sync thread",
+    summary: "Runtime 在线状态已经同步；下一步要把真实 Run 和审批链路带进前台。",
+    note: "这条 thread 已被 follow，用来反复回看频道里的关键协作线索。",
+    updatedAt: "09:19",
+    unread: 2,
+  },
+];
+
+const DEFAULT_SAVED_LATER_ITEMS: MessageSurfaceEntry[] = [
+  {
+    id: "saved-roadmap-chat-first",
+    channelId: "roadmap",
+    messageId: "msg-roadmap-1",
+    channelLabel: "#roadmap",
+    title: "Longwen default-entry note",
+    summary: "默认入口必须聊天优先，任务板只能是辅助视图。",
+    note: "Later 队列里保留的是“之后要重新打开的消息”，不是新的 planning lane。",
+    updatedAt: "10:06",
+    unread: 1,
+  },
+  {
+    id: "saved-dm-mina-later",
+    channelId: "dm-mina",
+    messageId: "msg-dm-mina-1",
+    channelLabel: "@Mina",
+    title: "Mina saved-later guideline",
+    summary: "saved later 更像“晚点回来看这条 thread”，不是第二个 board。",
+    note: "DM 里的轻量讨论也可以被 later 化，然后重新打开。",
+    updatedAt: "11:24",
+    unread: 0,
+  },
+];
 
 const CHANNEL_THREAD_REPLIES: Record<string, ThreadMap> = {
   all: {
@@ -150,6 +313,30 @@ const CHANNEL_THREAD_REPLIES: Record<string, ThreadMap> = {
         tone: "system",
         message: "已记录：Board 仅保留为 planning mirror，不再作为首页主心智。",
         time: "10:06",
+      },
+    ],
+  },
+  "dm-codex-dockmaster": {
+    "msg-dm-codex-1": [
+      {
+        id: "thread-dm-codex-1",
+        speaker: "Larkspur",
+        role: "human",
+        tone: "human",
+        message: "先把 revisit 做顺，再谈是不是要升成新 room。",
+        time: "11:15",
+      },
+    ],
+  },
+  "dm-mina": {
+    "msg-dm-mina-1": [
+      {
+        id: "thread-dm-mina-1",
+        speaker: "System",
+        role: "system",
+        tone: "system",
+        message: "Later surface 已记录为当前消息工作流的一等入口需求。",
+        time: "11:25",
       },
     ],
   },
@@ -301,6 +488,7 @@ function ThreadRail({
   replyTarget,
   onReply,
   primaryAction,
+  secondaryAction,
   emptyTitle,
   emptyMessage,
 }: {
@@ -310,6 +498,13 @@ function ThreadRail({
   replyTarget?: ReplyTarget | null;
   onReply: () => void;
   primaryAction?: {
+    label: string;
+    onClick: () => void | Promise<void>;
+    disabled?: boolean;
+    tone?: "yellow" | "white" | "ink";
+    testId?: string;
+  };
+  secondaryAction?: {
     label: string;
     onClick: () => void | Promise<void>;
     disabled?: boolean;
@@ -329,19 +524,37 @@ function ThreadRail({
               {scopeLabel}
             </p>
           </div>
-          {primaryAction ? (
-            <button
-              type="button"
-              data-testid={primaryAction.testId}
-              onClick={() => void primaryAction.onClick()}
-              disabled={primaryAction.disabled}
-              className={cn(
-                "min-h-[44px] rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-60",
-                actionTone(primaryAction.tone ?? "white")
-              )}
-            >
-              {primaryAction.label}
-            </button>
+          {primaryAction || secondaryAction ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              {primaryAction ? (
+                <button
+                  type="button"
+                  data-testid={primaryAction.testId}
+                  onClick={() => void primaryAction.onClick()}
+                  disabled={primaryAction.disabled}
+                  className={cn(
+                    "min-h-[44px] rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-60",
+                    actionTone(primaryAction.tone ?? "white")
+                  )}
+                >
+                  {primaryAction.label}
+                </button>
+              ) : null}
+              {secondaryAction ? (
+                <button
+                  type="button"
+                  data-testid={secondaryAction.testId}
+                  onClick={() => void secondaryAction.onClick()}
+                  disabled={secondaryAction.disabled}
+                  className={cn(
+                    "min-h-[44px] rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-60",
+                    actionTone(secondaryAction.tone ?? "white")
+                  )}
+                >
+                  {secondaryAction.label}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -413,6 +626,91 @@ function ThreadRail({
   );
 }
 
+function MessageWorkbenchCollectionPanel({
+  title,
+  description,
+  items,
+  activeItemId,
+  testId,
+}: {
+  title: string;
+  description: string;
+  items: Array<
+    MessageSurfaceEntry & {
+      surfaceHref: string;
+      reopenHref: string;
+      queueLabel: string;
+      reopenTestId: string;
+    }
+  >;
+  activeItemId?: string;
+  testId: string;
+}) {
+  return (
+    <div data-testid={testId} className="space-y-4">
+      <section className="border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
+        <p className="font-display text-[20px] font-bold">{title}</p>
+        <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">{description}</p>
+      </section>
+
+      {items.length > 0 ? (
+        items.map((item) => (
+          <section
+            key={item.id}
+            data-testid={`${testId}-card-${item.id}`}
+            className={cn(
+              "border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]",
+              activeItemId === item.id && "bg-[#fff4cc]"
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]">
+                {item.queueLabel}
+              </span>
+              <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]">
+                {item.channelLabel}
+              </span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.5)]">
+                {item.updatedAt}
+              </span>
+              {item.unread > 0 ? (
+                <span className="ml-auto min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
+                  {item.unread}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-3 font-display text-[18px] font-bold leading-6">{item.title}</p>
+            <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.82)]">{item.summary}</p>
+            <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.62)]">{item.note}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href={item.reopenHref}
+                data-testid={item.reopenTestId}
+                className="border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white shadow-[var(--shock-shadow-sm)]"
+              >
+                Reopen Thread
+              </Link>
+              <Link
+                href={item.surfaceHref}
+                className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+              >
+                Open Surface
+              </Link>
+            </div>
+          </section>
+        ))
+      ) : (
+        <section className="border-2 border-dashed border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
+          <p className="font-display text-[18px] font-bold">当前还没有条目</p>
+          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">
+            先在 Chat 里打开一条 thread，再选择 follow 或 save for later。
+          </p>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function MessageStreamRow({
   message,
   replyCount,
@@ -455,6 +753,7 @@ function MessageStreamRow({
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                data-testid={`message-thread-open-${message.id}`}
                 onClick={() => onOpenThread?.(message)}
                 className={cn(
                   "inline-flex min-h-[44px] items-center gap-1 rounded-full border border-[var(--shock-ink)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fff9ec]",
@@ -712,11 +1011,19 @@ function ClaudeCompactComposer({
 }
 
 export function StitchChannelsView({ channelId }: { channelId: string }) {
+  const searchParams = useSearchParams();
   const { state, approvalCenter, loading, error, postChannelMessage } = usePhaseZeroState();
   const quickSearch = useQuickSearchController(loading || error ? { ...state, channels: [], rooms: [], issues: [], runs: [], agents: [] } : state);
-  const channel = loading || error ? undefined : state.channels.find((item) => item.id === channelId);
-  const messages = channel ? state.channelMessages[channel.id] ?? [] : [];
-  const channelThreadReplies = channel ? CHANNEL_THREAD_REPLIES[channel.id] ?? {} : {};
+  const activeWorkbenchTab = parseChannelWorkbenchTab(searchParams.get("tab"));
+  const queryThreadId = searchParams.get("thread");
+  const liveChannel = loading || error ? undefined : state.channels.find((item) => item.id === channelId);
+  const directMessage = DIRECT_MESSAGES.find((item) => item.id === channelId);
+  const channel: MessageChannelSurface | undefined = liveChannel
+    ? { ...liveChannel, kind: "channel" }
+    : directMessage
+      ? { ...directMessage, kind: "dm" }
+      : undefined;
+  const isDirectMessage = channel?.kind === "dm";
   const sidebarChannels = loading || error ? [] : state.channels;
   const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = loading || error ? [] : state.machines;
@@ -728,23 +1035,119 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const [localDirectMessageMessages, setLocalDirectMessageMessages] = useState<Record<string, Message[]>>(DIRECT_MESSAGE_MESSAGES);
+  const [followedThreads, setFollowedThreads] = useState<MessageSurfaceEntry[]>(DEFAULT_FOLLOWED_THREADS);
+  const [savedLaterItems, setSavedLaterItems] = useState<MessageSurfaceEntry[]>(DEFAULT_SAVED_LATER_ITEMS);
+  const messages = channel
+    ? isDirectMessage
+      ? localDirectMessageMessages[channel.id] ?? []
+      : state.channelMessages[channel.id] ?? []
+    : [];
+  const channelThreadReplies = channel ? CHANNEL_THREAD_REPLIES[channel.id] ?? {} : {};
   const latestMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-  const messageScrollRef = useStickyMessageScroll(
-    channelId,
-    messages.length,
-    latestMessage?.message.length ?? 0
-  );
+  const messageScrollRef = useStickyMessageScroll(channelId, messages.length, latestMessage?.message.length ?? 0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
   const workspaceName = loading || error ? undefined : state.workspace.name;
   const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
+  const directMessagesForSidebar = DIRECT_MESSAGES.map((item) => ({
+    ...item,
+    href: buildChannelWorkbenchHref(item.id, "chat"),
+  }));
+  const followedItemsForSurface = followedThreads.map((item) => ({
+    ...item,
+    queueLabel: "Followed",
+    surfaceHref: buildChannelWorkbenchHref(item.channelId, "followed", item.messageId),
+    reopenHref: buildThreadReopenHref(item.channelId, item.messageId),
+    reopenTestId: `followed-thread-reopen-${item.id}`,
+  }));
+  const savedItemsForSurface = savedLaterItems.map((item) => ({
+    ...item,
+    queueLabel: "Later",
+    surfaceHref: buildChannelWorkbenchHref(item.channelId, "saved", item.messageId),
+    reopenHref: buildThreadReopenHref(item.channelId, item.messageId),
+    reopenTestId: `saved-later-reopen-${item.id}`,
+  }));
+  const followedThreadsForSidebar = followedThreads.map((item) => ({
+    id: item.id,
+    title: item.title,
+    summary: item.summary,
+    meta: `${item.channelLabel} · ${item.updatedAt}`,
+    unread: item.unread,
+    href: buildChannelWorkbenchHref(item.channelId, "followed", item.messageId),
+  }));
+  const savedLaterForSidebar = savedLaterItems.map((item) => ({
+    id: item.id,
+    title: item.title,
+    summary: item.summary,
+    meta: `${item.channelLabel} · ${item.updatedAt}`,
+    unread: item.unread,
+    href: buildChannelWorkbenchHref(item.channelId, "saved", item.messageId),
+  }));
   const selectedThreadMessage =
-    messages.find((message) => message.id === selectedThreadId) ?? messages.find((message) => message.id === initialThreadMessageId(messages, channelThreadReplies));
+    messages.find((message) => message.id === selectedThreadId) ??
+    messages.find((message) => message.id === queryThreadId) ??
+    messages.find((message) => message.id === initialThreadMessageId(messages, channelThreadReplies));
   const selectedThreadReplies = selectedThreadMessage ? channelThreadReplies[selectedThreadMessage.id] ?? [] : [];
+  const selectedFollowedEntry =
+    followedItemsForSurface.find((item) => item.channelId === channelId && item.messageId === queryThreadId) ??
+    followedItemsForSurface.find((item) => item.channelId === channelId) ??
+    followedItemsForSurface[0];
+  const selectedSavedEntry =
+    savedItemsForSurface.find((item) => item.channelId === channelId && item.messageId === queryThreadId) ??
+    savedItemsForSurface.find((item) => item.channelId === channelId) ??
+    savedItemsForSurface[0];
+  const selectedCollectionEntry = activeWorkbenchTab === "followed" ? selectedFollowedEntry : selectedSavedEntry;
+  const selectedCollectionMessage = selectedCollectionEntry
+    ? (selectedCollectionEntry.channelId === channelId
+        ? messages
+        : localDirectMessageMessages[selectedCollectionEntry.channelId] ?? state.channelMessages[selectedCollectionEntry.channelId] ?? []
+      ).find((message) => message.id === selectedCollectionEntry.messageId)
+    : undefined;
+  const selectedCollectionReplies = selectedCollectionEntry
+    ? (CHANNEL_THREAD_REPLIES[selectedCollectionEntry.channelId] ?? {})[selectedCollectionEntry.messageId] ?? []
+    : [];
+  const selectedFollowedThreadId = activeWorkbenchTab === "followed" ? selectedFollowedEntry?.id : undefined;
+  const selectedSavedLaterId = activeWorkbenchTab === "saved" ? selectedSavedEntry?.id : undefined;
+  const selectedDirectMessageId = isDirectMessage ? channelId : undefined;
+  const selectedChannelLinkId = isDirectMessage ? undefined : channelId;
+  const workbenchTabs = (["chat", "followed", "saved"] as ChannelWorkbenchTab[]).map((tab) => ({
+    label: CHANNEL_WORKBENCH_TAB_LABEL[tab],
+    href: buildChannelWorkbenchHref(channelId, tab, queryThreadId ?? undefined),
+    testId: `channel-workbench-tab-${tab}`,
+  }));
+  const isSelectedThreadFollowed = Boolean(
+    selectedThreadMessage &&
+      followedThreads.some((item) => item.channelId === channelId && item.messageId === selectedThreadMessage.id)
+  );
+  const isSelectedThreadSaved = Boolean(
+    selectedThreadMessage &&
+      savedLaterItems.some((item) => item.channelId === channelId && item.messageId === selectedThreadMessage.id)
+  );
+
+  function buildSurfaceEntry(prefix: "followed" | "saved", message: Message, note: string) {
+    return {
+      id: `${prefix}-${channelId}-${message.id}`,
+      channelId,
+      messageId: message.id,
+      channelLabel: channel?.name ?? channelId,
+      title: `${message.speaker} / ${messageExcerpt(message.message, 34)}`,
+      summary: messageExcerpt(message.message, 110),
+      note,
+      updatedAt: message.time,
+      unread: channelThreadReplies[message.id]?.length ?? 0,
+    } satisfies MessageSurfaceEntry;
+  }
 
   useEffect(() => {
-    const nextThreadId = initialThreadMessageId(messages, channelThreadReplies);
+    const nextThreadId =
+      queryThreadId && messages.some((message) => message.id === queryThreadId)
+        ? queryThreadId
+        : initialThreadMessageId(messages, channelThreadReplies);
     setSelectedThreadId((current) => {
+      if (queryThreadId && messages.some((message) => message.id === queryThreadId)) {
+        return queryThreadId;
+      }
       if (current && messages.some((message) => message.id === current)) {
         return current;
       }
@@ -756,7 +1159,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
       }
       return null;
     });
-  }, [channelId, messages, channelThreadReplies]);
+  }, [channelId, queryThreadId, messages, channelThreadReplies]);
 
   useEffect(() => {
     if (replyTarget) {
@@ -769,6 +1172,34 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     setReplyTarget(buildReplyTarget(message));
   }
 
+  function handleToggleFollowThread() {
+    if (!selectedThreadMessage || !channel) return;
+    setFollowedThreads((current) => {
+      const exists = current.some((item) => item.channelId === channelId && item.messageId === selectedThreadMessage.id);
+      if (exists) {
+        return current.filter((item) => !(item.channelId === channelId && item.messageId === selectedThreadMessage.id));
+      }
+      return [
+        buildSurfaceEntry("followed", selectedThreadMessage, "这条 thread 已被 follow，可从 sidebar 或 Followed tab 重新打开。"),
+        ...current,
+      ];
+    });
+  }
+
+  function handleToggleSaveLater() {
+    if (!selectedThreadMessage || !channel) return;
+    setSavedLaterItems((current) => {
+      const exists = current.some((item) => item.channelId === channelId && item.messageId === selectedThreadMessage.id);
+      if (exists) {
+        return current.filter((item) => !(item.channelId === channelId && item.messageId === selectedThreadMessage.id));
+      }
+      return [
+        buildSurfaceEntry("saved", selectedThreadMessage, "Later 队列保留“晚点回看”的消息，不把它伪装成新的 planning lane。"),
+        ...current,
+      ];
+    });
+  }
+
   async function handleChannelSend() {
     if (!channel || !draft.trim() || sending || loading || Boolean(error)) {
       return;
@@ -777,7 +1208,32 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     setSending(true);
     setSendError(null);
     try {
-      await postChannelMessage(channel.id, sendPrompt);
+      if (isDirectMessage) {
+        const now = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+        const counterpart = channel.counterpart ?? channel.name;
+        const humanMessage: Message = {
+          id: `local-dm-human-${Date.now()}`,
+          speaker: "Larkspur",
+          role: "human",
+          tone: "human",
+          message: sendPrompt,
+          time: now,
+        };
+        const replyMessage: Message = {
+          id: `local-dm-agent-${Date.now()}`,
+          speaker: counterpart,
+          role: "agent",
+          tone: "agent",
+          message: "收到。这条我先留在 DM / followed thread 工作流里，不急着升级成 room。",
+          time: now,
+        };
+        setLocalDirectMessageMessages((current) => ({
+          ...current,
+          [channel.id]: [...(current[channel.id] ?? []), humanMessage, replyMessage],
+        }));
+      } else {
+        await postChannelMessage(channel.id, sendPrompt);
+      }
       setDraft("");
       setReplyTarget(null);
     } catch (channelError) {
@@ -807,12 +1263,25 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
         <StitchSidebar
           active="channels"
           channels={sidebarChannels}
+          directMessages={directMessagesForSidebar.map((item) => ({
+            id: item.id,
+            name: item.name,
+            summary: item.summary,
+            unread: item.unread,
+            presence: item.presence,
+            href: item.href,
+          }))}
+          followedThreads={followedThreadsForSidebar}
+          savedLaterItems={savedLaterForSidebar}
           rooms={sidebarRooms}
           machines={sidebarMachines}
           agents={sidebarAgents}
           workspaceName={workspaceName}
           workspaceSubtitle={workspaceSubtitle}
-          selectedChannelId={channelId}
+          selectedChannelId={selectedChannelLinkId}
+          selectedDirectMessageId={selectedDirectMessageId}
+          selectedFollowedThreadId={selectedFollowedThreadId}
+          selectedSavedLaterId={selectedSavedLaterId}
           inboxCount={inboxCount}
           onOpenQuickSearch={quickSearch.onOpenQuickSearch}
         />
@@ -822,34 +1291,59 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
             disconnected={loading || Boolean(error) || sidebarMachines.every((machine) => machine.state === "offline")}
           />
           <StitchTopBar
-            eyebrow="Workspace Channel"
-            title={loading ? "频道同步中" : error ? "频道同步失败" : `# ${channel?.name ?? channelId}`}
+            eyebrow={isDirectMessage ? "Direct Message" : "Workspace Channel"}
+            title={loading ? "消息面同步中" : error ? "消息面同步失败" : channel?.name ?? channelId}
             description={
               loading
-                ? "等待 live channel state 返回。"
+                ? "等待 live message surface 返回。"
                 : error
                   ? error
-                  : channel?.purpose ?? "当前还没有拿到这条频道的 live purpose。"
+                  : channel?.purpose ?? "当前还没有拿到这条消息面的 purpose。"
             }
-            searchPlaceholder="Search channel / thread / saved"
-            tabs={["Chat", "Thread", "Saved"]}
-            activeTab="Chat"
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
+            searchPlaceholder={isDirectMessage ? "Search DM / thread / saved later" : "Search channel / thread / saved later"}
+            tabs={workbenchTabs}
+            activeTab={CHANNEL_WORKBENCH_TAB_LABEL[activeWorkbenchTab]}
           />
           <div className="border-b-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
                 {workspaceName || "OpenShock"}
               </span>
-              <span className="border border-[var(--shock-ink)] bg-[var(--shock-cyan)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-                {sidebarMachines.length} machines
-              </span>
-              <span className="border border-[var(--shock-ink)] bg-[var(--shock-lime)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-                {runningAgents} active citizens
-              </span>
-              <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-                {blockedAgents} blocked
-              </span>
+              {isDirectMessage ? (
+                <>
+                  <span className="border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    dm 1:1
+                  </span>
+                  <span
+                    className={cn(
+                      "border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+                      channel?.presence === "running"
+                        ? "bg-[var(--shock-lime)]"
+                        : channel?.presence === "blocked"
+                          ? "bg-[var(--shock-pink)] text-white"
+                          : "bg-white"
+                    )}
+                  >
+                    {channel?.presence ?? "idle"}
+                  </span>
+                  <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    {channel?.unread ?? 0} unread
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="border border-[var(--shock-ink)] bg-[var(--shock-cyan)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    {sidebarMachines.length} machines
+                  </span>
+                  <span className="border border-[var(--shock-ink)] bg-[var(--shock-lime)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    {runningAgents} active citizens
+                  </span>
+                  <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    {blockedAgents} blocked
+                  </span>
+                </>
+              )}
               <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
                 {inboxCount} inbox
               </span>
@@ -857,121 +1351,226 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
           </div>
           <div className="grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="flex min-h-0 flex-col border-r-2 border-[var(--shock-ink)]">
-              <div
-                ref={messageScrollRef}
-                data-testid="channel-message-list"
-                className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-[var(--shock-paper)] [scroll-padding-bottom:11rem] [scrollbar-gutter:stable]"
-              >
-                <div className="mx-auto max-w-[1040px] border-x-2 border-[var(--shock-ink)] bg-[#fff9ec] pb-4">
-                  <div className="border-b-2 border-[var(--shock-ink)] px-4 py-3">
-                    <p className="font-display text-[18px] font-bold">{channel?.name ?? "等待同步"}</p>
-                    <p className="mt-1 text-[12px] leading-5 text-[color:rgba(24,20,14,0.64)]">
-                      {channel?.summary ?? channel?.purpose ?? "当前还没有拿到这条频道的 live purpose。"}
-                    </p>
+              {activeWorkbenchTab === "chat" ? (
+                <>
+                  <div
+                    ref={messageScrollRef}
+                    data-testid="channel-message-list"
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-[var(--shock-paper)] [scroll-padding-bottom:11rem] [scrollbar-gutter:stable]"
+                  >
+                    <div className="mx-auto max-w-[1040px] border-x-2 border-[var(--shock-ink)] bg-[#fff9ec] pb-4">
+                      <div className="border-b-2 border-[var(--shock-ink)] px-4 py-3">
+                        <p className="font-display text-[18px] font-bold">{channel?.name ?? "等待同步"}</p>
+                        <p className="mt-1 text-[12px] leading-5 text-[color:rgba(24,20,14,0.64)]">
+                          {channel?.summary ?? channel?.purpose ?? "当前还没有拿到这条消息面的 purpose。"}
+                        </p>
+                      </div>
+                      {loading ? (
+                        <DiscussionStateMessage
+                          title="正在同步消息面真值"
+                          message="等待 server 返回当前 channel / DM state，前端先不回退到别的页面。"
+                        />
+                      ) : error ? (
+                        <DiscussionStateMessage title="消息面同步失败" message={error} />
+                      ) : !channel ? (
+                        <DiscussionStateMessage
+                          title="未找到消息面"
+                          message={`当前找不到 \`${channelId}\` 对应的 channel / DM 记录。`}
+                        />
+                      ) : messages.length === 0 ? (
+                        <DiscussionStateMessage
+                          title="这个消息面当前还没有内容"
+                          message="等第一条消息出现后，这里会直接显示真实流。"
+                        />
+                      ) : (
+                        messages.map((message) => (
+                          <MessageStreamRow
+                            key={message.id}
+                            message={message}
+                            replyCount={channelThreadReplies[message.id]?.length}
+                            threadActive={selectedThreadMessage?.id === message.id}
+                            onOpenThread={handleOpenThread}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
-                  {loading ? (
-                    <DiscussionStateMessage
-                      title="正在同步频道真值"
-                      message="等待 server 返回当前频道对象和消息列表，前端不再自动退回到另一条 mock 频道。"
-                    />
-                  ) : error ? (
-                    <DiscussionStateMessage title="频道同步失败" message={error} />
-                  ) : !channel ? (
-                    <DiscussionStateMessage
-                      title="未找到频道"
-                      message={`当前找不到 \`${channelId}\` 对应的 live channel 记录。`}
-                    />
-                  ) : messages.length === 0 ? (
-                    <DiscussionStateMessage
-                      title="这个频道当前还没有消息"
-                      message="等第一条 live channel message 出现后，这里会直接显示真实频道流。"
-                    />
-                  ) : (
-                    messages.map((message) => (
-                      <MessageStreamRow
-                        key={message.id}
-                        message={message}
-                        replyCount={channelThreadReplies[message.id]?.length}
-                        threadActive={selectedThreadMessage?.id === message.id}
-                        onOpenThread={handleOpenThread}
-                      />
-                    ))
-                  )}
-                </div>
-              </div>
 
-              <div className="border-t-2 border-[var(--shock-ink)] bg-white/95 px-4 py-3 shadow-[0_-3px_0_0_var(--shock-ink)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
-                <div className="mx-auto max-w-[1040px]">
-                  {replyTarget ? (
-                    <ReplyComposerChip replyTarget={replyTarget} onClear={() => setReplyTarget(null)} />
-                  ) : null}
-                </div>
-                <form onSubmit={(event) => void handleChannelSubmit(event)} className="mx-auto flex max-w-[1040px] items-center gap-2">
-                  <button
-                    type="button"
-                    aria-label="attach message context"
-                    className="flex h-11 w-11 items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white text-lg shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                  >
-                    +
-                  </button>
-                  <input
-                    ref={inputRef}
-                    data-testid="channel-message-input"
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    disabled={!channel || loading || Boolean(error) || sending}
-                    className="h-11 flex-1 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-3 font-mono text-[13px] outline-none transition-colors duration-150 focus:bg-white focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                    placeholder={
-                      replyTarget
-                        ? `继续回复 ${replyTarget.speaker}...`
-                        : channel
-                          ? `发送消息到 ${channel.name}...`
-                          : "等待频道同步..."
-                    }
+                  <div className="border-t-2 border-[var(--shock-ink)] bg-white/95 px-4 py-3 shadow-[0_-3px_0_0_var(--shock-ink)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
+                    <div className="mx-auto max-w-[1040px]">
+                      {replyTarget ? (
+                        <ReplyComposerChip replyTarget={replyTarget} onClear={() => setReplyTarget(null)} />
+                      ) : null}
+                    </div>
+                    <form onSubmit={(event) => void handleChannelSubmit(event)} className="mx-auto flex max-w-[1040px] items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="attach message context"
+                        className="flex h-11 w-11 items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white text-lg shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                      >
+                        +
+                      </button>
+                      <input
+                        ref={inputRef}
+                        data-testid="channel-message-input"
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        disabled={!channel || loading || Boolean(error) || sending}
+                        className="h-11 flex-1 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-3 font-mono text-[13px] outline-none transition-colors duration-150 focus:bg-white focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                        placeholder={
+                          replyTarget
+                            ? `继续回复 ${replyTarget.speaker}...`
+                            : channel
+                              ? `发送消息到 ${channel.name}...`
+                              : "等待消息面同步..."
+                        }
+                      />
+                      <button
+                        type="button"
+                        aria-label="mention teammate"
+                        className="flex h-11 w-11 items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                      >
+                        @
+                      </button>
+                      <button
+                        type="submit"
+                        data-testid="channel-send-message"
+                        disabled={!channel || loading || Boolean(error) || sending || !draft.trim()}
+                        className="min-h-[44px] rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white shadow-[var(--shock-shadow-sm)] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-60"
+                      >
+                        {sending ? "..." : "Send"}
+                      </button>
+                    </form>
+                    {sendError ? (
+                      <p data-testid="channel-send-error" className="mx-auto mt-3 max-w-[1040px] text-sm leading-6 text-[var(--shock-pink)]">
+                        {sendError}
+                      </p>
+                    ) : null}
+                  </div>
+                </>
+              ) : activeWorkbenchTab === "followed" ? (
+                <div className="min-h-0 overflow-y-auto bg-[var(--shock-paper)] p-4">
+                  <MessageWorkbenchCollectionPanel
+                    title="Followed Threads"
+                    description="从这里重新打开你决定持续跟踪的线程，不必再从消息流里重新翻。"
+                    items={followedItemsForSurface}
+                    activeItemId={selectedFollowedEntry?.id}
+                    testId="followed-thread-panel"
                   />
-                  <button
-                    type="button"
-                    aria-label="mention teammate"
-                    className="flex h-11 w-11 items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                  >
-                    @
-                  </button>
-                  <button
-                    type="submit"
-                    data-testid="channel-send-message"
-                    disabled={!channel || loading || Boolean(error) || sending || !draft.trim()}
-                    className="min-h-[44px] rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white shadow-[var(--shock-shadow-sm)] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-60"
-                  >
-                    {sending ? "..." : "Send"}
-                  </button>
-                </form>
-                {sendError ? (
-                  <p data-testid="channel-send-error" className="mx-auto mt-3 max-w-[1040px] text-sm leading-6 text-[var(--shock-pink)]">
-                    {sendError}
-                  </p>
-                ) : null}
-              </div>
+                </div>
+              ) : (
+                <div className="min-h-0 overflow-y-auto bg-[var(--shock-paper)] p-4">
+                  <MessageWorkbenchCollectionPanel
+                    title="Saved Later"
+                    description="Later 队列只收“晚点再回看”的消息，不复制出第二个任务板。"
+                    items={savedItemsForSurface}
+                    activeItemId={selectedSavedEntry?.id}
+                    testId="saved-later-panel"
+                  />
+                </div>
+              )}
             </div>
 
             <aside className="hidden min-h-0 flex-col border-l-2 border-[var(--shock-ink)] bg-[#f1efe7] xl:flex">
-              <ThreadRail
-                scopeLabel={channel?.name ?? "channel"}
-                selectedMessage={selectedThreadMessage}
-                replies={selectedThreadReplies}
-                replyTarget={replyTarget}
-                onReply={() => {
-                  if (selectedThreadMessage) {
-                    setReplyTarget(buildReplyTarget(selectedThreadMessage));
-                  }
-                }}
-                primaryAction={{
-                  label: "Focus Reply",
-                  onClick: () => setReplyTarget(selectedThreadMessage ? buildReplyTarget(selectedThreadMessage) : null),
-                  disabled: !selectedThreadMessage,
-                }}
-                emptyTitle="先选一条消息"
-                emptyMessage="thread 是频道消息的局部回复区。先在左侧消息流里点一条消息，再从这里继续。"
-              />
+              {activeWorkbenchTab === "chat" ? (
+                <ThreadRail
+                  scopeLabel={channel?.name ?? "channel"}
+                  selectedMessage={selectedThreadMessage}
+                  replies={selectedThreadReplies}
+                  replyTarget={replyTarget}
+                  onReply={() => {
+                    if (selectedThreadMessage) {
+                      setReplyTarget(buildReplyTarget(selectedThreadMessage));
+                    }
+                  }}
+                  primaryAction={{
+                    label: isSelectedThreadFollowed ? "Following" : "Follow Thread",
+                    onClick: handleToggleFollowThread,
+                    disabled: !selectedThreadMessage,
+                    tone: isSelectedThreadFollowed ? "ink" : "yellow",
+                    testId: "channel-thread-follow",
+                  }}
+                  secondaryAction={{
+                    label: isSelectedThreadSaved ? "Saved" : "Save Later",
+                    onClick: handleToggleSaveLater,
+                    disabled: !selectedThreadMessage,
+                    tone: "white",
+                    testId: "channel-thread-save-later",
+                  }}
+                  emptyTitle="先选一条消息"
+                  emptyMessage="thread 是频道消息的局部回复区。先在左侧消息流里点一条消息，再决定要不要 follow 或稍后回看。"
+                />
+              ) : (
+                <>
+                  <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+                    <p className="font-display text-[20px] font-bold leading-none">
+                      {activeWorkbenchTab === "followed" ? "Followed Rail" : "Saved Rail"}
+                    </p>
+                    <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(17,17,17,0.56)]">
+                      {selectedCollectionEntry?.channelLabel ?? channel?.name ?? channelId}
+                    </p>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    {selectedCollectionEntry && selectedCollectionMessage ? (
+                      <div className="space-y-3">
+                        <section className="border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]">
+                              {activeWorkbenchTab === "followed" ? "Followed" : "Later"}
+                            </span>
+                            <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]">
+                              {selectedCollectionEntry.channelLabel}
+                            </span>
+                            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.5)]">
+                              {selectedCollectionEntry.updatedAt}
+                            </span>
+                          </div>
+                          <p className="mt-3 font-display text-[18px] font-bold leading-6">{selectedCollectionEntry.title}</p>
+                          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.82)]">{selectedCollectionEntry.note}</p>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Link
+                              href={selectedCollectionEntry.reopenHref}
+                              data-testid={activeWorkbenchTab === "followed" ? "followed-thread-rail-reopen" : "saved-later-rail-reopen"}
+                              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white shadow-[var(--shock-shadow-sm)]"
+                            >
+                              Reopen Thread
+                            </Link>
+                            <Link
+                              href={selectedCollectionEntry.surfaceHref}
+                              className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+                            >
+                              Open Queue
+                            </Link>
+                          </div>
+                        </section>
+
+                        <section className="border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">
+                            Parent Message
+                          </p>
+                          <p className="mt-3 font-display text-[15px] font-bold">{selectedCollectionMessage.speaker}</p>
+                          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.84)]">{selectedCollectionMessage.message}</p>
+                        </section>
+
+                        <section className="border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">
+                            Replies
+                          </p>
+                          <p className="mt-2 font-display text-[18px] font-bold leading-none">{selectedCollectionReplies.length}</p>
+                          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">
+                            这条消息当前有 {selectedCollectionReplies.length} 条 reply，可在 reopen 后继续 thread 级回访。
+                          </p>
+                        </section>
+                      </div>
+                    ) : (
+                      <DiscussionStateMessage
+                        title="等待条目"
+                        message="先在 Chat 里选一条消息并 follow / save，它就会进入这个回访队列。"
+                      />
+                    )}
+                  </div>
+                </>
+              )}
             </aside>
           </div>
         </section>

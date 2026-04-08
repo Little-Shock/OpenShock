@@ -84,6 +84,16 @@ function SearchIcon() {
   );
 }
 
+function DirectMessageIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+      <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h9A2.5 2.5 0 0 1 17 6.5v5A2.5 2.5 0 0 1 14.5 14H9l-3.5 2v-2H5.5A2.5 2.5 0 0 1 3 11.5z" />
+      <circle cx="8" cy="9" r="1" />
+      <circle cx="12" cy="9" r="1" />
+    </svg>
+  );
+}
+
 function kindLabel(kind: QuickSearchEntryKind) {
   switch (kind) {
     case "channel":
@@ -129,16 +139,56 @@ function highlightText(text: string, query: string) {
   );
 }
 
+function ThreadIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+      <path d="M5 4.5h8A2.5 2.5 0 0 1 15.5 7v1.5A2.5 2.5 0 0 1 13 11H8.5A2.5 2.5 0 0 0 6 13.5V16" />
+      <path d="m4 14 2 2 2-2" />
+    </svg>
+  );
+}
+
+function BookmarkIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+      <path d="M5 4h10v12l-5-3-5 3z" />
+    </svg>
+  );
+}
+
+type DirectMessageSidebarEntry = {
+  id: string;
+  name: string;
+  summary: string;
+  unread: number;
+  href: string;
+  presence: "running" | "idle" | "blocked";
+};
+
+type MessageSurfaceSidebarEntry = {
+  id: string;
+  title: string;
+  summary: string;
+  meta: string;
+  unread?: number;
+  href: string;
+};
 type StitchSidebarProps = {
   active: "channels" | "rooms" | "board" | "inbox" | null;
   mode?: "chat" | "work";
   channels?: Channel[];
+  directMessages?: DirectMessageSidebarEntry[];
+  followedThreads?: MessageSurfaceSidebarEntry[];
+  savedLaterItems?: MessageSurfaceSidebarEntry[];
   rooms?: Room[];
   machines?: MachineStatus[];
   agents?: AgentStatus[];
   workspaceName?: string;
   workspaceSubtitle?: string;
   selectedChannelId?: string;
+  selectedDirectMessageId?: string;
+  selectedFollowedThreadId?: string;
+  selectedSavedLaterId?: string;
   selectedRoomId?: string;
   inboxCount?: number;
   onOpenQuickSearch?: () => void;
@@ -211,17 +261,26 @@ export function StitchSidebar({
   active,
   mode = "chat",
   channels,
+  directMessages,
+  followedThreads,
+  savedLaterItems,
   rooms,
   machines,
   agents,
   workspaceName,
   workspaceSubtitle,
   selectedChannelId,
+  selectedDirectMessageId,
+  selectedFollowedThreadId,
+  selectedSavedLaterId,
   selectedRoomId,
   inboxCount,
   onOpenQuickSearch,
 }: StitchSidebarProps) {
   const navChannels = channels ?? [];
+  const dmList = directMessages ?? [];
+  const followedList = followedThreads ?? [];
+  const savedList = savedLaterItems ?? [];
   const roomList = rooms ?? [];
   const machineList = machines ?? [];
   const agentList = agents ?? [];
@@ -296,6 +355,7 @@ export function StitchSidebar({
             <Link
               key={channel.id}
               href={`/chat/${channel.id}`}
+              data-testid={`sidebar-channel-${channel.id}`}
               className={cn(
                 "block min-h-[52px] rounded-[16px] border-2 px-2.5 py-2 text-sm transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
                 selectedChannelId === channel.id
@@ -315,6 +375,105 @@ export function StitchSidebar({
               <p className={cn("mt-1 truncate pl-6 text-[10px] leading-4", selectedChannelId === channel.id ? "text-white/80" : "text-[color:rgba(24,20,14,0.56)]")}>
                 {channel.summary}
               </p>
+            </Link>
+          ))}
+        </SidebarSection>
+
+        <SidebarSection title="DMs" count={dmList.length} defaultOpen={Boolean(selectedDirectMessageId) || dmList.length <= 4}>
+          {dmList.map((dm) => (
+            <Link
+              key={dm.id}
+              href={dm.href}
+              data-testid={`sidebar-dm-${dm.id}`}
+              className={cn(
+                "block border-2 px-2 py-1.5 text-sm transition-colors",
+                selectedDirectMessageId === dm.id
+                  ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
+                  : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <DirectMessageIcon />
+                <p className="min-w-0 flex-1 truncate font-medium">{dm.name}</p>
+                <span
+                  className={cn(
+                    "rounded-full border border-[var(--shock-ink)] px-1.5 py-0.5 font-mono text-[9px] uppercase",
+                    dm.presence === "running"
+                      ? "bg-[var(--shock-lime)]"
+                      : dm.presence === "blocked"
+                        ? "bg-[var(--shock-pink)] text-white"
+                        : "bg-white"
+                  )}
+                >
+                  {dm.presence}
+                </span>
+                {dm.unread > 0 ? (
+                  <span className="min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
+                    {dm.unread}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 truncate pl-6 text-[10px] text-[color:rgba(24,20,14,0.56)]">{dm.summary}</p>
+            </Link>
+          ))}
+        </SidebarSection>
+
+        <SidebarSection title="Followed Threads" count={followedList.length} defaultOpen={followedList.length > 0}>
+          {followedList.map((item) => (
+            <Link
+              key={item.id}
+              href={item.href}
+              data-testid={`sidebar-followed-${item.id}`}
+              className={cn(
+                "block border-2 px-2 py-1.5 text-sm transition-colors",
+                selectedFollowedThreadId === item.id
+                  ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
+                  : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <ThreadIcon />
+                <p className="min-w-0 flex-1 truncate font-medium">{item.title}</p>
+                {typeof item.unread === "number" && item.unread > 0 ? (
+                  <span className="min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
+                    {item.unread}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 truncate pl-6 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.56)]">
+                {item.meta}
+              </p>
+              <p className="mt-0.5 truncate pl-6 text-[10px] text-[color:rgba(24,20,14,0.56)]">{item.summary}</p>
+            </Link>
+          ))}
+        </SidebarSection>
+
+        <SidebarSection title="Saved Later" count={savedList.length} defaultOpen={savedList.length > 0}>
+          {savedList.map((item) => (
+            <Link
+              key={item.id}
+              href={item.href}
+              data-testid={`sidebar-saved-${item.id}`}
+              className={cn(
+                "block border-2 px-2 py-1.5 text-sm transition-colors",
+                selectedSavedLaterId === item.id
+                  ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
+                  : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <BookmarkIcon />
+                <p className="min-w-0 flex-1 truncate font-medium">{item.title}</p>
+                {typeof item.unread === "number" && item.unread > 0 ? (
+                  <span className="min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
+                    {item.unread}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 truncate pl-6 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.56)]">
+                {item.meta}
+              </p>
+              <p className="mt-0.5 truncate pl-6 text-[10px] text-[color:rgba(24,20,14,0.56)]">{item.summary}</p>
             </Link>
           ))}
         </SidebarSection>
@@ -510,12 +669,7 @@ export function StitchTopBar({
 
               if (resolvedTab.href) {
                 return (
-                  <Link
-                    key={resolvedTab.label}
-                    href={resolvedTab.href}
-                    data-testid={resolvedTab.testId}
-                    className={className}
-                  >
+                  <Link key={resolvedTab.label} href={resolvedTab.href} data-testid={resolvedTab.testId} className={className}>
                     {resolvedTab.label}
                   </Link>
                 );
