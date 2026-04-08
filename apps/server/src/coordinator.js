@@ -243,6 +243,8 @@ const DEPLOY_RUNTIME_HOSTED_ENTRY_CHAIN_STATUSES = new Set(["pending", "ready", 
 const NOTIFICATION_ACCESS_STATUSES = new Set(["pending", "ready", "blocked"]);
 const USAGE_QUOTA_READINESS_STATES = new Set(["pending", "healthy", "near_limit", "blocked"]);
 const USAGE_QUOTA_READINESS_STATUSES = new Set(["pending", "ready", "blocked"]);
+const WORKSPACE_PLAN_SUBSCRIPTION_STATUSES = new Set(["pending", "trialing", "active", "past_due", "canceled", "blocked"]);
+const WORKSPACE_PLAN_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
 const INBOX_ATTENTION_CHANNELS = new Set(["inbox", "browser_push", "email"]);
 const INBOX_FOLLOW_UP_PRIORITIES = new Set(["normal", "high", "urgent"]);
 const CHANNEL_AGENT_MAILBOX_ROUTING_KEYS = Object.freeze([
@@ -4226,6 +4228,97 @@ export class ServerCoordinator {
     };
   }
 
+  buildWorkspacePlanSubscriptionLimitContract(channel) {
+    this.ensureChannelGovernance(channel);
+    const tokenQuotaContext = channel.governance.tokenQuotaContext;
+    if (!tokenQuotaContext || typeof tokenQuotaContext !== "object") {
+      return null;
+    }
+    const planRef = normalizeOptionalScopeId(tokenQuotaContext.planRef);
+    const subscriptionStatusRaw = normalizeOptionalScopeId(tokenQuotaContext.subscriptionStatus);
+    const subscriptionStatus = subscriptionStatusRaw ?? "pending";
+    assertOrThrow(
+      WORKSPACE_PLAN_SUBSCRIPTION_STATUSES.has(subscriptionStatus),
+      "invalid_token_subscription_status",
+      "token_quota_context.subscription_status is invalid"
+    );
+    // Keep stage6c contract behind explicit plan/subscription data to avoid backfilling prior stages.
+    if (!planRef && subscriptionStatus === "pending") {
+      return null;
+    }
+    const onboardingAccess = this.buildWorkspaceOnboardingAccessContract(channel);
+    const workspaceAccessStatus =
+      onboardingAccess.status?.repoBindingAccessStatus === "blocked"
+        ? "blocked"
+        : onboardingAccess.status?.repoBindingAccessStatus === "ready"
+          ? "ready"
+          : "pending";
+    const planStatus = planRef ? "ready" : "pending";
+    const subscriptionReadinessStatus =
+      subscriptionStatus === "active" || subscriptionStatus === "trialing"
+        ? "ready"
+        : subscriptionStatus === "pending"
+          ? "pending"
+          : "blocked";
+    const tokenLimit =
+      Number.isInteger(tokenQuotaContext.tokenLimit) && tokenQuotaContext.tokenLimit > 0
+        ? tokenQuotaContext.tokenLimit
+        : null;
+    const limitStatus = tokenLimit ? "ready" : "pending";
+    const workspacePlanContractStatus =
+      [workspaceAccessStatus, planStatus, subscriptionReadinessStatus, limitStatus].some((item) => item === "blocked")
+        ? "blocked"
+        : [workspaceAccessStatus, planStatus, subscriptionReadinessStatus, limitStatus].every((item) => item === "ready")
+          ? "ready"
+          : "pending";
+    assertOrThrow(
+      WORKSPACE_PLAN_CONTRACT_STATUSES.has(workspacePlanContractStatus),
+      "invalid_workspace_plan_contract_status",
+      "workspace plan contract status is invalid"
+    );
+    const auditAnchor = this.buildChannelAuditAnchor(channel);
+    return {
+      contractVersion: "v1.stage6c",
+      truthFamily: ["/v1/channels/*", "/v1/topics/*"],
+      status: {
+        workspacePlanContractStatus,
+        workspaceAccessStatus,
+        planStatus,
+        subscriptionStatus,
+        subscriptionReadinessStatus,
+        limitStatus
+      },
+      refs: {
+        workspaceId: channel.workspace?.workspaceId ?? "workspace_default",
+        authIdentityId: channel.governance.authIdentity?.identityId ?? null,
+        memberId: channel.governance.member?.memberId ?? null,
+        planRef
+      },
+      limits: {
+        tokenLimit,
+        tokenUsed: tokenQuotaContext.tokenUsed ?? 0,
+        contextWindowTokens: tokenQuotaContext.contextWindowTokens ?? null
+      },
+      writeAnchors: {
+        workspaceContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        tokenQuotaContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`
+      },
+      readAnchors: {
+        channelContext: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        channelAuditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`
+      },
+      auditAnchor: {
+        trail: auditAnchor.trail,
+        latest: {
+          authIdentity: auditAnchor.latest?.authIdentity ?? null,
+          member: auditAnchor.latest?.member ?? null,
+          tokenQuotaContext: auditAnchor.latest?.tokenQuotaContext ?? null
+        }
+      },
+      updatedAt: channel.updatedAt
+    };
+  }
+
   upsertChannelGovernance(channel, input = {}, operatorId, policySnapshot) {
     const governance = this.ensureChannelGovernance(channel);
     if (input.authIdentity !== undefined) {
@@ -4662,7 +4755,9 @@ export class ServerCoordinator {
         "contextWindowTokens",
         "recallSource",
         "recallHits",
-        "degradeReason"
+        "degradeReason",
+        "planRef",
+        "subscriptionStatus"
       ]);
       for (const key of Object.keys(tokenQuotaContextInput)) {
         assertOrThrow(allowedKeys.has(key), "invalid_token_quota_context_field", `unsupported token_quota_context field: ${key}`);
@@ -4723,6 +4818,19 @@ export class ServerCoordinator {
         "invalid_token_quota_state",
         "token_quota_context.quota_state is invalid"
       );
+      const planRef =
+        tokenQuotaContextInput.planRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.planRef) ?? existing?.planRef ?? null;
+      const subscriptionStatus =
+        tokenQuotaContextInput.subscriptionStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.subscriptionStatus) ?? existing?.subscriptionStatus ?? "pending";
+      assertOrThrow(
+        WORKSPACE_PLAN_SUBSCRIPTION_STATUSES.has(subscriptionStatus),
+        "invalid_token_subscription_status",
+        "token_quota_context.subscription_status is invalid"
+      );
 
       const now = nowIso();
       governance.tokenQuotaContext = {
@@ -4734,6 +4842,8 @@ export class ServerCoordinator {
         recallSource,
         recallHits,
         degradeReason,
+        planRef,
+        subscriptionStatus,
         updatedAt: now,
         updatedBy: operatorId
       };
@@ -4750,7 +4860,9 @@ export class ServerCoordinator {
           context_window_tokens: governance.tokenQuotaContext.contextWindowTokens,
           recall_source: governance.tokenQuotaContext.recallSource,
           recall_hits: governance.tokenQuotaContext.recallHits,
-          degrade_reason: governance.tokenQuotaContext.degradeReason
+          degrade_reason: governance.tokenQuotaContext.degradeReason,
+          plan_ref: governance.tokenQuotaContext.planRef,
+          subscription_status: governance.tokenQuotaContext.subscriptionStatus
         }
       });
     }
@@ -5240,6 +5352,7 @@ export class ServerCoordinator {
       externalMemoryProvider: channel.externalMemoryProvider,
       workspaceOnboardingAccess: this.buildWorkspaceOnboardingAccessContract(channel),
       usageQuotaReadiness: this.buildUsageQuotaReadinessContract(channel),
+      workspacePlanSubscriptionLimitContract: this.buildWorkspacePlanSubscriptionLimitContract(channel),
       repoBinding: channel.repoBinding ?? null,
       auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt

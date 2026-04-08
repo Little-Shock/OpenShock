@@ -1328,6 +1328,74 @@ function serializeStage6cUsageQuotaReadinessContract(input = {}, channelId = nul
   };
 }
 
+function serializeWorkspacePlanSubscriptionLimitContract(input = {}, channelId = null) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const encodedChannelId = channelId ? encodeURIComponent(channelId) : ":channelId";
+  const latest = input.auditAnchor?.latest ?? {};
+  return {
+    contract_version: input.contractVersion ?? "v1.stage6c",
+    truth_family: deepClone(input.truthFamily ?? ["/v1/channels/*", "/v1/topics/*"]),
+    status: {
+      workspace_plan_contract_status: input.status?.workspacePlanContractStatus ?? "pending",
+      workspace_access_status: input.status?.workspaceAccessStatus ?? "pending",
+      plan_status: input.status?.planStatus ?? "pending",
+      subscription_status: input.status?.subscriptionStatus ?? "pending",
+      subscription_readiness_status: input.status?.subscriptionReadinessStatus ?? "pending",
+      limit_status: input.status?.limitStatus ?? "pending"
+    },
+    refs: {
+      workspace_id: input.refs?.workspaceId ?? null,
+      auth_identity_id: input.refs?.authIdentityId ?? null,
+      member_id: input.refs?.memberId ?? null,
+      plan_ref: input.refs?.planRef ?? null
+    },
+    limits: {
+      token_limit: input.limits?.tokenLimit ?? null,
+      token_used: input.limits?.tokenUsed ?? 0,
+      context_window_tokens: input.limits?.contextWindowTokens ?? null
+    },
+    write_anchors: {
+      workspace_context_upsert:
+        input.writeAnchors?.workspaceContextUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      token_quota_context_upsert:
+        input.writeAnchors?.tokenQuotaContextUpsert ?? `/v1/channels/${encodedChannelId}/context`
+    },
+    read_anchors: {
+      channel_context: input.readAnchors?.channelContext ?? `/v1/channels/${encodedChannelId}/context`,
+      channel_audit_trail: input.readAnchors?.channelAuditTrail ?? `/v1/channels/${encodedChannelId}/audit-trail`
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      latest: {
+        auth_identity: latest.authIdentity
+          ? {
+              audit_id: latest.authIdentity.auditId ?? null,
+              action: latest.authIdentity.action ?? null,
+              at: latest.authIdentity.at ?? null
+            }
+          : null,
+        member: latest.member
+          ? {
+              audit_id: latest.member.auditId ?? null,
+              action: latest.member.action ?? null,
+              at: latest.member.at ?? null
+            }
+          : null,
+        token_quota_context: latest.tokenQuotaContext
+          ? {
+              audit_id: latest.tokenQuotaContext.auditId ?? null,
+              action: latest.tokenQuotaContext.action ?? null,
+              at: latest.tokenQuotaContext.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
 function serializeChannelContextContract(input = {}) {
   const channelId = input.channelId;
   return {
@@ -1364,6 +1432,10 @@ function serializeChannelContextContract(input = {}) {
     notification_access_contract: serializeStage6bNotificationAccessContract(input.notificationRecoveryAccess, channelId),
     workspace_onboarding_access: serializeWorkspaceOnboardingAccessContract(input.workspaceOnboardingAccess, channelId),
     usage_quota_readiness: serializeStage6cUsageQuotaReadinessContract(input.usageQuotaReadiness, channelId),
+    workspace_plan_subscription_limit_contract: serializeWorkspacePlanSubscriptionLimitContract(
+      input.workspacePlanSubscriptionLimitContract,
+      channelId
+    ),
     governance: {
       auth_identity: input.governance?.authIdentity
         ? {
@@ -1447,6 +1519,8 @@ function serializeChannelContextContract(input = {}) {
             recall_source: input.governance.tokenQuotaContext.recallSource ?? null,
             recall_hits: input.governance.tokenQuotaContext.recallHits ?? 0,
             degrade_reason: input.governance.tokenQuotaContext.degradeReason ?? null,
+            plan_ref: input.governance.tokenQuotaContext.planRef ?? null,
+            subscription_status: input.governance.tokenQuotaContext.subscriptionStatus ?? "pending",
             updated_at: input.governance.tokenQuotaContext.updatedAt ?? null,
             updated_by: input.governance.tokenQuotaContext.updatedBy ?? null
           }
@@ -3563,7 +3637,9 @@ export function createHttpServer(coordinator, options = {}) {
             "context_window_tokens",
             "recall_source",
             "recall_hits",
-            "degrade_reason"
+            "degrade_reason",
+            "plan_ref",
+            "subscription_status"
           ]);
           for (const key of Object.keys(body.token_quota_context)) {
             if (!allowedTokenQuotaContextFields.has(key)) {
@@ -3856,7 +3932,9 @@ export function createHttpServer(coordinator, options = {}) {
                 contextWindowTokens: body.token_quota_context.context_window_tokens,
                 recallSource: body.token_quota_context.recall_source,
                 recallHits: body.token_quota_context.recall_hits,
-                degradeReason: body.token_quota_context.degrade_reason
+                degradeReason: body.token_quota_context.degrade_reason,
+                planRef: body.token_quota_context.plan_ref,
+                subscriptionStatus: body.token_quota_context.subscription_status
               }
             : undefined,
           hostedAccess: body.hosted_access

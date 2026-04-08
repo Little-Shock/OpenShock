@@ -6894,6 +6894,117 @@ test("v1 stage6c usage/quota/readiness contract keeps usage, quota_state, remain
   });
 });
 
+test("v1 stage6c workspace plan/subscription/limit contract keeps plan truth on token/quota/context and workspace governance truth", async () => {
+  const channelId = "channel_stage6c_plan_quota_contract";
+  const operatorId = "human_operator_stage6c_plan_quota";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage6c_plan_quota",
+        workspace_root: "/Users/atou/.slock/agents",
+        auth_identity: {
+          identity_id: "identity_stage6c_plan_quota",
+          provider: "github",
+          subject_ref: "github_user_stage6c_plan_quota",
+          github_login: "atou",
+          status: "bound"
+        },
+        member: {
+          member_id: "member_stage6c_plan_quota_owner",
+          role: "owner",
+          status: "active"
+        },
+        github_installation: {
+          installation_id: "gh_ins_stage6c_plan_quota",
+          provider: "github_app",
+          workspace_id: "workspace_stage6c_plan_quota",
+          status: "active",
+          authorized_repos: ["Little-Shock/OpenShockSwarm"]
+        },
+        token_quota_context: {
+          token_used: 1200,
+          token_limit: 10000,
+          context_tokens: 2400,
+          context_window_tokens: 32000,
+          quota_state: "healthy",
+          plan_ref: "workspace_plan/pro",
+          subscription_status: "active"
+        }
+      }
+    });
+    assert.equal(context.statusCode, 200);
+    assert.equal(
+      context.body.context.workspace_plan_subscription_limit_contract.contract_version,
+      "v1.stage6c"
+    );
+    assert.equal(
+      context.body.context.workspace_plan_subscription_limit_contract.status.workspace_plan_contract_status,
+      "ready"
+    );
+    assert.equal(
+      context.body.context.workspace_plan_subscription_limit_contract.status.workspace_access_status,
+      "ready"
+    );
+    assert.equal(
+      context.body.context.workspace_plan_subscription_limit_contract.status.subscription_status,
+      "active"
+    );
+    assert.equal(
+      context.body.context.workspace_plan_subscription_limit_contract.refs.plan_ref,
+      "workspace_plan/pro"
+    );
+    assert.equal(
+      context.body.context.workspace_plan_subscription_limit_contract.limits.token_limit,
+      10000
+    );
+    assert.equal(
+      context.body.context.workspace_plan_subscription_limit_contract.write_anchors.token_quota_context_upsert,
+      `/v1/channels/${encodeURIComponent(channelId)}/context`
+    );
+
+    const contextRead = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`
+    });
+    assert.equal(contextRead.statusCode, 200);
+    assert.equal(
+      contextRead.body.context.workspace_plan_subscription_limit_contract.status.plan_status,
+      "ready"
+    );
+    assert.equal(
+      contextRead.body.context.workspace_plan_subscription_limit_contract.status.limit_status,
+      "ready"
+    );
+
+    const invalidSubscriptionStatus = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        token_quota_context: {
+          subscription_status: "auto_renewing"
+        }
+      }
+    });
+    assert.equal(invalidSubscriptionStatus.statusCode, 400);
+    assert.equal(invalidSubscriptionStatus.body.error.code, "invalid_token_subscription_status");
+
+    const payload = JSON.stringify({
+      context: contextRead.body.context
+    });
+    assert.equal(payload.includes("stage6c"), true);
+    assert.equal(payload.includes("\"payment_channel\""), false);
+    assert.equal(payload.includes("\"invoice\""), false);
+  });
+});
+
 test("v1 stage5b inbox attention contract keeps unified inbox/follow-up/mention routing under /v1/inbox truth family", async () => {
   const topicId = "topic_stage5b_inbox_contract";
   const actorId = "human_sample_01";
