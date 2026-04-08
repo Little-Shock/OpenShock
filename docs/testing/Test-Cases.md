@@ -376,7 +376,7 @@
 ## TC-029 DM / Thread / Saved Workflow
 
 - 业务目标: 确认 DM、followed thread、saved/later 已形成完整消息工作流。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-16` `CHK-17`
 - 前置条件: 存在 DM、线程关注和 saved/later 的前台入口与状态模型。
 - 测试步骤:
@@ -384,7 +384,7 @@
   2. 在频道中打开并 follow 一条 thread。
   3. 从 saved/later 或 followed threads 再次回到该 thread。
 - 预期结果: DM、线程回访和暂存面在同一套壳层里闭环可用。
-- 业务结论: 当前 repo 还没有完整 DM / followed thread / saved 工作流，这条用例继续保持 `Blocked`，留给下一轮 `TKT-22` 和 `TKT-27`。
+- 业务结论: 2026 年 4 月 8 日 `TKT-22` 已用 `pnpm test:headed-dm-followed-thread-saved-later -- --report docs/testing/Test-Report-2026-04-08-dm-followed-thread-saved-later.md` 完成有头 exact replay；当前 sidebar 已能直达 DM，channel thread rail 可直接 `follow` 与 `save later`，并且 `Followed Threads` / `Saved Later` 两个回访面都能把同一条 thread 重新打开回 chat，因此这条用例当前转为 `Pass`。`TKT-27` 继续负责把这条前台工作流补成正式 server contract，而不是否定当前前台闭环已经成立。
 
 ## TC-030 Agent / Machine / Human Profile Surface
 

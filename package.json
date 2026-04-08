@@ -26,6 +26,7 @@
     "test:headed-approval-center-lifecycle": "node ./scripts/headed-approval-center-lifecycle.mjs",
     "test:headed-memory-governance": "node ./scripts/headed-memory-governance.mjs",
     "test:headed-notification-preference-delivery": "node ./scripts/headed-notification-preference-delivery.mjs",
+    "test:headed-dm-followed-thread-saved-later": "node ./scripts/headed-dm-followed-thread-saved-later.mjs",
     "test:headed-stop-resume-follow-thread": "node ./scripts/headed-stop-resume-follow-thread.mjs",
     "test:headed-multi-runtime-scheduler-failover": "node ./scripts/headed-multi-runtime-scheduler-failover.mjs",
     "test:headed-quick-search": "node ./scripts/headed-quick-search.mjs",

@@ -300,8 +300,9 @@
   - [x] `setup / issues / memory / inbox / board / room / run` 已完成 2026-04-08 headed work-shell smoke，统一壳层、去白缝和密度收紧都有当天证据
   - [x] `pnpm test:headed-quick-search` 已把 Quick Search 收成真实 command palette：同一套 search surface 能从 `chat / room / issue / run / agent` 页面命中 `channel / room / issue / run / agent` 五类结果，并验证命中高亮与 empty state
   - [x] `pnpm test:headed-frontend-interaction-polish` 已锁住 sidebar / topbar hit area、channel / room scrollback、composer 常驻与窄屏无横向溢出
+  - [x] sidebar 现在已有 `DM / Followed Threads / Saved Later` 入口，且能在同一套壳层内直达对应消息面
 - 当前 GAP:
-  - [ ] 仍缺 `app.slock.ai` 式 DM / saved / later / profile 级入口
+  - [ ] 仍缺 `app.slock.ai` 式 profile 级入口
 - 对应 Test Cases: `TC-028` `TC-029` `TC-033` `TC-034`
 
 ### CHK-17 会话上下文、Presence 与 Profile Surface
@@ -315,8 +316,8 @@
   - [x] Agent 列表、Room 详情、Run 详情已经存在
   - [x] channel / room 现在都有 message-centric thread rail，message row 可直接打开 reply 子区，composer 保持常驻可见
   - [x] room thread rail 已直接接上 `follow_thread` 控制，不再只是纯展示卡片
+  - [x] channel 现在已有 followed thread / saved later 回访面，thread 可在 `follow -> reopen` 与 `save later -> reopen` 闭环
 - 当前 GAP:
-  - [ ] `Thread / followed thread / saved later` 还没形成完整回访工作流，当前仍缺 follow list / reopen / saved 列表
   - [ ] `Agent / Machine / Human` 还没有像 `app.slock.ai` 那样的一等 profile route / panel
   - [ ] Room 还缺稳定的 `Chat / Topic / Run / PR / Context` 工作台 tabs，用户仍需频繁跨页面跳转
 - 对应 Test Cases: `TC-029` `TC-030` `TC-031` `TC-034`
