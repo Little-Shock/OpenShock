@@ -7005,6 +7005,146 @@ test("v1 stage6c workspace plan/subscription/limit contract keeps plan truth on 
   });
 });
 
+test("v1 stage7a workspace checkout/payment/subscription activation contract keeps paid conversion on stage6a + stage6c truths and existing notification truth", async () => {
+  const channelId = "channel_stage7a_checkout_payment_activation";
+  const operatorId = "human_operator_stage7a_checkout_payment";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage7a_checkout_payment",
+        workspace_root: "/Users/atou/.slock/agents",
+        auth_identity: {
+          identity_id: "identity_stage7a_checkout_payment",
+          provider: "github",
+          subject_ref: "github_user_stage7a_checkout_payment",
+          github_login: "atou",
+          status: "bound"
+        },
+        member: {
+          member_id: "member_stage7a_checkout_payment_owner",
+          role: "owner",
+          status: "active"
+        },
+        github_installation: {
+          installation_id: "gh_ins_stage7a_checkout_payment",
+          provider: "github_app",
+          workspace_id: "workspace_stage7a_checkout_payment",
+          status: "active",
+          authorized_repos: ["Little-Shock/OpenShockSwarm"]
+        },
+        token_quota_context: {
+          token_used: 1200,
+          token_limit: 10000,
+          context_tokens: 2400,
+          context_window_tokens: 32000,
+          quota_state: "healthy",
+          plan_ref: "workspace_plan/pro",
+          subscription_status: "active",
+          checkout_session_status: "completed",
+          checkout_session_ref: "checkout_session/cs_stage7a_001",
+          payment_method_status: "ready",
+          payment_method_ref: "payment_method/pm_stage7a_001",
+          subscription_activation_status: "active",
+          subscription_ref: "subscription/sub_stage7a_001"
+        }
+      }
+    });
+    assert.equal(context.statusCode, 200);
+    assert.equal(
+      context.body.context.workspace_checkout_payment_subscription_activation_contract.contract_version,
+      "v1.stage7a"
+    );
+    assert.equal(
+      context.body.context.workspace_checkout_payment_subscription_activation_contract.status
+        .paid_conversion_status,
+      "pending"
+    );
+    assert.equal(
+      context.body.context.workspace_checkout_payment_subscription_activation_contract.status
+        .notification_access_status,
+      "pending"
+    );
+    assert.equal(
+      context.body.context.workspace_checkout_payment_subscription_activation_contract.refs
+        .checkout_session_ref,
+      "checkout_session/cs_stage7a_001"
+    );
+
+    const notificationEndpoint = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        email: {
+          enabled: true,
+          endpoint_ref: "mailto:workspace-owner@openshock.dev"
+        }
+      }
+    });
+    assert.equal(notificationEndpoint.statusCode, 200);
+
+    const contextReady = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`
+    });
+    assert.equal(contextReady.statusCode, 200);
+    assert.equal(
+      contextReady.body.context.workspace_checkout_payment_subscription_activation_contract.status
+        .paid_conversion_status,
+      "ready"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_checkout_payment_subscription_activation_contract.status
+        .checkout_session_status,
+      "completed"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_checkout_payment_subscription_activation_contract.status
+        .payment_method_status,
+      "ready"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_checkout_payment_subscription_activation_contract.status
+        .subscription_activation_status,
+      "active"
+    );
+    assert.equal(
+      contextReady.body.context.workspace_checkout_payment_subscription_activation_contract.status
+        .notification_access_status,
+      "ready"
+    );
+
+    const invalidCheckoutStatus = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        token_quota_context: {
+          checkout_session_status: "authorizing"
+        }
+      }
+    });
+    assert.equal(invalidCheckoutStatus.statusCode, 400);
+    assert.equal(invalidCheckoutStatus.body.error.code, "invalid_token_checkout_session_status");
+
+    const payload = JSON.stringify({
+      context: contextReady.body.context
+    });
+    assert.equal(payload.includes("stage7a"), true);
+    assert.equal(payload.includes("\"invoice\""), false);
+    assert.equal(payload.includes("\"coupon\""), false);
+    assert.equal(payload.includes("\"token_resale\""), false);
+  });
+});
+
 test("v1 stage5b inbox attention contract keeps unified inbox/follow-up/mention routing under /v1/inbox truth family", async () => {
   const topicId = "topic_stage5b_inbox_contract";
   const actorId = "human_sample_01";

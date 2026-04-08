@@ -1396,6 +1396,91 @@ function serializeWorkspacePlanSubscriptionLimitContract(input = {}, channelId =
   };
 }
 
+function serializeWorkspaceCheckoutPaymentSubscriptionActivationContract(input = {}, channelId = null) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const encodedChannelId = channelId ? encodeURIComponent(channelId) : ":channelId";
+  const latest = input.auditAnchor?.latest ?? {};
+  return {
+    contract_version: input.contractVersion ?? "v1.stage7a",
+    truth_family: deepClone(input.truthFamily ?? ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"]),
+    status: {
+      paid_conversion_status: input.status?.paidConversionStatus ?? "pending",
+      workspace_access_status: input.status?.workspaceAccessStatus ?? "pending",
+      plan_contract_status: input.status?.planContractStatus ?? "pending",
+      checkout_session_status: input.status?.checkoutSessionStatus ?? "pending",
+      payment_method_status: input.status?.paymentMethodStatus ?? "pending",
+      subscription_activation_status: input.status?.subscriptionActivationStatus ?? "pending",
+      notification_access_status: input.status?.notificationAccessStatus ?? "pending"
+    },
+    refs: {
+      workspace_id: input.refs?.workspaceId ?? null,
+      plan_ref: input.refs?.planRef ?? null,
+      checkout_session_ref: input.refs?.checkoutSessionRef ?? null,
+      payment_method_ref: input.refs?.paymentMethodRef ?? null,
+      subscription_ref: input.refs?.subscriptionRef ?? null
+    },
+    write_anchors: {
+      workspace_context_upsert:
+        input.writeAnchors?.workspaceContextUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      token_quota_context_upsert:
+        input.writeAnchors?.tokenQuotaContextUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      notification_endpoint_upsert:
+        input.writeAnchors?.notificationEndpointUpsert ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`
+    },
+    read_anchors: {
+      channel_context: input.readAnchors?.channelContext ?? `/v1/channels/${encodedChannelId}/context`,
+      channel_notification_endpoint:
+        input.readAnchors?.channelNotificationEndpoint ??
+        `/v1/channels/${encodedChannelId}/notification-endpoint`,
+      channel_audit_trail: input.readAnchors?.channelAuditTrail ?? `/v1/channels/${encodedChannelId}/audit-trail`
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      latest: {
+        auth_identity: latest.authIdentity
+          ? {
+              audit_id: latest.authIdentity.auditId ?? null,
+              action: latest.authIdentity.action ?? null,
+              at: latest.authIdentity.at ?? null
+            }
+          : null,
+        member: latest.member
+          ? {
+              audit_id: latest.member.auditId ?? null,
+              action: latest.member.action ?? null,
+              at: latest.member.at ?? null
+            }
+          : null,
+        github_installation: latest.githubInstallation
+          ? {
+              audit_id: latest.githubInstallation.auditId ?? null,
+              action: latest.githubInstallation.action ?? null,
+              at: latest.githubInstallation.at ?? null
+            }
+          : null,
+        token_quota_context: latest.tokenQuotaContext
+          ? {
+              audit_id: latest.tokenQuotaContext.auditId ?? null,
+              action: latest.tokenQuotaContext.action ?? null,
+              at: latest.tokenQuotaContext.at ?? null
+            }
+          : null,
+        notification_endpoint: latest.notificationEndpoint
+          ? {
+              audit_id: latest.notificationEndpoint.auditId ?? null,
+              action: latest.notificationEndpoint.action ?? null,
+              at: latest.notificationEndpoint.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
 function serializeChannelContextContract(input = {}) {
   const channelId = input.channelId;
   return {
@@ -1436,6 +1521,11 @@ function serializeChannelContextContract(input = {}) {
       input.workspacePlanSubscriptionLimitContract,
       channelId
     ),
+    workspace_checkout_payment_subscription_activation_contract:
+      serializeWorkspaceCheckoutPaymentSubscriptionActivationContract(
+        input.workspaceCheckoutPaymentSubscriptionActivationContract,
+        channelId
+      ),
     governance: {
       auth_identity: input.governance?.authIdentity
         ? {
@@ -1521,6 +1611,13 @@ function serializeChannelContextContract(input = {}) {
             degrade_reason: input.governance.tokenQuotaContext.degradeReason ?? null,
             plan_ref: input.governance.tokenQuotaContext.planRef ?? null,
             subscription_status: input.governance.tokenQuotaContext.subscriptionStatus ?? "pending",
+            checkout_session_status: input.governance.tokenQuotaContext.checkoutSessionStatus ?? "pending",
+            checkout_session_ref: input.governance.tokenQuotaContext.checkoutSessionRef ?? null,
+            payment_method_status: input.governance.tokenQuotaContext.paymentMethodStatus ?? "pending",
+            payment_method_ref: input.governance.tokenQuotaContext.paymentMethodRef ?? null,
+            subscription_activation_status:
+              input.governance.tokenQuotaContext.subscriptionActivationStatus ?? "pending",
+            subscription_ref: input.governance.tokenQuotaContext.subscriptionRef ?? null,
             updated_at: input.governance.tokenQuotaContext.updatedAt ?? null,
             updated_by: input.governance.tokenQuotaContext.updatedBy ?? null
           }
@@ -3639,7 +3736,13 @@ export function createHttpServer(coordinator, options = {}) {
             "recall_hits",
             "degrade_reason",
             "plan_ref",
-            "subscription_status"
+            "subscription_status",
+            "checkout_session_status",
+            "checkout_session_ref",
+            "payment_method_status",
+            "payment_method_ref",
+            "subscription_activation_status",
+            "subscription_ref"
           ]);
           for (const key of Object.keys(body.token_quota_context)) {
             if (!allowedTokenQuotaContextFields.has(key)) {
@@ -3934,7 +4037,13 @@ export function createHttpServer(coordinator, options = {}) {
                 recallHits: body.token_quota_context.recall_hits,
                 degradeReason: body.token_quota_context.degrade_reason,
                 planRef: body.token_quota_context.plan_ref,
-                subscriptionStatus: body.token_quota_context.subscription_status
+                subscriptionStatus: body.token_quota_context.subscription_status,
+                checkoutSessionStatus: body.token_quota_context.checkout_session_status,
+                checkoutSessionRef: body.token_quota_context.checkout_session_ref,
+                paymentMethodStatus: body.token_quota_context.payment_method_status,
+                paymentMethodRef: body.token_quota_context.payment_method_ref,
+                subscriptionActivationStatus: body.token_quota_context.subscription_activation_status,
+                subscriptionRef: body.token_quota_context.subscription_ref
               }
             : undefined,
           hostedAccess: body.hosted_access

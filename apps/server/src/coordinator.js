@@ -245,6 +245,10 @@ const USAGE_QUOTA_READINESS_STATES = new Set(["pending", "healthy", "near_limit"
 const USAGE_QUOTA_READINESS_STATUSES = new Set(["pending", "ready", "blocked"]);
 const WORKSPACE_PLAN_SUBSCRIPTION_STATUSES = new Set(["pending", "trialing", "active", "past_due", "canceled", "blocked"]);
 const WORKSPACE_PLAN_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
+const TOKEN_CHECKOUT_SESSION_STATUSES = new Set(["pending", "open", "completed", "expired", "failed"]);
+const TOKEN_PAYMENT_METHOD_STATUSES = new Set(["pending", "ready", "blocked"]);
+const TOKEN_SUBSCRIPTION_ACTIVATION_STATUSES = new Set(["pending", "active", "blocked"]);
+const WORKSPACE_PAID_CONVERSION_CONTRACT_STATUSES = new Set(["pending", "ready", "blocked"]);
 const INBOX_ATTENTION_CHANNELS = new Set(["inbox", "browser_push", "email"]);
 const INBOX_FOLLOW_UP_PRIORITIES = new Set(["normal", "high", "urgent"]);
 const CHANNEL_AGENT_MAILBOX_ROUTING_KEYS = Object.freeze([
@@ -4319,6 +4323,125 @@ export class ServerCoordinator {
     };
   }
 
+  buildWorkspaceCheckoutPaymentSubscriptionActivationContract(channel) {
+    this.ensureChannelGovernance(channel);
+    const tokenQuotaContext = channel.governance.tokenQuotaContext;
+    if (!tokenQuotaContext || typeof tokenQuotaContext !== "object") {
+      return null;
+    }
+    const workspacePlanSubscriptionLimit = this.buildWorkspacePlanSubscriptionLimitContract(channel);
+    // Keep stage7a behind stage6c contract input so it does not backfill earlier stages.
+    if (!workspacePlanSubscriptionLimit) {
+      return null;
+    }
+    const onboardingAccess = this.buildWorkspaceOnboardingAccessContract(channel);
+    const notificationAccess = this.buildNotificationRecoveryAccessContract(channel);
+    const workspaceAccessStatus =
+      onboardingAccess.status?.repoBindingAccessStatus === "blocked"
+        ? "blocked"
+        : onboardingAccess.status?.repoBindingAccessStatus === "ready"
+          ? "ready"
+          : "pending";
+    const planContractStatus = workspacePlanSubscriptionLimit.status?.workspacePlanContractStatus ?? "pending";
+    const checkoutSessionStatus = tokenQuotaContext.checkoutSessionStatus ?? "pending";
+    assertOrThrow(
+      TOKEN_CHECKOUT_SESSION_STATUSES.has(checkoutSessionStatus),
+      "invalid_token_checkout_session_status",
+      "token_quota_context.checkout_session_status is invalid"
+    );
+    const paymentMethodStatus = tokenQuotaContext.paymentMethodStatus ?? "pending";
+    assertOrThrow(
+      TOKEN_PAYMENT_METHOD_STATUSES.has(paymentMethodStatus),
+      "invalid_token_payment_method_status",
+      "token_quota_context.payment_method_status is invalid"
+    );
+    const subscriptionActivationStatus = tokenQuotaContext.subscriptionActivationStatus ?? "pending";
+    assertOrThrow(
+      TOKEN_SUBSCRIPTION_ACTIVATION_STATUSES.has(subscriptionActivationStatus),
+      "invalid_token_subscription_activation_status",
+      "token_quota_context.subscription_activation_status is invalid"
+    );
+    const notificationAccessStatus = notificationAccess.status?.notificationAccessStatus ?? "pending";
+    assertOrThrow(
+      NOTIFICATION_ACCESS_STATUSES.has(notificationAccessStatus),
+      "invalid_notification_access_status",
+      "notification access status is invalid"
+    );
+    const toReadyState = (value, readyState, blockedStates = []) => {
+      if (value === readyState) {
+        return "ready";
+      }
+      if (blockedStates.includes(value)) {
+        return "blocked";
+      }
+      return "pending";
+    };
+    const checkoutReadyState = toReadyState(checkoutSessionStatus, "completed", ["expired", "failed"]);
+    const paymentMethodReadyState = toReadyState(paymentMethodStatus, "ready", ["blocked"]);
+    const subscriptionActivationReadyState = toReadyState(subscriptionActivationStatus, "active", ["blocked"]);
+    const signals = [
+      workspaceAccessStatus,
+      planContractStatus,
+      checkoutReadyState,
+      paymentMethodReadyState,
+      subscriptionActivationReadyState,
+      notificationAccessStatus
+    ];
+    const paidConversionStatus =
+      signals.some((item) => item === "blocked")
+        ? "blocked"
+        : signals.every((item) => item === "ready")
+          ? "ready"
+          : "pending";
+    assertOrThrow(
+      WORKSPACE_PAID_CONVERSION_CONTRACT_STATUSES.has(paidConversionStatus),
+      "invalid_workspace_paid_conversion_contract_status",
+      "workspace paid conversion contract status is invalid"
+    );
+    const auditAnchor = this.buildChannelAuditAnchor(channel);
+    return {
+      contractVersion: "v1.stage7a",
+      truthFamily: ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"],
+      status: {
+        paidConversionStatus,
+        workspaceAccessStatus,
+        planContractStatus,
+        checkoutSessionStatus,
+        paymentMethodStatus,
+        subscriptionActivationStatus,
+        notificationAccessStatus
+      },
+      refs: {
+        workspaceId: channel.workspace?.workspaceId ?? "workspace_default",
+        planRef: tokenQuotaContext.planRef ?? null,
+        checkoutSessionRef: tokenQuotaContext.checkoutSessionRef ?? null,
+        paymentMethodRef: tokenQuotaContext.paymentMethodRef ?? null,
+        subscriptionRef: tokenQuotaContext.subscriptionRef ?? null
+      },
+      writeAnchors: {
+        workspaceContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        tokenQuotaContextUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        notificationEndpointUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`
+      },
+      readAnchors: {
+        channelContext: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        channelNotificationEndpoint: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`,
+        channelAuditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`
+      },
+      auditAnchor: {
+        trail: auditAnchor.trail,
+        latest: {
+          authIdentity: auditAnchor.latest?.authIdentity ?? null,
+          member: auditAnchor.latest?.member ?? null,
+          githubInstallation: auditAnchor.latest?.githubInstallation ?? null,
+          tokenQuotaContext: auditAnchor.latest?.tokenQuotaContext ?? null,
+          notificationEndpoint: auditAnchor.latest?.notificationEndpoint ?? null
+        }
+      },
+      updatedAt: channel.updatedAt
+    };
+  }
+
   upsertChannelGovernance(channel, input = {}, operatorId, policySnapshot) {
     const governance = this.ensureChannelGovernance(channel);
     if (input.authIdentity !== undefined) {
@@ -4757,7 +4880,13 @@ export class ServerCoordinator {
         "recallHits",
         "degradeReason",
         "planRef",
-        "subscriptionStatus"
+        "subscriptionStatus",
+        "checkoutSessionStatus",
+        "checkoutSessionRef",
+        "paymentMethodStatus",
+        "paymentMethodRef",
+        "subscriptionActivationStatus",
+        "subscriptionRef"
       ]);
       for (const key of Object.keys(tokenQuotaContextInput)) {
         assertOrThrow(allowedKeys.has(key), "invalid_token_quota_context_field", `unsupported token_quota_context field: ${key}`);
@@ -4831,6 +4960,55 @@ export class ServerCoordinator {
         "invalid_token_subscription_status",
         "token_quota_context.subscription_status is invalid"
       );
+      const checkoutSessionStatus =
+        tokenQuotaContextInput.checkoutSessionStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.checkoutSessionStatus) ??
+            existing?.checkoutSessionStatus ??
+            "pending";
+      assertOrThrow(
+        TOKEN_CHECKOUT_SESSION_STATUSES.has(checkoutSessionStatus),
+        "invalid_token_checkout_session_status",
+        "token_quota_context.checkout_session_status is invalid"
+      );
+      const checkoutSessionRef =
+        tokenQuotaContextInput.checkoutSessionRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.checkoutSessionRef) ?? existing?.checkoutSessionRef ?? null;
+      const paymentMethodStatus =
+        tokenQuotaContextInput.paymentMethodStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.paymentMethodStatus) ??
+            existing?.paymentMethodStatus ??
+            "pending";
+      assertOrThrow(
+        TOKEN_PAYMENT_METHOD_STATUSES.has(paymentMethodStatus),
+        "invalid_token_payment_method_status",
+        "token_quota_context.payment_method_status is invalid"
+      );
+      const paymentMethodRef =
+        tokenQuotaContextInput.paymentMethodRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.paymentMethodRef) ?? existing?.paymentMethodRef ?? null;
+      const subscriptionActivationStatus =
+        tokenQuotaContextInput.subscriptionActivationStatus === null
+          ? "pending"
+          : normalizeOptionalScopeId(tokenQuotaContextInput.subscriptionActivationStatus) ??
+            existing?.subscriptionActivationStatus ??
+            (subscriptionStatus === "active" || subscriptionStatus === "trialing"
+              ? "active"
+              : subscriptionStatus === "pending"
+                ? "pending"
+                : "blocked");
+      assertOrThrow(
+        TOKEN_SUBSCRIPTION_ACTIVATION_STATUSES.has(subscriptionActivationStatus),
+        "invalid_token_subscription_activation_status",
+        "token_quota_context.subscription_activation_status is invalid"
+      );
+      const subscriptionRef =
+        tokenQuotaContextInput.subscriptionRef === null
+          ? null
+          : normalizeOptionalScopeId(tokenQuotaContextInput.subscriptionRef) ?? existing?.subscriptionRef ?? null;
 
       const now = nowIso();
       governance.tokenQuotaContext = {
@@ -4844,6 +5022,12 @@ export class ServerCoordinator {
         degradeReason,
         planRef,
         subscriptionStatus,
+        checkoutSessionStatus,
+        checkoutSessionRef,
+        paymentMethodStatus,
+        paymentMethodRef,
+        subscriptionActivationStatus,
+        subscriptionRef,
         updatedAt: now,
         updatedBy: operatorId
       };
@@ -4862,7 +5046,13 @@ export class ServerCoordinator {
           recall_hits: governance.tokenQuotaContext.recallHits,
           degrade_reason: governance.tokenQuotaContext.degradeReason,
           plan_ref: governance.tokenQuotaContext.planRef,
-          subscription_status: governance.tokenQuotaContext.subscriptionStatus
+          subscription_status: governance.tokenQuotaContext.subscriptionStatus,
+          checkout_session_status: governance.tokenQuotaContext.checkoutSessionStatus,
+          checkout_session_ref: governance.tokenQuotaContext.checkoutSessionRef,
+          payment_method_status: governance.tokenQuotaContext.paymentMethodStatus,
+          payment_method_ref: governance.tokenQuotaContext.paymentMethodRef,
+          subscription_activation_status: governance.tokenQuotaContext.subscriptionActivationStatus,
+          subscription_ref: governance.tokenQuotaContext.subscriptionRef
         }
       });
     }
@@ -5353,6 +5543,8 @@ export class ServerCoordinator {
       workspaceOnboardingAccess: this.buildWorkspaceOnboardingAccessContract(channel),
       usageQuotaReadiness: this.buildUsageQuotaReadinessContract(channel),
       workspacePlanSubscriptionLimitContract: this.buildWorkspacePlanSubscriptionLimitContract(channel),
+      workspaceCheckoutPaymentSubscriptionActivationContract:
+        this.buildWorkspaceCheckoutPaymentSubscriptionActivationContract(channel),
       repoBinding: channel.repoBinding ?? null,
       auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt
