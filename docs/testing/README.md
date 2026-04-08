@@ -46,6 +46,8 @@
   - `TKT-23` 的 room-first `Chat / Topic / Run / PR / Context` workbench、reload persistence 与 inbox back-link evidence
 - [Test Report 2026-04-08 Profile Surface](./Test-Report-2026-04-08-profile-surface.md)
   - `TKT-25` 的 `Agent / Machine / Human` unified profile surface、shell / room drill-in 与 live presence evidence
+- [Test Report 2026-04-08 Destructive Guard](./Test-Report-2026-04-08-destructive-guard.md)
+  - `TKT-30` 的 destructive approval、sandbox / secret boundary 与 room / inbox / run guard truth headed evidence
 
 常用入口：
 
@@ -77,6 +79,8 @@
   - 验证 room-first `Chat / Topic / Run / PR / Context` workbench、follow_thread、PR surface 与 inbox back-link
 - `pnpm test:headed-profile-surface`
   - 验证 `Agent / Machine / Human` unified profile surface、shell / room drill-in、presence / capability / recent activity
+- `pnpm test:headed-destructive-guard`
+  - 验证 destructive git、越界写入、secret boundary 的 guard truth，以及 Inbox / Room / Run 三处同步
 - `pnpm test:headed-multi-runtime-scheduler-failover`
   - 验证 multi-runtime scheduler、active lease、offline failover
 - `pnpm test:headed-quick-search`
