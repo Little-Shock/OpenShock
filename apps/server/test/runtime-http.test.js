@@ -6139,6 +6139,166 @@ test("v1 stage5a hosted access contract keeps hosted entry/login truth on channe
   });
 });
 
+test("v1 stage5b channel/topic collaboration contract keeps hosted multi-human truth on v1 families", async () => {
+  const channelId = "channel_stage5b_collaboration_contract";
+  const topicId = "topic_stage5b_collaboration_contract";
+  const operatorId = "human_operator_stage5b";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const seeded = await requestJson({
+      port,
+      method: "POST",
+      path: "/runtime/fixtures/seed",
+      body: {}
+    });
+    assert.equal(seeded.statusCode, 200);
+
+    const upsertContext = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage5b",
+        workspace_root: "/Users/atou/.slock/agents",
+        hosted_access: {
+          hosted_web_url: "https://openshock.dev/workbench",
+          access_mode: "hosted_web"
+        },
+        collaboration_contract: {
+          mode: "hosted_multi_human",
+          default_flow: "channel_thread_task",
+          thread_model: "topic_messages_route",
+          task_model: "topic_task_allocation"
+        },
+        policy_snapshot: {
+          mode: "stage5b_collaboration_contract",
+          boundary: "reuse_v1_channels_topics_inbox_truth"
+        }
+      }
+    });
+    assert.equal(upsertContext.statusCode, 200);
+    assert.equal(upsertContext.body.context.context.collaboration_contract.mode, "hosted_multi_human");
+    assert.equal(upsertContext.body.context.context.collaboration_contract.default_flow, "channel_thread_task");
+    assert.equal(upsertContext.body.context.context.collaboration_contract.thread_model, "topic_messages_route");
+    assert.equal(upsertContext.body.context.context.collaboration_contract.task_model, "topic_task_allocation");
+    assert.equal(
+      upsertContext.body.context.write_anchors.collaboration_contract_upsert,
+      `/v1/channels/${encodeURIComponent(channelId)}/context`
+    );
+    assert.equal(
+      upsertContext.body.context.audit_anchor.latest.collaboration_contract.action,
+      "channel_collaboration_contract_upsert"
+    );
+
+    const createdTopic = await requestJson({
+      port,
+      method: "POST",
+      path: "/v1/topics",
+      headers: {
+        "Idempotency-Key": "idem_stage5b_topic_create"
+      },
+      body: {
+        topic_id: topicId,
+        goal: "ship stage5b hosted multi-human defaults",
+        constraints: ["no_shadow_truth", "no_stage5c_runtime_fleet"]
+      }
+    });
+    assert.equal(createdTopic.statusCode, 201);
+
+    const controlConsumer = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/topics/${encodeURIComponent(topicId)}/control-plane-consumer`
+    });
+    assert.equal(controlConsumer.statusCode, 200);
+    assert.equal(controlConsumer.body.collaboration_contract.mode, "hosted_multi_human");
+    assert.equal(
+      controlConsumer.body.collaboration_contract.channel_contract.truth_surface,
+      "/v1/channels/:channelId/context"
+    );
+    assert.equal(
+      controlConsumer.body.collaboration_contract.topic_contract.truth_surface,
+      `/v1/topics/${encodeURIComponent(topicId)}/topic-state`
+    );
+    assert.equal(
+      controlConsumer.body.collaboration_contract.thread_contract.truth_surface,
+      `/v1/topics/${encodeURIComponent(topicId)}/messages?route=thread`
+    );
+    assert.equal(
+      controlConsumer.body.collaboration_contract.task_contract.truth_surface,
+      `/v1/topics/${encodeURIComponent(topicId)}/task-allocation`
+    );
+    assert.equal(controlConsumer.body.collaboration_contract.task_contract.summary.total_tasks, 0);
+
+    const invalidCollaborationField = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        collaboration_contract: {
+          mode: "hosted_multi_human",
+          unsupported_field: true
+        }
+      }
+    });
+    assert.equal(invalidCollaborationField.statusCode, 400);
+    assert.equal(invalidCollaborationField.body.error.code, "invalid_collaboration_contract_field");
+
+    const invalidCollaborationMode = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        collaboration_contract: {
+          mode: "free_debate_social"
+        }
+      }
+    });
+    assert.equal(invalidCollaborationMode.statusCode, 400);
+    assert.equal(invalidCollaborationMode.body.error.code, "invalid_collaboration_mode");
+
+    const invalidDefaultFlow = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        collaboration_contract: {
+          default_flow: "dm_only"
+        }
+      }
+    });
+    assert.equal(invalidDefaultFlow.statusCode, 400);
+    assert.equal(invalidDefaultFlow.body.error.code, "invalid_collaboration_default_flow");
+
+    const shellCompatibility = await requestJson({
+      port,
+      method: "GET",
+      path: "/v1/compatibility/shell-adapter"
+    });
+    assert.equal(shellCompatibility.statusCode, 200);
+    assert.equal(
+      shellCompatibility.body.backend_derived_projection.projection_surfaces.includes("/v1/channels/:channelId/context"),
+      true
+    );
+    assert.equal(
+      shellCompatibility.body.backend_derived_projection.lineage_anchors.channel_context,
+      "/v1/channels/:channelId/context"
+    );
+
+    const payload = JSON.stringify({
+      context: upsertContext.body.context,
+      controlConsumer: controlConsumer.body,
+      shellCompatibility: shellCompatibility.body
+    });
+    assert.equal(payload.includes("\"shell_local_collaboration_shadow\""), false);
+    assert.equal(payload.includes("\"stage6\""), false);
+  });
+});
+
 test("v1 stage2 batch2 runtime recovery contract supports assignment enforcement and operator-triggered recoveries", async () => {
   const operatorId = "human_operator_stage2_batch2";
   const channelId = "channel_open_shock_batch2";

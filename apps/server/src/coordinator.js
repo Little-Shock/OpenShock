@@ -212,6 +212,10 @@ const SKILL_POLICY_PLUGIN_SCOPES = new Set(["channel", "workspace"]);
 const TOKEN_QUOTA_STATES = new Set(["healthy", "near_limit", "blocked"]);
 const HOSTED_ACCESS_MODES = new Set(["hosted_web", "local_hosted_bridge"]);
 const STABLE_LOGIN_STATES = new Set(["stable", "pending", "degraded"]);
+const COLLABORATION_MODES = new Set(["hosted_multi_human"]);
+const COLLABORATION_DEFAULT_FLOWS = new Set(["channel_thread_task"]);
+const COLLABORATION_THREAD_MODELS = new Set(["topic_messages_route"]);
+const COLLABORATION_TASK_MODELS = new Set(["topic_task_allocation"]);
 const EXTERNAL_MEMORY_PROVIDER_STATUSES = new Set(["active", "disabled"]);
 const DIGITAL_TWIN_STATUSES = new Set(["active", "paused", "disabled"]);
 const DIGITAL_TWIN_MODES = new Set(["advisory", "delegate", "simulate"]);
@@ -3304,6 +3308,9 @@ export class ServerCoordinator {
         skillPolicyPlugin: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_skill_policy_plugin_upsert")),
         tokenQuotaContext: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_token_quota_context_upsert")),
         hostedAccess: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_hosted_access_upsert")),
+        collaborationContract: mapEntry(
+          this.findLatestChannelAuditByAction(channel, "channel_collaboration_contract_upsert")
+        ),
         digitalTwin: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_digital_twin_upsert")),
         operationalCapability: mapEntry(
           this.findLatestChannelAuditByAction(channel, "channel_operational_capability_upsert")
@@ -4295,7 +4302,8 @@ export class ServerCoordinator {
         docPaths: [],
         runtimeEntries: [],
         ruleEntries: [],
-        hostedAccess: null
+        hostedAccess: null,
+        collaborationContract: null
       },
       governance: {
         authIdentity: channel.governance.authIdentity,
@@ -4339,6 +4347,7 @@ export class ServerCoordinator {
       "skillPolicyPlugin",
       "tokenQuotaContext",
       "hostedAccess",
+      "collaborationContract",
       "digitalTwin",
       "operationalCapability",
       "policySnapshot"
@@ -4364,7 +4373,8 @@ export class ServerCoordinator {
           docPaths: [],
           runtimeEntries: [],
           ruleEntries: [],
-          hostedAccess: null
+          hostedAccess: null,
+          collaborationContract: null
         },
         governance: createEmptyChannelGovernance(),
         orchestrationUpgrade: createEmptyChannelOrchestrationUpgrade(),
@@ -4415,6 +4425,9 @@ export class ServerCoordinator {
       channel.context.ruleEntries = input.ruleEntries
         .filter((item) => typeof item === "string" && item.trim().length > 0)
         .map((item) => item.trim());
+    }
+    if (!Object.prototype.hasOwnProperty.call(channel.context, "collaborationContract")) {
+      channel.context.collaborationContract = null;
     }
     if (input.hostedAccess !== undefined) {
       const hostedAccessInput = input.hostedAccess;
@@ -4516,6 +4529,79 @@ export class ServerCoordinator {
         }
       });
     }
+    if (input.collaborationContract !== undefined) {
+      const collaborationInput = input.collaborationContract;
+      assertOrThrow(
+        collaborationInput && typeof collaborationInput === "object" && !Array.isArray(collaborationInput),
+        "invalid_collaboration_contract",
+        "collaboration_contract payload must be object"
+      );
+      const allowedCollaborationKeys = new Set(["mode", "defaultFlow", "threadModel", "taskModel"]);
+      for (const key of Object.keys(collaborationInput)) {
+        assertOrThrow(
+          allowedCollaborationKeys.has(key),
+          "invalid_collaboration_contract_field",
+          `unsupported collaboration_contract field: ${key}`
+        );
+      }
+      const existingCollaboration =
+        channel.context.collaborationContract && typeof channel.context.collaborationContract === "object"
+          ? channel.context.collaborationContract
+          : null;
+      const mode =
+        normalizeOptionalScopeId(collaborationInput.mode) ??
+        normalizeOptionalScopeId(existingCollaboration?.mode) ??
+        "hosted_multi_human";
+      assertOrThrow(COLLABORATION_MODES.has(mode), "invalid_collaboration_mode", "collaboration_contract.mode is invalid");
+      const defaultFlow =
+        normalizeOptionalScopeId(collaborationInput.defaultFlow) ??
+        normalizeOptionalScopeId(existingCollaboration?.defaultFlow) ??
+        "channel_thread_task";
+      assertOrThrow(
+        COLLABORATION_DEFAULT_FLOWS.has(defaultFlow),
+        "invalid_collaboration_default_flow",
+        "collaboration_contract.default_flow is invalid"
+      );
+      const threadModel =
+        normalizeOptionalScopeId(collaborationInput.threadModel) ??
+        normalizeOptionalScopeId(existingCollaboration?.threadModel) ??
+        "topic_messages_route";
+      assertOrThrow(
+        COLLABORATION_THREAD_MODELS.has(threadModel),
+        "invalid_collaboration_thread_model",
+        "collaboration_contract.thread_model is invalid"
+      );
+      const taskModel =
+        normalizeOptionalScopeId(collaborationInput.taskModel) ??
+        normalizeOptionalScopeId(existingCollaboration?.taskModel) ??
+        "topic_task_allocation";
+      assertOrThrow(
+        COLLABORATION_TASK_MODELS.has(taskModel),
+        "invalid_collaboration_task_model",
+        "collaboration_contract.task_model is invalid"
+      );
+      const collaborationUpdatedAt = nowIso();
+      channel.context.collaborationContract = {
+        mode,
+        defaultFlow,
+        threadModel,
+        taskModel,
+        updatedAt: collaborationUpdatedAt,
+        updatedBy: operatorId
+      };
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_collaboration_contract_upsert",
+        target: `channel:${normalizedChannelId}`,
+        policySnapshot: input.policySnapshot,
+        details: {
+          mode,
+          default_flow: defaultFlow,
+          thread_model: threadModel,
+          task_model: taskModel
+        }
+      });
+    }
     this.upsertChannelGovernance(
       channel,
       {
@@ -4561,6 +4647,10 @@ export class ServerCoordinator {
         stable_login_state: channel.context.hostedAccess?.stableLoginState ?? null,
         login_provider: channel.context.hostedAccess?.loginProvider ?? null,
         session_ttl_minutes: channel.context.hostedAccess?.sessionTtlMinutes ?? null,
+        collaboration_mode: channel.context.collaborationContract?.mode ?? null,
+        collaboration_default_flow: channel.context.collaborationContract?.defaultFlow ?? null,
+        collaboration_thread_model: channel.context.collaborationContract?.threadModel ?? null,
+        collaboration_task_model: channel.context.collaborationContract?.taskModel ?? null,
         digital_twin_status: channel.governance.digitalTwin?.status ?? null,
         digital_twin_mode: channel.governance.digitalTwin?.mode ?? null,
         operational_capability_level: channel.governance.operationalCapability?.capabilityLevel ?? null
@@ -6918,6 +7008,7 @@ export class ServerCoordinator {
         "/v1/compatibility/shell-adapter?topic_id=:topicId",
         "/v1/inbox/:actorId?topic_id=:topicId",
         "/v1/inbox/:actorId/acks",
+        "/v1/channels/:channelId/context",
         "/v1/channels/:channelId/notification-endpoint",
         "/v1/channels/:channelId/orchestration-upgrade",
         "/v1/channels/:channelId/external-memory-provider",
@@ -6952,6 +7043,7 @@ export class ServerCoordinator {
         execution_events: "/v1/execution/runs/:runId/events?topic_id=:topicId",
         execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId",
         execution_inbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
+        channel_context: "/v1/channels/:channelId/context",
         channel_notification_endpoint: "/v1/channels/:channelId/notification-endpoint",
         channel_orchestration_upgrade: "/v1/channels/:channelId/orchestration-upgrade",
         channel_external_memory_provider: "/v1/channels/:channelId/external-memory-provider",

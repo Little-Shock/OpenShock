@@ -991,6 +991,28 @@ function serializeRuntimeDeployRuntimeContract(input = {}) {
   };
 }
 
+function serializeChannelCollaborationContract(input = {}, channelId = null) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const encodedChannelId = channelId ? encodeURIComponent(channelId) : ":channelId";
+  return {
+    mode: input.mode ?? "hosted_multi_human",
+    default_flow: input.defaultFlow ?? "channel_thread_task",
+    thread_model: input.threadModel ?? "topic_messages_route",
+    task_model: input.taskModel ?? "topic_task_allocation",
+    truth_family: ["/v1/channels/*", "/v1/topics/*"],
+    read_anchors: {
+      channel_context: `/v1/channels/${encodedChannelId}/context`,
+      topic_state: "/v1/topics/:topicId/topic-state",
+      topic_messages: "/v1/topics/:topicId/messages?route=:route",
+      task_allocation: "/v1/topics/:topicId/task-allocation"
+    },
+    updated_at: input.updatedAt ?? null,
+    updated_by: input.updatedBy ?? null
+  };
+}
+
 function serializeChannelContextContract(input = {}) {
   const channelId = input.channelId;
   return {
@@ -1021,7 +1043,8 @@ function serializeChannelContextContract(input = {}) {
             updated_at: input.context.hostedAccess.updatedAt ?? null,
             updated_by: input.context.hostedAccess.updatedBy ?? null
           }
-        : null
+        : null,
+      collaboration_contract: serializeChannelCollaborationContract(input.context?.collaborationContract, channelId)
     },
     governance: {
       auth_identity: input.governance?.authIdentity
@@ -1235,6 +1258,7 @@ function serializeChannelContextContract(input = {}) {
       skill_policy_plugin_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       token_quota_context_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       hosted_access_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      collaboration_contract_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       digital_twin_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       operational_capability_upsert: `/v1/channels/${encodeURIComponent(channelId)}/context`,
       orchestration_upgrade_upsert: `/v1/channels/${encodeURIComponent(channelId)}/orchestration-upgrade`,
@@ -1311,6 +1335,13 @@ function serializeChannelContextContract(input = {}) {
               audit_id: input.auditAnchor.latest.hostedAccess.auditId ?? null,
               action: input.auditAnchor.latest.hostedAccess.action ?? null,
               at: input.auditAnchor.latest.hostedAccess.at ?? null
+            }
+          : null,
+        collaboration_contract: input.auditAnchor?.latest?.collaborationContract
+          ? {
+              audit_id: input.auditAnchor.latest.collaborationContract.auditId ?? null,
+              action: input.auditAnchor.latest.collaborationContract.action ?? null,
+              at: input.auditAnchor.latest.collaborationContract.at ?? null
             }
           : null,
         digital_twin: input.auditAnchor?.latest?.digitalTwin
@@ -2265,6 +2296,39 @@ function serializeTaskAllocationReadModel(overview) {
   };
 }
 
+function serializeTopicCollaborationContract({
+  topicId,
+  topicRevision,
+  taskAllocationSummary = null
+}) {
+  const topicIdEncoded = encodeURIComponent(topicId);
+  return {
+    mode: "hosted_multi_human",
+    default_flow: "channel_thread_task",
+    channel_contract: {
+      truth_surface: "/v1/channels/:channelId/context",
+      source: "channel_context_projection"
+    },
+    topic_contract: {
+      topic_id: topicId,
+      revision: topicRevision,
+      truth_surface: `/v1/topics/${topicIdEncoded}/topic-state`,
+      source: "topic_truth_projection"
+    },
+    thread_contract: {
+      model: "topic_messages_route",
+      truth_surface: `/v1/topics/${topicIdEncoded}/messages?route=thread`,
+      source: "topic_messages_projection"
+    },
+    task_contract: {
+      model: "topic_task_allocation",
+      truth_surface: `/v1/topics/${topicIdEncoded}/task-allocation`,
+      source: "topic_truth_projection",
+      summary: deepClone(taskAllocationSummary ?? null)
+    }
+  };
+}
+
 function serializeDispatchResource(dispatch) {
   return {
     dispatch_id: dispatch.dispatchId,
@@ -2960,6 +3024,7 @@ export function createHttpServer(coordinator, options = {}) {
           "skill_policy_plugin",
           "token_quota_context",
           "hosted_access",
+          "collaboration_contract",
           "digital_twin",
           "operational_capability",
           "policy_snapshot"
@@ -3197,6 +3262,59 @@ export function createHttpServer(coordinator, options = {}) {
             );
           }
         }
+        if (body.collaboration_contract !== undefined) {
+          assertObjectBody(
+            body.collaboration_contract,
+            "invalid_collaboration_contract",
+            "collaboration_contract payload must be object"
+          );
+          const allowedCollaborationFields = new Set(["mode", "default_flow", "thread_model", "task_model"]);
+          for (const key of Object.keys(body.collaboration_contract)) {
+            if (!allowedCollaborationFields.has(key)) {
+              throw new CoordinatorError(
+                "invalid_collaboration_contract_field",
+                `unsupported collaboration_contract field: ${key}`
+              );
+            }
+          }
+          if (
+            body.collaboration_contract.mode !== undefined &&
+            (typeof body.collaboration_contract.mode !== "string" ||
+              body.collaboration_contract.mode.trim().length === 0)
+          ) {
+            throw new CoordinatorError("invalid_collaboration_mode", "collaboration_contract.mode must be non-empty string");
+          }
+          if (
+            body.collaboration_contract.default_flow !== undefined &&
+            (typeof body.collaboration_contract.default_flow !== "string" ||
+              body.collaboration_contract.default_flow.trim().length === 0)
+          ) {
+            throw new CoordinatorError(
+              "invalid_collaboration_default_flow",
+              "collaboration_contract.default_flow must be non-empty string"
+            );
+          }
+          if (
+            body.collaboration_contract.thread_model !== undefined &&
+            (typeof body.collaboration_contract.thread_model !== "string" ||
+              body.collaboration_contract.thread_model.trim().length === 0)
+          ) {
+            throw new CoordinatorError(
+              "invalid_collaboration_thread_model",
+              "collaboration_contract.thread_model must be non-empty string"
+            );
+          }
+          if (
+            body.collaboration_contract.task_model !== undefined &&
+            (typeof body.collaboration_contract.task_model !== "string" ||
+              body.collaboration_contract.task_model.trim().length === 0)
+          ) {
+            throw new CoordinatorError(
+              "invalid_collaboration_task_model",
+              "collaboration_contract.task_model must be non-empty string"
+            );
+          }
+        }
         if (body.digital_twin !== undefined) {
           assertObjectBody(body.digital_twin, "invalid_digital_twin", "digital_twin payload must be object");
           const allowedDigitalTwinFields = new Set([
@@ -3377,6 +3495,14 @@ export function createHttpServer(coordinator, options = {}) {
                 stableLoginState: body.hosted_access.stable_login_state,
                 loginProvider: body.hosted_access.login_provider,
                 sessionTtlMinutes: body.hosted_access.session_ttl_minutes
+              }
+            : undefined,
+          collaborationContract: body.collaboration_contract
+            ? {
+                mode: body.collaboration_contract.mode,
+                defaultFlow: body.collaboration_contract.default_flow,
+                threadModel: body.collaboration_contract.thread_model,
+                taskModel: body.collaboration_contract.task_model
               }
             : undefined,
           digitalTwin: body.digital_twin
@@ -4849,6 +4975,12 @@ export function createHttpServer(coordinator, options = {}) {
             : "pending";
         const topicIdEncoded = encodeURIComponent(route.topicId);
         const mergeLifecycle = serializeMergeLifecycle(overview);
+        const taskAllocation = serializeTaskAllocationReadModel(overview);
+        const collaborationContract = serializeTopicCollaborationContract({
+          topicId: route.topicId,
+          topicRevision: overview.revision,
+          taskAllocationSummary: taskAllocation.summary
+        });
 
         sendJson(response, 200, {
           projection: "control_plane_consumer_projection",
@@ -4857,7 +4989,8 @@ export function createHttpServer(coordinator, options = {}) {
           topic_status: serializeTopicStatusReadModel(overview, coarse),
           topic_state: serializeTopicState(overview),
           merge_lifecycle: mergeLifecycle,
-          task_allocation: serializeTaskAllocationReadModel(overview),
+          task_allocation: taskAllocation,
+          collaboration_contract: collaborationContract,
           topic_messages: {
             route: messageRoute,
             items: coordinator.listMessages(route.topicId, { route: messageRoute })
