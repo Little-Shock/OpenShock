@@ -499,7 +499,7 @@ export function RunDetailView({
               打开 Issue
             </Link>
             <Link
-              href={`/rooms/${run.roomId}`}
+              href={`/rooms/${run.roomId}?tab=run`}
               className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
             >
               回到讨论间
@@ -651,7 +651,7 @@ export function IssueDetailView({
           <p className="mt-4 text-base leading-7">{issue.summary}</p>
           <div className="mt-5 flex flex-wrap gap-3">
               <Link
-                href={`/rooms/${issue.roomId}`}
+                href={`/rooms/${issue.roomId}?tab=context`}
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
               打开讨论间

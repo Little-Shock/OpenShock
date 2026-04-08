@@ -140,10 +140,13 @@
   - [x] run detail 能展示 runtime、branch/worktree、执行日志等信息
   - [x] bridge 执行链已能跑通同步 prompt
   - [x] room / run 已能真实 stop / resume / follow-thread，并把 paused state 回写到同一条执行真相
+  - [x] `/rooms/:roomId` 已升级成 query-driven room workbench，`Chat / Topic / Run / PR / Context` 可在同一页切换
+  - [x] Topic summary、Run control、PR entry 与 inbox / issue / board back-links 已能在 room 内闭环，不再强制跳去独立详情页
+  - [x] `pnpm test:headed-room-workbench-topic-context` 已完成 exact replay，验证切 tab、follow_thread、PR surface、reload persistence 与 inbox back-link
 - 当前 GAP:
-  - [ ] Topic 仍主要隐含在 room/run 中，未形成明确产品对象
+  - [ ] Topic 目前仍主要挂在 room workbench 内，还没有独立 topic route / edit lifecycle
   - [ ] token-quota 与更细粒度执行可观测性尚未完成
-- 对应 Test Cases: `TC-006` `TC-007` `TC-018`
+- 对应 Test Cases: `TC-006` `TC-007` `TC-018` `TC-031`
 
 ### CHK-07 工作流 D: PR 与 Review 闭环
 
@@ -317,9 +320,9 @@
   - [x] channel / room 现在都有 message-centric thread rail，message row 可直接打开 reply 子区，composer 保持常驻可见
   - [x] room thread rail 已直接接上 `follow_thread` 控制，不再只是纯展示卡片
   - [x] channel 现在已有 followed thread / saved later 回访面，thread 可在 `follow -> reopen` 与 `save later -> reopen` 闭环
+  - [x] room 现在已有稳定的 `Chat / Topic / Run / PR / Context` 工作台 tabs，query state 与 room-first back-links 都能留在同一壳层内
 - 当前 GAP:
   - [ ] `Agent / Machine / Human` 还没有像 `app.slock.ai` 那样的一等 profile route / panel
-  - [ ] Room 还缺稳定的 `Chat / Topic / Run / PR / Context` 工作台 tabs，用户仍需频繁跨页面跳转
 - 对应 Test Cases: `TC-029` `TC-030` `TC-031` `TC-034`
 
 ### CHK-18 Board 次级规划面

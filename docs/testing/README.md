@@ -42,6 +42,8 @@
   - `TKT-13` 当天重跑后的有头 stop / resume / follow-thread 证据
 - [Test Report 2026-04-08 DM Followed Thread Saved Later](./Test-Report-2026-04-08-dm-followed-thread-saved-later.md)
   - `TKT-22` 的 DM entry、followed thread revisit、saved-later revisit 有头证据
+- [Test Report 2026-04-08 Room Workbench Topic Context](./Test-Report-2026-04-08-room-workbench-topic-context.md)
+  - `TKT-23` 的 room-first `Chat / Topic / Run / PR / Context` workbench、reload persistence 与 inbox back-link evidence
 
 常用入口：
 
@@ -69,6 +71,8 @@
   - 验证 stop / resume / follow-thread exact replay
 - `pnpm test:headed-dm-followed-thread-saved-later`
   - 验证 DM entry、thread follow、saved-later、reopen thread 回访闭环
+- `pnpm test:headed-room-workbench-topic-context`
+  - 验证 room-first `Chat / Topic / Run / PR / Context` workbench、follow_thread、PR surface 与 inbox back-link
 - `pnpm test:headed-multi-runtime-scheduler-failover`
   - 验证 multi-runtime scheduler、active lease、offline failover
 - `pnpm test:headed-quick-search`

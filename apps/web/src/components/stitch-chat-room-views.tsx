@@ -7,12 +7,17 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { QuickSearchSurface, StitchSidebar, StitchTopBar, WorkspaceStatusStrip } from "@/components/stitch-shell-primitives";
 import { useQuickSearchController } from "@/lib/quick-search";
 import {
+  type ApprovalCenterItem,
   type Message,
   type PhaseZeroState,
+  type PullRequest,
   type Room,
+  type Run,
+  type Session,
 } from "@/lib/mock-data";
 import { type RoomStreamEvent, usePhaseZeroState } from "@/lib/live-phase0";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
+import { Panel, RunDetailView } from "@/components/phase-zero-views";
 import { RunControlSurface } from "@/components/run-control-surface";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -168,6 +173,30 @@ function parseChannelWorkbenchTab(value?: string | null): ChannelWorkbenchTab {
   }
 }
 
+type RoomWorkbenchTab = "chat" | "topic" | "run" | "pr" | "context";
+
+const ROOM_WORKBENCH_TABS: RoomWorkbenchTab[] = ["chat", "topic", "run", "pr", "context"];
+
+const ROOM_WORKBENCH_TAB_LABEL: Record<RoomWorkbenchTab, string> = {
+  chat: "Chat",
+  topic: "Topic",
+  run: "Run",
+  pr: "PR",
+  context: "Context",
+};
+
+function parseRoomWorkbenchTab(value?: string | null): RoomWorkbenchTab {
+  switch (value) {
+    case "topic":
+    case "run":
+    case "pr":
+    case "context":
+      return value;
+    default:
+      return "chat";
+  }
+}
+
 function buildChannelWorkbenchHref(channelId: string, tab: ChannelWorkbenchTab, threadId?: string) {
   const params = new URLSearchParams();
   if (tab !== "chat") {
@@ -282,6 +311,13 @@ const DEFAULT_SAVED_LATER_ITEMS: MessageSurfaceEntry[] = [
     unread: 0,
   },
 ];
+
+function buildRoomWorkbenchHref(roomId: string, tab: RoomWorkbenchTab) {
+  if (tab === "chat") {
+    return `/rooms/${roomId}`;
+  }
+  return `/rooms/${roomId}?tab=${tab}`;
+}
 
 const CHANNEL_THREAD_REPLIES: Record<string, ThreadMap> = {
   all: {
@@ -429,6 +465,585 @@ function actionTone(tone: "yellow" | "white" | "ink") {
   }
 }
 
+function signalTone(kind: ApprovalCenterItem["kind"]) {
+  switch (kind) {
+    case "approval":
+      return "bg-[var(--shock-yellow)]";
+    case "blocked":
+      return "bg-[var(--shock-pink)] text-white";
+    case "review":
+      return "bg-[var(--shock-lime)]";
+    default:
+      return "bg-white";
+  }
+}
+
+function signalLabel(kind: ApprovalCenterItem["kind"]) {
+  switch (kind) {
+    case "approval":
+      return "Approval";
+    case "blocked":
+      return "Blocked";
+    case "review":
+      return "Review";
+    default:
+      return "Status";
+  }
+}
+
+function RoomRelatedSignalsPanel({
+  roomId,
+  relatedSignals,
+  recentSignals,
+}: {
+  roomId: string;
+  relatedSignals: ApprovalCenterItem[];
+  recentSignals: ApprovalCenterItem[];
+}) {
+  return (
+    <Panel tone="white">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">
+            Inbox Back-links
+          </p>
+          <p className="mt-2 font-display text-[20px] font-bold leading-6">
+            {relatedSignals.length} open / {recentSignals.length} recent
+          </p>
+        </div>
+        <Link
+          href="/inbox"
+          data-testid="room-workbench-open-inbox"
+          className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+        >
+          打开 Inbox
+        </Link>
+      </div>
+      <div className="mt-4 space-y-3">
+        {(relatedSignals.length === 0 ? recentSignals.slice(0, 2) : relatedSignals.slice(0, 3)).map((item) => (
+          <div
+            key={item.id}
+            data-testid={`room-workbench-signal-${item.id}`}
+            className={cn("border-2 border-[var(--shock-ink)] px-3 py-3 shadow-[var(--shock-shadow-sm)]", signalTone(item.kind))}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="border border-[var(--shock-ink)] bg-white/90 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--shock-ink)]">
+                {signalLabel(item.kind)}
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] opacity-70">{item.time}</span>
+            </div>
+            <p className="mt-2 font-display text-[18px] font-bold leading-6">{item.title}</p>
+            <p className="mt-2 text-[13px] leading-6 opacity-85">{item.summary}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href="/inbox"
+                className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--shock-ink)]"
+              >
+                Inbox Detail
+              </Link>
+              <Link
+                href={buildRoomWorkbenchHref(roomId, item.kind === "review" ? "pr" : "context")}
+                className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+              >
+                回到 Room
+              </Link>
+            </div>
+          </div>
+        ))}
+        {relatedSignals.length === 0 && recentSignals.length === 0 ? (
+          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">
+            当前这条 room 还没有挂住新的 approval / blocked / review signal。
+          </p>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
+function RoomContextPanels({
+  room,
+  run,
+  session,
+  pullRequest,
+  issueTitle,
+  activeAgents,
+  sessionMemoryPaths,
+  latestTimelineEvent,
+  relatedSignals,
+  recentSignals,
+  canControlRun,
+  runControlStatus,
+  runControlBoundary,
+  onRunControl,
+  pullRequestActionLabel,
+  pullRequestActionDisabled,
+  onPullRequestAction,
+  pullRequestActionStatus,
+  pullRequestBoundary,
+  prError,
+}: {
+  room: Room;
+  run: Run;
+  session?: Session;
+  pullRequest?: PullRequest;
+  issueTitle?: string;
+  activeAgents: Array<{ id: string; name: string; state: string }>;
+  sessionMemoryPaths: string[];
+  latestTimelineEvent?: Run["timeline"][number];
+  relatedSignals: ApprovalCenterItem[];
+  recentSignals: ApprovalCenterItem[];
+  canControlRun: boolean;
+  runControlStatus: string;
+  runControlBoundary: string;
+  onRunControl: (action: "stop" | "resume" | "follow_thread", note: string) => Promise<void>;
+  pullRequestActionLabel: string;
+  pullRequestActionDisabled: boolean;
+  onPullRequestAction: (() => Promise<void>) | null;
+  pullRequestActionStatus: string;
+  pullRequestBoundary: string;
+  prError: string | null;
+}) {
+  const currentRunStatus = session?.status ?? run.status;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 xl:grid-cols-2">
+        <Panel tone="white">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Topic</p>
+          <p className="mt-2 font-display text-[20px] font-bold leading-6">{room.topic.title}</p>
+          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">{room.topic.summary}</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">Owner</p>
+              <p className="mt-2 text-sm font-semibold">{room.topic.owner}</p>
+            </div>
+            <div className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">Issue</p>
+              <p className="mt-2 text-sm font-semibold">{room.issueKey}</p>
+            </div>
+          </div>
+          {issueTitle ? (
+            <p className="mt-3 text-[12px] leading-5 text-[color:rgba(24,20,14,0.6)]">
+              当前 topic 绑定的 Issue 标题：{issueTitle}
+            </p>
+          ) : null}
+        </Panel>
+
+        <Panel tone="paper">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Context Links</p>
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            <Link
+              href={`/issues/${room.issueKey}`}
+              className="border-2 border-[var(--shock-ink)] bg-white px-3 py-3 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+            >
+              Issue Context
+            </Link>
+            <Link
+              href={buildRoomWorkbenchHref(room.id, "run")}
+              className="border-2 border-[var(--shock-ink)] bg-white px-3 py-3 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+            >
+              Run Truth
+            </Link>
+            <Link
+              href={buildRoomWorkbenchHref(room.id, "pr")}
+              className="border-2 border-[var(--shock-ink)] bg-white px-3 py-3 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+            >
+              PR Surface
+            </Link>
+            <Link
+              href="/board"
+              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-3 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+            >
+              Board Mirror
+            </Link>
+          </div>
+        </Panel>
+      </div>
+
+      <Panel tone="white">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Run</p>
+            <p className="mt-2 font-display text-[20px] font-bold leading-6">{run.id}</p>
+          </div>
+          <span
+            data-testid="room-workbench-run-status"
+            className={cn(
+              "rounded-[4px] border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px]",
+              currentRunStatus === "paused"
+                ? "bg-[var(--shock-paper)]"
+                : currentRunStatus === "blocked"
+                  ? "bg-[var(--shock-pink)] text-white"
+                  : currentRunStatus === "review"
+                    ? "bg-[var(--shock-lime)]"
+                    : currentRunStatus === "done"
+                      ? "bg-[var(--shock-ink)] text-white"
+                      : "bg-[var(--shock-yellow)]"
+            )}
+          >
+            {runStatusLabel(currentRunStatus)}
+          </span>
+        </div>
+        <p className="mt-3 font-mono text-[11px] text-[color:rgba(24,20,14,0.56)]">
+          Branch {session?.branch ?? run.branch}
+        </p>
+        <p className="mt-1 font-mono text-[11px] text-[color:rgba(24,20,14,0.56)]">
+          Worktree {session?.worktreePath || run.worktreePath || session?.worktree || run.worktree}
+        </p>
+      </Panel>
+
+      <RunControlSurface
+        scope="room"
+        run={run}
+        session={session}
+        canControl={canControlRun}
+        controlStatus={runControlStatus}
+        controlBoundary={runControlBoundary}
+        onControl={onRunControl}
+      />
+
+      <Panel tone="white">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Pull Request</p>
+            <p data-testid="room-workbench-pr-label" className="mt-2 font-display text-[20px] font-bold leading-6">
+              {pullRequest?.label ?? run.pullRequest ?? "未创建"}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="room-workbench-pr-action"
+            disabled={pullRequestActionDisabled}
+            onClick={() => void onPullRequestAction?.()}
+            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] disabled:opacity-60"
+          >
+            {pullRequestActionLabel}
+          </button>
+        </div>
+        <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+          {pullRequestActionStatus}
+        </p>
+        {(pullRequestActionStatus === "blocked" ||
+          pullRequestActionStatus === "signed_out" ||
+          pullRequestActionStatus === "review_only" ||
+          pullRequestActionStatus === "merged") ? (
+          <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{pullRequestBoundary}</p>
+        ) : null}
+        <p data-testid="room-workbench-pr-summary" className="mt-3 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
+          {pullRequest?.reviewSummary ?? run.nextAction}
+        </p>
+        {prError ? (
+          <p data-testid="room-workbench-pr-error" className="mt-3 font-mono text-[11px] text-[var(--shock-pink)]">
+            {prError}
+          </p>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {pullRequest?.url ? (
+            <Link
+              href={pullRequest.url}
+              target="_blank"
+              rel="noreferrer"
+              className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+            >
+              Open Remote PR
+            </Link>
+          ) : null}
+          <Link
+            href="/inbox"
+            data-testid="room-workbench-pr-inbox-link"
+            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+          >
+            Inbox Back-link
+          </Link>
+        </div>
+      </Panel>
+
+      <div className="grid gap-3 xl:grid-cols-2">
+        <Panel tone="ink">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/70">Session Memory</p>
+          <div className="mt-3 space-y-2 font-mono text-[10px] leading-5 text-[#8bff9e]">
+            {sessionMemoryPaths.map((item) => (
+              <p key={item}>{item}</p>
+            ))}
+          </div>
+        </Panel>
+        <Panel tone="paper">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Active Presence</p>
+          <p className="mt-2 font-display text-[20px] font-bold leading-6">{activeAgents.length} active agents</p>
+          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
+            最近执行 lane 仍挂在这个 room 上的 Agent 会在这里持续可见，不再只留在总览页 badge。
+          </p>
+          <div className="mt-4 space-y-2">
+            {activeAgents.slice(0, 3).map((agent) => (
+              <div key={agent.id} className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
+                <p className="font-display text-[16px] font-semibold leading-5">{agent.name}</p>
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                  {agent.state}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-2">
+        <Panel tone="yellow">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Tool Calls</p>
+          <p className="mt-2 font-display text-[28px] font-bold leading-none">{run.toolCalls.length}</p>
+          <p className="mt-2 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{run.toolCalls[0]?.tool ?? "当前还没有工具调用"}</p>
+          <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{run.toolCalls[0]?.summary ?? "等待下一条执行事件"}</p>
+        </Panel>
+        <Panel tone="white">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Timeline</p>
+          <p className="mt-2 font-display text-[28px] font-bold leading-none">{run.timeline.length}</p>
+          <p className="mt-2 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{latestTimelineEvent?.label ?? "暂无事件"}</p>
+          <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{latestTimelineEvent?.at ?? "等待同步"}</p>
+        </Panel>
+      </div>
+
+      <RoomRelatedSignalsPanel roomId={room.id} relatedSignals={relatedSignals} recentSignals={recentSignals} />
+    </div>
+  );
+}
+
+function RoomTopicWorkbenchPanel({
+  room,
+  issueTitle,
+  messages,
+}: {
+  room: Room;
+  issueTitle?: string;
+  messages: Message[];
+}) {
+  const highlights = messages.slice(-3).reverse();
+
+  return (
+    <div data-testid="room-workbench-topic-panel" className="space-y-4">
+      <Panel tone="paper" className="shadow-[6px_6px_0_0_var(--shock-yellow)]">
+        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">
+          {room.issueKey} / Topic
+        </p>
+        <h3 className="mt-2 font-display text-3xl font-bold">{room.topic.title}</h3>
+        <p className="mt-4 text-base leading-7">{room.topic.summary}</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">Owner</p>
+            <p className="mt-2 font-display text-xl font-semibold">{room.topic.owner}</p>
+          </div>
+          <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">Board Mirror</p>
+            <p className="mt-2 font-display text-xl font-semibold">{room.boardCount} cards</p>
+          </div>
+          <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">Issue Title</p>
+            <p className="mt-2 text-sm font-semibold leading-6">{issueTitle ?? "等待 issue detail 同步"}</p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel tone="white">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Topic Guidance</p>
+            <p className="mt-2 font-display text-[20px] font-bold leading-6">最近 room 语境</p>
+          </div>
+          <Link
+            href={buildRoomWorkbenchHref(room.id, "chat")}
+            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+          >
+            回到 Chat
+          </Link>
+        </div>
+        <div className="mt-4 space-y-3">
+          {highlights.map((message) => (
+            <div key={message.id} className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn("border border-[var(--shock-ink)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em]", messageBadgeTone(message))}>
+                  {messageGlyph(message)} {roleLabel(message.role)}
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                  {message.time}
+                </span>
+              </div>
+              <p className="mt-3 text-sm leading-6">{renderMarkedMessage(message.message)}</p>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function RoomPullRequestWorkbenchPanel({
+  roomId,
+  pullRequest,
+  actionLabel,
+  actionDisabled,
+  onAction,
+  actionStatus,
+  actionBoundary,
+  prError,
+  relatedSignals,
+}: {
+  roomId: string;
+  pullRequest?: PullRequest;
+  actionLabel: string;
+  actionDisabled: boolean;
+  onAction: (() => Promise<void>) | null;
+  actionStatus: string;
+  actionBoundary: string;
+  prError: string | null;
+  relatedSignals: ApprovalCenterItem[];
+}) {
+  return (
+    <div data-testid="room-workbench-pr-panel" className="space-y-4">
+      <Panel tone="white" className="shadow-[6px_6px_0_0_var(--shock-yellow)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">Pull Request</p>
+            <h3 className="mt-2 font-display text-3xl font-bold">{pullRequest?.label ?? "未创建 PR"}</h3>
+          </div>
+          <button
+            type="button"
+            data-testid="room-workbench-pr-primary-action"
+            disabled={actionDisabled}
+            onClick={() => void onAction?.()}
+            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] shadow-[var(--shock-shadow-sm)] disabled:opacity-60"
+          >
+            {actionLabel}
+          </button>
+        </div>
+        <p data-testid="room-workbench-pr-status" className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+          {actionStatus}
+        </p>
+        {(actionStatus === "blocked" ||
+          actionStatus === "signed_out" ||
+          actionStatus === "review_only" ||
+          actionStatus === "merged") ? (
+          <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{actionBoundary}</p>
+        ) : null}
+        <p className="mt-4 text-sm leading-6">{pullRequest?.title ?? "当前 room 还没有远端或本地 PR 对象。"}</p>
+        <p data-testid="room-workbench-pr-review-summary" className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+          {pullRequest?.reviewSummary ?? "创建 PR 后，这里会直接展示 review / merge 当前真值。"}
+        </p>
+        {prError ? (
+          <p className="mt-3 font-mono text-[11px] text-[var(--shock-pink)]">{prError}</p>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/inbox"
+            className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+          >
+            Inbox Review
+          </Link>
+          {pullRequest?.url ? (
+            <Link
+              href={pullRequest.url}
+              target="_blank"
+              rel="noreferrer"
+              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+            >
+              Remote PR
+            </Link>
+          ) : null}
+          <Link
+            href={buildRoomWorkbenchHref(roomId, "context")}
+            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+          >
+            Topic Context
+          </Link>
+        </div>
+      </Panel>
+
+      <RoomRelatedSignalsPanel roomId={roomId} relatedSignals={relatedSignals} recentSignals={[]} />
+    </div>
+  );
+}
+
+function RoomWorkbenchRailSummary({
+  room,
+  run,
+  pullRequest,
+  activeTab,
+  activeAgentsCount,
+  relatedSignals,
+}: {
+  room: Room;
+  run: Run;
+  pullRequest?: PullRequest;
+  activeTab: RoomWorkbenchTab;
+  activeAgentsCount: number;
+  relatedSignals: ApprovalCenterItem[];
+}) {
+  return (
+    <div className="space-y-3">
+      <Panel tone="paper">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Workbench Summary</p>
+        <div className="mt-3 space-y-2">
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Current Tab</p>
+            <p className="mt-1.5 font-display text-[18px] font-semibold">{ROOM_WORKBENCH_TAB_LABEL[activeTab]}</p>
+          </div>
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Run</p>
+            <p className="mt-1.5 font-display text-[18px] font-semibold">{run.id}</p>
+            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+              {runStatusLabel(run.status)}
+            </p>
+          </div>
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">PR</p>
+            <p className="mt-1.5 font-display text-[18px] font-semibold">{pullRequest?.label ?? "未创建"}</p>
+            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+              {pullRequestStatusLabel(pullRequest?.status)}
+            </p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel tone="white">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Quick Links</p>
+        <div className="mt-3 grid gap-2">
+          {ROOM_WORKBENCH_TABS.map((tab) => (
+            <Link
+              key={tab}
+              href={buildRoomWorkbenchHref(room.id, tab)}
+              className={cn(
+                "border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]",
+                activeTab === tab ? "bg-[var(--shock-yellow)]" : "bg-white"
+              )}
+            >
+              {ROOM_WORKBENCH_TAB_LABEL[tab]}
+            </Link>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel tone="white">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Live Context</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-1">
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Issue</p>
+            <p className="mt-1.5 text-sm font-semibold">{room.issueKey}</p>
+          </div>
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Signals</p>
+            <p className="mt-1.5 text-sm font-semibold">{relatedSignals.length} open links</p>
+          </div>
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Agents</p>
+            <p className="mt-1.5 text-sm font-semibold">{activeAgentsCount} active</p>
+          </div>
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Board</p>
+            <p className="mt-1.5 text-sm font-semibold">{room.boardCount} mirror cards</p>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 function ReplyComposerChip({
   replyTarget,
   onClear,
@@ -437,20 +1052,22 @@ function ReplyComposerChip({
   onClear: () => void;
 }) {
   return (
-    <div className="mb-2 flex items-center gap-2 border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2">
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-        Reply
-      </span>
-      <p className="min-w-0 flex-1 truncate text-[12px] text-[color:rgba(24,20,14,0.74)]">
-        {replyTarget.speaker}: {replyTarget.excerpt}
-      </p>
-      <button
-        type="button"
-        onClick={onClear}
-        className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em]"
-      >
-        Clear
-      </button>
+    <div className="mb-2 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 shadow-[var(--shock-shadow-sm)]">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+          Reply
+        </span>
+        <p className="min-w-0 flex-1 truncate text-[12px] text-[color:rgba(24,20,14,0.74)]">
+          {replyTarget.speaker}: {replyTarget.excerpt}
+        </p>
+        <button
+          type="button"
+          onClick={onClear}
+          className="min-h-[32px] rounded-[10px] border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-yellow)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-paper)]"
+        >
+          Clear
+        </button>
+      </div>
     </div>
   );
 }
@@ -1469,7 +2086,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                   />
                 </div>
               )}
-            </div>
+                </div>
 
             <aside className="hidden min-h-0 flex-col border-l-2 border-[var(--shock-ink)] bg-[#f1efe7] xl:flex">
               {activeWorkbenchTab === "chat" ? (
@@ -1580,11 +2197,13 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
 }
 
 export function StitchDiscussionView({ roomId }: { roomId: string }) {
+  const searchParams = useSearchParams();
   const { state, approvalCenter, loading, error, streamRoomMessage, createPullRequest, updatePullRequest, controlRun } = usePhaseZeroState();
   const quickSearch = useQuickSearchController(loading || error ? { ...state, channels: [], rooms: [], issues: [], runs: [], agents: [] } : state);
   const room = state.rooms.find((item) => item.id === roomId);
   const run = room ? state.runs.find((item) => item.id === room.runId) : undefined;
   const session = room ? state.sessions.find((item) => item.roomId === room.id) : undefined;
+  const issue = room ? state.issues.find((item) => item.roomId === room.id) : undefined;
   const authSession = state.auth.session;
   const currentRunStatus = session?.status ?? run?.status;
   const runPaused = currentRunStatus === "paused";
@@ -1625,12 +2244,38 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
   const workspaceName = loading || error ? undefined : state.workspace.name;
   const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
+  const activeWorkbenchTab = parseRoomWorkbenchTab(searchParams.get("tab"));
   const selectedThreadMessage =
     messages.find((message) => message.id === selectedThreadId) ?? messages.find((message) => message.id === initialThreadMessageId(messages, roomThreadReplies));
   const selectedThreadReplies = selectedThreadMessage ? roomThreadReplies[selectedThreadMessage.id] ?? [] : [];
   const threadReplyCounts = Object.fromEntries(
     messages.map((message) => [message.id, roomThreadReplies[message.id]?.length ?? 0])
   );
+  const relatedSignals =
+    loading || error || !room || !run
+      ? []
+      : approvalCenter.signals.filter(
+          (item) =>
+            item.roomId === room.id ||
+            item.runId === run.id ||
+            item.href.includes(room.id) ||
+            item.href.includes(run.id)
+        );
+  const recentSignals =
+    loading || error || !room || !run
+      ? []
+      : approvalCenter.recent.filter(
+          (item) =>
+            item.roomId === room.id ||
+            item.runId === run.id ||
+            item.href.includes(room.id) ||
+            item.href.includes(run.id)
+        );
+  const workbenchTabs = ROOM_WORKBENCH_TABS.map((tab) => ({
+    label: ROOM_WORKBENCH_TAB_LABEL[tab],
+    href: buildRoomWorkbenchHref(roomId, tab),
+    testId: `room-workbench-tab-${tab}`,
+  }));
 
   useEffect(() => {
     const nextThreadId = initialThreadMessageId(messages, roomThreadReplies);
@@ -1729,6 +2374,32 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
     }
   }
 
+  const contextPanels =
+    room && run ? (
+      <RoomContextPanels
+        room={room}
+        run={run}
+        session={session}
+        pullRequest={pullRequest}
+        issueTitle={issue?.title}
+        activeAgents={activeAgents}
+        sessionMemoryPaths={sessionMemoryPaths}
+        latestTimelineEvent={latestTimelineEvent}
+        relatedSignals={relatedSignals}
+        recentSignals={recentSignals}
+        canControlRun={canControlRun}
+        runControlStatus={runControlStatus}
+        runControlBoundary={runControlBoundary}
+        onRunControl={handleRunControl}
+        pullRequestActionLabel={pullRequestActionLabel}
+        pullRequestActionDisabled={pullRequestActionDisabled}
+        onPullRequestAction={pullRequestActionHandler}
+        pullRequestActionStatus={pullRequestActionStatus}
+        pullRequestBoundary={pullRequestBoundary}
+        prError={prError}
+      />
+    ) : null;
+
   return (
     <main className="h-[100dvh] min-h-[100dvh] overflow-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
       <QuickSearchSurface
@@ -1769,8 +2440,8 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                   : room?.summary ?? "当前还没有拿到这间房的 live 摘要。"
             }
             searchPlaceholder="Search room / run / PR / board"
-            tabs={["Chat", "Thread", "Topic", "Run", "PR"]}
-            activeTab="Chat"
+            tabs={workbenchTabs}
+            activeTab={ROOM_WORKBENCH_TAB_LABEL[activeWorkbenchTab]}
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
           />
           <div className="border-b-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-2">
@@ -1824,152 +2495,25 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                   <DiscussionStateMessage title="未找到讨论间" message={`当前找不到 \`${roomId}\` 对应的 live room / run 记录。`} />
                 </div>
               ) : (
-                <ClaudeCompactComposer
-                  room={room}
-                  initialMessages={messages}
-                  onSend={streamRoomMessage}
-                  canSend={canReply}
-                  sendStatus={roomReplyStatus}
-                  sendBoundary={roomReplyBoundary}
-                  replyTarget={replyTarget}
-                  onClearReplyTarget={() => setReplyTarget(null)}
-                  threadReplyCounts={threadReplyCounts}
-                  activeThreadMessageId={selectedThreadMessage?.id}
-                  onOpenThread={handleOpenThread}
-                />
-              )}
-            </div>
-
-            <aside className="hidden min-h-0 flex-col border-l-2 border-[var(--shock-ink)] bg-[#f1efe7] xl:flex">
-              <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-4">
-                <p className="font-display text-[20px] font-bold leading-none">
-                  {railMode === "thread" ? "Thread Rail" : "Context Rail"}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-0 border-2 border-[var(--shock-ink)]">
-                  {["Context", "Thread", "Run", "PR"].map((tab) => (
-                    <button
-                      type="button"
-                      key={tab}
-                      onClick={() => setRailMode(tab === "Thread" ? "thread" : "context")}
-                      className={cn(
-                        "border-r-2 border-[var(--shock-ink)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] last:border-r-0",
-                        (tab === "Thread" && railMode === "thread") || (tab !== "Thread" && tab === "Context" && railMode === "context")
-                          ? "bg-[var(--shock-yellow)]"
-                          : "bg-white"
-                      )}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4">
-                {railMode === "thread" ? (
-                  <ThreadRail
-                    scopeLabel={room?.issueKey ?? roomId}
-                    selectedMessage={selectedThreadMessage}
-                    replies={selectedThreadReplies}
-                    replyTarget={replyTarget}
-                    onReply={() => {
-                      if (selectedThreadMessage) {
-                        setReplyTarget(buildReplyTarget(selectedThreadMessage));
-                      }
-                    }}
-                    primaryAction={{
-                      label: session?.followThread ?? run?.followThread ? "Thread Locked" : "Lock Thread",
-                      onClick: () =>
-                        void handleRunControl(
-                          "follow_thread",
-                          selectedThreadMessage
-                            ? `锁定 thread: ${selectedThreadMessage.speaker} / ${messageExcerpt(selectedThreadMessage.message, 48)}`
-                            : "锁定当前线程"
-                        ),
-                      disabled: !selectedThreadMessage || !canControlRun,
-                      tone: session?.followThread ?? run?.followThread ? "ink" : "yellow",
-                      testId: "room-thread-follow-current",
-                    }}
-                    emptyTitle="先选一条 room 消息"
-                    emptyMessage="thread 只作为当前 room 的局部回复区，不会再生成新的一级页面。先在左侧消息流里点一条消息。"
-                  />
-                ) : (
-                  <>
-                    <div className="mb-3 flex gap-2">
-                      <button className="flex-1 border-2 border-[var(--shock-ink)] bg-black px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white shadow-[var(--shock-shadow-sm)]">
-                        注入 Guidance
-                      </button>
-                      <button
-                        data-testid="room-pull-request-action"
-                        disabled={pullRequestActionDisabled}
-                        onClick={() => void pullRequestActionHandler?.()}
-                        className="flex-1 border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] disabled:opacity-60"
-                      >
-                        {pullRequestActionLabel}
-                      </button>
-                    </div>
-                    <p data-testid="room-pull-request-authz" className="mb-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                      {pullRequestActionStatus}
-                    </p>
-                    {(pullRequestActionStatus === "blocked" || pullRequestActionStatus === "signed_out" || pullRequestActionStatus === "review_only" || pullRequestActionStatus === "merged") ? (
-                      <p className="mb-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{pullRequestBoundary}</p>
-                    ) : null}
-
-                    <div className="space-y-3">
-                      {loading ? (
-                        <DiscussionStateMessage title="等待房间上下文" message="右侧 context rail 会在 live room / run / session 真值返回后展开。" />
-                      ) : error ? (
-                        <DiscussionStateMessage title="上下文同步失败" message={error} />
-                      ) : !room || !run ? (
-                        <DiscussionStateMessage title="缺少讨论间上下文" message={`当前找不到 \`${roomId}\` 对应的 live room / run 记录。`} />
-                      ) : (
-                        <>
-                      <section className="border-2 border-[var(--shock-ink)] bg-white p-3 shadow-[var(--shock-shadow-sm)]">
-                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Topic</p>
-                        <p className="mt-2 font-display text-[18px] font-bold leading-6">{room.topic.title}</p>
-                        <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">{room.topic.summary}</p>
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                          <div className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
-                            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">Owner</p>
-                            <p className="mt-2 text-sm font-semibold">{room.topic.owner}</p>
-                          </div>
-                          <div className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
-                            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">Board</p>
-                            <p className="mt-2 text-sm font-semibold">{room.boardCount} planning cards</p>
-                          </div>
-                        </div>
-                      </section>
-
-                      <section className="border-2 border-[var(--shock-ink)] bg-white p-3 shadow-[var(--shock-shadow-sm)]">
-                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Run</p>
-                        <div className="mt-3 border-2 border-[var(--shock-ink)] bg-[#f7f7f7] px-3 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="font-mono text-[10px] text-[color:rgba(24,20,14,0.48)]">Current Branch</p>
-                              <p className="mt-2 font-display text-[18px] font-bold leading-6">{session?.branch ?? run.branch}</p>
-                            </div>
-                            <span
-                              data-testid="room-run-status"
-                              className={cn(
-                                "rounded-[4px] border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px]",
-                                currentRunStatus === "paused"
-                                  ? "bg-[var(--shock-paper)]"
-                                  : currentRunStatus === "blocked"
-                                    ? "bg-[var(--shock-pink)] text-white"
-                                    : currentRunStatus === "review"
-                                      ? "bg-[var(--shock-lime)]"
-                                      : currentRunStatus === "done"
-                                        ? "bg-[var(--shock-ink)] text-white"
-                                        : "bg-[var(--shock-yellow)]"
-                              )}
-                            >
-                              {runStatusLabel(currentRunStatus)}
-                            </span>
-                          </div>
-                          <p className="mt-3 font-mono text-[11px] text-[color:rgba(24,20,14,0.56)]">Worktree {session?.worktreePath || run.worktreePath || session?.worktree || run.worktree}</p>
-                          <p className="mt-1 font-mono text-[11px] text-[color:rgba(24,20,14,0.56)]">Last Sync {session?.updatedAt || run.startedAt}</p>
-                        </div>
-                      </section>
-
+                <div className="min-h-0 overflow-y-auto bg-[var(--shock-paper)] p-3">
+                  {activeWorkbenchTab === "chat" ? (
+                    <ClaudeCompactComposer
+                      room={room}
+                      initialMessages={messages}
+                      onSend={streamRoomMessage}
+                      canSend={canReply}
+                      sendStatus={roomReplyStatus}
+                      sendBoundary={roomReplyBoundary}
+                      replyTarget={replyTarget}
+                      onClearReplyTarget={() => setReplyTarget(null)}
+                      threadReplyCounts={threadReplyCounts}
+                      activeThreadMessageId={selectedThreadMessage?.id}
+                      onOpenThread={handleOpenThread}
+                    />
+                  ) : activeWorkbenchTab === "topic" ? (
+                    <RoomTopicWorkbenchPanel room={room} issueTitle={issue?.title} messages={messages} />
+                  ) : activeWorkbenchTab === "run" ? (
+                    <div data-testid="room-workbench-run-panel" className="space-y-4">
                       <RunControlSurface
                         scope="room"
                         run={run}
@@ -1979,70 +2523,104 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                         controlBoundary={runControlBoundary}
                         onControl={handleRunControl}
                       />
-
-                      <section className="border-2 border-[var(--shock-ink)] bg-white p-3 shadow-[var(--shock-shadow-sm)]">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Pull Request</p>
-                            <p data-testid="room-pull-request-label" className="mt-2 font-display text-[18px] font-bold leading-6">{pullRequest?.label ?? run.pullRequest ?? "未创建"}</p>
-                          </div>
-                          <span data-testid="room-pull-request-status" className="rounded-[4px] border border-[var(--shock-ink)] bg-[#ececec] px-2 py-1 font-mono text-[10px]">
-                            {pullRequestStatusLabel(pullRequest?.status)}
-                          </span>
-                        </div>
-                        <p data-testid="room-pull-request-summary" className="mt-3 text-[13px] leading-6 text-[color:rgba(24,20,14,0.64)]">
-                          {pullRequest?.reviewSummary ?? run.nextAction}
-                        </p>
-                        {prError ? (
-                          <p data-testid="room-pull-request-error" className="mt-3 font-mono text-[11px] text-[var(--shock-pink)]">
-                            {prError}
-                          </p>
-                        ) : null}
-                      </section>
-
-                      <section className="border-2 border-[var(--shock-ink)] bg-[#111827] p-3 text-white shadow-[var(--shock-shadow-sm)]">
-                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/70">Session Memory</p>
-                        <div className="mt-3 space-y-2 font-mono text-[10px] leading-5 text-[#8bff9e]">
-                          {sessionMemoryPaths.map((item) => (
-                            <p key={item}>{item}</p>
-                          ))}
-                        </div>
-                      </section>
-
-                      <div className="grid gap-3 xl:grid-cols-2">
-                        <section className="border-2 border-[var(--shock-ink)] bg-[#ead7ff] p-3 shadow-[var(--shock-shadow-sm)]">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Tool Calls</p>
-                          <p className="mt-2 font-display text-[28px] font-bold leading-none">{run.toolCalls.length}</p>
-                          <p className="mt-2 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{run.toolCalls[0]?.tool ?? "当前还没有工具调用"}</p>
-                          <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{run.toolCalls[0]?.summary ?? "等待下一条执行事件"}</p>
-                        </section>
-                        <section className="border-2 border-[var(--shock-ink)] bg-white p-3 shadow-[var(--shock-shadow-sm)]">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Timeline</p>
-                          <p className="mt-2 font-display text-[28px] font-bold leading-none">{run.timeline.length}</p>
-                          <p className="mt-2 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{latestTimelineEvent?.label ?? "暂无事件"}</p>
-                          <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{latestTimelineEvent?.at ?? "等待同步"}</p>
-                        </section>
-                      </div>
-
-                      <section className="border-2 border-[var(--shock-ink)] bg-white p-3 shadow-[var(--shock-shadow-sm)]">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-6 w-6 items-center justify-center border-2 border-[var(--shock-ink)] bg-[var(--shock-purple)] text-[10px] text-white">AI</span>
-                            <span className="flex h-6 w-6 items-center justify-center border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] text-[10px]">{activeAgents.length}</span>
-                          </div>
-                          <p className="font-mono text-[10px] text-[color:rgba(24,20,14,0.48)]">{run.runtime} / {run.provider}</p>
-                        </div>
-                        <div className="mt-4 border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
-                          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">Board mirror</p>
-                          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">
-                            这间房关联 {room.boardCount} 张 planning 卡。Board 只是镜像，不是主协作入口。
-                          </p>
-                        </div>
-                      </section>
-                        </>
-                      )}
+                      <RunDetailView run={run} statusTestId="room-workbench-run-detail-status" />
                     </div>
-                  </>
+                  ) : activeWorkbenchTab === "pr" ? (
+                    <RoomPullRequestWorkbenchPanel
+                      roomId={room.id}
+                      pullRequest={pullRequest}
+                      actionLabel={pullRequestActionLabel}
+                      actionDisabled={pullRequestActionDisabled}
+                      onAction={pullRequestActionHandler}
+                      actionStatus={pullRequestActionStatus}
+                      actionBoundary={pullRequestBoundary}
+                      prError={prError}
+                      relatedSignals={relatedSignals}
+                    />
+                  ) : (
+                    <div data-testid="room-workbench-context-panel">{contextPanels}</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <aside className="hidden min-h-0 flex-col border-l-2 border-[var(--shock-ink)] bg-[#f1efe7] xl:flex">
+              <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+                <p className="font-display text-[20px] font-bold leading-none">
+                  {activeWorkbenchTab === "chat"
+                    ? railMode === "thread"
+                      ? "Thread Rail"
+                      : "Context Rail"
+                    : `${ROOM_WORKBENCH_TAB_LABEL[activeWorkbenchTab]} Rail`}
+                </p>
+                {activeWorkbenchTab === "chat" ? (
+                  <div className="mt-3 flex flex-wrap gap-0 border-2 border-[var(--shock-ink)]">
+                    {["Context", "Thread"].map((tab) => (
+                      <button
+                        type="button"
+                        key={tab}
+                        onClick={() => setRailMode(tab === "Thread" ? "thread" : "context")}
+                        className={cn(
+                          "min-h-[44px] border-r-2 border-[var(--shock-ink)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--shock-ink)] last:border-r-0",
+                          (tab === "Thread" && railMode === "thread") || (tab === "Context" && railMode === "context")
+                            ? "bg-[var(--shock-yellow)]"
+                            : "bg-white"
+                        )}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]">
+                    {room?.issueKey ?? roomId} / room workbench
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                {loading ? (
+                  <DiscussionStateMessage title="等待房间上下文" message="右侧 rail 会在 live room / run / session 真值返回后展开。" />
+                ) : error ? (
+                  <DiscussionStateMessage title="上下文同步失败" message={error} />
+                ) : !room || !run ? (
+                  <DiscussionStateMessage title="缺少讨论间上下文" message={`当前找不到 \`${roomId}\` 对应的 live room / run 记录。`} />
+                ) : activeWorkbenchTab === "chat" && railMode === "thread" ? (
+                  <ThreadRail
+                    scopeLabel={room.issueKey}
+                    selectedMessage={selectedThreadMessage}
+                    replies={selectedThreadReplies}
+                    replyTarget={replyTarget}
+                    onReply={() => {
+                      if (selectedThreadMessage) {
+                        setReplyTarget(buildReplyTarget(selectedThreadMessage));
+                      }
+                    }}
+                    primaryAction={{
+                      label: session?.followThread ?? run.followThread ? "Thread Locked" : "Lock Thread",
+                      onClick: () =>
+                        void handleRunControl(
+                          "follow_thread",
+                          selectedThreadMessage
+                            ? `锁定 thread: ${selectedThreadMessage.speaker} / ${messageExcerpt(selectedThreadMessage.message, 48)}`
+                            : "锁定当前线程"
+                        ),
+                      disabled: !selectedThreadMessage || !canControlRun,
+                      tone: session?.followThread ?? run.followThread ? "ink" : "yellow",
+                      testId: "room-thread-follow-current",
+                    }}
+                    emptyTitle="先选一条 room 消息"
+                    emptyMessage="thread 只作为当前 room 的局部回复区，不会再生成新的一级页面。先在左侧消息流里点一条消息。"
+                  />
+                ) : (
+                  <RoomWorkbenchRailSummary
+                    room={room}
+                    run={run}
+                    pullRequest={pullRequest}
+                    activeTab={activeWorkbenchTab}
+                    activeAgentsCount={activeAgents.length}
+                    relatedSignals={relatedSignals}
+                  />
                 )}
               </div>
             </aside>
