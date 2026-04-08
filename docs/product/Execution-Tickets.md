@@ -327,7 +327,7 @@
 
 ## TKT-37 Workspace / User / Agent Config Persistence + Database Truth
 
-- 状态: `todo`
+- 状态: `in_review`
 - 优先级: `P1`
 - 目标: 把 user / workspace / agent / machine 配置从临时前端状态补成 durable store truth。
 - 范围:
