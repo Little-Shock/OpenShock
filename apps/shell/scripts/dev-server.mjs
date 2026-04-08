@@ -2724,9 +2724,16 @@ function buildStage4bGovernanceProjection({
   );
   const usageQuotaReadinessContract = normalizeStage6cUsageQuotaReadinessContract(
     pickFirstDefinedValue([
+      channelContextContract?.usage_quota_readiness,
+      channelContextContract?.usageQuotaReadiness,
       channelContextContract?.usage_quota_readiness_contract,
+      channelContextContract?.usageQuotaReadinessContract,
+      governance.usage_quota_readiness,
+      governance.usageQuotaReadiness,
       governance.usage_quota_readiness_contract,
       governance.usageQuotaReadinessContract,
+      context.usage_quota_readiness,
+      context.usageQuotaReadiness,
       context.usage_quota_readiness_contract,
       context.usageQuotaReadinessContract,
     ]),
@@ -4851,30 +4858,71 @@ function normalizeStage6cWorkspacePlanSubscriptionLimitContract(raw) {
   if (!raw || typeof raw !== "object") {
     return null;
   }
+  const refs = raw.refs && typeof raw.refs === "object" ? raw.refs : {};
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const limits = raw.limits && typeof raw.limits === "object" ? raw.limits : {};
   const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
   return {
     contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
-    workspace_id: normalizeText(raw.workspace_id || raw.workspaceId) || null,
-    plan_ref: normalizeText(raw.plan_ref || raw.planRef) || null,
+    workspace_id: normalizeText(raw.workspace_id || raw.workspaceId || refs.workspace_id || refs.workspaceId) || null,
+    plan_ref: normalizeText(raw.plan_ref || raw.planRef || refs.plan_ref || refs.planRef) || null,
     plan_id: normalizeText(raw.plan_id || raw.planId) || null,
     plan_code: normalizeText(raw.plan_code || raw.planCode) || null,
-    subscription_status: normalizeText(raw.subscription_status || raw.subscriptionStatus) || null,
-    plan_status: normalizeText(raw.plan_status || raw.planStatus) || null,
-    limit_status: normalizeText(raw.limit_status || raw.limitStatus) || null,
+    subscription_status:
+      normalizeText(
+        raw.subscription_status ||
+          raw.subscriptionStatus ||
+          statusSource.subscription_status ||
+          statusSource.subscriptionStatus ||
+          statusSource.subscription_readiness_status ||
+          statusSource.subscriptionReadinessStatus,
+      ) || null,
+    plan_status:
+      normalizeText(
+        raw.plan_status ||
+          raw.planStatus ||
+          statusSource.plan_status ||
+          statusSource.planStatus ||
+          statusSource.workspace_plan_contract_status ||
+          statusSource.workspacePlanContractStatus ||
+          statusSource.workspace_access_status ||
+          statusSource.workspaceAccessStatus,
+      ) || null,
+    limit_status:
+      normalizeText(raw.limit_status || raw.limitStatus || statusSource.limit_status || statusSource.limitStatus) || null,
     token_limit:
       raw.token_limit === null || raw.token_limit === undefined
-        ? null
+        ? limits.token_limit === null || limits.token_limit === undefined
+          ? null
+          : Number(limits.token_limit)
         : Number(raw.token_limit),
     token_used:
       raw.token_used === null || raw.token_used === undefined
-        ? null
+        ? limits.token_used === null || limits.token_used === undefined
+          ? null
+          : Number(limits.token_used)
         : Number(raw.token_used),
     read_anchors: {
-      channel_context: normalizeText(readAnchors.channel_context || readAnchors.channelContext) || null,
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context ||
+            readAnchors.channelContext ||
+            readAnchors.workspace_context ||
+            readAnchors.workspaceContext,
+        ) || null,
       token_quota_context:
         normalizeText(readAnchors.token_quota_context || readAnchors.tokenQuotaContext) || null,
     },
-    write_anchor: normalizeText(raw.write_anchor || raw.writeAnchor) || null,
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.workspace_context_upsert ||
+          writeAnchors.workspaceContextUpsert ||
+          writeAnchors.token_quota_context_upsert ||
+          writeAnchors.tokenQuotaContextUpsert,
+      ) || null,
     audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
   };
 }
@@ -4883,16 +4931,65 @@ function normalizeStage6cUsageQuotaReadinessContract(raw) {
   if (!raw || typeof raw !== "object") {
     return null;
   }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const usageSource = raw.usage && typeof raw.usage === "object" ? raw.usage : {};
+  const remainingCapacitySource =
+    raw.remaining_capacity && typeof raw.remaining_capacity === "object" ? raw.remaining_capacity : {};
+  const blockReasonSource = raw.block_reason && typeof raw.block_reason === "object" ? raw.block_reason : {};
+  const upgradeReadinessSource =
+    raw.upgrade_readiness && typeof raw.upgrade_readiness === "object" ? raw.upgrade_readiness : {};
   const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const rawRemainingCapacityValue =
+    raw.remaining_capacity !== null && raw.remaining_capacity !== undefined && typeof raw.remaining_capacity !== "object"
+      ? raw.remaining_capacity
+      : undefined;
+  const rawBlockReasonValue =
+    typeof raw.block_reason === "string" || typeof raw.blockReason === "string"
+      ? raw.block_reason || raw.blockReason
+      : undefined;
+  const rawUpgradeReadinessValue =
+    typeof raw.upgrade_readiness === "string" || typeof raw.upgradeReadiness === "string"
+      ? raw.upgrade_readiness || raw.upgradeReadiness
+      : undefined;
+  const rawStatusValue = typeof raw.status === "string" ? raw.status : undefined;
+  const resolvedRemainingCapacity = pickFirstDefinedValue([
+    rawRemainingCapacityValue,
+    raw.remaining,
+    raw.capacity_remaining,
+    remainingCapacitySource.token_remaining,
+    remainingCapacitySource.tokenRemaining,
+  ]);
+  const resolvedBlockReason = normalizeText(
+    rawBlockReasonValue || blockReasonSource.code || blockReasonSource.detail || blockReasonSource.source,
+  );
+  const resolvedUpgradeReadiness = normalizeText(
+    rawUpgradeReadinessValue || raw.upgrade_readiness_status || upgradeReadinessSource.status,
+  );
   return {
     contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
-    usage_status: normalizeText(raw.usage_status || raw.usageStatus) || null,
-    status: normalizeText(raw.status) || null,
-    quota_state: normalizeText(raw.quota_state || raw.quotaState) || null,
+    usage_status:
+      normalizeText(
+        raw.usage_status ||
+          raw.usageStatus ||
+          statusSource.usage_quota_readiness_status ||
+          statusSource.usageQuotaReadinessStatus ||
+          statusSource.usage_status ||
+          statusSource.usageStatus,
+      ) || null,
+    status:
+      normalizeText(
+        rawStatusValue ||
+          statusSource.usage_quota_readiness_status ||
+          statusSource.usageQuotaReadinessStatus ||
+          statusSource.usage_status ||
+          statusSource.usageStatus,
+      ) || null,
+    quota_state: normalizeText(raw.quota_state || raw.quotaState || statusSource.quota_state || statusSource.quotaState) || null,
     remaining_capacity:
-      raw.remaining_capacity === null || raw.remaining_capacity === undefined
+      resolvedRemainingCapacity === null || resolvedRemainingCapacity === undefined
         ? null
-        : Number(raw.remaining_capacity),
+        : Number(resolvedRemainingCapacity),
     remaining:
       raw.remaining === null || raw.remaining === undefined
         ? null
@@ -4903,19 +5000,55 @@ function normalizeStage6cUsageQuotaReadinessContract(raw) {
         : Number(raw.capacity_remaining),
     capacity_limit:
       raw.capacity_limit === null || raw.capacity_limit === undefined
-        ? null
+        ? usageSource.token_limit === null || usageSource.token_limit === undefined
+          ? null
+          : Number(usageSource.token_limit)
         : Number(raw.capacity_limit),
-    block_reason: normalizeText(raw.block_reason || raw.blockReason) || null,
+    block_reason: resolvedBlockReason || null,
     upgrade_readiness:
-      normalizeText(raw.upgrade_readiness || raw.upgradeReadiness || raw.upgrade_readiness_status) || null,
+      resolvedUpgradeReadiness || null,
     upgrade_path_ref:
       normalizeText(raw.upgrade_path_ref || raw.upgradePathRef || raw.upgrade_ref || raw.upgradeRef) || null,
+    context_tokens:
+      raw.context_tokens === null || raw.context_tokens === undefined
+        ? usageSource.context_tokens === null || usageSource.context_tokens === undefined
+          ? null
+          : Number(usageSource.context_tokens)
+        : Number(raw.context_tokens),
+    context_window_tokens:
+      raw.context_window_tokens === null || raw.context_window_tokens === undefined
+        ? usageSource.context_window_tokens === null || usageSource.context_window_tokens === undefined
+          ? null
+          : Number(usageSource.context_window_tokens)
+        : Number(raw.context_window_tokens),
+    recall_source: normalizeText(raw.recall_source || usageSource.recall_source) || null,
+    recall_hits:
+      raw.recall_hits === null || raw.recall_hits === undefined
+        ? usageSource.recall_hits === null || usageSource.recall_hits === undefined
+          ? null
+          : Number(usageSource.recall_hits)
+        : Number(raw.recall_hits),
     read_anchors: {
       token_quota_context:
-        normalizeText(readAnchors.token_quota_context || readAnchors.tokenQuotaContext) || null,
-      runtime_registry: normalizeText(readAnchors.runtime_registry || readAnchors.runtimeRegistry) || null,
+        normalizeText(
+          readAnchors.token_quota_context ||
+            readAnchors.tokenQuotaContext ||
+            readAnchors.channel_context ||
+            readAnchors.channelContext,
+        ) || null,
+      runtime_registry:
+        normalizeText(readAnchors.runtime_registry || readAnchors.runtimeRegistry || readAnchors.runtime_deploy_runtime) ||
+        null,
     },
-    write_anchor: normalizeText(raw.write_anchor || raw.writeAnchor) || null,
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.token_quota_context_upsert ||
+          writeAnchors.tokenQuotaContextUpsert ||
+          writeAnchors.runtime_deploy_runtime_upsert ||
+          writeAnchors.runtimeDeployRuntimeUpsert,
+      ) || null,
     audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
   };
 }
