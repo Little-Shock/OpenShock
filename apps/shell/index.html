@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenShock Collaboration Shell</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="shell-header">
+      <div>
+        <h1>OpenShock Collaboration Shell</h1>
+        <p>
+          Stage 1 workflow workspace with Stage 2 operator console and Stage 5A hosted workbench fan-in on stable truth.
+        </p>
+      </div>
+      <div class="header-actions">
+        <button id="refresh-button" type="button">Refresh</button>
+        <span id="last-updated">Last updated: --</span>
+      </div>
+    </header>
+
+    <main class="shell-grid">
+      <section class="panel" id="room-panel">
+        <h2>Rooms</h2>
+        <p class="panel-subtitle">Default mapping is <strong>1 Room = 1 Topic</strong>.</p>
+        <div id="room-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="metrics-panel">
+        <h2>Coarse Metrics</h2>
+        <div id="metric-cards" class="metric-cards"></div>
+      </section>
+
+      <section class="panel" id="operator-panel">
+        <h2>Operator Console</h2>
+        <p class="panel-subtitle">
+          Channel entry for governance, assignment, action loop, recovery, recent actions, and audit evidence.
+        </p>
+        <div class="operator-sections">
+          <section class="operator-section">
+            <h3>Channel & Workspace</h3>
+            <div id="workspace-summary-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Workspace Governance</h3>
+            <div id="workspace-governance-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Repo Binding</h3>
+            <div id="repo-binding-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Runtime & Machine</h3>
+            <div id="runtime-machine-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Agent Registry</h3>
+            <div id="agent-registry-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Assignment & Recovery</h3>
+            <div id="assignment-recovery-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Operator Action Loop</h3>
+            <div id="operator-action-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Recent Actions</h3>
+            <div id="recent-action-list" class="list-cards"></div>
+          </section>
+          <section class="operator-section">
+            <h3>Audit Trail</h3>
+            <div id="audit-entry-list" class="list-cards"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel" id="topic-panel">
+        <h2>Topic Workspace</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Room</th>
+              <th>Topic</th>
+              <th>Revision</th>
+              <th>Status</th>
+              <th>Lead</th>
+              <th>Pending Gates</th>
+              <th>Delivery</th>
+              <th>Risk</th>
+            </tr>
+          </thead>
+          <tbody id="topic-table-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="run-panel">
+        <h2>Run Workspace</h2>
+        <div id="run-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="inbox-panel">
+        <h2>Inbox</h2>
+        <p class="panel-subtitle">Pending approvals, interventions, and closeout actions.</p>
+        <div id="inbox-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="approval-panel">
+        <h2>Approval Queue</h2>
+        <div id="approval-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="intervention-panel">
+        <h2>Intervention Queue</h2>
+        <div id="intervention-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="closeout-panel">
+        <h2>Closeout & Human Gates</h2>
+        <p class="panel-subtitle">Gate actions stay on stable `/v1` through shell adapters.</p>
+        <div id="intervention-points-list" class="list-cards"></div>
+      </section>
+
+      <section class="panel" id="event-panel">
+        <h2>Coarse Event Feed</h2>
+        <ul id="event-feed" class="event-feed"></ul>
+      </section>
+    </main>
+
+    <template id="queue-action-template">
+      <button class="action-button" type="button"></button>
+    </template>
+
+    <script src="./runtime-config.js"></script>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

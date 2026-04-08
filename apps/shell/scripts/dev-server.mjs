@@ -1,0 +1,7279 @@
+import http from "node:http";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, "..");
+const host = "127.0.0.1";
+const port = Number(process.env.SHELL_PORT || 4173);
+const apiUpstream = process.env.SHELL_API_UPSTREAM || "http://127.0.0.1:7070";
+const configuredApiBase = process.env.SHELL_API_BASE_URL || "";
+const operatorAgentId = process.env.SHELL_OPERATOR_AGENT_ID || "shell_operator";
+const configuredOperatorId =
+  typeof process.env.SHELL_OPERATOR_ID === "string" && process.env.SHELL_OPERATOR_ID.trim().length > 0
+    ? process.env.SHELL_OPERATOR_ID.trim()
+    : "";
+const configuredChannelId =
+  typeof process.env.SHELL_CHANNEL_ID === "string" && process.env.SHELL_CHANNEL_ID.trim().length > 0
+    ? process.env.SHELL_CHANNEL_ID.trim()
+    : "";
+const configuredChannelCandidates =
+  typeof process.env.SHELL_CHANNEL_CANDIDATES === "string" && process.env.SHELL_CHANNEL_CANDIDATES.trim().length > 0
+    ? process.env.SHELL_CHANNEL_CANDIDATES
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    : ["channel_stage4a1_review", "channel_open_shock_stage4a1"];
+
+const mimeByExt = new Map([
+  [".html", "text/html; charset=utf-8"],
+  [".css", "text/css; charset=utf-8"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
+]);
+
+const FIXED_INTERVENTION_POINTS = [
+  { id: "lead_plan", name: "Lead Plan", owner: "lead" },
+  { id: "worker_dispatch", name: "Worker Dispatch", owner: "lead" },
+  { id: "merge_closeout", name: "Merge Closeout", owner: "human" },
+];
+
+const STAGE4A2_NOTIFICATION_RULE_REFERENCE = {
+  inbox: "all_events",
+  browser_push: ["blocked", "approval_required", "mention", "pr_pending_review"],
+  email: ["invite", "verify", "reset_password", "high_priority_escalation"],
+};
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const route = matchRoute(req.url || "/");
+
+    if (route.kind === "runtime-config") {
+      return writeRuntimeConfig(res);
+    }
+
+    if (route.kind === "shell-state") {
+      return writeShellState(res);
+    }
+
+    if (route.kind === "approval-decision") {
+      return handleApprovalDecision(req, res, route.approvalId);
+    }
+
+    if (route.kind === "intervention-action") {
+      return handleInterventionAction(req, res, route.interventionId);
+    }
+
+    if (route.kind === "run-follow-up") {
+      return handleRunFollowUp(req, res, route.runId);
+    }
+
+    if (route.kind === "operator-repo-binding-upsert") {
+      return handleOperatorRepoBindingUpsert(req, res);
+    }
+
+    if (route.kind === "operator-channel-context-upsert") {
+      return handleOperatorChannelContextUpsert(req, res);
+    }
+
+    if (route.kind === "workspace-governance-member-upsert") {
+      return handleWorkspaceGovernanceMemberUpsert(req, res);
+    }
+
+    if (route.kind === "workspace-governance-github-identity-upsert") {
+      return handleWorkspaceGovernanceGithubIdentityUpsert(req, res);
+    }
+
+    if (route.kind === "workspace-governance-github-installation-upsert") {
+      return handleWorkspaceGovernanceGithubInstallationUpsert(req, res);
+    }
+
+    if (route.kind === "operator-agent-upsert") {
+      return handleOperatorAgentUpsert(req, res, route.actorId);
+    }
+
+    if (route.kind === "operator-agent-assignment") {
+      return handleOperatorAgentAssignment(req, res, route.actorId);
+    }
+
+    if (route.kind === "operator-agent-recovery-action") {
+      return handleOperatorAgentRecoveryAction(req, res, route.actorId);
+    }
+
+    if (route.kind === "operator-action") {
+      return handleOperatorAction(req, res);
+    }
+
+    if (route.kind === "intervention-point-action") {
+      return handleInterventionPointAction(req, res, route.pointId);
+    }
+
+    if (route.kind === "proxy-api") {
+      return proxyApi(req, res, route.pathWithQuery);
+    }
+
+    if (route.kind === "asset") {
+      return writeAsset(res, route.filePath);
+    }
+
+    return writeJson(res, 404, { error: "Not found" });
+  } catch (error) {
+    return writeJson(res, 500, { error: String(error) });
+  }
+});
+
+server.listen(port, host, () => {
+  console.log(`OpenShock integrated shell listening on http://${host}:${port}`);
+  console.log(`API upstream: ${apiUpstream}`);
+});
+
+function matchRoute(rawUrl) {
+  const url = new URL(rawUrl, "http://localhost");
+  const pathname = url.pathname;
+
+  if (pathname === "/runtime-config.js") {
+    return { kind: "runtime-config" };
+  }
+
+  if (pathname === "/api/v0a/shell-state" && url.search.length === 0) {
+    return { kind: "shell-state" };
+  }
+
+  const approvalDecisionMatch = pathname.match(/^\/api\/v0a\/approvals\/([^/]+)\/decision$/);
+  if (approvalDecisionMatch) {
+    return { kind: "approval-decision", approvalId: decodeURIComponent(approvalDecisionMatch[1]) };
+  }
+
+  const interventionActionMatch = pathname.match(/^\/api\/v0a\/interventions\/([^/]+)\/action$/);
+  if (interventionActionMatch) {
+    return { kind: "intervention-action", interventionId: decodeURIComponent(interventionActionMatch[1]) };
+  }
+
+  const runFollowUpMatch = pathname.match(/^\/api\/v0a\/runs\/([^/]+)\/follow-up$/);
+  if (runFollowUpMatch) {
+    return { kind: "run-follow-up", runId: decodeURIComponent(runFollowUpMatch[1]) };
+  }
+
+  if (pathname === "/api/v0a/operator/repo-binding" && url.search.length === 0) {
+    return { kind: "operator-repo-binding-upsert" };
+  }
+
+  if (pathname === "/api/v0a/operator/channel-context" && url.search.length === 0) {
+    return { kind: "operator-channel-context-upsert" };
+  }
+
+  if (pathname === "/api/v0a/workspace-governance/member-upsert" && url.search.length === 0) {
+    return { kind: "workspace-governance-member-upsert" };
+  }
+
+  if (pathname === "/api/v0a/workspace-governance/github-identity-upsert" && url.search.length === 0) {
+    return { kind: "workspace-governance-github-identity-upsert" };
+  }
+
+  if (pathname === "/api/v0a/workspace-governance/github-installation-upsert" && url.search.length === 0) {
+    return { kind: "workspace-governance-github-installation-upsert" };
+  }
+
+  const operatorAgentUpsertMatch = pathname.match(/^\/api\/v0a\/operator\/agents\/([^/]+)\/upsert$/);
+  if (operatorAgentUpsertMatch) {
+    return { kind: "operator-agent-upsert", actorId: decodeURIComponent(operatorAgentUpsertMatch[1]) };
+  }
+
+  const operatorAgentAssignmentMatch = pathname.match(/^\/api\/v0a\/operator\/agents\/([^/]+)\/assignment$/);
+  if (operatorAgentAssignmentMatch) {
+    return { kind: "operator-agent-assignment", actorId: decodeURIComponent(operatorAgentAssignmentMatch[1]) };
+  }
+
+  const operatorAgentRecoveryMatch = pathname.match(/^\/api\/v0a\/operator\/agents\/([^/]+)\/recovery-actions$/);
+  if (operatorAgentRecoveryMatch) {
+    return { kind: "operator-agent-recovery-action", actorId: decodeURIComponent(operatorAgentRecoveryMatch[1]) };
+  }
+
+  if (pathname === "/api/v0a/operator/actions" && url.search.length === 0) {
+    return { kind: "operator-action" };
+  }
+
+  const interventionPointActionMatch = pathname.match(/^\/api\/v0a\/intervention-points\/([^/]+)\/action$/);
+  if (interventionPointActionMatch) {
+    return { kind: "intervention-point-action", pointId: decodeURIComponent(interventionPointActionMatch[1]) };
+  }
+
+  if (pathname.startsWith("/api/")) {
+    return { kind: "proxy-api", pathWithQuery: `${pathname}${url.search}` };
+  }
+
+  if (pathname === "/" || pathname === "/index.html") {
+    return { kind: "asset", filePath: path.resolve(root, "index.html") };
+  }
+
+  if (pathname === "/styles.css" || pathname.startsWith("/src/")) {
+    return { kind: "asset", filePath: path.resolve(root, pathname.slice(1)) };
+  }
+
+  return { kind: "missing" };
+}
+
+async function writeAsset(res, filePath) {
+  const safeRoot = `${root}${path.sep}`;
+  const normalized = path.normalize(filePath);
+  if (!normalized.startsWith(safeRoot)) {
+    return writeJson(res, 403, { error: "Forbidden" });
+  }
+  const data = await fs.readFile(normalized);
+  const extension = path.extname(normalized);
+  const mime = mimeByExt.get(extension) || "application/octet-stream";
+  res.writeHead(200, { "content-type": mime });
+  res.end(data);
+}
+
+function writeRuntimeConfig(res) {
+  const apiBaseUrl = configuredApiBase || `http://${host}:${port}`;
+  const payload = `window.OPENSHOCK_SHELL_CONFIG = ${JSON.stringify({ apiBaseUrl })};`;
+  res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
+  res.end(payload);
+}
+
+async function writeShellState(res) {
+  try {
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const [
+      topicRead,
+      topicStatusRead,
+      topicStateRead,
+      mergeLifecycleRead,
+      taskAllocationRead,
+      holdsRead,
+      messages,
+      runHistory,
+      topicNotificationsRead,
+      runtimeConfigRead,
+      runtimeSmokeRead,
+      runtimeDeployRuntimeRead,
+      repoBindingRead,
+      actorListRead,
+      controlEventsRead,
+      runtimeRegistryRead,
+      runtimeAgentsRead,
+      runtimeWorktreeClaimsRead,
+    ] = await Promise.all([
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/status`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/topic-state`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/merge-lifecycle`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/task-allocation`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/approval-holds?status=pending&limit=50`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages?route=topic`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/run-history?limit=20`),
+        fetchOptionalUpstreamJson(`/v1/topics/${encodedTopicId}/notifications?limit=50`),
+        fetchUpstreamJson("/runtime/config"),
+        fetchUpstreamJson("/runtime/smoke"),
+        fetchOptionalUpstreamJson("/v1/runtime/deploy-runtime"),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/repo-binding`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors?limit=100`),
+        fetchUpstreamJson(`/v1/topics/${encodedTopicId}/events?limit=20`),
+        fetchUpstreamJson("/v1/runtime/registry"),
+        fetchUpstreamJson("/v1/runtime/agents?limit=200"),
+        fetchUpstreamJson("/v1/runtime/worktree-claims?limit=200"),
+      ]);
+    const runtimeAgents = Array.isArray(runtimeAgentsRead?.items) ? runtimeAgentsRead.items : [];
+    const runtimeWorktreeClaims = Array.isArray(runtimeWorktreeClaimsRead?.items)
+      ? runtimeWorktreeClaimsRead.items
+      : [];
+    const scope = deriveOperatorScope({
+      topicId,
+      runtimeRegistry: runtimeRegistryRead ?? null,
+      runtimeAgents,
+    });
+    const channelCandidates = buildChannelIdCandidates({
+      scopeChannelId: scope.channelId,
+      configuredChannelId,
+      configuredChannelCandidates,
+      topicRepoBindingProjection: repoBindingRead?.repo_binding ?? null,
+    });
+    const resolvedChannelContext = await resolveChannelContextFromCandidates(channelCandidates);
+    const channelId = normalizeText(resolvedChannelContext.channelId);
+    const effectiveScope = {
+      ...scope,
+      channelId,
+    };
+    const encodedChannelId = channelId ? encodeURIComponent(channelId) : "";
+    const inboxActorId =
+      normalizeText(effectiveScope.operatorId) ||
+      normalizeText(configuredOperatorId) ||
+      normalizeText(operatorAgentId) ||
+      "";
+    const [
+      channelRepoBindingRead,
+      channelNotificationEndpointRead,
+      channelOrchestrationUpgradeRead,
+      channelAuditTrailRead,
+      channelWorkAssignmentsRead,
+      channelOperatorActionsRead,
+      channelRecentActionsRead,
+      recoveryActionsRead,
+      channelExternalMemoryProviderRead,
+      actorInboxRead,
+    ] = await Promise.all([
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/repo-binding` : ""),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/notification-endpoint` : ""),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/orchestration-upgrade` : ""),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/audit-trail?limit=50` : ""),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/work-assignments?limit=100` : ""),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/operator-actions?limit=100` : ""),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/recent-actions?limit=100` : ""),
+      fetchOptionalUpstreamJson(buildRuntimeRecoveryActionsPath(effectiveScope)),
+      fetchOptionalUpstreamJson(channelId ? `/v1/channels/${encodedChannelId}/external-memory-provider` : ""),
+      resolveActorInboxRead({
+        actorId: inboxActorId,
+        topicId,
+      }),
+    ]);
+    const channelMemoryViewerRead = await resolveChannelMemoryViewerRead({
+      channelId,
+      encodedChannelId,
+      channelExternalMemoryProviderRead,
+    });
+    const channelContextRead = resolvedChannelContext.contextRead;
+    const workspaceId = resolveWorkspaceIdFromChannelContext(channelContextRead.payload?.context);
+    const workspaceGovernanceProjection = buildWorkspaceGovernanceProjectionFromChannelTruth({
+      workspaceId,
+      channelContextRead,
+      channelRepoBindingRead,
+    });
+
+    const payload = buildShellStatePayload({
+      topicId,
+      topic: topicRead?.topic ?? null,
+      status: topicStatusRead?.status ?? null,
+      topicState: topicStateRead?.topic_state ?? null,
+      mergeLifecycle: mergeLifecycleRead?.merge_lifecycle ?? null,
+      taskAllocation: taskAllocationRead?.task_allocation ?? null,
+      approvalHolds: Array.isArray(holdsRead?.items) ? holdsRead.items : [],
+      messages: Array.isArray(messages) ? messages : [],
+      runHistory: Array.isArray(runHistory?.items) ? runHistory.items : [],
+      topicNotifications: Array.isArray(topicNotificationsRead.payload?.items) ? topicNotificationsRead.payload.items : [],
+      runtimeConfig: runtimeConfigRead ?? null,
+      runtimeSmoke: runtimeSmokeRead ?? null,
+      runtimeDeployRuntimeRead,
+      repoBindingProjection: repoBindingRead?.repo_binding ?? null,
+      channelContextContract: channelContextRead.payload?.context ?? null,
+      channelNotificationEndpointContract: channelNotificationEndpointRead.payload?.notification_endpoint ?? null,
+      channelOrchestrationUpgradeContract:
+        channelOrchestrationUpgradeRead.payload?.orchestration_upgrade ?? null,
+      channelExternalMemoryProviderContract:
+        channelExternalMemoryProviderRead.payload?.external_memory_provider ?? null,
+      channelMemoryViewerProjection: channelMemoryViewerRead.payload?.memory_viewer ?? null,
+      channelRepoBindingConfig: channelRepoBindingRead.payload?.repo_binding ?? null,
+      channelAuditTrail: Array.isArray(channelAuditTrailRead.payload?.items) ? channelAuditTrailRead.payload.items : [],
+      channelWorkAssignments: Array.isArray(channelWorkAssignmentsRead.payload?.items)
+        ? channelWorkAssignmentsRead.payload.items
+        : [],
+      channelOperatorActions: Array.isArray(channelOperatorActionsRead.payload?.items)
+        ? channelOperatorActionsRead.payload.items
+        : [],
+      channelRecentActions: Array.isArray(channelRecentActionsRead.payload?.items)
+        ? channelRecentActionsRead.payload.items
+        : [],
+      runtimeRecoveryActions: Array.isArray(recoveryActionsRead.payload?.items) ? recoveryActionsRead.payload.items : [],
+      workspaceGovernance: workspaceGovernanceProjection,
+      runtimeRegistry: runtimeRegistryRead ?? null,
+      runtimeAgents,
+      runtimeWorktreeClaims,
+      scope: effectiveScope,
+      actorInboxRead,
+      channelSurface: {
+        context_status: channelContextRead.status,
+        notification_endpoint_status: channelNotificationEndpointRead.status,
+        orchestration_upgrade_status: channelOrchestrationUpgradeRead.status,
+        repo_binding_status: channelRepoBindingRead.status,
+        audit_trail_status: channelAuditTrailRead.status,
+        work_assignments_status: channelWorkAssignmentsRead.status,
+        operator_actions_status: channelOperatorActionsRead.status,
+        recent_actions_status: channelRecentActionsRead.status,
+        recovery_actions_status: recoveryActionsRead.status,
+        external_memory_provider_status: channelExternalMemoryProviderRead.status,
+        memory_viewer_status: channelMemoryViewerRead.status,
+        inbox_status: actorInboxRead.status,
+      },
+      actorRegistry: Array.isArray(actorListRead?.items) ? actorListRead.items : [],
+      controlEvents: Array.isArray(controlEventsRead?.items) ? controlEventsRead.items : [],
+    });
+    return writeJson(res, 200, payload);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleApprovalDecision(req, res, approvalId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const decision = normalizeDecision(input.decision);
+    if (!decision) {
+      return writeJson(res, 400, { error: "invalid_decision", message: "decision must be approve or reject" });
+    }
+
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const operator = normalizeOperator(input.operator);
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
+      body: {
+        role: "human",
+        status: "active",
+      },
+    });
+    const idempotencyKey = resolveIdempotencyKey(req, `approval:${topicId}:${approvalId}:${decision}`);
+    const result = await fetchUpstreamJson(
+      `/v1/topics/${encodedTopicId}/approval-holds/${encodeURIComponent(approvalId)}/decisions`,
+      {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: {
+          decider_actor_id: operator,
+          approve: decision === "approve",
+          intervention_point: approvalId,
+        },
+      },
+    );
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleInterventionAction(req, res, interventionId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const action = normalizeText(input.action);
+    if (!action) {
+      return writeJson(res, 400, { error: "invalid_action", message: "action is required" });
+    }
+
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const operator = normalizeOperator(input.operator);
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
+      body: {
+        role: "human",
+        status: "active",
+      },
+    });
+    const result = await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages`, {
+      method: "POST",
+      body: {
+        type: "status_report",
+        sourceAgentId: operator,
+        sourceRole: "human",
+        targetScope: "topic",
+        payload: {
+          event: "shell_intervention_action",
+          interventionId,
+          action,
+          note: normalizeNote(input.note),
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleRunFollowUp(req, res, runId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const normalizedRunId = normalizeText(runId);
+    if (!normalizedRunId) {
+      return writeJson(res, 400, { error: "invalid_run_id", message: "runId is required" });
+    }
+
+    const input = await readJsonBody(req);
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const operator = normalizeOperator(input.operator);
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
+      body: {
+        role: "human",
+        status: "active",
+      },
+    });
+    const result = await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages`, {
+      method: "POST",
+      body: {
+        type: "status_report",
+        sourceAgentId: operator,
+        sourceRole: "human",
+        targetScope: "topic",
+        payload: {
+          event: "shell_follow_up_request",
+          runId: normalizedRunId,
+          note: normalizeNote(input.note),
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleOperatorRepoBindingUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const repoRef = normalizeText(input.repo_ref);
+    if (!repoRef) {
+      return writeJson(res, 400, { error: "invalid_repo_ref", message: "repo_ref is required" });
+    }
+    const provider = normalizeText(input.provider) || "github";
+    const defaultBranch = normalizeText(input.default_branch) || null;
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
+    }
+    const topicId = normalizeText(input.topic_id) || normalizeText(scope.topicId);
+    if (!topicId) {
+      return writeJson(res, 400, { error: "invalid_topic_id", message: "topic_id is required" });
+    }
+    const operator = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const fixedDirectory = normalizeText(input.fixed_directory) || null;
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/repo-binding`, {
+      method: "PUT",
+      body: {
+        operator_id: operator,
+        topic_id: topicId,
+        provider_ref: {
+          provider,
+          repo_ref: repoRef,
+        },
+        default_branch: defaultBranch,
+        fixed_directory: fixedDirectory,
+        policy_snapshot: {
+          mode: "single_human_multi_agent",
+          source: "shell_operator_console",
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleOperatorChannelContextUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
+    }
+    const operator = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const workspaceId = normalizeText(input.workspace_id) || null;
+    const workspaceRoot = normalizeText(input.workspace_root) || null;
+    const baselineRef = normalizeText(input.baseline_ref) || null;
+    const fixedDirectory = normalizeText(input.fixed_directory) || null;
+    const docPaths = normalizeStringArray(input.doc_paths);
+    const runtimeEntries = normalizeStringArray(input.runtime_entries);
+    const ruleEntries = normalizeStringArray(input.rule_entries);
+    const hasHostedAccessKey = Object.prototype.hasOwnProperty.call(input, "hosted_access");
+    const hostedAccessRaw = hasHostedAccessKey ? input.hosted_access : undefined;
+    let hostedAccessPayload;
+    if (
+      hasHostedAccessKey &&
+      (hostedAccessRaw === null || typeof hostedAccessRaw !== "object" || Array.isArray(hostedAccessRaw))
+    ) {
+      hostedAccessPayload = hostedAccessRaw;
+    } else {
+      const hostedAccessInput =
+        hostedAccessRaw && typeof hostedAccessRaw === "object" && !Array.isArray(hostedAccessRaw) ? hostedAccessRaw : {};
+      const readHostedAccessField = (key) =>
+        Object.prototype.hasOwnProperty.call(hostedAccessInput, key)
+          ? hostedAccessInput[key]
+          : Object.prototype.hasOwnProperty.call(input, key)
+            ? input[key]
+            : undefined;
+      const nextHostedAccessPayload = {};
+      const hostedWebUrl = readHostedAccessField("hosted_web_url");
+      if (hostedWebUrl !== undefined) {
+        nextHostedAccessPayload.hosted_web_url = hostedWebUrl;
+      }
+      const accessMode = readHostedAccessField("access_mode");
+      if (accessMode !== undefined) {
+        nextHostedAccessPayload.access_mode = accessMode;
+      }
+      const nonLocalAccessEnabled = readHostedAccessField("non_local_access_enabled");
+      if (nonLocalAccessEnabled !== undefined) {
+        nextHostedAccessPayload.non_local_access_enabled = nonLocalAccessEnabled;
+      }
+      const stableLoginState = readHostedAccessField("stable_login_state");
+      if (stableLoginState !== undefined) {
+        nextHostedAccessPayload.stable_login_state = stableLoginState;
+      }
+      const loginProvider = readHostedAccessField("login_provider");
+      if (loginProvider !== undefined) {
+        nextHostedAccessPayload.login_provider = loginProvider;
+      }
+      const sessionTtlMinutes = readHostedAccessField("session_ttl_minutes");
+      if (sessionTtlMinutes !== undefined) {
+        nextHostedAccessPayload.session_ttl_minutes = sessionTtlMinutes;
+      }
+      if (hasHostedAccessKey || Object.keys(nextHostedAccessPayload).length > 0) {
+        hostedAccessPayload = nextHostedAccessPayload;
+      }
+    }
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
+      method: "PUT",
+      body: {
+        operator_id: operator,
+        workspace_id: workspaceId,
+        workspace_root: workspaceRoot,
+        baseline_ref: baselineRef,
+        fixed_directory: fixedDirectory,
+        doc_paths: docPaths.length > 0 ? docPaths : undefined,
+        runtime_entries: runtimeEntries.length > 0 ? runtimeEntries : undefined,
+        rule_entries: ruleEntries.length > 0 ? ruleEntries : undefined,
+        hosted_access: hostedAccessPayload,
+        policy_snapshot: {
+          mode: "single_human_multi_agent",
+          boundary: "channel_aligned_entry",
+          source: "shell_operator_console",
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleWorkspaceGovernanceMemberUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
+    }
+    const workspaceId = normalizeText(input.workspace_id) || null;
+    const memberId = normalizeText(input.member_id);
+    if (!memberId) {
+      return writeJson(res, 400, { error: "invalid_member_id", message: "member_id is required" });
+    }
+    const role = normalizeText(input.role);
+    if (!role) {
+      return writeJson(res, 400, { error: "invalid_member_role", message: "role is required" });
+    }
+    const status = normalizeText(input.status) || "active";
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
+      method: "PUT",
+      body: {
+        operator_id: operatorId,
+        workspace_id: workspaceId,
+        member: {
+          member_id: memberId,
+          role,
+          status,
+        },
+        policy_snapshot: {
+          mode: "multi_human_governance_stage4a1",
+          source: "shell_workspace_governance",
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleWorkspaceGovernanceGithubIdentityUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
+    }
+    const workspaceId = normalizeText(input.workspace_id) || null;
+    const provider = normalizeText(input.provider) || "github";
+    const githubLogin = normalizeText(input.github_login);
+    const providerUserId = normalizeText(input.provider_user_id);
+    if (!githubLogin && !providerUserId) {
+      return writeJson(res, 400, {
+        error: "invalid_identity",
+        message: "github_login or provider_user_id is required",
+      });
+    }
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const identityId = providerUserId || githubLogin;
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
+      method: "PUT",
+      body: {
+        operator_id: operatorId,
+        workspace_id: workspaceId,
+        auth_identity: {
+          identity_id: identityId,
+          provider,
+          subject_ref: providerUserId || identityId,
+          github_login: githubLogin || null,
+          status: "bound",
+        },
+        policy_snapshot: {
+          mode: "multi_human_governance_stage4a1",
+          source: "shell_workspace_governance",
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleWorkspaceGovernanceGithubInstallationUpsert(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const scope = await resolveOperatorScope();
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
+    }
+    const workspaceId = normalizeText(input.workspace_id) || null;
+    const installationId = normalizeText(input.installation_id);
+    if (!installationId) {
+      return writeJson(res, 400, { error: "invalid_installation_id", message: "installation_id is required" });
+    }
+    const status = normalizeText(input.status) || "installed";
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const authorizedRepos = normalizeStringArray(input.authorized_repos);
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`, {
+      method: "PUT",
+      body: {
+        operator_id: operatorId,
+        workspace_id: workspaceId,
+        github_installation: {
+          installation_id: installationId,
+          provider: normalizeText(input.provider) || "github",
+          workspace_id: workspaceId,
+          status,
+          authorized_repos: authorizedRepos,
+        },
+        policy_snapshot: {
+          mode: "multi_human_governance_stage4a1",
+          source: "shell_workspace_governance",
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleOperatorAgentUpsert(req, res, actorId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const normalizedActorId = normalizeText(actorId);
+    if (!normalizedActorId) {
+      return writeJson(res, 400, { error: "invalid_actor_id", message: "actorId is required" });
+    }
+    const input = await readJsonBody(req);
+    const role = normalizeText(input.role);
+    if (!role) {
+      return writeJson(res, 400, { error: "invalid_actor_role", message: "role is required" });
+    }
+    const status = normalizeText(input.status) || "active";
+    const laneId = normalizeText(input.lane_id) || null;
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const result = await fetchUpstreamJson(
+      `/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(normalizedActorId)}`,
+      {
+        method: "PUT",
+        body: {
+          role,
+          status,
+          lane_id: laneId,
+        },
+      },
+    );
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleOperatorAgentAssignment(req, res, actorId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const normalizedActorId = normalizeText(actorId);
+    if (!normalizedActorId) {
+      return writeJson(res, 400, { error: "invalid_actor_id", message: "actorId is required" });
+    }
+    const input = await readJsonBody(req);
+    const scope = await resolveOperatorScope();
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId);
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
+    }
+    const threadId = normalizeText(input.thread_id) || normalizeText(scope.threadId) || null;
+    const workitemId = normalizeText(input.workitem_id) || normalizeText(scope.workitemId) || null;
+    const defaultDuty = normalizeText(input.default_duty) || null;
+    const note = normalizeText(input.note) || null;
+    const result = await fetchUpstreamJson(
+      `/v1/channels/${encodeURIComponent(channelId)}/work-assignments/${encodeURIComponent(normalizedActorId)}`,
+      {
+        method: "PUT",
+        body: {
+          operator_id: operatorId,
+          thread_id: threadId,
+          workitem_id: workitemId,
+          default_duty: defaultDuty,
+          note,
+          policy_snapshot: {
+            mode: "single_human_multi_agent",
+            source: "shell_operator_console",
+          },
+        },
+      },
+    );
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleOperatorAgentRecoveryAction(req, res, actorId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const normalizedActorId = normalizeText(actorId);
+    if (!normalizedActorId) {
+      return writeJson(res, 400, { error: "invalid_actor_id", message: "actorId is required" });
+    }
+    const input = await readJsonBody(req);
+    const action = normalizeText(input.action);
+    if (!["resume", "rebind", "reclaim_worktree"].includes(action)) {
+      return writeJson(res, 400, {
+        error: "invalid_runtime_recovery_action",
+        message: "action must be one of resume/rebind/reclaim_worktree",
+      });
+    }
+    const scope = await resolveOperatorScope();
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId) || null;
+    const threadId = normalizeText(input.thread_id) || normalizeText(scope.threadId) || null;
+    const workitemId = normalizeText(input.workitem_id) || normalizeText(scope.workitemId) || null;
+    const reason = normalizeText(input.reason) || null;
+    const claimKey = normalizeText(input.claim_key) || null;
+    const repoRef = normalizeText(input.repo_ref) || null;
+    const branch = normalizeText(input.branch) || null;
+    const laneId = normalizeText(input.lane_id) || null;
+    const status = normalizeText(input.status) || null;
+    const result = await fetchUpstreamJson(
+      `/v1/runtime/agents/${encodeURIComponent(normalizedActorId)}/recovery-actions`,
+      {
+        method: "POST",
+        body: {
+          action,
+          operator_id: operatorId,
+          channel_id: channelId,
+          thread_id: threadId,
+          workitem_id: workitemId,
+          reason,
+          claim_key: claimKey,
+          repo_ref: repoRef,
+          branch,
+          lane_id: laneId,
+          status,
+        },
+      },
+    );
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleOperatorAction(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const actionType = normalizeOperatorActionType(input.action_type || input.action);
+    if (!actionType) {
+      return writeJson(res, 400, { error: "invalid_operator_action_type", message: "unsupported operator action type" });
+    }
+
+    const scope = await resolveOperatorScope();
+    const operatorId = normalizeText(input.operator) || normalizeText(scope.operatorId) || normalizeOperator(input.operator);
+    const channelId = normalizeText(input.channel_id) || normalizeText(scope.channelId) || "";
+    if (!channelId) {
+      return writeJson(res, 400, { error: "invalid_channel_id", message: "channel_id is required" });
+    }
+    const agentId = normalizeText(input.agent_id || input.target_agent_id) || null;
+    const threadId = normalizeText(input.thread_id) || normalizeText(scope.threadId) || null;
+    const workitemId = normalizeText(input.workitem_id) || normalizeText(scope.workitemId) || null;
+    const basePayload =
+      input.payload && typeof input.payload === "object" && !Array.isArray(input.payload)
+        ? { ...input.payload }
+        : {};
+    const runId = normalizeText(input.run_id);
+    const approvalId = normalizeText(input.approval_id);
+    const sandboxProfile = normalizeText(input.sandbox_profile);
+    const secretRefs = Array.isArray(input.secret_refs)
+      ? input.secret_refs.filter((item) => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+      : null;
+    if (runId) {
+      basePayload.run_id = runId;
+    }
+    if (approvalId) {
+      basePayload.approval_id = approvalId;
+    }
+    if (sandboxProfile) {
+      basePayload.sandbox_profile = sandboxProfile;
+    }
+    if (secretRefs && secretRefs.length > 0) {
+      basePayload.secret_refs = secretRefs;
+    }
+    const result = await fetchUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/operator-actions`, {
+      method: "POST",
+      body: {
+        operator_id: operatorId,
+        action_type: actionType,
+        agent_id: agentId,
+        thread_id: threadId,
+        workitem_id: workitemId,
+        note: normalizeNote(input.note),
+        payload: basePayload,
+        policy_snapshot: {
+          mode: "single_human_multi_agent",
+          source: "shell_operator_console",
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function handleInterventionPointAction(req, res, pointId) {
+  try {
+    if (req.method !== "POST") {
+      return writeJson(res, 405, { error: "method_not_allowed" });
+    }
+    const input = await readJsonBody(req);
+    const action = normalizeInterventionPointAction(input.action);
+    if (!action) {
+      return writeJson(res, 400, { error: "invalid_action", message: "action must be approve, hold, or escalate" });
+    }
+
+    const topicId = await resolveConsumerTopicId();
+    const encodedTopicId = encodeURIComponent(topicId);
+    const operator = normalizeOperator(input.operator);
+    await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors/${encodeURIComponent(operator)}`, {
+      method: "PUT",
+      body: {
+        role: "human",
+        status: "active",
+      },
+    });
+    const result = await fetchUpstreamJson(`/v1/topics/${encodedTopicId}/messages`, {
+      method: "POST",
+      body: {
+        type: "status_report",
+        sourceAgentId: operator,
+        sourceRole: "human",
+        targetScope: "topic",
+        payload: {
+          event: "shell_intervention_point_action",
+          pointId,
+          action,
+          note: normalizeNote(input.note),
+        },
+      },
+    });
+    return writeJson(res, 200, result);
+  } catch (error) {
+    return writeUpstreamError(res, error);
+  }
+}
+
+async function proxyApi(req, res, pathWithQuery) {
+  const upstreamUrl = new URL(pathWithQuery, apiUpstream).toString();
+  const headers = { ...req.headers };
+  delete headers.host;
+  delete headers["content-length"];
+
+  const body = await readBody(req);
+  let upstreamResponse;
+  try {
+    upstreamResponse = await fetch(upstreamUrl, {
+      method: req.method,
+      headers,
+      body: body.length > 0 ? body : undefined,
+    });
+  } catch (error) {
+    return writeJson(res, 502, { error: `upstream unavailable: ${String(error)}` });
+  }
+
+  const text = await upstreamResponse.text();
+  const responseHeaders = {
+    "content-type": upstreamResponse.headers.get("content-type") || "application/json; charset=utf-8",
+  };
+  res.writeHead(upstreamResponse.status, responseHeaders);
+  res.end(text);
+}
+
+async function readBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function readJsonBody(req) {
+  const body = await readBody(req);
+  if (body.length === 0) {
+    return {};
+  }
+  try {
+    return JSON.parse(body.toString("utf8"));
+  } catch {
+    throw new LocalRouteError(400, {
+      error: "invalid_json",
+      message: "request body must be valid JSON",
+    });
+  }
+}
+
+class LocalRouteError extends Error {
+  constructor(statusCode, payload) {
+    super(payload?.error || "local_route_error");
+    this.statusCode = statusCode;
+    this.payload = payload;
+  }
+}
+
+class UpstreamHttpError extends Error {
+  constructor(statusCode, payload) {
+    super(`upstream_http_${statusCode}`);
+    this.statusCode = statusCode;
+    this.payload = payload;
+  }
+}
+
+class UpstreamUnavailableError extends Error {
+  constructor(original) {
+    super("upstream_unavailable");
+    this.original = original;
+  }
+}
+
+async function fetchUpstreamJson(pathWithQuery, options = {}) {
+  const url = new URL(pathWithQuery, apiUpstream).toString();
+  const headers = {};
+  if (options.headers && typeof options.headers === "object") {
+    for (const [key, value] of Object.entries(options.headers)) {
+      if (typeof value === "string" && value.length > 0) {
+        headers[key] = value;
+      }
+    }
+  }
+  const request = {
+    method: options.method || "GET",
+    headers,
+  };
+  if (options.body !== undefined) {
+    headers["content-type"] = "application/json";
+    request.body = JSON.stringify(options.body);
+  }
+
+  let response;
+  try {
+    response = await fetch(url, request);
+  } catch (error) {
+    throw new UpstreamUnavailableError(error);
+  }
+  const text = await response.text();
+  const parsed = safeJsonParse(text);
+  if (!response.ok) {
+    throw new UpstreamHttpError(response.status, parsed || { error: "upstream_error", message: text });
+  }
+  return parsed || {};
+}
+
+function writeUpstreamError(res, error) {
+  if (error instanceof LocalRouteError) {
+    return writeJson(res, error.statusCode, error.payload);
+  }
+  if (error instanceof UpstreamHttpError) {
+    return writeJson(res, error.statusCode, error.payload);
+  }
+  if (error instanceof UpstreamUnavailableError) {
+    return writeJson(res, 502, { error: `upstream unavailable: ${String(error.original)}` });
+  }
+  return writeJson(res, 500, { error: String(error) });
+}
+
+function safeJsonParse(text) {
+  if (!text || text.length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+async function resolveConsumerTopicId() {
+  const topics = await fetchUpstreamJson("/v1/topics?limit=1");
+  const firstTopic = Array.isArray(topics?.items) ? topics.items[0] : null;
+  const topicId = typeof firstTopic?.topic_id === "string" ? firstTopic.topic_id.trim() : "";
+  if (topicId.length === 0) {
+    throw new LocalRouteError(502, {
+      error: "consumer_topic_unavailable",
+      message: "no topic available from /v1/topics",
+    });
+  }
+  return topicId;
+}
+
+async function resolveOperatorScope() {
+  const topicId = await resolveConsumerTopicId();
+  const [runtimeRegistryRead, runtimeAgentsRead] = await Promise.all([
+    fetchUpstreamJson("/v1/runtime/registry"),
+    fetchUpstreamJson("/v1/runtime/agents?limit=200"),
+  ]);
+  const runtimeAgents = Array.isArray(runtimeAgentsRead?.items) ? runtimeAgentsRead.items : [];
+  return deriveOperatorScope({
+    topicId,
+    runtimeRegistry: runtimeRegistryRead ?? null,
+    runtimeAgents,
+  });
+}
+
+function deriveOperatorScope({ topicId, runtimeRegistry, runtimeAgents }) {
+  const mergedAgents = [];
+  if (Array.isArray(runtimeRegistry?.agents)) {
+    mergedAgents.push(...runtimeRegistry.agents);
+  }
+  if (Array.isArray(runtimeAgents)) {
+    mergedAgents.push(...runtimeAgents);
+  }
+
+  let operatorId = configuredOperatorId;
+  let channelId = configuredChannelId;
+  let threadId = "";
+  let workitemId = "";
+
+  for (const item of mergedAgents) {
+    const candidateOperatorId = normalizeText(item?.owner_operator_id || item?.operator_id);
+    const candidateChannelId = normalizeText(item?.assigned_channel_id || item?.channel_id);
+    const candidateThreadId = normalizeText(item?.assigned_thread_id || item?.thread_id);
+    const candidateWorkitemId = normalizeText(item?.assigned_workitem_id || item?.workitem_id);
+    if (!operatorId && candidateOperatorId) {
+      operatorId = candidateOperatorId;
+    }
+    if (!channelId && candidateChannelId) {
+      channelId = candidateChannelId;
+    }
+    if (!threadId && candidateThreadId) {
+      threadId = candidateThreadId;
+    }
+    if (!workitemId && candidateWorkitemId) {
+      workitemId = candidateWorkitemId;
+    }
+    if (operatorId && channelId && threadId && workitemId) {
+      break;
+    }
+  }
+
+  return {
+    topicId: normalizeText(topicId),
+    operatorId: operatorId || operatorAgentId,
+    channelId: channelId || "",
+    threadId: threadId || "",
+    workitemId: workitemId || "",
+  };
+}
+
+function buildRuntimeRecoveryActionsPath(scope) {
+  const query = new URLSearchParams();
+  query.set("limit", "50");
+  const channelId = normalizeText(scope?.channelId);
+  const operatorId = normalizeText(scope?.operatorId);
+  if (channelId) {
+    query.set("channel_id", channelId);
+  }
+  if (operatorId) {
+    query.set("operator_id", operatorId);
+  }
+  return `/v1/runtime/recovery-actions?${query.toString()}`;
+}
+
+function buildChannelIdCandidates({ scopeChannelId, configuredChannelId, configuredChannelCandidates, topicRepoBindingProjection }) {
+  const candidates = [];
+  const fromScope = normalizeText(scopeChannelId);
+  if (fromScope) {
+    candidates.push(fromScope);
+  }
+  const fromConfigured = normalizeText(configuredChannelId);
+  if (fromConfigured) {
+    candidates.push(fromConfigured);
+  }
+  const fromTopicRepoBinding =
+    normalizeText(topicRepoBindingProjection?.channel_id) ||
+    normalizeText(topicRepoBindingProjection?.channelId) ||
+    "";
+  if (fromTopicRepoBinding) {
+    candidates.push(fromTopicRepoBinding);
+  }
+  if (Array.isArray(configuredChannelCandidates)) {
+    for (const candidate of configuredChannelCandidates) {
+      const normalized = normalizeText(candidate);
+      if (normalized) {
+        candidates.push(normalized);
+      }
+    }
+  }
+  return Array.from(new Set(candidates));
+}
+
+async function resolveChannelContextFromCandidates(candidates) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return { channelId: "", contextRead: { status: "skipped", payload: null, path: null } };
+  }
+  for (const candidate of candidates) {
+    const channelId = normalizeText(candidate);
+    if (!channelId) {
+      continue;
+    }
+    const contextRead = await fetchOptionalUpstreamJson(`/v1/channels/${encodeURIComponent(channelId)}/context`);
+    if (contextRead.status === "ok") {
+      return { channelId, contextRead };
+    }
+  }
+  return { channelId: "", contextRead: { status: "skipped", payload: null, path: null } };
+}
+
+async function resolveChannelMemoryViewerRead({ channelId, encodedChannelId, channelExternalMemoryProviderRead }) {
+  const normalizedChannelId = normalizeText(channelId);
+  if (!normalizedChannelId) {
+    return { status: "skipped", payload: null, path: null };
+  }
+  if (channelExternalMemoryProviderRead?.status !== "ok") {
+    return { status: "skipped", payload: null, path: null };
+  }
+  const providerContract =
+    channelExternalMemoryProviderRead.payload?.external_memory_provider &&
+    typeof channelExternalMemoryProviderRead.payload.external_memory_provider === "object"
+      ? channelExternalMemoryProviderRead.payload.external_memory_provider
+      : {};
+  const provider =
+    providerContract.external_memory_provider &&
+    typeof providerContract.external_memory_provider === "object"
+      ? providerContract.external_memory_provider
+      : providerContract;
+  const providerStatus = normalizeText(provider?.status);
+  if (providerStatus && providerStatus !== "active") {
+    return { status: "skipped", payload: null, path: null };
+  }
+  return fetchOptionalUpstreamJson(`/v1/channels/${encodedChannelId}/memory-viewer?limit=100`);
+}
+
+async function resolveActorInboxRead({ actorId, topicId }) {
+  const normalizedActorId = normalizeText(actorId);
+  const normalizedTopicId = normalizeText(topicId);
+  if (!normalizedActorId || !normalizedTopicId) {
+    return { status: "skipped", payload: null, path: null };
+  }
+  const pathWithQuery = `/v1/inbox/${encodeURIComponent(normalizedActorId)}?topic_id=${encodeURIComponent(
+    normalizedTopicId,
+  )}&limit=100`;
+  try {
+    const payload = await fetchUpstreamJson(pathWithQuery);
+    return { status: "ok", payload, path: pathWithQuery };
+  } catch (error) {
+    const errorCode =
+      error instanceof UpstreamHttpError
+        ? normalizeText(error.payload?.error?.code || error.payload?.error || error.payload?.code)
+        : "";
+    if (
+      error instanceof UpstreamHttpError &&
+      (error.statusCode === 400 || error.statusCode === 422) &&
+      errorCode === "actor_not_registered"
+    ) {
+      return { status: "missing", payload: error.payload || null, path: pathWithQuery };
+    }
+    if (error instanceof UpstreamHttpError && error.statusCode === 404) {
+      return { status: "missing", payload: error.payload || null, path: pathWithQuery };
+    }
+    throw error;
+  }
+}
+
+async function fetchOptionalUpstreamJson(pathWithQuery) {
+  if (!normalizeText(pathWithQuery)) {
+    return { status: "skipped", payload: null, path: null };
+  }
+  try {
+    const payload = await fetchUpstreamJson(pathWithQuery);
+    return { status: "ok", payload, path: pathWithQuery };
+  } catch (error) {
+    if (error instanceof UpstreamHttpError && error.statusCode === 404) {
+      return { status: "missing", payload: error.payload || null, path: pathWithQuery };
+    }
+    throw error;
+  }
+}
+
+function normalizeDecision(decision) {
+  if (decision === "approve" || decision === "reject") {
+    return decision;
+  }
+  return null;
+}
+
+function normalizeInterventionPointAction(action) {
+  if (action === "approve" || action === "hold" || action === "escalate") {
+    return action;
+  }
+  return null;
+}
+
+function normalizeOperatorActionType(action) {
+  const normalized = normalizeText(action);
+  if (normalized === "request_report" || normalized === "follow_up" || normalized === "intervention" || normalized === "recovery") {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeText(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim();
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item) => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim());
+}
+
+function normalizeOperator(value) {
+  const normalized = normalizeText(value);
+  return normalized || configuredOperatorId || operatorAgentId;
+}
+
+function normalizeNote(value) {
+  const normalized = normalizeText(value);
+  return normalized || null;
+}
+
+function resolveIdempotencyKey(req, fallbackPrefix) {
+  const raw =
+    req.headers?.["idempotency-key"] ||
+    req.headers?.["Idempotency-Key"] ||
+    req.headers?.["x-idempotency-key"] ||
+    "";
+  if (typeof raw === "string") {
+    const normalized = raw.trim();
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+  return `${fallbackPrefix}:${Date.now()}`;
+}
+
+function buildShellStatePayload({
+  topicId,
+  topic,
+  status,
+  topicState,
+  mergeLifecycle,
+  taskAllocation,
+  approvalHolds,
+  messages,
+  runHistory,
+  topicNotifications,
+  runtimeConfig,
+  runtimeSmoke,
+  runtimeDeployRuntimeRead,
+  repoBindingProjection,
+  channelContextContract,
+  channelNotificationEndpointContract,
+  channelOrchestrationUpgradeContract,
+  channelExternalMemoryProviderContract,
+  channelMemoryViewerProjection,
+  channelRepoBindingConfig,
+  channelAuditTrail,
+  channelWorkAssignments,
+  channelOperatorActions,
+  channelRecentActions,
+  runtimeRecoveryActions,
+  workspaceGovernance,
+  runtimeRegistry,
+  runtimeAgents,
+  runtimeWorktreeClaims,
+  scope,
+  actorInboxRead,
+  channelSurface,
+  actorRegistry,
+  controlEvents,
+}) {
+  const now = Date.now();
+  const normalizedTopicState = normalizeTopicState(topicState, status);
+  const normalizedStatus = normalizeStatus(status, normalizedTopicState);
+  const normalizedMergeLifecycle = normalizeMergeLifecycle(mergeLifecycle, normalizedStatus);
+  const normalizedTaskAllocation = normalizeTaskAllocation(taskAllocation);
+  const normalizedApprovals = normalizeApprovalHolds(approvalHolds);
+  const normalizedMessages = normalizeMessages(messages);
+  const normalizedRunHistory = normalizeRunHistory(runHistory);
+  const normalizedTopicNotifications = normalizeTopicNotifications(topicNotifications);
+  const actors = normalizeTopicActors(topic);
+  const normalizedActorRegistry = normalizeActorRegistry(actorRegistry);
+  const normalizedControlEvents = normalizeControlEvents(controlEvents);
+  const normalizedRuntimeAgents = normalizeRuntimeAgents(runtimeAgents, runtimeRegistry);
+  const normalizedRuntimeWorktreeClaims = normalizeRuntimeWorktreeClaims(runtimeWorktreeClaims);
+  const normalizedRuntimeRecoveryActions = normalizeRuntimeRecoveryActions(runtimeRecoveryActions);
+  const normalizedChannelAuditTrail = normalizeChannelAuditTrail(channelAuditTrail);
+  const normalizedChannelWorkAssignments = normalizeChannelWorkAssignments(channelWorkAssignments);
+  const normalizedChannelOperatorActions = normalizeChannelOperatorActions(channelOperatorActions);
+  const normalizedChannelRecentActions = normalizeChannelRecentActions(channelRecentActions);
+  const normalizedOperatorConsole = buildOperatorConsoleState({
+    topicId,
+    runtimeConfig,
+    runtimeSmoke,
+    runtimeDeployRuntimeRead,
+    topicRepoBindingProjection: repoBindingProjection,
+    channelContextContract,
+    channelNotificationEndpointContract,
+    channelOrchestrationUpgradeContract,
+    channelExternalMemoryProviderContract,
+    channelMemoryViewerProjection,
+    channelRepoBindingConfig,
+    channelAuditTrail: normalizedChannelAuditTrail,
+    channelWorkAssignments: normalizedChannelWorkAssignments,
+    channelOperatorActions: normalizedChannelOperatorActions,
+    channelRecentActions: normalizedChannelRecentActions,
+    runtimeRecoveryActions: normalizedRuntimeRecoveryActions,
+    workspaceGovernance,
+    approvalHolds: normalizedApprovals,
+    topicNotifications: normalizedTopicNotifications,
+    runtimeRegistry,
+    runtimeAgents: normalizedRuntimeAgents,
+    runtimeWorktreeClaims: normalizedRuntimeWorktreeClaims,
+    scope,
+    actorInboxRead,
+    channelSurface,
+    actorRegistry: normalizedActorRegistry,
+    controlEvents: normalizedControlEvents,
+  });
+  const leadAgent = actors.find((agent) => normalizeText(agent?.role) === "lead");
+
+  const activeActorCount = Number(normalizedStatus.active_actor_count || 0);
+  const blockedActorCount = Number(normalizedStatus.blocked_actor_count || 0);
+  const coarseModel = {
+    revision: normalizedTopicState.revision,
+    activeAgents: Array.from({ length: Math.max(0, activeActorCount) }, (_, index) => `active_${index}`),
+    blockedAgents: Array.from({ length: Math.max(0, blockedActorCount) }, (_, index) => `blocked_${index}`),
+    pendingApprovalCount: Number(normalizedTopicState.pending_approval_count || 0),
+    openConflictCount: Number(normalizedTopicState.open_conflict_count || 0),
+    blockerCount: Number(normalizedTopicState.blocker_count || 0),
+    riskFlags: Array.isArray(normalizedStatus.risk_flags) ? normalizedStatus.risk_flags : [],
+    deliveryState: {
+      state: normalizedMergeLifecycle.delivery?.state || "unknown",
+      prUrl: normalizedMergeLifecycle.delivery?.pr_url || null,
+      lastUpdatedAt: normalizedStatus.updated_at || topic?.updated_at || new Date().toISOString(),
+    },
+  };
+
+  const openConflicts = Array.isArray(topic?.open_conflicts) ? topic.open_conflicts : [];
+  const blockers = Array.isArray(topic?.blockers) ? topic.blockers : [];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    topics: [
+      {
+        id: topicId,
+        title: topic?.goal || "Integrated runtime topic",
+        revision: Number(normalizedTopicState.revision || topic?.revision || 0),
+        leadAgent: leadAgent?.actor_id || leadAgent?.agentId || "n/a",
+        status: computeTopicStatus({ pendingApprovals: normalizedApprovals, blockers, openConflicts }),
+        pendingApprovals: normalizedApprovals.length,
+        deliveryState: normalizedMergeLifecycle.delivery?.state || "unknown",
+        riskLevel: computeRiskLevel({ blockers, openConflicts }),
+      },
+    ],
+    agents: mapAgents(actors, now),
+    delivery: [
+      {
+        topicId,
+        stage: normalizedMergeLifecycle.stage || "unknown",
+        prState: normalizedMergeLifecycle.delivery?.pr_url ? "open" : "none",
+        nextGate: normalizedApprovals.length > 0 ? "human_gate_pending" : "none",
+        updatedAt: coarseModel.deliveryState.lastUpdatedAt,
+      },
+    ],
+    approvals: normalizedApprovals.map((hold) => ({
+      id: hold.holdId,
+      gateType: hold.gate,
+      topicId,
+      runId: "runtime",
+      requestedBy: "server",
+      createdAt: hold.createdAt,
+      note: `gate ${hold.gate}`,
+      status: hold.status,
+    })),
+    runs: normalizedRunHistory,
+    operator_console: normalizedOperatorConsole,
+    operatorConsole: normalizedOperatorConsole,
+    interventionPoints: buildInterventionPoints(topicId, normalizedMessages, coarseModel, normalizedApprovals.length),
+    interventions: buildInterventions(topicId, blockers, openConflicts),
+    observability: {
+      metrics: buildMetrics(coarseModel, blockers, openConflicts),
+      events: buildEvents(
+        topicId,
+        normalizedMessages,
+        blockers,
+        openConflicts,
+        normalizedRunHistory,
+        normalizedTaskAllocation,
+      ),
+    },
+  };
+}
+
+function normalizeTopicActors(topic) {
+  if (!topic || typeof topic !== "object") {
+    return [];
+  }
+  if (Array.isArray(topic.agents)) {
+    return topic.agents;
+  }
+  if (Array.isArray(topic.actor_registry)) {
+    return topic.actor_registry;
+  }
+  return [];
+}
+
+function normalizeTopicState(topicState, status) {
+  const source = topicState && typeof topicState === "object" ? topicState : status?.topic_state ?? {};
+  return {
+    revision: Number(source?.revision || status?.revision || 0),
+    merge_stage: normalizeText(source?.merge_stage) || "unknown",
+    open_conflict_count: Number(source?.open_conflict_count || status?.open_conflict_count || 0),
+    pending_approval_count: Number(source?.pending_approval_count || status?.pending_approval_count || 0),
+    blocker_count: Number(source?.blocker_count || status?.blocker_count || 0),
+  };
+}
+
+function normalizeStatus(status, topicState) {
+  const source = status && typeof status === "object" ? status : {};
+  return {
+    revision: Number(source.revision || topicState.revision || 0),
+    active_actor_count: Number(source.active_actor_count || 0),
+    blocked_actor_count: Number(source.blocked_actor_count || 0),
+    open_conflict_count: Number(source.open_conflict_count || topicState.open_conflict_count || 0),
+    pending_approval_count: Number(source.pending_approval_count || topicState.pending_approval_count || 0),
+    blocker_count: Number(source.blocker_count || topicState.blocker_count || 0),
+    risk_flags: Array.isArray(source.risk_flags) ? source.risk_flags : [],
+    delivery_state: source.delivery_state && typeof source.delivery_state === "object" ? source.delivery_state : {},
+    updated_at: source.updated_at || null,
+  };
+}
+
+function normalizeMergeLifecycle(mergeLifecycle, status) {
+  const source = mergeLifecycle && typeof mergeLifecycle === "object" ? mergeLifecycle : {};
+  return {
+    stage: normalizeText(source.stage) || normalizeText(status?.topic_state?.merge_stage) || "unknown",
+    delivery: {
+      state: normalizeText(source?.delivery?.state || status?.delivery_state?.state) || "unknown",
+      pr_url: source?.delivery?.pr_url || status?.delivery_state?.pr_url || null,
+    },
+  };
+}
+
+function normalizeTaskAllocation(taskAllocation) {
+  const items = Array.isArray(taskAllocation?.items) ? taskAllocation.items : [];
+  return {
+    summary: {
+      total_tasks: Number(taskAllocation?.summary?.total_tasks || items.length),
+      assigned_tasks: Number(taskAllocation?.summary?.assigned_tasks || 0),
+      unassigned_tasks: Number(taskAllocation?.summary?.unassigned_tasks || Math.max(0, items.length)),
+    },
+  };
+}
+
+function normalizeApprovalHolds(approvalHolds) {
+  if (!Array.isArray(approvalHolds)) {
+    return [];
+  }
+  return approvalHolds.map((hold) => ({
+    holdId: normalizeText(hold?.hold_id || hold?.holdId),
+    gate: normalizeText(hold?.gate) || "approval_hold",
+    status: normalizeText(hold?.status) || "pending",
+    createdAt: hold?.created_at || hold?.createdAt || new Date().toISOString(),
+  }));
+}
+
+function normalizeMessages(messages) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+  return messages.map((message) => ({
+    ...message,
+    createdAt: message?.createdAt || message?.created_at || message?.at || new Date().toISOString(),
+  }));
+}
+
+function normalizeRunHistory(runHistory) {
+  if (!Array.isArray(runHistory)) {
+    return [];
+  }
+  return runHistory.map((item) => ({
+    runId: normalizeText(item?.run_id || item?.runId),
+    state: normalizeText(item?.state) || "unknown",
+    summary: normalizeText(item?.summary) || "run_history",
+    updatedAt: item?.updated_at || item?.updatedAt || item?.at || new Date().toISOString(),
+  }));
+}
+
+function normalizeTopicNotifications(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    notification_id: normalizeText(item?.notification_id || item?.notificationId) || null,
+    kind: normalizeText(item?.kind) || "unknown",
+    severity: normalizeText(item?.severity) || "info",
+    summary: normalizeText(item?.summary) || null,
+    at: item?.at || null,
+  }));
+}
+
+function normalizeActorRegistry(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    actor_id: normalizeText(item?.actor_id || item?.actorId),
+    role: normalizeText(item?.role) || "unknown",
+    status: normalizeText(item?.status) || "unknown",
+    lane_id: normalizeText(item?.lane_id || item?.laneId) || null,
+    last_seen_at: item?.last_seen_at || item?.lastSeenAt || null,
+  }));
+}
+
+function normalizeControlEvents(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    event_id: normalizeText(item?.event_id || item?.eventId),
+    event_type: normalizeText(item?.event_type || item?.eventType) || "unknown",
+    related_resource_type: normalizeText(item?.related_resource_type || item?.relatedResourceType) || null,
+    related_resource_id: normalizeText(item?.related_resource_id || item?.relatedResourceId) || null,
+    result_state: normalizeText(item?.result_state || item?.resultState) || null,
+    reason_code: normalizeText(item?.reason_code || item?.reasonCode) || null,
+    at: item?.at || item?.createdAt || new Date().toISOString(),
+  }));
+}
+
+function buildOperatorConsoleState({
+  topicId,
+  runtimeConfig,
+  runtimeSmoke,
+  runtimeDeployRuntimeRead,
+  topicRepoBindingProjection,
+  channelContextContract,
+  channelNotificationEndpointContract,
+  channelOrchestrationUpgradeContract,
+  channelExternalMemoryProviderContract,
+  channelMemoryViewerProjection,
+  channelRepoBindingConfig,
+  channelAuditTrail,
+  channelWorkAssignments,
+  channelOperatorActions,
+  channelRecentActions,
+  runtimeRecoveryActions,
+  workspaceGovernance,
+  runtimeRegistry,
+  runtimeAgents,
+  runtimeWorktreeClaims,
+  scope,
+  actorInboxRead,
+  channelSurface,
+  actorRegistry,
+  controlEvents,
+  approvalHolds,
+  topicNotifications,
+}) {
+  const channelId = normalizeText(scope?.channelId) || null;
+  const operatorId = normalizeText(scope?.operatorId) || operatorAgentId;
+  const runtimeName = normalizeText(runtimeConfig?.runtimeName) || "openshock-runtime";
+  const daemonName = normalizeText(runtimeConfig?.daemonName) || "openshock-daemon";
+  const shellUrl = normalizeText(runtimeConfig?.shellUrl) || null;
+  const serverPort = Number.isFinite(Number(runtimeConfig?.serverPort)) ? Number(runtimeConfig.serverPort) : null;
+  const sampleTopicId = normalizeText(runtimeConfig?.sampleFixture?.topicId) || topicId;
+  const sampleTopicReady = Boolean(runtimeSmoke?.sampleTopicReady);
+  const sampleTopicAgentCount = Number(runtimeSmoke?.sampleTopicAgentCount || runtimeAgents.length || actorRegistry.length || 0);
+
+  const contextWriteAnchors =
+    channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+      ? channelContextContract.write_anchors
+      : {};
+  const notificationWriteAnchors =
+    channelNotificationEndpointContract?.write_anchors &&
+    typeof channelNotificationEndpointContract.write_anchors === "object"
+      ? channelNotificationEndpointContract.write_anchors
+      : {};
+  const mergedWriteAnchors = {
+    ...contextWriteAnchors,
+    ...notificationWriteAnchors,
+  };
+  const contextAuditAnchor =
+    channelContextContract?.audit_anchor && typeof channelContextContract.audit_anchor === "object"
+      ? channelContextContract.audit_anchor
+      : null;
+  const notificationAuditAnchor =
+    channelNotificationEndpointContract?.audit_anchor &&
+    typeof channelNotificationEndpointContract.audit_anchor === "object"
+      ? channelNotificationEndpointContract.audit_anchor
+      : null;
+  const channelContract =
+    (channelContextContract && typeof channelContextContract === "object") ||
+    (channelNotificationEndpointContract && typeof channelNotificationEndpointContract === "object")
+      ? {
+          channel_id:
+            normalizeText(channelContextContract?.channel_id) ||
+            normalizeText(channelNotificationEndpointContract?.channel_id) ||
+            channelId,
+          owner_operator_id:
+            normalizeText(channelContextContract?.owner_operator_id) ||
+            normalizeText(channelNotificationEndpointContract?.owner_operator_id) ||
+            operatorId,
+          project_aligned_entry: Boolean(channelContextContract?.project_aligned_entry),
+          workspace: channelContextContract?.workspace || null,
+          context: channelContextContract?.context || null,
+          governance: channelContextContract?.governance || null,
+          notification_endpoint:
+            channelContextContract?.notification_endpoint ||
+            channelNotificationEndpointContract?.notification_endpoint ||
+            null,
+          notification_routing_rules:
+            channelContextContract?.notification_routing_rules ||
+            channelNotificationEndpointContract?.routing_rules ||
+            null,
+          approval_contract:
+            channelContextContract?.approval_contract ||
+            channelNotificationEndpointContract?.approval_contract ||
+            null,
+          notification_access_contract: channelContextContract?.notification_access_contract || null,
+          workspace_onboarding_access: channelContextContract?.workspace_onboarding_access || null,
+          workspace_plan_subscription_limit_contract:
+            channelContextContract?.workspace_plan_subscription_limit_contract ||
+            channelContextContract?.workspace_plan_subscription_limit ||
+            null,
+          usage_quota_readiness:
+            channelContextContract?.usage_quota_readiness ||
+            channelContextContract?.usage_quota_readiness_contract ||
+            null,
+          usage_quota_readiness_contract:
+            channelContextContract?.usage_quota_readiness_contract ||
+            channelContextContract?.usage_quota_readiness ||
+            null,
+          workspace_checkout_payment_method_subscription_activation_contract:
+            channelContextContract?.workspace_checkout_payment_subscription_activation_contract ||
+            channelContextContract?.workspace_checkout_payment_subscription_activation ||
+            channelContextContract?.workspace_checkout_payment_method_subscription_activation_contract ||
+            channelContextContract?.workspace_checkout_payment_method_subscription_activation ||
+            channelContextContract?.checkout_payment_subscription_activation_contract ||
+            channelContextContract?.checkout_payment_subscription_activation ||
+            channelContextContract?.checkout_payment_method_subscription_activation_contract ||
+            channelContextContract?.checkout_payment_method_subscription_activation ||
+            null,
+          subscription_lifecycle_recovery_contract:
+            channelContextContract?.subscription_lifecycle_recovery_contract ||
+            channelContextContract?.subscription_renewal_recovery_contract ||
+            channelContextContract?.subscription_renewal_failure_cancel_resume_grace_recovery_contract ||
+            channelContextContract?.subscription_recovery_contract ||
+            null,
+          workspace_invoice_tax_receipt_contract:
+            channelContextContract?.workspace_invoice_tax_receipt_contract ||
+            channelContextContract?.workspace_invoice_tax_receipt ||
+            channelContextContract?.invoice_tax_receipt_contract ||
+            channelContextContract?.invoice_tax_receipt ||
+            null,
+          coupon_promotion_discount_application_contract:
+            channelContextContract?.coupon_promotion_discount_application_contract ||
+            channelContextContract?.coupon_promotion_discount_application ||
+            channelContextContract?.coupon_discount_application_contract ||
+            channelContextContract?.coupon_discount_application ||
+            channelContextContract?.price_adjustment_discount_contract ||
+            channelContextContract?.price_adjustment_discount ||
+            null,
+          write_anchors: mergedWriteAnchors,
+          audit_anchor: contextAuditAnchor || notificationAuditAnchor,
+          updated_at: channelContextContract?.updated_at || channelNotificationEndpointContract?.updated_at || null,
+        }
+      : null;
+
+  const normalizedRepoBinding = normalizeOperatorRepoBinding({
+    topicId,
+    channelId,
+    operatorId,
+    channelRepoBindingConfig,
+    topicRepoBindingProjection,
+  });
+  const normalizedWorkspaceGovernance = normalizeWorkspaceGovernance({
+    workspaceGovernance,
+    workspaceId: resolveWorkspaceIdFromChannelContext(channelContextContract),
+    operatorId,
+    repoBinding: normalizedRepoBinding,
+  });
+  normalizedWorkspaceGovernance.stage4a2 = buildStage4a2GovernanceProjection({
+    channelContextContract: channelContract,
+    channelNotificationEndpointContract,
+    channelAuditTrail,
+    approvalHolds,
+    topicNotifications,
+    channelOperatorActions,
+  });
+  normalizedWorkspaceGovernance.stage4a2_governance = normalizedWorkspaceGovernance.stage4a2;
+  normalizedWorkspaceGovernance.stage4b = buildStage4bGovernanceProjection({
+    channelContextContract: channelContract,
+    channelExternalMemoryProviderContract,
+    channelMemoryViewerProjection,
+    channelRecentActions,
+    channelSurface,
+  });
+  normalizedWorkspaceGovernance.stage4b_governance = normalizedWorkspaceGovernance.stage4b;
+  normalizedWorkspaceGovernance.stage4c = buildStage4cGovernanceProjection({
+    channelContextContract: channelContract,
+    channelOrchestrationUpgradeContract,
+    channelOperatorActions,
+    channelRecentActions,
+    channelSurface,
+  });
+  normalizedWorkspaceGovernance.stage4c_governance = normalizedWorkspaceGovernance.stage4c;
+  normalizedWorkspaceGovernance.stage5a = buildStage5aHostedWorkbenchProjection({
+    topicId,
+    scope,
+    runtimeConfig,
+    runtimeSmoke,
+    channelContextContract: channelContract,
+    channelWorkAssignments,
+    channelOperatorActions,
+    approvalHolds,
+    topicNotifications,
+    repoBinding: normalizedRepoBinding,
+    chain: normalizedWorkspaceGovernance.chain,
+  });
+  normalizedWorkspaceGovernance.stage5a_hosted_workbench = normalizedWorkspaceGovernance.stage5a;
+  normalizedWorkspaceGovernance.stage5b = buildStage5bHostedWorkbenchProjection({
+    topicId,
+    scope,
+    channelContextContract: channelContract,
+    channelWorkAssignments,
+    actorInboxRead,
+    stage5a: normalizedWorkspaceGovernance.stage5a,
+  });
+  normalizedWorkspaceGovernance.stage5b_hosted_workbench = normalizedWorkspaceGovernance.stage5b;
+  normalizedWorkspaceGovernance.stage5c = buildStage5cHostedRuntimeProjection({
+    scope,
+    runtimeConfig,
+    runtimeSmoke,
+    runtimeRegistry,
+    runtimeAgents,
+    runtimeWorktreeClaims,
+    runtimeRecoveryActions,
+    runtimeDeployRuntimeRead,
+    stage5a: normalizedWorkspaceGovernance.stage5a,
+  });
+  normalizedWorkspaceGovernance.stage5c_hosted_runtime = normalizedWorkspaceGovernance.stage5c;
+  normalizedWorkspaceGovernance.stage6a = buildStage6aHostedOnboardingProjection({
+    scope,
+    workspaceGovernance: normalizedWorkspaceGovernance,
+    stage5a: normalizedWorkspaceGovernance.stage5a,
+    stage5b: normalizedWorkspaceGovernance.stage5b,
+    stage5c: normalizedWorkspaceGovernance.stage5c,
+  });
+  normalizedWorkspaceGovernance.stage6a_hosted_onboarding_access = normalizedWorkspaceGovernance.stage6a;
+  normalizedWorkspaceGovernance.stage6b = buildStage6bHostedNotificationRecoveryProjection({
+    scope,
+    workspaceGovernance: normalizedWorkspaceGovernance,
+    stage5b: normalizedWorkspaceGovernance.stage5b,
+    stage5c: normalizedWorkspaceGovernance.stage5c,
+    stage6a: normalizedWorkspaceGovernance.stage6a,
+  });
+  normalizedWorkspaceGovernance.stage6b_hosted_notification_recovery = normalizedWorkspaceGovernance.stage6b;
+  normalizedWorkspaceGovernance.stage6c = buildStage6cHostedPlanQuotaProjection({
+    scope,
+    workspaceGovernance: normalizedWorkspaceGovernance,
+    stage5b: normalizedWorkspaceGovernance.stage5b,
+    stage5c: normalizedWorkspaceGovernance.stage5c,
+    stage6a: normalizedWorkspaceGovernance.stage6a,
+  });
+  normalizedWorkspaceGovernance.stage6c_hosted_plan_quota = normalizedWorkspaceGovernance.stage6c;
+  normalizedWorkspaceGovernance.stage7a = buildStage7aHostedBillingSubscriptionProjection({
+    scope,
+    workspaceGovernance: normalizedWorkspaceGovernance,
+    stage6a: normalizedWorkspaceGovernance.stage6a,
+    stage6b: normalizedWorkspaceGovernance.stage6b,
+    stage6c: normalizedWorkspaceGovernance.stage6c,
+    channelContextContract: channelContract,
+  });
+  normalizedWorkspaceGovernance.stage7a_hosted_billing_subscription = normalizedWorkspaceGovernance.stage7a;
+  normalizedWorkspaceGovernance.stage7b = buildStage7bHostedBillingArtifactsDiscountProjection({
+    scope,
+    workspaceGovernance: normalizedWorkspaceGovernance,
+    stage6a: normalizedWorkspaceGovernance.stage6a,
+    stage6b: normalizedWorkspaceGovernance.stage6b,
+    stage6c: normalizedWorkspaceGovernance.stage6c,
+    stage7a: normalizedWorkspaceGovernance.stage7a,
+    channelContextContract: channelContract,
+  });
+  normalizedWorkspaceGovernance.stage7b_hosted_billing_artifacts_discount = normalizedWorkspaceGovernance.stage7b;
+
+  const auditEntries = buildAuditEntries({
+    channelAuditTrail,
+    controlEvents,
+  });
+  const contractWriteAnchors =
+    channelContract?.write_anchors && typeof channelContract.write_anchors === "object"
+      ? channelContract.write_anchors
+      : {};
+
+  return {
+    scope: "single_human_multi_agent",
+    layer: "channel -> workspace(root) -> repo/worktree -> agent",
+    channel: {
+      channel_id: channelId,
+      status: channelSurface || null,
+      context_contract: channelContract,
+      project_aligned_entry: true,
+    },
+    workspace: {
+      workspace_id: `single_operator_${topicId}`,
+      operator_id: operatorId,
+      default_topic_id: topicId,
+      mode: "single_human_multi_agent",
+      root_path: normalizeText(channelContract?.workspace?.root_path) || null,
+    },
+    runtime: {
+      runtime_name: runtimeName,
+      daemon_name: daemonName,
+      shell_url: shellUrl,
+      server_port: serverPort,
+      sample_topic_id: sampleTopicId,
+      pairing_status: sampleTopicReady ? "paired" : "pending_pairing",
+      summary: runtimeRegistry?.summary || null,
+    },
+    machine: {
+      machine_id: `${runtimeName}@single-machine`,
+      status: sampleTopicReady ? "online" : "booting",
+      sample_topic_ready: sampleTopicReady,
+      sample_topic_agent_count: sampleTopicAgentCount,
+    },
+    repo_binding: normalizedRepoBinding,
+    workspace_governance: normalizedWorkspaceGovernance,
+    workspaceGovernance: normalizedWorkspaceGovernance,
+    agents: actorRegistry,
+    runtime_agents: runtimeAgents,
+    work_assignments: channelWorkAssignments,
+    worktree_claims: runtimeWorktreeClaims,
+    recovery_actions: runtimeRecoveryActions,
+    operator_actions: channelOperatorActions,
+    recent_actions: channelRecentActions,
+    audit_entries: auditEntries,
+    write_anchors: {
+      context_upsert: "/api/v0a/operator/channel-context",
+      repo_binding_upsert: "/api/v0a/operator/repo-binding",
+      governance_member_upsert: "/api/v0a/workspace-governance/member-upsert",
+      governance_identity_upsert: "/api/v0a/workspace-governance/github-identity-upsert",
+      governance_installation_upsert: "/api/v0a/workspace-governance/github-installation-upsert",
+      notification_endpoint_upsert:
+        normalizeText(contractWriteAnchors.notification_endpoint_upsert) ||
+        normalizeText(contractWriteAnchors.context_upsert) ||
+        null,
+      sandbox_profile_upsert:
+        normalizeText(contractWriteAnchors.sandbox_profile_upsert) ||
+        normalizeText(contractWriteAnchors.context_upsert) ||
+        null,
+      secrets_binding_upsert:
+        normalizeText(contractWriteAnchors.secrets_binding_upsert) ||
+        normalizeText(contractWriteAnchors.context_upsert) ||
+        null,
+      approval_anchor: normalizeText(contractWriteAnchors.approval_decision) || null,
+      agent_upsert: "/api/v0a/operator/agents/:actorId/upsert",
+      assignment_enforce: "/api/v0a/operator/agents/:actorId/assignment",
+      recovery_action: "/api/v0a/operator/agents/:actorId/recovery-actions",
+      operator_action: "/api/v0a/operator/actions",
+      contract: contractWriteAnchors,
+    },
+  };
+}
+
+function buildStage4a2GovernanceProjection({
+  channelContextContract,
+  channelNotificationEndpointContract,
+  channelAuditTrail,
+  approvalHolds,
+  topicNotifications,
+  channelOperatorActions,
+}) {
+  const context = channelContextContract?.context && typeof channelContextContract.context === "object"
+    ? channelContextContract.context
+    : {};
+  const governance = channelContextContract?.governance && typeof channelContextContract.governance === "object"
+    ? channelContextContract.governance
+    : {};
+  const writeAnchors = channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+    ? channelContextContract.write_anchors
+    : {};
+  const notificationEndpoints = normalizeStage4a2NotificationEndpoints(
+    pickFirstDefinedValue([
+      channelContextContract?.notification_endpoint,
+      governance.notification_endpoints,
+      governance.notificationEndpoints,
+      governance.notification_endpoint,
+      governance.notificationEndpoint,
+      context.notification_endpoints,
+      context.notificationEndpoints,
+      context.notification_endpoint,
+      context.notificationEndpoint,
+    ]),
+  );
+  const routingRules = normalizeStage4a2RoutingRules(
+    pickFirstDefinedValue([
+      channelContextContract?.notification_routing_rules,
+      governance.notification_routing,
+      governance.notificationRouting,
+      governance.notification_rules,
+      governance.notificationRules,
+      context.notification_routing,
+      context.notificationRouting,
+      context.notification_rules,
+      context.notificationRules,
+    ]),
+  );
+  const notificationAccessContract = normalizeStage6bNotificationAccessContract(
+    pickFirstDefinedValue([
+      channelNotificationEndpointContract?.notification_access_contract,
+      channelContextContract?.notification_endpoint?.notification_access_contract,
+      governance.notification_access_contract,
+      governance.notificationAccessContract,
+      context.notification_access_contract,
+      context.notificationAccessContract,
+    ]),
+  );
+  const agentMailboxRoutingContract = normalizeStage6bAgentMailboxRoutingContract(
+    pickFirstDefinedValue([
+      channelNotificationEndpointContract?.agent_mailbox_routing,
+      channelContextContract?.notification_endpoint?.agent_mailbox_routing,
+      governance.agent_mailbox_routing,
+      governance.agentMailboxRouting,
+      context.agent_mailbox_routing,
+      context.agentMailboxRouting,
+    ]),
+  );
+  const sandboxProfile = normalizeStage4a2SandboxProfile(
+    pickFirstDefinedValue([
+      governance.sandbox_profile,
+      governance.sandboxProfile,
+      context.sandbox_profile,
+      context.sandboxProfile,
+    ]),
+  );
+  const secretsBindings = normalizeStage4a2SecretsBindings(
+    pickFirstDefinedValue([
+      governance.secrets_bindings,
+      governance.secretsBindings,
+      governance.secrets_binding,
+      governance.secretsBinding,
+      context.secrets_bindings,
+      context.secretsBindings,
+      context.secrets_binding,
+      context.secretsBinding,
+    ]),
+  );
+  const usageNotes = buildStage4a2UsageNotes({
+    context,
+    sandboxProfile,
+    secretsBindings,
+  });
+  const approvalContract = normalizeStage4a2ApprovalContract(
+    pickFirstDefinedValue([
+      channelContextContract?.approval_contract,
+      governance.approval_contract,
+      governance.approvalContract,
+      context.approval_contract,
+      context.approvalContract,
+    ]),
+  );
+  const pendingApprovals = Array.isArray(approvalHolds)
+    ? approvalHolds.filter((item) => normalizeText(item?.status) === "pending")
+    : [];
+  const latestEnforcement = findLatestStage4a2Enforcement(channelOperatorActions);
+  const approvalStatus = pendingApprovals.length > 0 ? "approval_required" : "ready";
+  const auditSummary = buildStage4a2AuditSummary({
+    auditAnchor: channelContextContract?.audit_anchor,
+    channelAuditTrail,
+  });
+
+  return {
+    status: {
+      notification_endpoints_status: notificationEndpoints.length > 0 ? "ok" : "pending",
+      routing_rules_status: routingRules.length > 0 ? "ok" : "pending",
+      approval_status: approvalStatus,
+      sandbox_profile_status: sandboxProfile ? "ok" : "pending",
+      secrets_bindings_status: secretsBindings.length > 0 ? "ok" : "pending",
+      usage_notes_status: usageNotes.length > 0 ? "ok" : "pending",
+    },
+    notification: {
+      endpoints: notificationEndpoints,
+      routing_rules: routingRules,
+      notification_access_contract: notificationAccessContract,
+      agent_mailbox_routing: agentMailboxRoutingContract,
+      default_rule_matrix: STAGE4A2_NOTIFICATION_RULE_REFERENCE,
+      recent_signal_summary: summarizeStage4a2NotificationSignals(topicNotifications),
+      audit_anchor: auditSummary.notification,
+      write_anchor:
+        normalizeText(writeAnchors.notification_endpoint_upsert) ||
+        normalizeText(writeAnchors.context_upsert) ||
+        null,
+    },
+    approval: {
+      status: approvalStatus,
+      pending_count: pendingApprovals.length,
+      pending_hold_ids: pendingApprovals
+        .map((item) => normalizeText(item?.holdId || item?.hold_id))
+        .filter((item) => item.length > 0),
+      contract: approvalContract,
+      audit_anchor: auditSummary.approval,
+      write_anchor: normalizeText(writeAnchors.approval_decision) || null,
+    },
+    restricted_execution: {
+      sandbox_profile: sandboxProfile,
+      secrets_bindings: secretsBindings,
+      usage_notes: usageNotes,
+      latest_enforcement: latestEnforcement,
+      cloud_sandbox: "not_in_scope",
+      audit_anchor: auditSummary.restricted_execution,
+      write_anchors: {
+        sandbox_profile_upsert:
+          normalizeText(writeAnchors.sandbox_profile_upsert) ||
+          normalizeText(writeAnchors.context_upsert) ||
+          null,
+        secrets_binding_upsert:
+          normalizeText(writeAnchors.secrets_binding_upsert) ||
+          normalizeText(writeAnchors.context_upsert) ||
+          null,
+      },
+    },
+  };
+}
+
+function buildStage4cGovernanceProjection({
+  channelContextContract,
+  channelOrchestrationUpgradeContract,
+  channelOperatorActions,
+  channelRecentActions,
+  channelSurface,
+}) {
+  const context = channelContextContract?.context && typeof channelContextContract.context === "object"
+    ? channelContextContract.context
+    : {};
+  const governance = channelContextContract?.governance && typeof channelContextContract.governance === "object"
+    ? channelContextContract.governance
+    : {};
+  const writeAnchors = channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+    ? channelContextContract.write_anchors
+    : {};
+  const auditAnchor = channelContextContract?.audit_anchor && typeof channelContextContract.audit_anchor === "object"
+    ? channelContextContract.audit_anchor
+    : {};
+  const orchestrationUpgradeContract = normalizeStage4cOrchestrationUpgradeContract(channelOrchestrationUpgradeContract);
+  const orchestrationWriteAnchors =
+    orchestrationUpgradeContract.write_anchors && typeof orchestrationUpgradeContract.write_anchors === "object"
+      ? orchestrationUpgradeContract.write_anchors
+      : {};
+  const orchestrationTimelineAnchors =
+    orchestrationUpgradeContract.timeline_anchor && typeof orchestrationUpgradeContract.timeline_anchor === "object"
+      ? orchestrationUpgradeContract.timeline_anchor
+      : {};
+  const orchestrationContractAuditAnchor =
+    orchestrationUpgradeContract.audit_anchor && typeof orchestrationUpgradeContract.audit_anchor === "object"
+      ? orchestrationUpgradeContract.audit_anchor
+      : {};
+
+  const digitalTwin = normalizeStage4cDigitalTwin(
+    pickFirstDefinedValue([
+      governance.digital_twin,
+      governance.digitalTwin,
+      context.digital_twin,
+      context.digitalTwin,
+    ]),
+  );
+  const operationalCapability = normalizeStage4cOperationalCapability(
+    pickFirstDefinedValue([
+      governance.operational_capability,
+      governance.operationalCapability,
+      context.operational_capability,
+      context.operationalCapability,
+    ]),
+  );
+  const orchestration = normalizeStage4cOrchestration(
+    pickFirstDefinedValue([
+      orchestrationUpgradeContract.multi_agent_orchestration,
+      governance.multi_agent_orchestration,
+      governance.multiAgentOrchestration,
+      governance.orchestration,
+      governance.agent_orchestration,
+      governance.agentOrchestration,
+      context.multi_agent_orchestration,
+      context.multiAgentOrchestration,
+      context.orchestration,
+      context.agent_orchestration,
+      context.agentOrchestration,
+    ]),
+  );
+  const upgradeArbitration = normalizeStage4cUpgradeArbitration(
+    pickFirstDefinedValue([
+      orchestrationUpgradeContract.upgrade_arbitration,
+      governance.upgrade_arbitration,
+      governance.upgradeArbitration,
+      context.upgrade_arbitration,
+      context.upgradeArbitration,
+    ]),
+  );
+  const humanUpgradeChain = normalizeStage4cHumanUpgradeChain(
+    pickFirstDefinedValue([
+      upgradeArbitration?.human_upgrade_chain,
+      orchestrationUpgradeContract.upgrade_arbitration?.human_upgrade_chain,
+      governance.human_upgrade_chain,
+      governance.humanUpgradeChain,
+      context.human_upgrade_chain,
+      context.humanUpgradeChain,
+    ]),
+  );
+  const latestEscalation =
+    findLatestStage4cHumanEscalation(channelOperatorActions) ||
+    (humanUpgradeChain
+      ? {
+          action_id: null,
+          action_type: "human_upgrade_chain",
+          status: normalizeText(humanUpgradeChain.status) || "pending",
+          approval_id: normalizeText(humanUpgradeChain.approval_id) || null,
+          operator_id: normalizeText(humanUpgradeChain.approved_by) || null,
+          agent_id: null,
+          thread_id: null,
+          workitem_id: null,
+          note: null,
+          at: humanUpgradeChain.approved_at || null,
+        }
+      : null);
+  const stage4cTimeline = summarizeStage4cTimeline(channelRecentActions);
+  const contextReadStatus = normalizeText(channelSurface?.context_status) || "skipped";
+  const orchestrationUpgradeReadStatus = normalizeText(channelSurface?.orchestration_upgrade_status) || "skipped";
+
+  const resolveContextStatus = (ready) => {
+    if (contextReadStatus === "ok") {
+      return ready ? "ok" : "pending";
+    }
+    return contextReadStatus;
+  };
+  const resolveOrchestrationStatus = (ready) => {
+    if (orchestrationUpgradeReadStatus === "ok") {
+      return ready ? "ok" : "pending";
+    }
+    return orchestrationUpgradeReadStatus;
+  };
+  const digitalTwinStatus = resolveContextStatus(Boolean(digitalTwin?.agent_id));
+  const operationalCapabilityStatus = resolveContextStatus(Boolean(operationalCapability));
+  const orchestrationStatus = resolveOrchestrationStatus(Boolean(orchestration?.orchestration_id));
+  const upgradeArbitrationStatus = resolveOrchestrationStatus(Boolean(upgradeArbitration?.arbitration_id));
+  const humanUpgradeChainStatus = resolveOrchestrationStatus(Boolean(humanUpgradeChain?.escalation_id || latestEscalation));
+
+  const digitalTwinAuditAnchor = normalizeStage4a2AuditAnchor(
+    pickFirstDefinedValue([auditAnchor.latest?.digital_twin, auditAnchor.latest?.digitalTwin]),
+  );
+  const operationalCapabilityAuditAnchor = normalizeStage4a2AuditAnchor(
+    pickFirstDefinedValue([
+      auditAnchor.latest?.operational_capability,
+      auditAnchor.latest?.operationalCapability,
+    ]),
+  );
+  const orchestrationAuditAnchor = normalizeStage4a2AuditAnchor(
+    pickFirstDefinedValue([
+      orchestrationContractAuditAnchor.latest?.multi_agent_orchestration,
+      auditAnchor.latest?.multi_agent_orchestration,
+      auditAnchor.latest?.multiAgentOrchestration,
+      auditAnchor.latest?.orchestration,
+      auditAnchor.latest?.agent_orchestration,
+      auditAnchor.latest?.agentOrchestration,
+    ]),
+  );
+  const upgradeArbitrationAuditAnchor = normalizeStage4a2AuditAnchor(
+    pickFirstDefinedValue([
+      orchestrationContractAuditAnchor.latest?.upgrade_arbitration,
+      auditAnchor.latest?.upgrade_arbitration,
+      auditAnchor.latest?.upgradeArbitration,
+    ]),
+  );
+  const humanUpgradeChainAuditAnchor = normalizeStage4a2AuditAnchor(
+    pickFirstDefinedValue([
+      orchestrationContractAuditAnchor.latest?.human_upgrade_chain,
+      auditAnchor.latest?.human_upgrade_chain,
+      auditAnchor.latest?.humanUpgradeChain,
+    ]),
+  );
+  const escalationAuditAnchor = latestEscalation
+    ? {
+        action: normalizeText(latestEscalation.action_type) || "unknown_action",
+        audit_id: normalizeText(latestEscalation.action_id) || "n/a",
+        at: latestEscalation.at || null,
+      }
+    : null;
+  const normalizedEscalationAuditAnchor = normalizeStage4a2AuditAnchor(escalationAuditAnchor);
+
+  const normalizedWriteAnchors = {
+    digital_twin_upsert:
+      normalizeText(writeAnchors.digital_twin_upsert) ||
+      normalizeText(writeAnchors.context_upsert) ||
+      null,
+    operational_capability_upsert:
+      normalizeText(writeAnchors.operational_capability_upsert) ||
+      normalizeText(writeAnchors.context_upsert) ||
+      null,
+    orchestration_upsert:
+      normalizeText(orchestrationWriteAnchors.orchestration_upgrade_upsert) ||
+      normalizeText(writeAnchors.multi_agent_orchestration_upsert) ||
+      normalizeText(writeAnchors.orchestration_upsert) ||
+      normalizeText(writeAnchors.agent_orchestration_upsert) ||
+      normalizeText(writeAnchors.context_upsert) ||
+      null,
+    upgrade_arbitration_upsert:
+      normalizeText(orchestrationWriteAnchors.orchestration_upgrade_upsert) ||
+      normalizeText(writeAnchors.upgrade_arbitration_upsert) ||
+      normalizeText(writeAnchors.context_upsert) ||
+      null,
+    human_upgrade_chain_upsert:
+      normalizeText(orchestrationWriteAnchors.orchestration_upgrade_upsert) ||
+      normalizeText(writeAnchors.human_upgrade_chain_upsert) ||
+      normalizeText(writeAnchors.context_upsert) ||
+      null,
+    operator_action:
+      normalizeText(orchestrationWriteAnchors.operator_action) ||
+      normalizeText(writeAnchors.operator_action_append) ||
+      normalizeText(writeAnchors.operator_action_upsert) ||
+      null,
+    approval_decision:
+      normalizeText(orchestrationWriteAnchors.approval_decision) ||
+      normalizeText(writeAnchors.approval_decision) ||
+      null,
+    timeline_anchor:
+      normalizeText(orchestrationTimelineAnchors.recent_actions) ||
+      normalizeText(writeAnchors.recent_actions) ||
+      null,
+    operator_actions_timeline_anchor:
+      normalizeText(orchestrationTimelineAnchors.operator_actions) ||
+      normalizeText(writeAnchors.operator_action_append) ||
+      null,
+    approval_holds_timeline_anchor:
+      normalizeText(orchestrationTimelineAnchors.approval_holds) ||
+      null,
+    approval_decisions_timeline_anchor:
+      normalizeText(orchestrationTimelineAnchors.approval_decisions) ||
+      null,
+  };
+
+  const auditReady = Boolean(
+    digitalTwinAuditAnchor ||
+      operationalCapabilityAuditAnchor ||
+      orchestrationAuditAnchor ||
+      upgradeArbitrationAuditAnchor ||
+      humanUpgradeChainAuditAnchor ||
+      normalizedEscalationAuditAnchor,
+  );
+  const timelineReady = stage4cTimeline.total > 0 || Boolean(normalizedWriteAnchors.timeline_anchor);
+
+  return {
+    status: {
+      digital_twin_status: digitalTwinStatus,
+      operational_capability_status: operationalCapabilityStatus,
+      orchestration_status: orchestrationStatus,
+      upgrade_arbitration_status: upgradeArbitrationStatus,
+      human_upgrade_chain_status: humanUpgradeChainStatus,
+      audit_status: auditReady ? "ok" : "pending",
+      timeline_status: timelineReady ? "ok" : "pending",
+    },
+    digital_twin: {
+      value: digitalTwin,
+      write_anchor: normalizedWriteAnchors.digital_twin_upsert,
+      audit_anchor: digitalTwinAuditAnchor,
+    },
+    operational_capability: {
+      value: operationalCapability,
+      write_anchor: normalizedWriteAnchors.operational_capability_upsert,
+      audit_anchor: operationalCapabilityAuditAnchor,
+    },
+    orchestration: {
+      value: orchestration,
+      write_anchor: normalizedWriteAnchors.orchestration_upsert,
+      audit_anchor: orchestrationAuditAnchor,
+    },
+    upgrade: {
+      arbitration: upgradeArbitration,
+      human_upgrade_chain: humanUpgradeChain,
+      latest_escalation: latestEscalation,
+      write_anchors: {
+        upgrade_arbitration_upsert: normalizedWriteAnchors.upgrade_arbitration_upsert,
+        human_upgrade_chain_upsert: normalizedWriteAnchors.human_upgrade_chain_upsert,
+        operator_action: normalizedWriteAnchors.operator_action,
+        approval_decision: normalizedWriteAnchors.approval_decision,
+      },
+      audit_anchor: {
+        upgrade_arbitration: upgradeArbitrationAuditAnchor,
+        human_upgrade_chain: humanUpgradeChainAuditAnchor,
+        latest_escalation: normalizedEscalationAuditAnchor,
+      },
+    },
+    timeline: {
+      anchor: normalizedWriteAnchors.timeline_anchor,
+      operator_actions_anchor: normalizedWriteAnchors.operator_actions_timeline_anchor,
+      approval_holds_anchor: normalizedWriteAnchors.approval_holds_timeline_anchor,
+      approval_decisions_anchor: normalizedWriteAnchors.approval_decisions_timeline_anchor,
+      recent_actions: stage4cTimeline.actions,
+      total: stage4cTimeline.total,
+    },
+  };
+}
+
+function normalizeStage4cOrchestrationUpgradeContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+  const contract =
+    raw.orchestration_upgrade && typeof raw.orchestration_upgrade === "object" ? raw.orchestration_upgrade : raw;
+  return {
+    multi_agent_orchestration: contract.multi_agent_orchestration || null,
+    upgrade_arbitration: contract.upgrade_arbitration || null,
+    write_anchors: contract.write_anchors || {},
+    timeline_anchor: contract.timeline_anchor || {},
+    audit_anchor: contract.audit_anchor || {},
+  };
+}
+
+function normalizeStage4cDigitalTwin(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  return {
+    twin_id: normalizeText(raw.twin_id || raw.twinId) || null,
+    agent_id: normalizeText(raw.agent_id || raw.agentId) || null,
+    persona_ref: normalizeText(raw.persona_ref || raw.personaRef) || null,
+    mode: normalizeText(raw.mode) || null,
+    status: normalizeText(raw.status) || null,
+    memory_scope: normalizeText(raw.memory_scope || raw.memoryScope) || null,
+    updated_at: raw.updated_at || raw.updatedAt || null,
+    updated_by: normalizeText(raw.updated_by || raw.updatedBy) || null,
+  };
+}
+
+function normalizeStage4cOperationalCapability(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  return {
+    enabled: raw.enabled !== false,
+    capability_level: normalizeText(raw.capability_level || raw.capabilityLevel) || null,
+    operation_modes: normalizeStringArray(raw.operation_modes || raw.operationModes),
+    human_escalation_required:
+      raw.human_escalation_required === undefined && raw.humanEscalationRequired === undefined
+        ? null
+        : raw.human_escalation_required === true || raw.humanEscalationRequired === true,
+    timeline_evidence_required:
+      raw.timeline_evidence_required === undefined && raw.timelineEvidenceRequired === undefined
+        ? null
+        : raw.timeline_evidence_required === true || raw.timelineEvidenceRequired === true,
+    audit_evidence_required:
+      raw.audit_evidence_required === undefined && raw.auditEvidenceRequired === undefined
+        ? null
+        : raw.audit_evidence_required === true || raw.auditEvidenceRequired === true,
+    updated_at: raw.updated_at || raw.updatedAt || null,
+    updated_by: normalizeText(raw.updated_by || raw.updatedBy) || null,
+  };
+}
+
+function normalizeStage4cOrchestration(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  return {
+    orchestration_id: normalizeText(raw.orchestration_id || raw.orchestrationId) || null,
+    mode: normalizeText(raw.mode) || null,
+    status: normalizeText(raw.status) || null,
+    plan_ref: normalizeText(raw.plan_ref || raw.planRef) || null,
+    participant_agent_ids: normalizeStringArray(
+      raw.participant_agent_ids || raw.participantAgentIds,
+    ),
+    participants: Array.isArray(raw.participants)
+      ? raw.participants.map((item) => ({
+          agent_id: normalizeText(item?.agent_id || item?.agentId) || null,
+          role: normalizeText(item?.role) || null,
+          duty: normalizeText(item?.duty) || null,
+          required:
+            item?.required === undefined || item?.required === null ? null : item.required === true,
+        }))
+      : [],
+    dependency_edges: Array.isArray(raw.dependency_edges || raw.dependencyEdges)
+      ? (raw.dependency_edges || raw.dependencyEdges).map((item) => ({
+          from_agent_id: normalizeText(item?.from_agent_id || item?.fromAgentId) || null,
+          to_agent_id: normalizeText(item?.to_agent_id || item?.toAgentId) || null,
+          handoff_required:
+            item?.handoff_required === undefined || item?.handoff_required === null
+              ? null
+              : item.handoff_required === true,
+          condition: normalizeText(item?.condition) || null,
+        }))
+      : [],
+    quorum:
+      raw.quorum && typeof raw.quorum === "object"
+        ? {
+            min_success_count:
+              raw.quorum.min_success_count === undefined || raw.quorum.min_success_count === null
+                ? null
+                : Number(raw.quorum.min_success_count),
+            max_parallel_agents:
+              raw.quorum.max_parallel_agents === undefined || raw.quorum.max_parallel_agents === null
+                ? null
+                : Number(raw.quorum.max_parallel_agents),
+            stop_on_blocked:
+              raw.quorum.stop_on_blocked === undefined || raw.quorum.stop_on_blocked === null
+                ? null
+                : raw.quorum.stop_on_blocked === true,
+            stop_on_failure_count:
+              raw.quorum.stop_on_failure_count === undefined || raw.quorum.stop_on_failure_count === null
+                ? null
+                : Number(raw.quorum.stop_on_failure_count),
+          }
+        : null,
+    stop_conditions: normalizeStringArray(raw.stop_conditions || raw.stopConditions),
+    escalation_triggers: normalizeStringArray(raw.escalation_triggers || raw.escalationTriggers),
+    evidence_anchors:
+      raw.evidence_anchors && typeof raw.evidence_anchors === "object" ? raw.evidence_anchors : null,
+    updated_at: raw.updated_at || raw.updatedAt || null,
+    updated_by: normalizeText(raw.updated_by || raw.updatedBy) || null,
+  };
+}
+
+function normalizeStage4cUpgradeArbitration(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  return {
+    arbitration_id: normalizeText(raw.arbitration_id || raw.arbitrationId) || null,
+    status: normalizeText(raw.status) || null,
+    reason: normalizeText(raw.reason) || null,
+    candidate_paths: Array.isArray(raw.candidate_paths || raw.candidatePaths)
+      ? (raw.candidate_paths || raw.candidatePaths).map((item) => ({
+          path_id: normalizeText(item?.path_id || item?.pathId) || null,
+          target_mode: normalizeText(item?.target_mode || item?.targetMode) || null,
+          reason: normalizeText(item?.reason) || null,
+          evidence_refs: normalizeStringArray(item?.evidence_refs || item?.evidenceRefs),
+        }))
+      : [],
+    selected_path_id: normalizeText(raw.selected_path_id || raw.selectedPathId) || null,
+    human_upgrade_chain: normalizeStage4cHumanUpgradeChain(raw.human_upgrade_chain || raw.humanUpgradeChain),
+    updated_at: raw.updated_at || raw.updatedAt || null,
+    updated_by: normalizeText(raw.updated_by || raw.updatedBy) || null,
+  };
+}
+
+function normalizeStage4cHumanUpgradeChain(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  return {
+    escalation_id: normalizeText(raw.escalation_id || raw.escalationId) || null,
+    status: normalizeText(raw.status) || null,
+    approval_required:
+      raw.approval_required === undefined && raw.approvalRequired === undefined
+        ? null
+        : raw.approval_required === true || raw.approvalRequired === true,
+    approval_id: normalizeText(raw.approval_id || raw.approvalId) || null,
+    approved_by: normalizeText(raw.approved_by || raw.approvedBy) || null,
+    approved_at: raw.approved_at || raw.approvedAt || null,
+    rollback_allowed:
+      raw.rollback_allowed === undefined && raw.rollbackAllowed === undefined
+        ? null
+        : raw.rollback_allowed === true || raw.rollbackAllowed === true,
+    rollback_ref: normalizeText(raw.rollback_ref || raw.rollbackRef) || null,
+    operator_action_ref: normalizeText(raw.operator_action_ref || raw.operatorActionRef) || null,
+    approval_hold_ref: normalizeText(raw.approval_hold_ref || raw.approvalHoldRef) || null,
+    decision_ref: normalizeText(raw.decision_ref || raw.decisionRef) || null,
+    updated_at: raw.updated_at || raw.updatedAt || null,
+    updated_by: normalizeText(raw.updated_by || raw.updatedBy) || null,
+  };
+}
+
+function findLatestStage4cHumanEscalation(items) {
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  for (const item of items) {
+    const actionType = normalizeText(item?.action_type || item?.actionType);
+    const approvalId = normalizeText(item?.approval_id || item?.approvalId);
+    if (
+      !approvalId &&
+      !actionType.includes("upgrade") &&
+      !actionType.includes("escalat") &&
+      !actionType.includes("arbitrat")
+    ) {
+      continue;
+    }
+    return {
+      action_id: normalizeText(item?.action_id || item?.actionId) || null,
+      action_type: actionType || "unknown",
+      status: normalizeText(item?.status) || "accepted",
+      approval_id: approvalId || null,
+      operator_id: normalizeText(item?.operator_id || item?.operatorId) || null,
+      agent_id: normalizeText(item?.agent_id || item?.agentId) || null,
+      thread_id: normalizeText(item?.thread_id || item?.threadId) || null,
+      workitem_id: normalizeText(item?.workitem_id || item?.workitemId) || null,
+      note: normalizeText(item?.note) || null,
+      at: item?.at || null,
+    };
+  }
+  return null;
+}
+
+function summarizeStage4cTimeline(items) {
+  if (!Array.isArray(items)) {
+    return { total: 0, actions: [] };
+  }
+  const actions = [];
+  for (const item of items) {
+    const action = normalizeText(item?.action);
+    if (!action) {
+      continue;
+    }
+    if (
+      !action.includes("digital_twin") &&
+      !action.includes("operational_capability") &&
+      !action.includes("orchestration") &&
+      !action.includes("upgrade_arbitration") &&
+      !action.includes("human_upgrade_chain") &&
+      !action.includes("escalation")
+    ) {
+      continue;
+    }
+    actions.push({
+      action,
+      at: item?.at || null,
+    });
+    if (actions.length >= 10) {
+      break;
+    }
+  }
+  return {
+    total: actions.length,
+    actions,
+  };
+}
+
+function buildStage4bGovernanceProjection({
+  channelContextContract,
+  channelExternalMemoryProviderContract,
+  channelMemoryViewerProjection,
+  channelRecentActions,
+  channelSurface,
+}) {
+  const context = channelContextContract?.context && typeof channelContextContract.context === "object"
+    ? channelContextContract.context
+    : {};
+  const governance = channelContextContract?.governance && typeof channelContextContract.governance === "object"
+    ? channelContextContract.governance
+    : {};
+  const writeAnchors = channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+    ? channelContextContract.write_anchors
+    : {};
+  const auditAnchor = channelContextContract?.audit_anchor && typeof channelContextContract.audit_anchor === "object"
+    ? channelContextContract.audit_anchor
+    : {};
+  const providerContract = normalizeStage4bExternalMemoryProviderContract(channelExternalMemoryProviderContract);
+  const provider = normalizeStage4bExternalMemoryProvider(
+    pickFirstDefinedValue([
+      providerContract.external_memory_provider,
+      channelMemoryViewerProjection?.external_memory_provider,
+      channelContextContract?.external_memory_provider,
+      context.external_memory_provider,
+    ]),
+  );
+  const memoryViewer = normalizeStage4bMemoryViewer(channelMemoryViewerProjection);
+  const skillPolicyPlugin = normalizeStage4bSkillPolicyPlugin(
+    pickFirstDefinedValue([
+      governance.skill_policy_plugin,
+      governance.skillPolicyPlugin,
+      context.skill_policy_plugin,
+      context.skillPolicyPlugin,
+    ]),
+  );
+  const tokenQuotaContext = normalizeStage4bTokenQuotaContext(
+    pickFirstDefinedValue([
+      governance.token_quota_context,
+      governance.tokenQuotaContext,
+      context.token_quota_context,
+      context.tokenQuotaContext,
+    ]),
+  );
+  const workspacePlanSubscriptionLimitContract = normalizeStage6cWorkspacePlanSubscriptionLimitContract(
+    pickFirstDefinedValue([
+      channelContextContract?.workspace_plan_subscription_limit_contract,
+      governance.workspace_plan_subscription_limit_contract,
+      governance.workspacePlanSubscriptionLimitContract,
+      context.workspace_plan_subscription_limit_contract,
+      context.workspacePlanSubscriptionLimitContract,
+    ]),
+  );
+  const usageQuotaReadinessContract = normalizeStage6cUsageQuotaReadinessContract(
+    pickFirstDefinedValue([
+      channelContextContract?.usage_quota_readiness,
+      channelContextContract?.usageQuotaReadiness,
+      channelContextContract?.usage_quota_readiness_contract,
+      channelContextContract?.usageQuotaReadinessContract,
+      governance.usage_quota_readiness,
+      governance.usageQuotaReadiness,
+      governance.usage_quota_readiness_contract,
+      governance.usageQuotaReadinessContract,
+      context.usage_quota_readiness,
+      context.usageQuotaReadiness,
+      context.usage_quota_readiness_contract,
+      context.usageQuotaReadinessContract,
+    ]),
+  );
+  const providerReadStatus = normalizeText(channelSurface?.external_memory_provider_status) || "skipped";
+  const memoryViewerReadStatus = normalizeText(channelSurface?.memory_viewer_status) || "skipped";
+  const providerStatus = normalizeText(provider?.status);
+  const externalMemoryProviderStatus =
+    providerReadStatus === "ok"
+      ? provider
+        ? providerStatus === "active"
+          ? "ok"
+          : providerStatus || "pending"
+        : "pending"
+      : providerReadStatus;
+  const resolvedMemoryViewerStatus =
+    memoryViewerReadStatus === "ok"
+      ? "ok"
+      : memoryViewerReadStatus === "skipped" && providerStatus && providerStatus !== "active"
+        ? "provider_not_active"
+        : memoryViewerReadStatus;
+  const skillPolicyPluginStatus = skillPolicyPlugin ? "ok" : "pending";
+  const tokenQuotaContextStatus = tokenQuotaContext ? "ok" : "pending";
+  const workspacePlanSubscriptionLimitStatus = workspacePlanSubscriptionLimitContract ? "ok" : "pending";
+  const usageQuotaReadinessStatus = usageQuotaReadinessContract ? "ok" : "pending";
+  const providerAuditAnchor =
+    normalizeStage4a2AuditAnchor(providerContract.audit_anchor?.latest?.external_memory_provider) ||
+    normalizeStage4a2AuditAnchor(auditAnchor.latest?.external_memory_provider) ||
+    null;
+  const memoryWriteAuditAnchor =
+    normalizeStage4a2AuditAnchor(memoryViewer.audit_anchor?.latest?.memory_write) ||
+    normalizeStage4a2AuditAnchor(providerContract.audit_anchor?.latest?.memory_write) ||
+    normalizeStage4a2AuditAnchor(auditAnchor.latest?.memory_write) ||
+    null;
+  const memoryFeedbackAuditAnchor =
+    normalizeStage4a2AuditAnchor(memoryViewer.audit_anchor?.latest?.memory_feedback) ||
+    normalizeStage4a2AuditAnchor(providerContract.audit_anchor?.latest?.memory_feedback) ||
+    normalizeStage4a2AuditAnchor(auditAnchor.latest?.memory_feedback) ||
+    null;
+  const memoryPromoteAuditAnchor =
+    normalizeStage4a2AuditAnchor(memoryViewer.audit_anchor?.latest?.memory_promote) ||
+    normalizeStage4a2AuditAnchor(providerContract.audit_anchor?.latest?.memory_promote) ||
+    normalizeStage4a2AuditAnchor(auditAnchor.latest?.memory_promote) ||
+    null;
+  const memoryForgetAuditAnchor =
+    normalizeStage4a2AuditAnchor(memoryViewer.audit_anchor?.latest?.memory_forget) ||
+    normalizeStage4a2AuditAnchor(providerContract.audit_anchor?.latest?.memory_forget) ||
+    normalizeStage4a2AuditAnchor(auditAnchor.latest?.memory_forget) ||
+    null;
+  const skillPolicyPluginAuditAnchor = normalizeStage4a2AuditAnchor(auditAnchor.latest?.skill_policy_plugin);
+  const tokenQuotaContextAuditAnchor = normalizeStage4a2AuditAnchor(auditAnchor.latest?.token_quota_context);
+  const stage4bTimeline = summarizeStage4bTimeline(channelRecentActions);
+  const auditReady = Boolean(
+    providerAuditAnchor ||
+      memoryWriteAuditAnchor ||
+      memoryFeedbackAuditAnchor ||
+      memoryPromoteAuditAnchor ||
+      memoryForgetAuditAnchor ||
+      skillPolicyPluginAuditAnchor ||
+      tokenQuotaContextAuditAnchor,
+  );
+  const providerWriteAnchors =
+    providerContract.write_anchors && typeof providerContract.write_anchors === "object"
+      ? providerContract.write_anchors
+      : {};
+  const memoryViewerWriteAnchors =
+    memoryViewer.write_anchors && typeof memoryViewer.write_anchors === "object"
+      ? memoryViewer.write_anchors
+      : {};
+  const normalizedWriteAnchors = {
+    external_memory_provider_upsert:
+      normalizeText(writeAnchors.external_memory_provider_upsert) ||
+      normalizeText(providerWriteAnchors.provider_upsert) ||
+      null,
+    memory_viewer: normalizeText(writeAnchors.memory_viewer) || null,
+    memory_search: normalizeText(writeAnchors.memory_search) || normalizeText(providerWriteAnchors.memory_search) || null,
+    memory_get: normalizeText(writeAnchors.memory_get) || normalizeText(providerWriteAnchors.memory_get) || null,
+    memory_write:
+      normalizeText(writeAnchors.memory_write) ||
+      normalizeText(memoryViewerWriteAnchors.memory_write) ||
+      normalizeText(providerWriteAnchors.memory_write) ||
+      null,
+    memory_feedback:
+      normalizeText(writeAnchors.memory_feedback) ||
+      normalizeText(memoryViewerWriteAnchors.memory_feedback) ||
+      normalizeText(providerWriteAnchors.memory_feedback) ||
+      null,
+    memory_promote:
+      normalizeText(writeAnchors.memory_promote) ||
+      normalizeText(memoryViewerWriteAnchors.memory_promote) ||
+      normalizeText(providerWriteAnchors.memory_promote) ||
+      null,
+    memory_forget:
+      normalizeText(writeAnchors.memory_forget) ||
+      normalizeText(memoryViewerWriteAnchors.memory_forget) ||
+      normalizeText(providerWriteAnchors.memory_forget) ||
+      null,
+    skill_policy_plugin_upsert: normalizeText(writeAnchors.skill_policy_plugin_upsert) || null,
+    token_quota_context_upsert: normalizeText(writeAnchors.token_quota_context_upsert) || null,
+    timeline_anchor: normalizeText(writeAnchors.recent_actions) || null,
+  };
+  const timelineReady = stage4bTimeline.total > 0 || Boolean(normalizedWriteAnchors.timeline_anchor);
+
+  return {
+    status: {
+      external_memory_provider_status: externalMemoryProviderStatus,
+      memory_viewer_status: resolvedMemoryViewerStatus,
+      skill_policy_plugin_status: skillPolicyPluginStatus,
+      token_quota_context_status: tokenQuotaContextStatus,
+      workspace_plan_subscription_limit_status: workspacePlanSubscriptionLimitStatus,
+      usage_quota_readiness_status: usageQuotaReadinessStatus,
+      audit_status: auditReady ? "ok" : "pending",
+      timeline_status: timelineReady ? "ok" : "pending",
+    },
+    external_memory_provider: {
+      provider,
+      write_anchors: {
+        provider_upsert: normalizedWriteAnchors.external_memory_provider_upsert,
+        memory_search: normalizedWriteAnchors.memory_search,
+        memory_get: normalizedWriteAnchors.memory_get,
+        memory_write: normalizedWriteAnchors.memory_write,
+        memory_feedback: normalizedWriteAnchors.memory_feedback,
+        memory_promote: normalizedWriteAnchors.memory_promote,
+        memory_forget: normalizedWriteAnchors.memory_forget,
+      },
+      audit_anchor: {
+        external_memory_provider: providerAuditAnchor,
+        memory_write: memoryWriteAuditAnchor,
+        memory_feedback: memoryFeedbackAuditAnchor,
+        memory_promote: memoryPromoteAuditAnchor,
+        memory_forget: memoryForgetAuditAnchor,
+      },
+    },
+    memory_viewer: {
+      summary: memoryViewer.summary,
+      items: memoryViewer.items,
+      write_anchors: {
+        memory_viewer: normalizedWriteAnchors.memory_viewer,
+        memory_write: normalizedWriteAnchors.memory_write,
+        memory_feedback: normalizedWriteAnchors.memory_feedback,
+        memory_promote: normalizedWriteAnchors.memory_promote,
+        memory_forget: normalizedWriteAnchors.memory_forget,
+      },
+      audit_anchor: {
+        memory_write: memoryWriteAuditAnchor,
+        memory_feedback: memoryFeedbackAuditAnchor,
+        memory_promote: memoryPromoteAuditAnchor,
+        memory_forget: memoryForgetAuditAnchor,
+      },
+    },
+    skill_policy_plugin: {
+      value: skillPolicyPlugin,
+      write_anchor: normalizedWriteAnchors.skill_policy_plugin_upsert,
+      audit_anchor: skillPolicyPluginAuditAnchor,
+    },
+    token_quota_context: {
+      value: tokenQuotaContext,
+      write_anchor: normalizedWriteAnchors.token_quota_context_upsert,
+      audit_anchor: tokenQuotaContextAuditAnchor,
+    },
+    workspace_plan_subscription_limit_contract: workspacePlanSubscriptionLimitContract,
+    usage_quota_readiness_contract: usageQuotaReadinessContract,
+    timeline: {
+      anchor: normalizedWriteAnchors.timeline_anchor,
+      recent_actions: stage4bTimeline.actions,
+      total: stage4bTimeline.total,
+    },
+  };
+}
+
+function buildStage5aHostedWorkbenchProjection({
+  topicId,
+  scope,
+  runtimeConfig,
+  runtimeSmoke,
+  channelContextContract,
+  channelWorkAssignments,
+  channelOperatorActions,
+  approvalHolds,
+  topicNotifications,
+  repoBinding,
+  chain,
+}) {
+  const context = channelContextContract?.context && typeof channelContextContract.context === "object"
+    ? channelContextContract.context
+    : {};
+  const governance = channelContextContract?.governance && typeof channelContextContract.governance === "object"
+    ? channelContextContract.governance
+    : {};
+  const writeAnchors = channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+    ? channelContextContract.write_anchors
+    : {};
+  const statusSource = findStage5aStatusSource({ context, governance });
+
+  const scopeChannelId = normalizeText(scope?.channelId);
+  const scopeThreadId = normalizeText(scope?.threadId);
+  const scopeWorkitemId = normalizeText(scope?.workitemId);
+  const primaryAssignment = resolvePrimaryStage5aAssignment(channelWorkAssignments, scopeChannelId);
+  const resolvedChannelId =
+    scopeChannelId ||
+    normalizeText(channelContextContract?.channel_id) ||
+    normalizeText(primaryAssignment?.assigned_channel_id) ||
+    null;
+  const resolvedThreadId =
+    scopeThreadId ||
+    normalizeText(primaryAssignment?.assigned_thread_id) ||
+    null;
+  const resolvedWorkitemId =
+    scopeWorkitemId ||
+    normalizeText(primaryAssignment?.assigned_workitem_id) ||
+    null;
+
+  const hostedEntryUrl =
+    normalizeText(statusSource?.hosted_web_url) ||
+    normalizeText(statusSource?.hosted_entry_url) ||
+    normalizeText(statusSource?.entry_url) ||
+    normalizeText(statusSource?.hosted_url) ||
+    null;
+  const hostedHomeUrl =
+    normalizeText(statusSource?.hosted_home_url) ||
+    normalizeText(statusSource?.home_url) ||
+    hostedEntryUrl ||
+    null;
+  const hostedHomeNonLocal = isNonLocalHttpUrl(hostedHomeUrl);
+  const nonLocalAccess =
+    typeof statusSource?.non_local_access_enabled === "boolean"
+      ? statusSource.non_local_access_enabled
+      : isNonLocalHttpUrl(hostedEntryUrl);
+  const stableLoginState =
+    normalizeText(statusSource?.stable_login_state) || normalizeText(statusSource?.login_state) || "pending";
+  const loginReady =
+    stableLoginState === "stable" ||
+    stableLoginState === "ready" ||
+    normalizeText(statusSource?.session_state) === "ready" ||
+    (normalizeText(chain?.identity_link_status) === "ready" && normalizeText(chain?.installation_status) === "ready");
+  const pendingApprovals = Array.isArray(approvalHolds)
+    ? approvalHolds.filter((item) => normalizeText(item?.status) === "pending").length
+    : 0;
+  const inboxSignals = summarizeStage5aInboxSignals(topicNotifications);
+  const interventionActions = countStage5aInterventionActions(channelOperatorActions);
+  const localEntryRoot =
+    normalizeText(statusSource?.local_entry_root) ||
+    normalizeText(context?.workspace?.root_path) ||
+    normalizeText(channelContextContract?.workspace?.root_path) ||
+    normalizeText(repoBinding?.fixed_directory) ||
+    null;
+  const hostedAccessStatus = nonLocalAccess ? "ok" : hostedEntryUrl ? "local_only" : "pending";
+  const nonLocalStatus = nonLocalAccess ? "ok" : hostedEntryUrl ? "local_only" : "pending";
+  const stableLoginStatus = loginReady ? "ok" : "pending";
+  const hostedHomeStatus = hostedHomeNonLocal ? "ok" : hostedHomeUrl ? "local_only" : "pending";
+  const unifiedInboxStatus = resolvedChannelId ? "ok" : "pending";
+  const defaultFlowStatus = resolvedChannelId && resolvedThreadId && resolvedWorkitemId ? "ok" : "pending";
+  const deployRuntimeStatus = resolveStage5aDeployRuntimeStatus(statusSource, runtimeSmoke);
+  const deliverySurfaceStatus = localEntryRoot && nonLocalAccess ? "ok" : localEntryRoot && hostedEntryUrl ? "local_only" : "pending";
+
+  return {
+    status: {
+      hosted_access_status: hostedAccessStatus,
+      non_local_access_status: nonLocalStatus,
+      stable_login_status: stableLoginStatus,
+      hosted_home_status: hostedHomeStatus,
+      unified_inbox_status: unifiedInboxStatus,
+      default_flow_status: defaultFlowStatus,
+      deploy_runtime_status: deployRuntimeStatus,
+      delivery_surface_status: deliverySurfaceStatus,
+    },
+    hosted_access: {
+      hosted_entry_url: hostedEntryUrl,
+      non_local_access: nonLocalAccess,
+      hosted_web_url: hostedEntryUrl,
+      access_mode: normalizeText(statusSource?.access_mode) || "hosted_web",
+      non_local_access_enabled: nonLocalAccess,
+      stable_login_state: stableLoginState || (loginReady ? "stable" : "pending"),
+      login_provider: normalizeText(statusSource?.login_provider) || null,
+      session_ttl_minutes:
+        Number.isInteger(statusSource?.session_ttl_minutes) && statusSource.session_ttl_minutes > 0
+          ? statusSource.session_ttl_minutes
+          : null,
+      source:
+        normalizeText(statusSource?.source) ||
+        (statusSource && typeof statusSource === "object" ? "channel_context_projection" : "runtime_projection"),
+      payload: statusSource && typeof statusSource === "object" ? statusSource : {},
+      login_state: loginReady ? "ready" : "pending",
+      workspace_id: normalizeText(channelContextContract?.workspace?.workspace_id) || null,
+      channel_id: resolvedChannelId,
+      write_anchor:
+        normalizeText(writeAnchors.hosted_access_upsert) ||
+        normalizeText(writeAnchors.context_upsert) ||
+        null,
+      truth_surface: "/v1/channels/:channelId/context",
+    },
+    hosted_workbench: {
+      home: {
+        hosted_home_url: hostedHomeUrl,
+        title: normalizeText(statusSource?.home_title) || "OpenShock Hosted Workbench",
+        channel_id: resolvedChannelId,
+      },
+      unified_inbox: {
+        pending_approvals: pendingApprovals,
+        notification_signals: inboxSignals,
+        intervention_actions: interventionActions,
+      },
+      default_flow: {
+        topic_id: normalizeText(topicId) || null,
+        channel_id: resolvedChannelId,
+        thread_id: resolvedThreadId,
+        task_id: resolvedWorkitemId,
+        assignment_source: normalizeText(primaryAssignment?.status) || "runtime_projection",
+        write_anchors: {
+          work_assignment: normalizeText(writeAnchors.work_assignment_upsert) || null,
+          operator_action: normalizeText(writeAnchors.operator_action) || null,
+        },
+      },
+    },
+    deploy_runtime: {
+      status: deployRuntimeStatus,
+      runtime_name: normalizeText(runtimeConfig?.runtimeName) || null,
+      daemon_name: normalizeText(runtimeConfig?.daemonName) || null,
+      shell_url: normalizeText(runtimeConfig?.shellUrl) || null,
+      server_port: Number.isFinite(Number(runtimeConfig?.serverPort)) ? Number(runtimeConfig.serverPort) : null,
+      sample_topic_ready: runtimeSmoke?.sampleTopicReady === true,
+      write_anchor: normalizeText(writeAnchors.hosted_deploy_runtime_upsert) || null,
+      health_anchor: "/health",
+      readiness_anchor: "/runtime/smoke",
+    },
+    delivery_contract: {
+      local_entry_root: localEntryRoot,
+      hosted_entry_url: hostedEntryUrl,
+      adapter_entry: "/api/v0a/shell-state",
+      truth_surface: "/v1/*",
+      single_delivery_path: Boolean(localEntryRoot && nonLocalAccess),
+    },
+  };
+}
+
+function buildStage5bHostedWorkbenchProjection({
+  topicId,
+  scope,
+  channelContextContract,
+  channelWorkAssignments,
+  actorInboxRead,
+  stage5a,
+}) {
+  const context = channelContextContract?.context && typeof channelContextContract.context === "object"
+    ? channelContextContract.context
+    : {};
+  const governance = channelContextContract?.governance && typeof channelContextContract.governance === "object"
+    ? channelContextContract.governance
+    : {};
+  const writeAnchors = channelContextContract?.write_anchors && typeof channelContextContract.write_anchors === "object"
+    ? channelContextContract.write_anchors
+    : {};
+  const statusSource = findStage5bStatusSource({ context, governance });
+  const statusDefaultFlow = statusSource.default_flow && typeof statusSource.default_flow === "object"
+    ? statusSource.default_flow
+    : {};
+  const stage5aHostedWorkbench = stage5a?.hosted_workbench && typeof stage5a.hosted_workbench === "object"
+    ? stage5a.hosted_workbench
+    : {};
+  const stage5aHostedAccess = stage5a?.hosted_access && typeof stage5a.hosted_access === "object"
+    ? stage5a.hosted_access
+    : {};
+
+  const scopeChannelId = normalizeText(scope?.channelId);
+  const scopeThreadId = normalizeText(scope?.threadId);
+  const scopeWorkitemId = normalizeText(scope?.workitemId);
+  const primaryAssignment = resolvePrimaryStage5aAssignment(channelWorkAssignments, scopeChannelId);
+  const resolvedChannelId =
+    scopeChannelId ||
+    normalizeText(channelContextContract?.channel_id) ||
+    normalizeText(statusSource.channel_id) ||
+    normalizeText(statusDefaultFlow.channel_id) ||
+    normalizeText(primaryAssignment?.assigned_channel_id) ||
+    null;
+  const resolvedThreadId =
+    scopeThreadId ||
+    normalizeText(statusSource.thread_id) ||
+    normalizeText(statusDefaultFlow.thread_id) ||
+    normalizeText(primaryAssignment?.assigned_thread_id) ||
+    null;
+  const resolvedWorkitemId =
+    scopeWorkitemId ||
+    normalizeText(statusSource.task_id) ||
+    normalizeText(statusSource.workitem_id) ||
+    normalizeText(statusDefaultFlow.task_id) ||
+    normalizeText(statusDefaultFlow.workitem_id) ||
+    normalizeText(primaryAssignment?.assigned_workitem_id) ||
+    null;
+
+  const hostedWorkbenchUrl =
+    normalizeText(statusSource.hosted_workbench_url) ||
+    normalizeText(statusSource.hosted_home_url) ||
+    normalizeText(statusSource.home_url) ||
+    normalizeText(stage5aHostedWorkbench.home?.hosted_home_url) ||
+    normalizeText(stage5aHostedAccess.hosted_entry_url) ||
+    null;
+  const hostedWorkbenchStatus =
+    resolvedChannelId && isNonLocalHttpUrl(hostedWorkbenchUrl)
+      ? "ok"
+      : resolvedChannelId && hostedWorkbenchUrl
+        ? "local_only"
+        : "pending";
+  const defaultFlowStatus = resolvedChannelId && resolvedThreadId && resolvedWorkitemId ? "ok" : "pending";
+
+  const inboxReadStatus = normalizeText(actorInboxRead?.status) || "skipped";
+  const inboxPayload = actorInboxRead?.payload && typeof actorInboxRead.payload === "object" ? actorInboxRead.payload : {};
+  const inboxItems = Array.isArray(inboxPayload.items) ? inboxPayload.items : [];
+  const inboxSummary = summarizeStage5bInboxItems(inboxItems);
+  const unifiedInboxStatus =
+    inboxReadStatus === "ok"
+      ? "ok"
+      : inboxReadStatus === "missing" || inboxReadStatus === "skipped"
+        ? "pending"
+        : inboxReadStatus;
+  const attentionRoutingStatus =
+    inboxReadStatus === "ok"
+      ? "ok"
+      : inboxReadStatus === "missing" || inboxReadStatus === "skipped"
+        ? "pending"
+        : inboxReadStatus;
+
+  const inboxActorId = normalizeText(inboxPayload.actor_id) || normalizeText(scope?.operatorId) || null;
+  const encodedInboxActorId = inboxActorId ? encodeURIComponent(inboxActorId) : "";
+  const inboxTopicId = normalizeText(inboxPayload.topic_id) || normalizeText(topicId) || null;
+  const assignedAgentIds = Array.isArray(channelWorkAssignments)
+    ? Array.from(
+        new Set(
+          channelWorkAssignments
+            .map((item) => normalizeText(item?.agent_id))
+            .filter((item) => item.length > 0),
+        ),
+      )
+    : [];
+  const assignmentSource = normalizeText(statusSource.assignment_source) || normalizeText(primaryAssignment?.status) || "channel_projection";
+
+  return {
+    status: {
+      hosted_multi_human_workbench_status: hostedWorkbenchStatus,
+      default_flow_status: defaultFlowStatus,
+      unified_inbox_status: unifiedInboxStatus,
+      attention_routing_status: attentionRoutingStatus,
+    },
+    hosted_multi_human_workbench: {
+      hosted_home_url: hostedWorkbenchUrl,
+      hosted_web_url: hostedWorkbenchUrl,
+      channel_id: resolvedChannelId,
+      participant_mode: normalizeText(statusSource.participant_mode) || "multi_human",
+      source: normalizeText(statusSource.source) || "channel_context_projection",
+      write_anchors: {
+        work_assignment:
+          normalizeText(writeAnchors.work_assignment_upsert) ||
+          null,
+        operator_action:
+          normalizeText(writeAnchors.operator_action) ||
+          normalizeText(writeAnchors.operator_action_append) ||
+          null,
+      },
+      truth_surfaces: {
+        channel_work_assignments: "/v1/channels/:channelId/work-assignments",
+        operator_actions: "/v1/channels/:channelId/operator-actions",
+      },
+    },
+    default_flow: {
+      topic_id: normalizeText(topicId) || null,
+      channel_id: resolvedChannelId,
+      thread_id: resolvedThreadId,
+      task_id: resolvedWorkitemId,
+      assignment_source: assignmentSource,
+      assigned_agents_count: assignedAgentIds.length,
+      assigned_agent_ids: assignedAgentIds,
+      truth_surface: "/v1/channels/:channelId/work-assignments",
+    },
+    unified_inbox: {
+      actor_id: inboxActorId,
+      topic_id: inboxTopicId,
+      total_items: inboxSummary.total,
+      pending_items: inboxSummary.pending_total,
+      acked_items: inboxSummary.acked_total,
+      kind_counts: inboxSummary.kind_counts,
+      next_cursor: normalizeText(inboxPayload.next_cursor) || null,
+      source: "v1_inbox_projection",
+      read_anchor: normalizeText(actorInboxRead?.path) || null,
+      ack_anchor: inboxActorId ? `/v1/inbox/${encodedInboxActorId}/acks` : null,
+      truth_surface: "/v1/inbox/:actorId?topic_id=:topicId",
+    },
+    attention_routing: {
+      pending_approval_holds: Number(inboxSummary.kind_counts.approval_hold_pending || 0),
+      unresolved_conflicts: Number(inboxSummary.kind_counts.conflict_unresolved || 0),
+      active_blockers: Number(inboxSummary.kind_counts.blocker_active || 0),
+      pending_total: inboxSummary.pending_total,
+      acked_total: inboxSummary.acked_total,
+      attention_required_total:
+        Number(inboxSummary.kind_counts.approval_hold_pending || 0) +
+        Number(inboxSummary.kind_counts.conflict_unresolved || 0) +
+        Number(inboxSummary.kind_counts.blocker_active || 0),
+      source: "inbox_kind_projection",
+    },
+  };
+}
+
+function buildStage5cHostedRuntimeProjection({
+  scope,
+  runtimeConfig,
+  runtimeSmoke,
+  runtimeRegistry,
+  runtimeAgents,
+  runtimeWorktreeClaims,
+  runtimeRecoveryActions,
+  runtimeDeployRuntimeRead,
+  stage5a,
+}) {
+  const stage5aHostedAccess = stage5a?.hosted_access && typeof stage5a.hosted_access === "object"
+    ? stage5a.hosted_access
+    : {};
+  const deployRuntimeContract =
+    normalizeText(runtimeDeployRuntimeRead?.status) === "ok" &&
+    runtimeDeployRuntimeRead?.payload &&
+    typeof runtimeDeployRuntimeRead.payload === "object"
+      ? runtimeDeployRuntimeRead.payload.deploy_runtime
+      : null;
+  const deployHostedAccess =
+    deployRuntimeContract?.hosted_access && typeof deployRuntimeContract.hosted_access === "object"
+      ? deployRuntimeContract.hosted_access
+      : {};
+  const deployment =
+    deployRuntimeContract?.deployment && typeof deployRuntimeContract.deployment === "object"
+      ? deployRuntimeContract.deployment
+      : {};
+  const healthReadiness =
+    deployRuntimeContract?.health_readiness && typeof deployRuntimeContract.health_readiness === "object"
+      ? deployRuntimeContract.health_readiness
+      : {};
+  const releaseRecoveryUpgradeHandoff =
+    deployRuntimeContract?.release_recovery_upgrade_handoff &&
+    typeof deployRuntimeContract.release_recovery_upgrade_handoff === "object"
+      ? deployRuntimeContract.release_recovery_upgrade_handoff
+      : {};
+  const deployWriteAnchors =
+    deployRuntimeContract?.write_anchors && typeof deployRuntimeContract.write_anchors === "object"
+      ? deployRuntimeContract.write_anchors
+      : {};
+  const deployAuditAnchor =
+    deployRuntimeContract?.audit_anchor && typeof deployRuntimeContract.audit_anchor === "object"
+      ? deployRuntimeContract.audit_anchor
+      : {};
+  const deployTimelineAnchor =
+    deployRuntimeContract?.timeline_anchor && typeof deployRuntimeContract.timeline_anchor === "object"
+      ? deployRuntimeContract.timeline_anchor
+      : {};
+
+  const hostedEntryUrl =
+    normalizeText(stage5aHostedAccess.hosted_entry_url) ||
+    normalizeText(deployHostedAccess.hosted_entry_url) ||
+    null;
+  const hostedAccessStatus = isNonLocalHttpUrl(hostedEntryUrl)
+    ? "ok"
+    : hostedEntryUrl
+      ? "local_only"
+      : "pending";
+
+  const machines = Array.isArray(runtimeRegistry?.machines) ? runtimeRegistry.machines : [];
+  const summary = runtimeRegistry?.summary && typeof runtimeRegistry.summary === "object" ? runtimeRegistry.summary : {};
+  const agents = Array.isArray(runtimeAgents) ? runtimeAgents : [];
+  const claims = Array.isArray(runtimeWorktreeClaims) ? runtimeWorktreeClaims : [];
+  const recoveryActions = Array.isArray(runtimeRecoveryActions) ? runtimeRecoveryActions : [];
+  const scopeChannelId = normalizeText(scope?.channelId) || null;
+
+  const pairedStates = new Set(["paired", "ready", "active"]);
+  const pairedAgents = agents.filter((item) => pairedStates.has(normalizeText(item?.pairing_state)));
+  const onlineAgents = agents.filter((item) => normalizeText(item?.liveness) === "online");
+  const pendingPairingAgentIds = agents
+    .filter((item) => {
+      const pairingState = normalizeText(item?.pairing_state);
+      const agentId = normalizeText(item?.agent_id);
+      if (!agentId) {
+        return false;
+      }
+      return !pairedStates.has(pairingState);
+    })
+    .map((item) => normalizeText(item?.agent_id))
+    .filter((item) => item.length > 0);
+  const scopeBoundAgents = scopeChannelId
+    ? agents.filter((item) => normalizeText(item?.assigned_channel_id) === scopeChannelId)
+    : [];
+  const pairingTruthReady = agents.length > 0 && pendingPairingAgentIds.length === 0 && onlineAgents.length === agents.length;
+  const pairingStatus = resolveStage5cHostedStatus(pairingTruthReady, hostedAccessStatus);
+
+  const onlineMachines = machines.filter((item) => {
+    const machineStatus = normalizeText(item?.status);
+    const liveness = normalizeText(item?.liveness);
+    return machineStatus === "online" || liveness === "online";
+  });
+  const activeClaims = claims.filter((item) => normalizeText(item?.claim_status) !== "released");
+  const reclaimedClaims = claims.filter((item) => normalizeText(item?.reclaimed_from_agent_id).length > 0);
+  const machineFleetTruthReady = machines.length > 0 && onlineMachines.length === machines.length;
+  const machineFleetStatus = resolveStage5cHostedStatus(machineFleetTruthReady, hostedAccessStatus);
+
+  const deploymentStatus = normalizeText(deployment?.status) || "not_deployed";
+  const deployRuntimeTruthReady = Boolean(deployRuntimeContract) && deploymentStatus === "ready";
+  const deployRuntimeStatus = resolveStage5cHostedStatus(deployRuntimeTruthReady, hostedAccessStatus);
+
+  const healthStatus = normalizeText(healthReadiness?.health_status) || "unknown";
+  const readinessStatus = normalizeText(healthReadiness?.readiness_status) || "not_ready";
+  const healthReadinessTruthReady = Boolean(deployRuntimeContract) && healthStatus === "healthy" && readinessStatus === "ready";
+  const healthReadinessStatus = resolveStage5cHostedStatus(healthReadinessTruthReady, hostedAccessStatus);
+
+  const lifecycleStatus = normalizeText(releaseRecoveryUpgradeHandoff?.status) || "draft";
+  const lifecycleTruthReady = lifecycleStatus === "ready" || lifecycleStatus === "in_progress" || lifecycleStatus === "completed";
+  const releaseRecoveryUpgradeHandoffStatus = resolveStage5cHostedStatus(
+    Boolean(deployRuntimeContract) && lifecycleTruthReady,
+    hostedAccessStatus,
+  );
+
+  const hostedRuntimeControlVisibilityReady =
+    pairingTruthReady &&
+    machineFleetTruthReady &&
+    deployRuntimeTruthReady &&
+    healthReadinessTruthReady &&
+    lifecycleTruthReady;
+  const hostedRuntimeControlVisibilityStatus = resolveStage5cHostedStatus(
+    Boolean(deployRuntimeContract) && hostedRuntimeControlVisibilityReady,
+    hostedAccessStatus,
+  );
+
+  const latestRecoveryAction = recoveryActions.length > 0 ? recoveryActions[0] : null;
+  const projectionSource = deployRuntimeContract ? "runtime_deploy_runtime_projection" : "runtime_registry_projection";
+
+  return {
+    status: {
+      hosted_runtime_control_visibility_status: hostedRuntimeControlVisibilityStatus,
+      remote_daemon_pairing_status: pairingStatus,
+      machine_fleet_status: machineFleetStatus,
+      deploy_runtime_status: deployRuntimeStatus,
+      health_readiness_status: healthReadinessStatus,
+      release_recovery_upgrade_handoff_status: releaseRecoveryUpgradeHandoffStatus,
+    },
+    hosted_runtime_entry: {
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      channel_id: normalizeText(stage5aHostedAccess.channel_id) || scopeChannelId || null,
+      source: projectionSource,
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    remote_daemon_pairing: {
+      status: pairingStatus,
+      total_agents: agents.length,
+      paired_agents: pairedAgents.length,
+      online_agents: onlineAgents.length,
+      channel_bound_agents: scopeBoundAgents.length,
+      pending_pairing_agent_ids: pendingPairingAgentIds.slice(0, 20),
+      source: "v1_runtime_agents_projection",
+      read_anchor: "/v1/runtime/agents",
+      truth_surfaces: {
+        agents: "/v1/runtime/agents",
+        registry: "/v1/runtime/registry",
+      },
+    },
+    machine_fleet: {
+      status: machineFleetStatus,
+      machine_count: machines.length,
+      online_machine_count: onlineMachines.length,
+      offline_machine_count: Math.max(0, machines.length - onlineMachines.length),
+      active_worktree_claim_count: activeClaims.length,
+      reclaimed_worktree_claim_count: reclaimedClaims.length,
+      total_runtime_agents:
+        Number.isFinite(Number(summary.agent_count)) && Number(summary.agent_count) >= 0
+          ? Number(summary.agent_count)
+          : agents.length,
+      summary,
+      sample_machines: machines.slice(0, 6).map((item) => ({
+        machine_id: normalizeText(item?.machine_id) || null,
+        runtime_id: normalizeText(item?.runtime_id) || null,
+        status: normalizeText(item?.status) || "unknown",
+        liveness: normalizeText(item?.liveness) || "unknown",
+        last_seen_at: item?.last_seen_at || null,
+      })),
+      source: "v1_runtime_registry_projection",
+      truth_surfaces: {
+        registry: "/v1/runtime/registry",
+        worktree_claims: "/v1/runtime/worktree-claims",
+      },
+    },
+    deploy_runtime: {
+      status: deployRuntimeStatus,
+      deployment_status: deploymentStatus,
+      runtime_version: normalizeText(deployment?.runtime_version) || null,
+      target_ref: normalizeText(deployment?.target_ref) || null,
+      release_channel: normalizeText(deployment?.release_channel) || null,
+      updated_at: deployment?.updated_at || null,
+      updated_by: normalizeText(deployment?.updated_by) || null,
+      write_anchor: normalizeText(deployWriteAnchors?.deploy_runtime_upsert) || "/v1/runtime/deploy-runtime",
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    health_readiness: {
+      status: healthReadinessStatus,
+      health_status: healthStatus,
+      readiness_status: readinessStatus,
+      checked_at: healthReadiness?.checked_at || null,
+      check_ref: normalizeText(healthReadiness?.check_ref) || null,
+      notes: normalizeText(healthReadiness?.notes) || null,
+      timeline_anchor: normalizeText(deployTimelineAnchor?.health) || "/health",
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    release_recovery_upgrade_handoff: {
+      status: releaseRecoveryUpgradeHandoffStatus,
+      lifecycle_status: lifecycleStatus,
+      release_ref: normalizeText(releaseRecoveryUpgradeHandoff?.release_ref) || null,
+      recovery_ref: normalizeText(releaseRecoveryUpgradeHandoff?.recovery_ref) || null,
+      upgrade_ref: normalizeText(releaseRecoveryUpgradeHandoff?.upgrade_ref) || null,
+      handoff_ref: normalizeText(releaseRecoveryUpgradeHandoff?.handoff_ref) || null,
+      runbook_ref: normalizeText(releaseRecoveryUpgradeHandoff?.runbook_ref) || null,
+      last_drill_at: releaseRecoveryUpgradeHandoff?.last_drill_at || null,
+      updated_at: releaseRecoveryUpgradeHandoff?.updated_at || null,
+      updated_by: normalizeText(releaseRecoveryUpgradeHandoff?.updated_by) || null,
+      latest_recovery_action: latestRecoveryAction
+        ? {
+            action_id: normalizeText(latestRecoveryAction.action_id) || null,
+            action: normalizeText(latestRecoveryAction.action) || "unknown",
+            status: normalizeText(latestRecoveryAction.status) || "unknown",
+            agent_id: normalizeText(latestRecoveryAction.agent_id) || null,
+            at: latestRecoveryAction.at || null,
+          }
+        : null,
+      write_anchors: {
+        deploy_runtime_upsert: normalizeText(deployWriteAnchors?.deploy_runtime_upsert) || "/v1/runtime/deploy-runtime",
+        runtime_recovery_action:
+          normalizeText(deployWriteAnchors?.runtime_recovery_action) || "/v1/runtime/agents/:agentId/recovery-actions",
+      },
+      audit_anchor:
+        deployAuditAnchor?.latest && typeof deployAuditAnchor.latest === "object" ? deployAuditAnchor.latest.deploy_runtime : null,
+      timeline_anchor: {
+        runtime_registry: normalizeText(deployTimelineAnchor?.runtime_registry) || "/v1/runtime/registry",
+        runtime_recovery_actions:
+          normalizeText(deployTimelineAnchor?.runtime_recovery_actions) || "/v1/runtime/recovery-actions",
+      },
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    hosted_control_visibility: {
+      status: hostedRuntimeControlVisibilityStatus,
+      shell_state_anchor: "/api/v0a/shell-state",
+      no_shadow_truth: true,
+      truth_family: ["/v1/runtime/*"],
+      read_surfaces: [
+        "/v1/runtime/registry",
+        "/v1/runtime/agents",
+        "/v1/runtime/worktree-claims",
+        "/v1/runtime/deploy-runtime",
+        "/v1/runtime/recovery-actions",
+      ],
+      runtime_name: normalizeText(runtimeConfig?.runtimeName) || null,
+      daemon_name: normalizeText(runtimeConfig?.daemonName) || null,
+      sample_topic_ready: runtimeSmoke?.sampleTopicReady === true,
+    },
+  };
+}
+
+function buildStage6aHostedOnboardingProjection({ scope, workspaceGovernance, stage5a, stage5b, stage5c }) {
+  const stage5aStatus = stage5a?.status && typeof stage5a.status === "object" ? stage5a.status : {};
+  const stage5aHostedAccess =
+    stage5a?.hosted_access && typeof stage5a.hosted_access === "object" ? stage5a.hosted_access : {};
+  const stage5aHostedWorkbench =
+    stage5a?.hosted_workbench && typeof stage5a.hosted_workbench === "object" ? stage5a.hosted_workbench : {};
+  const stage5bStatus = stage5b?.status && typeof stage5b.status === "object" ? stage5b.status : {};
+  const stage5bHostedWorkbench =
+    stage5b?.hosted_multi_human_workbench && typeof stage5b.hosted_multi_human_workbench === "object"
+      ? stage5b.hosted_multi_human_workbench
+      : {};
+  const stage5bDefaultFlow = stage5b?.default_flow && typeof stage5b.default_flow === "object" ? stage5b.default_flow : {};
+  const stage5cStatus = stage5c?.status && typeof stage5c.status === "object" ? stage5c.status : {};
+
+  const workspaceChain =
+    workspaceGovernance?.chain && typeof workspaceGovernance.chain === "object" ? workspaceGovernance.chain : {};
+  const workspaceMembers = Array.isArray(workspaceGovernance?.members) ? workspaceGovernance.members : [];
+  const workspaceAuthIdentities = Array.isArray(workspaceGovernance?.auth_identities)
+    ? workspaceGovernance.auth_identities
+    : [];
+  const workspaceInstallations = Array.isArray(workspaceGovernance?.github_installations)
+    ? workspaceGovernance.github_installations
+    : [];
+  const workspaceRepoBindings = Array.isArray(workspaceGovernance?.repo_bindings) ? workspaceGovernance.repo_bindings : [];
+
+  const hostedEntryUrl =
+    normalizeText(stage5aHostedAccess.hosted_entry_url) ||
+    normalizeText(stage5aHostedAccess.hosted_web_url) ||
+    normalizeText(stage5bHostedWorkbench.hosted_home_url) ||
+    normalizeText(stage5aHostedWorkbench?.home?.hosted_home_url) ||
+    null;
+  let hostedAccessStatus = normalizeText(stage5aStatus.hosted_access_status);
+  if (!hostedAccessStatus) {
+    if (isNonLocalHttpUrl(hostedEntryUrl)) {
+      hostedAccessStatus = "ok";
+    } else if (hostedEntryUrl) {
+      hostedAccessStatus = "local_only";
+    } else {
+      hostedAccessStatus = "pending";
+    }
+  }
+
+  const invitedMemberCount = workspaceMembers.filter((item) => {
+    const status = normalizeText(item?.status);
+    return status === "invited" || status === "pending_invite" || status === "invite_sent";
+  }).length;
+  const joinedMemberCount = workspaceMembers.filter((item) => {
+    const status = normalizeText(item?.status);
+    return status === "active" || status === "joined" || Boolean(item?.joined_at);
+  }).length;
+  const verifiedIdentityCount = workspaceAuthIdentities.filter((item) => {
+    const status = normalizeText(item?.status);
+    return status === "linked" || status === "verified" || status === "active" || normalizeText(item?.provider_user_id).length > 0;
+  }).length;
+  const inviteVerifyJoinReady =
+    joinedMemberCount > 0 && verifiedIdentityCount > 0 && (invitedMemberCount > 0 || joinedMemberCount > 0);
+  const inviteVerifyJoinStatus = resolveStage6aHostedStatus(inviteVerifyJoinReady, hostedAccessStatus);
+
+  const activeInstallationCount = workspaceInstallations.filter((item) => {
+    const status = normalizeText(item?.status);
+    return status === "installed" || status === "active" || status === "ready";
+  }).length;
+  const activeRepoBindingCount = workspaceRepoBindings.filter((item) => {
+    const status = normalizeText(item?.status);
+    const repoRef = normalizeText(item?.repo_ref);
+    return status === "active" || status === "ready" || status === "bound" || repoRef.length > 0;
+  }).length;
+  const installationChainReady = normalizeText(workspaceChain.installation_status) === "ready";
+  const repoBindingChainReady = normalizeText(workspaceChain.repo_binding_status) === "ready";
+  const githubInstallRepoBindingReady =
+    (activeInstallationCount > 0 || installationChainReady) && (activeRepoBindingCount > 0 || repoBindingChainReady);
+  const githubInstallRepoBindingStatus = resolveStage6aHostedStatus(githubInstallRepoBindingReady, hostedAccessStatus);
+
+  const remotePairingReady = isHostedReadyStatus(normalizeText(stage5cStatus.remote_daemon_pairing_status));
+  const machineFleetReady = isHostedReadyStatus(normalizeText(stage5cStatus.machine_fleet_status));
+  const runtimeVisibilityReady = isHostedReadyStatus(normalizeText(stage5cStatus.hosted_runtime_control_visibility_status));
+  const deviceAuthorizationRuntimeAttachReady = remotePairingReady && machineFleetReady && runtimeVisibilityReady;
+  const deviceAuthorizationRuntimeAttachStatus = resolveStage6aHostedStatus(
+    deviceAuthorizationRuntimeAttachReady,
+    hostedAccessStatus,
+  );
+
+  const stage5DefaultFlowReady = isHostedReadyStatus(normalizeText(stage5bStatus.default_flow_status));
+  const stage5HostedWorkbenchReady = isHostedReadyStatus(normalizeText(stage5bStatus.hosted_multi_human_workbench_status));
+  const stage5InboxReady = isHostedReadyStatus(normalizeText(stage5bStatus.unified_inbox_status));
+  const stage5WorkbenchHandoffReady =
+    stage5DefaultFlowReady && stage5HostedWorkbenchReady && stage5InboxReady && runtimeVisibilityReady;
+  const stage5WorkbenchHandoffStatus = resolveStage6aHostedStatus(stage5WorkbenchHandoffReady, hostedAccessStatus);
+
+  const hostedOnboardingAccessReady =
+    inviteVerifyJoinReady &&
+    githubInstallRepoBindingReady &&
+    deviceAuthorizationRuntimeAttachReady &&
+    stage5WorkbenchHandoffReady;
+  const hostedOnboardingAccessStatus = resolveStage6aHostedStatus(hostedOnboardingAccessReady, hostedAccessStatus);
+
+  const scopeChannelId = normalizeText(scope?.channelId) || null;
+  const resolvedChannelId =
+    normalizeText(stage5bDefaultFlow.channel_id) || normalizeText(stage5aHostedAccess.channel_id) || scopeChannelId;
+  const resolvedThreadId = normalizeText(stage5bDefaultFlow.thread_id) || normalizeText(scope?.threadId) || null;
+  const resolvedWorkitemId =
+    normalizeText(stage5bDefaultFlow.task_id) ||
+    normalizeText(stage5bDefaultFlow.workitem_id) ||
+    normalizeText(scope?.workitemId) ||
+    null;
+
+  return {
+    status: {
+      hosted_onboarding_access_status: hostedOnboardingAccessStatus,
+      invite_verify_join_status: inviteVerifyJoinStatus,
+      github_install_repo_binding_status: githubInstallRepoBindingStatus,
+      device_authorization_runtime_attach_status: deviceAuthorizationRuntimeAttachStatus,
+      stage5_workbench_handoff_status: stage5WorkbenchHandoffStatus,
+    },
+    hosted_onboarding_access: {
+      status: hostedOnboardingAccessStatus,
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      workspace_id: normalizeText(workspaceGovernance?.workspace_id) || null,
+      no_shadow_truth: true,
+      truth_family: ["/v1/channels/*", "/v1/topics/*", "/v1/runtime/*"],
+      read_surfaces: [
+        "/v1/channels/:channelId/context",
+        "/v1/channels/:channelId/repo-binding",
+        "/v1/runtime/registry",
+        "/v1/runtime/agents",
+        "/v1/runtime/deploy-runtime",
+      ],
+      source: "stage5_truth_fan_in",
+    },
+    invite_verify_join: {
+      status: inviteVerifyJoinStatus,
+      invited_member_count: invitedMemberCount,
+      verified_identity_count: verifiedIdentityCount,
+      joined_member_count: joinedMemberCount,
+      member_truth_surface: "/v1/channels/:channelId/context",
+      identity_truth_surface: "/v1/channels/:channelId/context",
+    },
+    github_install_repo_binding: {
+      status: githubInstallRepoBindingStatus,
+      active_installation_count: activeInstallationCount,
+      active_repo_binding_count: activeRepoBindingCount,
+      installation_chain_status: normalizeText(workspaceChain.installation_status) || "pending",
+      repo_binding_chain_status: normalizeText(workspaceChain.repo_binding_status) || "pending",
+      installation_truth_surface: "/v1/channels/:channelId/context",
+      repo_binding_truth_surface: "/v1/channels/:channelId/repo-binding",
+    },
+    device_authorization_runtime_attach: {
+      status: deviceAuthorizationRuntimeAttachStatus,
+      remote_daemon_pairing_status: normalizeText(stage5cStatus.remote_daemon_pairing_status) || "pending",
+      machine_fleet_status: normalizeText(stage5cStatus.machine_fleet_status) || "pending",
+      hosted_runtime_control_visibility_status:
+        normalizeText(stage5cStatus.hosted_runtime_control_visibility_status) || "pending",
+      truth_family: ["/v1/runtime/*"],
+      read_surfaces: ["/v1/runtime/registry", "/v1/runtime/agents", "/v1/runtime/deploy-runtime"],
+    },
+    stage5_workbench_handoff: {
+      status: stage5WorkbenchHandoffStatus,
+      stage5_default_flow_status: normalizeText(stage5bStatus.default_flow_status) || "pending",
+      stage5_hosted_workbench_status: normalizeText(stage5bStatus.hosted_multi_human_workbench_status) || "pending",
+      stage5_unified_inbox_status: normalizeText(stage5bStatus.unified_inbox_status) || "pending",
+      stage5_runtime_control_visibility_status:
+        normalizeText(stage5cStatus.hosted_runtime_control_visibility_status) || "pending",
+      topic_id: normalizeText(stage5bDefaultFlow.topic_id) || null,
+      channel_id: resolvedChannelId,
+      thread_id: resolvedThreadId,
+      task_id: resolvedWorkitemId,
+      hosted_workbench_url:
+        normalizeText(stage5bHostedWorkbench.hosted_home_url) ||
+        normalizeText(stage5aHostedWorkbench?.home?.hosted_home_url) ||
+        hostedEntryUrl,
+      truth_surface: "/api/v0a/shell-state",
+    },
+  };
+}
+
+function buildStage6bHostedNotificationRecoveryProjection({ scope, workspaceGovernance, stage5b, stage5c, stage6a }) {
+  const stage4a2 =
+    workspaceGovernance?.stage4a2 && typeof workspaceGovernance.stage4a2 === "object" ? workspaceGovernance.stage4a2 : {};
+  const stage4a2Status = stage4a2.status && typeof stage4a2.status === "object" ? stage4a2.status : {};
+  const stage4a2Notification =
+    stage4a2.notification && typeof stage4a2.notification === "object" ? stage4a2.notification : {};
+  const stage4a2Approval = stage4a2.approval && typeof stage4a2.approval === "object" ? stage4a2.approval : {};
+  const notificationEndpoints = Array.isArray(stage4a2Notification.endpoints) ? stage4a2Notification.endpoints : [];
+  const routingRules = Array.isArray(stage4a2Notification.routing_rules) ? stage4a2Notification.routing_rules : [];
+  const recentSignals =
+    stage4a2Notification.recent_signal_summary && typeof stage4a2Notification.recent_signal_summary === "object"
+      ? stage4a2Notification.recent_signal_summary
+      : {};
+  const notificationAccessContract =
+    stage4a2Notification.notification_access_contract &&
+    typeof stage4a2Notification.notification_access_contract === "object"
+      ? stage4a2Notification.notification_access_contract
+      : {};
+  const notificationAccessStatus =
+    notificationAccessContract.status && typeof notificationAccessContract.status === "object"
+      ? notificationAccessContract.status
+      : {};
+  const notificationAccessEndpointStatus =
+    notificationAccessContract.endpoint_status && typeof notificationAccessContract.endpoint_status === "object"
+      ? notificationAccessContract.endpoint_status
+      : {};
+  const agentMailboxRoutingContract =
+    stage4a2Notification.agent_mailbox_routing && typeof stage4a2Notification.agent_mailbox_routing === "object"
+      ? stage4a2Notification.agent_mailbox_routing
+      : {};
+
+  const stage5bStatus = stage5b?.status && typeof stage5b.status === "object" ? stage5b.status : {};
+  const stage5bDefaultFlow = stage5b?.default_flow && typeof stage5b.default_flow === "object" ? stage5b.default_flow : {};
+  const stage5bUnifiedInbox =
+    stage5b?.unified_inbox && typeof stage5b.unified_inbox === "object" ? stage5b.unified_inbox : {};
+  const stage5bAttentionRouting =
+    stage5b?.attention_routing && typeof stage5b.attention_routing === "object" ? stage5b.attention_routing : {};
+
+  const stage5cReleaseRecoveryUpgradeHandoff =
+    stage5c?.release_recovery_upgrade_handoff && typeof stage5c.release_recovery_upgrade_handoff === "object"
+      ? stage5c.release_recovery_upgrade_handoff
+      : {};
+
+  const stage6aStatus = stage6a?.status && typeof stage6a.status === "object" ? stage6a.status : {};
+  const stage6aHostedOnboardingAccess =
+    stage6a?.hosted_onboarding_access && typeof stage6a.hosted_onboarding_access === "object"
+      ? stage6a.hosted_onboarding_access
+      : {};
+  const stage6aWorkbenchHandoff =
+    stage6a?.stage5_workbench_handoff && typeof stage6a.stage5_workbench_handoff === "object"
+      ? stage6a.stage5_workbench_handoff
+      : {};
+
+  const hostedEntryUrl =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_entry_url) ||
+    normalizeText(stage6aWorkbenchHandoff.hosted_workbench_url) ||
+    null;
+  let hostedAccessStatus =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_access_status) ||
+    normalizeText(stage6aStatus.hosted_onboarding_access_status);
+  if (!hostedAccessStatus) {
+    if (isNonLocalHttpUrl(hostedEntryUrl)) {
+      hostedAccessStatus = "ok";
+    } else if (hostedEntryUrl) {
+      hostedAccessStatus = "local_only";
+    } else {
+      hostedAccessStatus = "pending";
+    }
+  }
+
+  const contractStatusPresent =
+    normalizeText(notificationAccessStatus.notification_access_status) ||
+    normalizeText(notificationAccessStatus.invite_status) ||
+    normalizeText(notificationAccessStatus.verify_status) ||
+    normalizeText(notificationAccessStatus.reset_password_status);
+  const inboxEndpointEnabled =
+    isStage6bEndpointReadyByContract(notificationAccessEndpointStatus.inbox) ||
+    isStage6bEndpointEnabled(notificationEndpoints, "inbox");
+  const browserPushEndpointEnabled =
+    isStage6bEndpointReadyByContract(notificationAccessEndpointStatus.browser_push) ||
+    isStage6bEndpointReadyByContract(notificationAccessEndpointStatus.browserPush) ||
+    isStage6bEndpointEnabled(notificationEndpoints, "browser_push");
+  const emailEndpointEnabled =
+    isStage6bEndpointReadyByContract(notificationAccessEndpointStatus.email) ||
+    isStage6bEndpointEnabled(notificationEndpoints, "email");
+  const endpointReadyByChannel = {
+    inbox: inboxEndpointEnabled,
+    browser_push: browserPushEndpointEnabled,
+    email: emailEndpointEnabled,
+  };
+
+  const inviteVerifyResetPasswordReady = contractStatusPresent
+    ? normalizeText(notificationAccessStatus.notification_access_status) === "ready" &&
+      normalizeText(notificationAccessStatus.invite_status) === "ready" &&
+      normalizeText(notificationAccessStatus.verify_status) === "ready" &&
+      normalizeText(notificationAccessStatus.reset_password_status) === "ready"
+    : emailEndpointEnabled &&
+      hasStage6bRouteCoverage(routingRules, "email", ["invite", "verify", "reset_password"]);
+  const blockedEscalationChannels = normalizeStringArray(agentMailboxRoutingContract?.blocked_escalation?.channels);
+  const approvalRequiredChannels = normalizeStringArray(agentMailboxRoutingContract?.approval_required?.channels);
+  const prReadyChannels = normalizeStringArray(agentMailboxRoutingContract?.pr_ready?.channels);
+  const agentMailboxChannels = normalizeStringArray(agentMailboxRoutingContract?.agent_mailbox?.channels);
+  const agentMailboxContractPresent =
+    normalizeText(agentMailboxRoutingContract.contract_version) ||
+    blockedEscalationChannels.length > 0 ||
+    approvalRequiredChannels.length > 0 ||
+    prReadyChannels.length > 0 ||
+    agentMailboxChannels.length > 0;
+
+  const blockedEscalationReady = agentMailboxContractPresent
+    ? areStage6bRouteChannelsReady(blockedEscalationChannels, endpointReadyByChannel)
+    : inboxEndpointEnabled &&
+      browserPushEndpointEnabled &&
+      emailEndpointEnabled &&
+      hasStage6bRouteCoverage(routingRules, "inbox", ["blocked"]) &&
+      hasStage6bRouteCoverage(routingRules, "browser_push", ["blocked", "high_priority_escalation"]) &&
+      hasStage6bRouteCoverage(routingRules, "email", ["high_priority_escalation"]);
+  const approvalRequiredPrReadyReady = agentMailboxContractPresent
+    ? areStage6bRouteChannelsReady(approvalRequiredChannels, endpointReadyByChannel) &&
+      areStage6bRouteChannelsReady(prReadyChannels, endpointReadyByChannel)
+    : inboxEndpointEnabled &&
+      browserPushEndpointEnabled &&
+      hasStage6bRouteCoverage(routingRules, "inbox", ["approval_required", "pr_pending_review"]) &&
+      hasStage6bRouteCoverage(routingRules, "browser_push", ["approval_required", "pr_pending_review"]);
+
+  const stage5MailboxReady =
+    isHostedReadyStatus(normalizeText(stage5bStatus.unified_inbox_status)) &&
+    isHostedReadyStatus(normalizeText(stage5bStatus.attention_routing_status));
+  const agentMailboxRoutingReady = agentMailboxContractPresent
+    ? areStage6bRouteChannelsReady(agentMailboxChannels, endpointReadyByChannel) && stage5MailboxReady
+    : inboxEndpointEnabled && stage5MailboxReady;
+
+  const resolvedTopicId =
+    normalizeText(stage5bDefaultFlow.topic_id) || normalizeText(stage5bUnifiedInbox.topic_id) || null;
+  const resolvedChannelId =
+    normalizeText(stage5bDefaultFlow.channel_id) ||
+    normalizeText(stage6aWorkbenchHandoff.channel_id) ||
+    normalizeText(scope?.channelId) ||
+    null;
+  const resolvedThreadId =
+    normalizeText(stage5bDefaultFlow.thread_id) ||
+    normalizeText(stage6aWorkbenchHandoff.thread_id) ||
+    normalizeText(scope?.threadId) ||
+    null;
+  const resolvedTaskId =
+    normalizeText(stage5bDefaultFlow.task_id) ||
+    normalizeText(stage6aWorkbenchHandoff.task_id) ||
+    normalizeText(scope?.workitemId) ||
+    null;
+  const runTimelineAnchor =
+    normalizeText(stage4a2Approval?.contract?.anchors?.run_timeline) ||
+    normalizeText(stage5cReleaseRecoveryUpgradeHandoff?.timeline_anchor?.runtime_recovery_actions) ||
+    "/v1/topics/:topicId/run-history";
+  const prReentrySurface =
+    normalizeText(agentMailboxRoutingContract?.pr_ready?.mailbox_ref) || "/v1/topics/:topicId/pr-writeback";
+  const hostedRecoveryEntryUrl =
+    normalizeText(stage6aWorkbenchHandoff.hosted_workbench_url) || normalizeText(stage6aHostedOnboardingAccess.hosted_entry_url) || null;
+  const recoveryReentryReady =
+    resolvedChannelId &&
+    resolvedTopicId &&
+    resolvedThreadId &&
+    resolvedTaskId &&
+    runTimelineAnchor &&
+    prReentrySurface &&
+    isHostedReadyStatus(normalizeText(stage6aStatus.stage5_workbench_handoff_status));
+
+  const hostedNotificationRecoveryReady =
+    inviteVerifyResetPasswordReady &&
+    blockedEscalationReady &&
+    approvalRequiredPrReadyReady &&
+    agentMailboxRoutingReady &&
+    recoveryReentryReady;
+
+  const inviteVerifyResetPasswordStatus = resolveStage6bHostedStatus(inviteVerifyResetPasswordReady, hostedAccessStatus);
+  const blockedEscalationStatus = resolveStage6bHostedStatus(blockedEscalationReady, hostedAccessStatus);
+  const approvalRequiredPrReadyStatus = resolveStage6bHostedStatus(approvalRequiredPrReadyReady, hostedAccessStatus);
+  const agentMailboxRoutingStatus = resolveStage6bHostedStatus(agentMailboxRoutingReady, hostedAccessStatus);
+  const recoveryReentryStatus = resolveStage6bHostedStatus(recoveryReentryReady, hostedAccessStatus);
+  const hostedNotificationRecoveryStatus = resolveStage6bHostedStatus(hostedNotificationRecoveryReady, hostedAccessStatus);
+
+  const blockedSignalCount =
+    Number(recentSignals.blocked || 0) + Number(stage5bAttentionRouting.active_blockers || 0);
+  const approvalRequiredSignalCount =
+    Number(recentSignals.approval_required || 0) + Number(stage5bAttentionRouting.pending_approval_holds || 0);
+  const prPendingReviewSignalCount = Number(recentSignals.pr_pending_review || 0);
+
+  return {
+    status: {
+      hosted_notification_recovery_status: hostedNotificationRecoveryStatus,
+      invite_verify_reset_password_status: inviteVerifyResetPasswordStatus,
+      blocked_escalation_status: blockedEscalationStatus,
+      approval_required_pr_ready_status: approvalRequiredPrReadyStatus,
+      agent_mailbox_routing_status: agentMailboxRoutingStatus,
+      recovery_reentry_status: recoveryReentryStatus,
+    },
+    hosted_notification_recovery: {
+      status: hostedNotificationRecoveryStatus,
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      source: "stage6b_truth_fan_in",
+      no_shadow_truth: true,
+      truth_family: ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"],
+      read_surfaces: [
+        "/v1/channels/:channelId/context",
+        "/v1/topics/:topicId/notifications",
+        "/v1/inbox/:actorId?topic_id=:topicId",
+      ],
+    },
+    notification_delivery: {
+      status: inviteVerifyResetPasswordStatus,
+      inbox_endpoint_status: inboxEndpointEnabled ? "enabled" : "disabled",
+      browser_push_endpoint_status: browserPushEndpointEnabled ? "enabled" : "disabled",
+      email_endpoint_status: emailEndpointEnabled ? "enabled" : "disabled",
+      invite_verify_reset_password_ready: inviteVerifyResetPasswordReady,
+      notification_access_contract_status:
+        normalizeText(notificationAccessStatus.notification_access_status) || "pending",
+      notification_access_contract_version:
+        normalizeText(notificationAccessContract.contract_version) || null,
+      endpoint_count: notificationEndpoints.length,
+      routing_rules_status: normalizeText(stage4a2Status.routing_rules_status) || "pending",
+      routing_rule_count: routingRules.length,
+      endpoint_truth_surface: "/v1/channels/:channelId/context",
+      routing_truth_surface: "/v1/channels/:channelId/context",
+    },
+    recovery_routing: {
+      status: resolveStage6bHostedStatus(
+        blockedEscalationReady && approvalRequiredPrReadyReady && agentMailboxRoutingReady,
+        hostedAccessStatus,
+      ),
+      contract_version: normalizeText(agentMailboxRoutingContract.contract_version) || null,
+      blocked_escalation_status: blockedEscalationStatus,
+      approval_required_pr_ready_status: approvalRequiredPrReadyStatus,
+      agent_mailbox_routing_status: agentMailboxRoutingStatus,
+      blocked_escalation_mailbox_ref:
+        normalizeText(agentMailboxRoutingContract?.blocked_escalation?.mailbox_ref) || "/v1/inbox/:actorId?topic_id=:topicId",
+      approval_required_mailbox_ref:
+        normalizeText(agentMailboxRoutingContract?.approval_required?.mailbox_ref) || "/v1/inbox/:actorId?topic_id=:topicId",
+      pr_ready_mailbox_ref:
+        normalizeText(agentMailboxRoutingContract?.pr_ready?.mailbox_ref) || "/v1/topics/:topicId/prs",
+      agent_mailbox_ref:
+        normalizeText(agentMailboxRoutingContract?.agent_mailbox?.mailbox_ref) ||
+        "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
+      blocked_signal_count: blockedSignalCount,
+      approval_required_signal_count: approvalRequiredSignalCount,
+      pr_pending_review_signal_count: prPendingReviewSignalCount,
+      agent_mailbox_actor_id: normalizeText(stage5bUnifiedInbox.actor_id) || null,
+      agent_mailbox_pending_items: Number(stage5bUnifiedInbox.pending_items || 0),
+      attention_required_total: Number(stage5bAttentionRouting.attention_required_total || 0),
+      inbox_truth_surface: "/v1/inbox/:actorId?topic_id=:topicId",
+      topic_notification_truth_surface: "/v1/topics/:topicId/notifications",
+    },
+    hosted_reentry: {
+      status: recoveryReentryStatus,
+      hosted_recovery_url: hostedRecoveryEntryUrl,
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+      thread_id: resolvedThreadId,
+      task_id: resolvedTaskId,
+      run_timeline_anchor: runTimelineAnchor,
+      pr_reentry_surface: prReentrySurface,
+      room_truth_surface: "/v1/channels/:channelId/context",
+      topic_truth_surface: "/v1/topics/:topicId",
+      source: "stage5_workbench_truth_projection",
+    },
+  };
+}
+
+function buildStage6cHostedPlanQuotaProjection({ scope, workspaceGovernance, stage5b, stage5c, stage6a }) {
+  const stage4b =
+    workspaceGovernance?.stage4b && typeof workspaceGovernance.stage4b === "object" ? workspaceGovernance.stage4b : {};
+  const stage4bStatus = stage4b.status && typeof stage4b.status === "object" ? stage4b.status : {};
+  const tokenQuotaContext =
+    stage4b?.token_quota_context && typeof stage4b.token_quota_context === "object"
+      ? stage4b.token_quota_context
+      : {};
+  const tokenQuotaContextValue =
+    tokenQuotaContext.value && typeof tokenQuotaContext.value === "object" ? tokenQuotaContext.value : {};
+  const workspacePlanSubscriptionLimitContract =
+    stage4b?.workspace_plan_subscription_limit_contract &&
+    typeof stage4b.workspace_plan_subscription_limit_contract === "object"
+      ? stage4b.workspace_plan_subscription_limit_contract
+      : {};
+  const usageQuotaReadinessContract =
+    stage4b?.usage_quota_readiness_contract && typeof stage4b.usage_quota_readiness_contract === "object"
+      ? stage4b.usage_quota_readiness_contract
+      : {};
+
+  const stage5bStatus = stage5b?.status && typeof stage5b.status === "object" ? stage5b.status : {};
+  const stage5bDefaultFlow = stage5b?.default_flow && typeof stage5b.default_flow === "object" ? stage5b.default_flow : {};
+
+  const stage5cStatus = stage5c?.status && typeof stage5c.status === "object" ? stage5c.status : {};
+  const stage5cHostedControlVisibility =
+    stage5c?.hosted_control_visibility && typeof stage5c.hosted_control_visibility === "object"
+      ? stage5c.hosted_control_visibility
+      : {};
+
+  const stage6aStatus = stage6a?.status && typeof stage6a.status === "object" ? stage6a.status : {};
+  const stage6aHostedOnboardingAccess =
+    stage6a?.hosted_onboarding_access && typeof stage6a.hosted_onboarding_access === "object"
+      ? stage6a.hosted_onboarding_access
+      : {};
+  const stage6aWorkbenchHandoff =
+    stage6a?.stage5_workbench_handoff && typeof stage6a.stage5_workbench_handoff === "object"
+      ? stage6a.stage5_workbench_handoff
+      : {};
+
+  const hostedEntryUrl =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_entry_url) ||
+    normalizeText(stage6aWorkbenchHandoff.hosted_workbench_url) ||
+    null;
+  let hostedAccessStatus =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_access_status) ||
+    normalizeText(stage6aStatus.hosted_onboarding_access_status) ||
+    normalizeText(stage5cHostedControlVisibility.hosted_access_status);
+  if (!hostedAccessStatus) {
+    if (isNonLocalHttpUrl(hostedEntryUrl)) {
+      hostedAccessStatus = "ok";
+    } else if (hostedEntryUrl) {
+      hostedAccessStatus = "local_only";
+    } else {
+      hostedAccessStatus = "pending";
+    }
+  }
+
+  const planRef =
+    normalizeText(workspacePlanSubscriptionLimitContract.plan_ref) ||
+    normalizeText(workspacePlanSubscriptionLimitContract.plan_id) ||
+    normalizeText(workspacePlanSubscriptionLimitContract.plan_code) ||
+    null;
+  const subscriptionStatus =
+    normalizeText(workspacePlanSubscriptionLimitContract.subscription_status) ||
+    normalizeText(workspacePlanSubscriptionLimitContract.plan_status) ||
+    "pending";
+  const limitStatus = normalizeText(workspacePlanSubscriptionLimitContract.limit_status) || "pending";
+  const tokenLimit =
+    workspacePlanSubscriptionLimitContract.token_limit === null ||
+    workspacePlanSubscriptionLimitContract.token_limit === undefined
+      ? tokenQuotaContextValue.token_limit === null || tokenQuotaContextValue.token_limit === undefined
+        ? null
+        : Number(tokenQuotaContextValue.token_limit)
+      : Number(workspacePlanSubscriptionLimitContract.token_limit);
+  const tokenUsed =
+    workspacePlanSubscriptionLimitContract.token_used === null ||
+    workspacePlanSubscriptionLimitContract.token_used === undefined
+      ? Number(tokenQuotaContextValue.token_used || 0)
+      : Number(workspacePlanSubscriptionLimitContract.token_used);
+  const quotaState =
+    normalizeText(usageQuotaReadinessContract.quota_state) ||
+    normalizeText(tokenQuotaContextValue.quota_state) ||
+    "pending";
+
+  const rawRemainingCapacity = pickFirstDefinedValue([
+    usageQuotaReadinessContract.remaining_capacity,
+    usageQuotaReadinessContract.remaining,
+    usageQuotaReadinessContract.capacity_remaining,
+  ]);
+  const remainingCapacity =
+    rawRemainingCapacity === null || rawRemainingCapacity === undefined
+      ? tokenLimit === null
+        ? null
+        : Math.max(tokenLimit - tokenUsed, 0)
+      : Number(rawRemainingCapacity);
+  const capacityLimit =
+    usageQuotaReadinessContract.capacity_limit === null || usageQuotaReadinessContract.capacity_limit === undefined
+      ? tokenLimit
+      : Number(usageQuotaReadinessContract.capacity_limit);
+
+  const blockReason =
+    normalizeText(usageQuotaReadinessContract.block_reason) ||
+    normalizeText(tokenQuotaContextValue.degrade_reason) ||
+    (quotaState === "blocked" ? "quota_blocked" : "none");
+  const upgradeReadiness =
+    normalizeText(usageQuotaReadinessContract.upgrade_readiness) ||
+    (quotaState === "near_limit" || quotaState === "blocked" ? "ready" : "pending");
+  const upgradePathRef =
+    normalizeText(usageQuotaReadinessContract.upgrade_path_ref) ||
+    normalizeText(usageQuotaReadinessContract.upgrade_ref) ||
+    null;
+  const usageStatus =
+    normalizeText(usageQuotaReadinessContract.usage_status) ||
+    normalizeText(usageQuotaReadinessContract.status) ||
+    "pending";
+
+  const workspaceAccessReady =
+    isHostedReadyStatus(normalizeText(stage6aStatus.hosted_onboarding_access_status)) &&
+    isHostedReadyStatus(normalizeText(stage6aStatus.stage5_workbench_handoff_status));
+  const flowSurfaceReady =
+    isHostedReadyStatus(normalizeText(stage5bStatus.default_flow_status)) &&
+    isHostedReadyStatus(normalizeText(stage5cStatus.hosted_runtime_control_visibility_status));
+
+  const planSubscriptionLimitReady =
+    Boolean(planRef) &&
+    isStage6cReadyStatus(subscriptionStatus) &&
+    isStage6cReadyStatus(limitStatus) &&
+    workspaceAccessReady;
+  const usageQuotaReadinessReady =
+    isStage6cReadyStatus(usageStatus) &&
+    isStage6cReadyStatus(quotaState) &&
+    remainingCapacity !== null &&
+    isStage6cReadyStatus(upgradeReadiness) &&
+    flowSurfaceReady;
+  const remainingCapacityReady = remainingCapacity !== null;
+  const upgradeReadinessReady = isStage6cReadyStatus(upgradeReadiness);
+  const hostedPlanQuotaReady =
+    planSubscriptionLimitReady && usageQuotaReadinessReady && remainingCapacityReady && upgradeReadinessReady;
+
+  const hostedPlanQuotaStatus = resolveStage6cHostedStatus(hostedPlanQuotaReady, hostedAccessStatus);
+  const planSubscriptionLimitStatus = resolveStage6cHostedStatus(planSubscriptionLimitReady, hostedAccessStatus);
+  const usageQuotaReadinessStatus = resolveStage6cHostedStatus(usageQuotaReadinessReady, hostedAccessStatus);
+  const remainingCapacityStatus = resolveStage6cHostedStatus(remainingCapacityReady, hostedAccessStatus);
+  const upgradeReadinessStatus = resolveStage6cHostedStatus(upgradeReadinessReady, hostedAccessStatus);
+
+  const resolvedChannelId =
+    normalizeText(stage5bDefaultFlow.channel_id) ||
+    normalizeText(stage6aWorkbenchHandoff.channel_id) ||
+    normalizeText(scope?.channelId) ||
+    null;
+  const resolvedTopicId =
+    normalizeText(stage5bDefaultFlow.topic_id) ||
+    normalizeText(stage6aWorkbenchHandoff.topic_id) ||
+    normalizeText(scope?.topicId) ||
+    null;
+
+  return {
+    status: {
+      hosted_plan_quota_status: hostedPlanQuotaStatus,
+      workspace_plan_subscription_limit_status: planSubscriptionLimitStatus,
+      usage_quota_readiness_status: usageQuotaReadinessStatus,
+      remaining_capacity_status: remainingCapacityStatus,
+      upgrade_readiness_status: upgradeReadinessStatus,
+    },
+    hosted_plan_quota: {
+      status: hostedPlanQuotaStatus,
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      source: "stage6c_truth_fan_in",
+      no_shadow_truth: true,
+      truth_family: ["/v1/channels/*", "/v1/topics/*", "/v1/runtime/*"],
+      read_surfaces: [
+        "/v1/channels/:channelId/context",
+        "/v1/topics/:topicId",
+        "/v1/runtime/deploy-runtime",
+      ],
+    },
+    workspace_plan_subscription_limit: {
+      status: planSubscriptionLimitStatus,
+      contract_version: normalizeText(workspacePlanSubscriptionLimitContract.contract_version) || null,
+      plan_ref: planRef,
+      subscription_status: subscriptionStatus,
+      limit_status: limitStatus,
+      workspace_id:
+        normalizeText(workspacePlanSubscriptionLimitContract.workspace_id) ||
+        normalizeText(stage6aHostedOnboardingAccess.workspace_id) ||
+        null,
+      token_limit: tokenLimit,
+      token_used: tokenUsed,
+      token_quota_context_status: normalizeText(stage4bStatus.token_quota_context_status) || "pending",
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+      plan_truth_surface:
+        normalizeText(workspacePlanSubscriptionLimitContract.read_anchors?.channel_context) ||
+        "/v1/channels/:channelId/context",
+      limit_truth_surface:
+        normalizeText(workspacePlanSubscriptionLimitContract.read_anchors?.token_quota_context) ||
+        "/v1/channels/:channelId/context",
+    },
+    usage_quota_readiness: {
+      status: usageQuotaReadinessStatus,
+      contract_version: normalizeText(usageQuotaReadinessContract.contract_version) || null,
+      usage_status: usageStatus,
+      quota_state: quotaState,
+      remaining_capacity: remainingCapacity,
+      capacity_limit: capacityLimit,
+      block_reason: blockReason,
+      upgrade_readiness: upgradeReadiness,
+      upgrade_path_ref: upgradePathRef,
+      context_tokens:
+        tokenQuotaContextValue.context_tokens === null || tokenQuotaContextValue.context_tokens === undefined
+          ? null
+          : Number(tokenQuotaContextValue.context_tokens),
+      context_window_tokens:
+        tokenQuotaContextValue.context_window_tokens === null || tokenQuotaContextValue.context_window_tokens === undefined
+          ? null
+          : Number(tokenQuotaContextValue.context_window_tokens),
+      recall_source: normalizeText(tokenQuotaContextValue.recall_source) || null,
+      recall_hits: Number(tokenQuotaContextValue.recall_hits || 0),
+      token_quota_context_status: normalizeText(stage4bStatus.token_quota_context_status) || "pending",
+      usage_truth_surface:
+        normalizeText(usageQuotaReadinessContract.read_anchors?.token_quota_context) ||
+        "/v1/channels/:channelId/context",
+      runtime_truth_surface:
+        normalizeText(usageQuotaReadinessContract.read_anchors?.runtime_registry) || "/v1/runtime/registry",
+    },
+  };
+}
+
+function buildStage7aHostedBillingSubscriptionProjection({
+  scope,
+  workspaceGovernance,
+  stage6a,
+  stage6b,
+  stage6c,
+  channelContextContract,
+}) {
+  const stage4a2 =
+    workspaceGovernance?.stage4a2 && typeof workspaceGovernance.stage4a2 === "object" ? workspaceGovernance.stage4a2 : {};
+  const stage4a2Status = stage4a2.status && typeof stage4a2.status === "object" ? stage4a2.status : {};
+
+  const stage6aStatus = stage6a?.status && typeof stage6a.status === "object" ? stage6a.status : {};
+  const stage6aHostedOnboardingAccess =
+    stage6a?.hosted_onboarding_access && typeof stage6a.hosted_onboarding_access === "object"
+      ? stage6a.hosted_onboarding_access
+      : {};
+  const stage6aWorkbenchHandoff =
+    stage6a?.stage5_workbench_handoff && typeof stage6a.stage5_workbench_handoff === "object"
+      ? stage6a.stage5_workbench_handoff
+      : {};
+
+  const stage6bStatus = stage6b?.status && typeof stage6b.status === "object" ? stage6b.status : {};
+  const stage6bNotificationDelivery =
+    stage6b?.notification_delivery && typeof stage6b.notification_delivery === "object" ? stage6b.notification_delivery : {};
+
+  const stage6cStatus = stage6c?.status && typeof stage6c.status === "object" ? stage6c.status : {};
+  const stage6cHostedPlanQuota =
+    stage6c?.hosted_plan_quota && typeof stage6c.hosted_plan_quota === "object" ? stage6c.hosted_plan_quota : {};
+  const stage6cPlanSubscriptionLimit =
+    stage6c?.workspace_plan_subscription_limit && typeof stage6c.workspace_plan_subscription_limit === "object"
+      ? stage6c.workspace_plan_subscription_limit
+      : {};
+  const stage6cUsageQuotaReadiness =
+    stage6c?.usage_quota_readiness && typeof stage6c.usage_quota_readiness === "object" ? stage6c.usage_quota_readiness : {};
+
+  const context =
+    channelContextContract?.context && typeof channelContextContract.context === "object"
+      ? channelContextContract.context
+      : {};
+  const governance =
+    channelContextContract?.governance && typeof channelContextContract.governance === "object"
+      ? channelContextContract.governance
+      : {};
+
+  const checkoutPaymentActivationContract = normalizeStage7aCheckoutPaymentActivationContract(
+    pickFirstDefinedValue([
+      channelContextContract?.workspace_checkout_payment_method_subscription_activation_contract,
+      channelContextContract?.workspace_checkout_payment_subscription_activation_contract,
+      channelContextContract?.workspace_checkout_payment_subscription_activation,
+      channelContextContract?.workspace_checkout_payment_method_subscription_activation,
+      channelContextContract?.checkout_payment_subscription_activation_contract,
+      channelContextContract?.checkout_payment_subscription_activation,
+      channelContextContract?.checkout_payment_method_subscription_activation_contract,
+      channelContextContract?.checkout_payment_method_subscription_activation,
+      governance.workspace_checkout_payment_subscription_activation_contract,
+      governance.workspaceCheckoutPaymentSubscriptionActivationContract,
+      governance.workspace_checkout_payment_subscription_activation,
+      governance.workspaceCheckoutPaymentSubscriptionActivation,
+      governance.workspace_checkout_payment_method_subscription_activation_contract,
+      governance.workspaceCheckoutPaymentMethodSubscriptionActivationContract,
+      governance.checkout_payment_method_subscription_activation_contract,
+      governance.checkoutPaymentMethodSubscriptionActivationContract,
+      governance.checkout_payment_subscription_activation_contract,
+      governance.checkoutPaymentSubscriptionActivationContract,
+      governance.checkout_payment_subscription_activation,
+      governance.checkoutPaymentSubscriptionActivation,
+      context.workspace_checkout_payment_subscription_activation_contract,
+      context.workspaceCheckoutPaymentSubscriptionActivationContract,
+      context.workspace_checkout_payment_subscription_activation,
+      context.workspaceCheckoutPaymentSubscriptionActivation,
+      context.workspace_checkout_payment_method_subscription_activation_contract,
+      context.workspaceCheckoutPaymentMethodSubscriptionActivationContract,
+      context.checkout_payment_method_subscription_activation_contract,
+      context.checkoutPaymentMethodSubscriptionActivationContract,
+      context.checkout_payment_subscription_activation_contract,
+      context.checkoutPaymentSubscriptionActivationContract,
+      context.checkout_payment_subscription_activation,
+      context.checkoutPaymentSubscriptionActivation,
+    ]),
+  );
+  const subscriptionLifecycleRecoveryContract = normalizeStage7aSubscriptionLifecycleRecoveryContract(
+    pickFirstDefinedValue([
+      channelContextContract?.subscription_lifecycle_recovery_contract,
+      channelContextContract?.subscription_renewal_recovery_contract,
+      channelContextContract?.subscription_renewal_failure_cancel_resume_grace_recovery_contract,
+      channelContextContract?.subscription_recovery_contract,
+      governance.subscription_lifecycle_recovery_contract,
+      governance.subscriptionLifecycleRecoveryContract,
+      governance.subscription_renewal_recovery_contract,
+      governance.subscriptionRenewalRecoveryContract,
+      governance.subscription_renewal_failure_cancel_resume_grace_recovery_contract,
+      governance.subscriptionRenewalFailureCancelResumeGraceRecoveryContract,
+      context.subscription_lifecycle_recovery_contract,
+      context.subscriptionLifecycleRecoveryContract,
+      context.subscription_renewal_recovery_contract,
+      context.subscriptionRenewalRecoveryContract,
+      context.subscription_renewal_failure_cancel_resume_grace_recovery_contract,
+      context.subscriptionRenewalFailureCancelResumeGraceRecoveryContract,
+    ]),
+  );
+
+  const hostedEntryUrl =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_entry_url) ||
+    normalizeText(stage6aWorkbenchHandoff.hosted_workbench_url) ||
+    normalizeText(stage6cHostedPlanQuota.hosted_entry_url) ||
+    null;
+  let hostedAccessStatus =
+    normalizeText(stage6aHostedOnboardingAccess.hosted_access_status) ||
+    normalizeText(stage6aStatus.hosted_onboarding_access_status) ||
+    normalizeText(stage6cHostedPlanQuota.hosted_access_status);
+  if (!hostedAccessStatus) {
+    if (isNonLocalHttpUrl(hostedEntryUrl)) {
+      hostedAccessStatus = "ok";
+    } else if (hostedEntryUrl) {
+      hostedAccessStatus = "local_only";
+    } else {
+      hostedAccessStatus = "pending";
+    }
+  }
+
+  const checkoutStatus = normalizeText(checkoutPaymentActivationContract?.checkout_status) || "pending";
+  const paymentMethodStatus = normalizeText(checkoutPaymentActivationContract?.payment_method_status) || "pending";
+  const subscriptionActivationStatus =
+    normalizeText(checkoutPaymentActivationContract?.subscription_activation_status) || "pending";
+  const paidConversionStatus = normalizeText(checkoutPaymentActivationContract?.paid_conversion_status) || null;
+  const checkoutActivationAggregateStatus =
+    normalizeText(checkoutPaymentActivationContract?.checkout_activation_status) ||
+    normalizeText(checkoutPaymentActivationContract?.paid_conversion_status) ||
+    normalizeText(checkoutPaymentActivationContract?.status) ||
+    null;
+
+  const renewalStatus = normalizeText(subscriptionLifecycleRecoveryContract?.renewal_status) || "pending";
+  const cancelStatus = normalizeText(subscriptionLifecycleRecoveryContract?.cancel_status) || "pending";
+  const resumeStatus = normalizeText(subscriptionLifecycleRecoveryContract?.resume_status) || "pending";
+  const graceRecoveryStatus = normalizeText(subscriptionLifecycleRecoveryContract?.grace_recovery_status) || "pending";
+  const subscriptionLifecycleAggregateStatus =
+    normalizeText(subscriptionLifecycleRecoveryContract?.subscription_lifecycle_status) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.status) ||
+    null;
+
+  const paymentPendingStatus = normalizeText(subscriptionLifecycleRecoveryContract?.payment_pending_status) || "pending";
+  const paymentFailedStatus = normalizeText(subscriptionLifecycleRecoveryContract?.payment_failed_status) || "pending";
+  const paymentRecoveryAggregateStatus =
+    normalizeText(subscriptionLifecycleRecoveryContract?.payment_recovery_status) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.recovery_status) ||
+    null;
+
+  const planRef = normalizeText(stage6cPlanSubscriptionLimit.plan_ref) || null;
+  const subscriptionStatus = normalizeText(stage6cPlanSubscriptionLimit.subscription_status) || "pending";
+  const quotaState = normalizeText(stage6cUsageQuotaReadiness.quota_state) || "pending";
+  const blockReason = normalizeText(stage6cUsageQuotaReadiness.block_reason) || "none";
+  const remainingCapacity =
+    stage6cUsageQuotaReadiness.remaining_capacity === null || stage6cUsageQuotaReadiness.remaining_capacity === undefined
+      ? null
+      : Number(stage6cUsageQuotaReadiness.remaining_capacity);
+  const upgradeReadiness = normalizeText(stage6cUsageQuotaReadiness.upgrade_readiness) || "pending";
+  const upgradeCtaRef =
+    normalizeText(checkoutPaymentActivationContract?.upgrade_cta_ref) ||
+    normalizeText(checkoutPaymentActivationContract?.checkout_session_ref) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.upgrade_cta_ref) ||
+    normalizeText(stage6cUsageQuotaReadiness.upgrade_path_ref) ||
+    normalizeText(checkoutPaymentActivationContract?.checkout_url) ||
+    null;
+  const planManageUrl =
+    normalizeText(checkoutPaymentActivationContract?.plan_manage_url) ||
+    normalizeText(checkoutPaymentActivationContract?.subscription_ref) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.plan_manage_url) ||
+    null;
+
+  const notificationDeliveryStatus =
+    normalizeText(checkoutPaymentActivationContract?.notification_access_status) ||
+    normalizeText(subscriptionLifecycleRecoveryContract?.notification_access_status) ||
+    normalizeText(stage6bStatus.hosted_notification_recovery_status) ||
+    normalizeText(stage6bNotificationDelivery.status) ||
+    normalizeText(stage4a2Status.notification_endpoints_status) ||
+    "pending";
+  const notificationReady = isHostedReadyStatus(notificationDeliveryStatus) || isStage7aReadyStatus(notificationDeliveryStatus);
+
+  const checkoutActivationReady = checkoutActivationAggregateStatus
+    ? isStage7aReadyStatus(checkoutActivationAggregateStatus)
+    : paidConversionStatus
+      ? isStage7aReadyStatus(paidConversionStatus)
+    : isStage7aReadyStatus(checkoutStatus) &&
+      isStage7aReadyStatus(paymentMethodStatus) &&
+      isStage7aReadyStatus(subscriptionActivationStatus);
+
+  const lifecycleStatusSignalsPresent = Boolean(
+    subscriptionLifecycleAggregateStatus || renewalStatus !== "pending" || cancelStatus !== "pending" ||
+    resumeStatus !== "pending" || graceRecoveryStatus !== "pending",
+  );
+  const subscriptionLifecycleReady = subscriptionLifecycleAggregateStatus
+    ? isStage7aReadyStatus(subscriptionLifecycleAggregateStatus)
+    : lifecycleStatusSignalsPresent &&
+      isStage7aReadyStatus(renewalStatus) &&
+      isStage7aReadyStatus(cancelStatus) &&
+      isStage7aReadyStatus(resumeStatus) &&
+      isStage7aReadyStatus(graceRecoveryStatus);
+
+  const paymentRecoveryReady = paymentRecoveryAggregateStatus
+    ? isStage7aReadyStatus(paymentRecoveryAggregateStatus)
+    : isStage7aReadyStatus(paymentPendingStatus) &&
+      isStage7aReadyStatus(paymentFailedStatus) &&
+      isStage7aReadyStatus(graceRecoveryStatus);
+
+  const planManageReady =
+    Boolean(planRef) &&
+    isStage7aPlanManageStatus(subscriptionStatus) &&
+    (Boolean(planManageUrl) || normalizeText(stage6cPlanSubscriptionLimit.plan_truth_surface));
+  const upgradeCtaReady =
+    Boolean(upgradeCtaRef) &&
+    isStage6cReadyStatus(upgradeReadiness) &&
+    (normalizeText(stage6cStatus.usage_quota_readiness_status) === "ok" ||
+      normalizeText(stage6cStatus.usage_quota_readiness_status) === "local_only");
+  const stage6cBaselineReady =
+    normalizeText(stage6cStatus.hosted_plan_quota_status) === "ok" ||
+    normalizeText(stage6cStatus.hosted_plan_quota_status) === "local_only";
+
+  const hostedBillingSubscriptionReady =
+    checkoutActivationReady &&
+    subscriptionLifecycleReady &&
+    upgradeCtaReady &&
+    planManageReady &&
+    paymentRecoveryReady &&
+    notificationReady &&
+    stage6cBaselineReady;
+
+  const hostedBillingSubscriptionStatus = resolveStage7aHostedStatus(hostedBillingSubscriptionReady, hostedAccessStatus);
+  const checkoutActivationStatus = resolveStage7aHostedStatus(checkoutActivationReady, hostedAccessStatus);
+  const subscriptionLifecycleStatus = resolveStage7aHostedStatus(subscriptionLifecycleReady, hostedAccessStatus);
+  const upgradeCtaStatus = resolveStage7aHostedStatus(upgradeCtaReady, hostedAccessStatus);
+  const planManageStatus = resolveStage7aHostedStatus(planManageReady, hostedAccessStatus);
+  const paymentRecoveryStatus = resolveStage7aHostedStatus(paymentRecoveryReady, hostedAccessStatus);
+
+  const resolvedChannelId =
+    normalizeText(stage6cPlanSubscriptionLimit.channel_id) || normalizeText(scope?.channelId) || null;
+  const resolvedTopicId = normalizeText(stage6cPlanSubscriptionLimit.topic_id) || normalizeText(scope?.topicId) || null;
+  const resolvedWorkspaceId =
+    normalizeText(checkoutPaymentActivationContract?.workspace_id) ||
+    normalizeText(stage6cPlanSubscriptionLimit.workspace_id) ||
+    normalizeText(stage6aHostedOnboardingAccess.workspace_id) ||
+    null;
+
+  return {
+    status: {
+      hosted_billing_subscription_status: hostedBillingSubscriptionStatus,
+      checkout_payment_subscription_activation_status: checkoutActivationStatus,
+      subscription_lifecycle_recovery_status: subscriptionLifecycleStatus,
+      upgrade_cta_status: upgradeCtaStatus,
+      plan_manage_status: planManageStatus,
+      payment_pending_failed_recovery_status: paymentRecoveryStatus,
+    },
+    hosted_billing_subscription: {
+      status: hostedBillingSubscriptionStatus,
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      source: "stage7a_truth_fan_in",
+      no_shadow_truth: true,
+      truth_family: ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"],
+      read_surfaces: [
+        "/v1/channels/:channelId/context",
+        "/v1/topics/:topicId/notifications",
+        "/v1/inbox/:actorId?topic_id=:topicId",
+      ],
+    },
+    checkout_payment_subscription_activation: {
+      status: checkoutActivationStatus,
+      contract_version: normalizeText(checkoutPaymentActivationContract?.contract_version) || null,
+      workspace_id: resolvedWorkspaceId,
+      plan_ref: planRef,
+      checkout_status: checkoutStatus,
+      payment_method_status: paymentMethodStatus,
+      subscription_activation_status: subscriptionActivationStatus,
+      checkout_url: normalizeText(checkoutPaymentActivationContract?.checkout_url) || null,
+      payment_method_ref: normalizeText(checkoutPaymentActivationContract?.payment_method_ref) || null,
+      notification_policy_ref: normalizeText(checkoutPaymentActivationContract?.notification_policy_ref) || null,
+      write_anchor: normalizeText(checkoutPaymentActivationContract?.write_anchor) || null,
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+    },
+    upgrade_plan_manage: {
+      status: resolveStage7aHostedStatus(upgradeCtaReady && planManageReady, hostedAccessStatus),
+      upgrade_cta_status: upgradeCtaStatus,
+      plan_manage_status: planManageStatus,
+      upgrade_cta_ref: upgradeCtaRef,
+      plan_manage_url: planManageUrl,
+      plan_ref: planRef,
+      subscription_status: subscriptionStatus,
+      quota_state: quotaState,
+      remaining_capacity: remainingCapacity,
+      block_reason: blockReason,
+      upgrade_readiness: upgradeReadiness,
+      notification_delivery_status: notificationDeliveryStatus,
+      plan_truth_surface:
+        normalizeText(stage6cPlanSubscriptionLimit.plan_truth_surface) || "/v1/channels/:channelId/context",
+      usage_truth_surface:
+        normalizeText(stage6cUsageQuotaReadiness.usage_truth_surface) || "/v1/channels/:channelId/context",
+    },
+    payment_recovery: {
+      status: paymentRecoveryStatus,
+      contract_version: normalizeText(subscriptionLifecycleRecoveryContract?.contract_version) || null,
+      renewal_status: renewalStatus,
+      cancel_status: cancelStatus,
+      resume_status: resumeStatus,
+      grace_recovery_status: graceRecoveryStatus,
+      payment_pending_status: paymentPendingStatus,
+      payment_failed_status: paymentFailedStatus,
+      recovery_status: paymentRecoveryAggregateStatus || "pending",
+      notification_delivery_status: notificationDeliveryStatus,
+      topic_notification_truth_surface:
+        normalizeText(subscriptionLifecycleRecoveryContract?.read_anchors?.topic_notifications) ||
+        "/v1/topics/:topicId/notifications",
+      inbox_truth_surface:
+        normalizeText(subscriptionLifecycleRecoveryContract?.read_anchors?.inbox) ||
+        "/v1/inbox/:actorId?topic_id=:topicId",
+      write_anchor: normalizeText(subscriptionLifecycleRecoveryContract?.write_anchor) || null,
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+    },
+  };
+}
+
+function buildStage7bHostedBillingArtifactsDiscountProjection({
+  scope,
+  workspaceGovernance,
+  stage6a,
+  stage6b,
+  stage6c,
+  stage7a,
+  channelContextContract,
+}) {
+  const stage4a2 =
+    workspaceGovernance?.stage4a2 && typeof workspaceGovernance.stage4a2 === "object" ? workspaceGovernance.stage4a2 : {};
+  const stage4a2Status = stage4a2.status && typeof stage4a2.status === "object" ? stage4a2.status : {};
+
+  const stage6aStatus = stage6a?.status && typeof stage6a.status === "object" ? stage6a.status : {};
+  const stage6aHostedOnboardingAccess =
+    stage6a?.hosted_onboarding_access && typeof stage6a.hosted_onboarding_access === "object"
+      ? stage6a.hosted_onboarding_access
+      : {};
+  const stage6aWorkbenchHandoff =
+    stage6a?.stage5_workbench_handoff && typeof stage6a.stage5_workbench_handoff === "object"
+      ? stage6a.stage5_workbench_handoff
+      : {};
+
+  const stage6bStatus = stage6b?.status && typeof stage6b.status === "object" ? stage6b.status : {};
+  const stage6bNotificationDelivery =
+    stage6b?.notification_delivery && typeof stage6b.notification_delivery === "object" ? stage6b.notification_delivery : {};
+
+  const stage6cStatus = stage6c?.status && typeof stage6c.status === "object" ? stage6c.status : {};
+  const stage6cHostedPlanQuota =
+    stage6c?.hosted_plan_quota && typeof stage6c.hosted_plan_quota === "object" ? stage6c.hosted_plan_quota : {};
+  const stage6cPlanSubscriptionLimit =
+    stage6c?.workspace_plan_subscription_limit && typeof stage6c.workspace_plan_subscription_limit === "object"
+      ? stage6c.workspace_plan_subscription_limit
+      : {};
+  const stage6cUsageQuotaReadiness =
+    stage6c?.usage_quota_readiness && typeof stage6c.usage_quota_readiness === "object"
+      ? stage6c.usage_quota_readiness
+      : {};
+
+  const stage7aStatus = stage7a?.status && typeof stage7a.status === "object" ? stage7a.status : {};
+  const stage7aHostedBillingSubscription =
+    stage7a?.hosted_billing_subscription && typeof stage7a.hosted_billing_subscription === "object"
+      ? stage7a.hosted_billing_subscription
+      : {};
+  const stage7aCheckoutActivation =
+    stage7a?.checkout_payment_subscription_activation &&
+    typeof stage7a.checkout_payment_subscription_activation === "object"
+      ? stage7a.checkout_payment_subscription_activation
+      : {};
+
+  const context =
+    channelContextContract?.context && typeof channelContextContract.context === "object"
+      ? channelContextContract.context
+      : {};
+  const governance =
+    channelContextContract?.governance && typeof channelContextContract.governance === "object"
+      ? channelContextContract.governance
+      : {};
+
+  const invoiceTaxReceiptContract = normalizeStage7bInvoiceTaxReceiptContract(
+    pickFirstDefinedValue([
+      channelContextContract?.workspace_invoice_tax_receipt_contract,
+      channelContextContract?.workspace_invoice_tax_receipt,
+      channelContextContract?.invoice_tax_receipt_contract,
+      channelContextContract?.invoice_tax_receipt,
+      governance.workspace_invoice_tax_receipt_contract,
+      governance.workspaceInvoiceTaxReceiptContract,
+      governance.workspace_invoice_tax_receipt,
+      governance.workspaceInvoiceTaxReceipt,
+      governance.invoice_tax_receipt_contract,
+      governance.invoiceTaxReceiptContract,
+      governance.invoice_tax_receipt,
+      governance.invoiceTaxReceipt,
+      context.workspace_invoice_tax_receipt_contract,
+      context.workspaceInvoiceTaxReceiptContract,
+      context.workspace_invoice_tax_receipt,
+      context.workspaceInvoiceTaxReceipt,
+      context.invoice_tax_receipt_contract,
+      context.invoiceTaxReceiptContract,
+      context.invoice_tax_receipt,
+      context.invoiceTaxReceipt,
+    ]),
+  );
+
+  const couponPromotionDiscountContract = normalizeStage7bCouponPromotionDiscountContract(
+    pickFirstDefinedValue([
+      channelContextContract?.coupon_promotion_discount_application_contract,
+      channelContextContract?.coupon_promotion_discount_application,
+      channelContextContract?.coupon_discount_application_contract,
+      channelContextContract?.coupon_discount_application,
+      channelContextContract?.price_adjustment_discount_contract,
+      channelContextContract?.price_adjustment_discount,
+      governance.coupon_promotion_discount_application_contract,
+      governance.couponPromotionDiscountApplicationContract,
+      governance.coupon_promotion_discount_application,
+      governance.couponPromotionDiscountApplication,
+      governance.coupon_discount_application_contract,
+      governance.couponDiscountApplicationContract,
+      governance.coupon_discount_application,
+      governance.couponDiscountApplication,
+      governance.price_adjustment_discount_contract,
+      governance.priceAdjustmentDiscountContract,
+      governance.price_adjustment_discount,
+      governance.priceAdjustmentDiscount,
+      context.coupon_promotion_discount_application_contract,
+      context.couponPromotionDiscountApplicationContract,
+      context.coupon_promotion_discount_application,
+      context.couponPromotionDiscountApplication,
+      context.coupon_discount_application_contract,
+      context.couponDiscountApplicationContract,
+      context.coupon_discount_application,
+      context.couponDiscountApplication,
+      context.price_adjustment_discount_contract,
+      context.priceAdjustmentDiscountContract,
+      context.price_adjustment_discount,
+      context.priceAdjustmentDiscount,
+    ]),
+  );
+
+  const hostedEntryUrl =
+    normalizeText(stage7aHostedBillingSubscription.hosted_entry_url) ||
+    normalizeText(stage6aHostedOnboardingAccess.hosted_entry_url) ||
+    normalizeText(stage6aWorkbenchHandoff.hosted_workbench_url) ||
+    normalizeText(stage6cHostedPlanQuota.hosted_entry_url) ||
+    null;
+  let hostedAccessStatus =
+    normalizeText(stage7aHostedBillingSubscription.hosted_access_status) ||
+    normalizeText(stage6aHostedOnboardingAccess.hosted_access_status) ||
+    normalizeText(stage6aStatus.hosted_onboarding_access_status) ||
+    normalizeText(stage6cHostedPlanQuota.hosted_access_status);
+  if (!hostedAccessStatus) {
+    if (isNonLocalHttpUrl(hostedEntryUrl)) {
+      hostedAccessStatus = "ok";
+    } else if (hostedEntryUrl) {
+      hostedAccessStatus = "local_only";
+    } else {
+      hostedAccessStatus = "pending";
+    }
+  }
+
+  const invoiceStatus = normalizeText(invoiceTaxReceiptContract?.invoice_status) || "pending";
+  const taxProfileStatus = normalizeText(invoiceTaxReceiptContract?.tax_profile_status) || "pending";
+  const receiptExportStatus = normalizeText(invoiceTaxReceiptContract?.receipt_export_status) || "pending";
+  const documentReadinessStatus = normalizeText(invoiceTaxReceiptContract?.document_readiness_status) || "pending";
+  const receiptInvoiceRefsStatusRaw = normalizeText(invoiceTaxReceiptContract?.receipt_invoice_refs_status);
+  const receiptInvoiceRefsStatus = receiptInvoiceRefsStatusRaw || "pending";
+  const invoiceTaxReceiptAggregateStatus =
+    normalizeText(invoiceTaxReceiptContract?.invoice_tax_receipt_status) ||
+    normalizeText(invoiceTaxReceiptContract?.status) ||
+    null;
+
+  const couponStatus = normalizeText(couponPromotionDiscountContract?.coupon_status) || "pending";
+  const promotionStatus = normalizeText(couponPromotionDiscountContract?.promotion_status) || "pending";
+  const discountApplicationStatus = normalizeText(couponPromotionDiscountContract?.discount_application_status) || "pending";
+  const discountStateStatus = normalizeText(couponPromotionDiscountContract?.discount_state_status) || "pending";
+  const totalsProjectionStatus = normalizeText(couponPromotionDiscountContract?.totals_projection_status) || "pending";
+  const couponPromotionDiscountAggregateStatus =
+    normalizeText(couponPromotionDiscountContract?.coupon_promotion_discount_application_status) ||
+    normalizeText(couponPromotionDiscountContract?.status) ||
+    null;
+
+  const invoiceRef = normalizeText(invoiceTaxReceiptContract?.invoice_ref) || null;
+  const receiptRef = normalizeText(invoiceTaxReceiptContract?.receipt_ref) || null;
+  const receiptExportRef = normalizeText(invoiceTaxReceiptContract?.receipt_export_ref) || null;
+  const billingProfileRef = normalizeText(invoiceTaxReceiptContract?.billing_profile_ref) || null;
+  const taxProfileRef = normalizeText(invoiceTaxReceiptContract?.tax_profile_ref) || null;
+  const couponRef = normalizeText(couponPromotionDiscountContract?.coupon_ref) || null;
+  const promotionRef = normalizeText(couponPromotionDiscountContract?.promotion_ref) || null;
+  const discountRef = normalizeText(couponPromotionDiscountContract?.discount_ref) || null;
+  const discountState = normalizeText(couponPromotionDiscountContract?.discount_state) || "pending";
+
+  const subtotalAmount = pickFirstDefinedValue([
+    couponPromotionDiscountContract?.subtotal_amount,
+    invoiceTaxReceiptContract?.subtotal_amount,
+  ]);
+  const taxAmount = pickFirstDefinedValue([
+    couponPromotionDiscountContract?.tax_amount,
+    invoiceTaxReceiptContract?.tax_amount,
+  ]);
+  const discountAmount = pickFirstDefinedValue([
+    couponPromotionDiscountContract?.discount_amount,
+    invoiceTaxReceiptContract?.discount_amount,
+  ]);
+  const totalAmount = pickFirstDefinedValue([
+    couponPromotionDiscountContract?.total_amount,
+    invoiceTaxReceiptContract?.total_amount,
+  ]);
+  const currency =
+    normalizeText(couponPromotionDiscountContract?.currency) ||
+    normalizeText(invoiceTaxReceiptContract?.currency) ||
+    "usd";
+
+  const notificationDeliveryStatus =
+    normalizeText(invoiceTaxReceiptContract?.notification_access_status) ||
+    normalizeText(couponPromotionDiscountContract?.notification_access_status) ||
+    normalizeText(stage6bStatus.hosted_notification_recovery_status) ||
+    normalizeText(stage6bNotificationDelivery.status) ||
+    normalizeText(stage4a2Status.notification_endpoints_status) ||
+    "pending";
+  const notificationReady =
+    isHostedReadyStatus(notificationDeliveryStatus) ||
+    isStage7bReadyStatus(notificationDeliveryStatus) ||
+    isStage7aReadyStatus(notificationDeliveryStatus);
+
+  const documentReadinessReady = isStage7bReadyStatus(documentReadinessStatus);
+  const receiptInvoiceRefsReady = receiptInvoiceRefsStatusRaw
+    ? isStage7bReadyStatus(receiptInvoiceRefsStatusRaw)
+    : Boolean(invoiceRef || receiptRef || receiptExportRef);
+
+  const invoiceTaxReceiptReady = invoiceTaxReceiptAggregateStatus
+    ? isStage7bReadyStatus(invoiceTaxReceiptAggregateStatus)
+    : isStage7bReadyStatus(invoiceStatus) &&
+      isStage7bReadyStatus(taxProfileStatus) &&
+      isStage7bReadyStatus(receiptExportStatus) &&
+      documentReadinessReady &&
+      receiptInvoiceRefsReady;
+
+  const couponPromotionDiscountReady = couponPromotionDiscountAggregateStatus
+    ? isStage7bReadyStatus(couponPromotionDiscountAggregateStatus)
+    : isStage7bReadyStatus(couponStatus) &&
+      isStage7bReadyStatus(promotionStatus) &&
+      isStage7bReadyStatus(discountApplicationStatus) &&
+      isStage7bReadyStatus(discountStateStatus) &&
+      isStage7bReadyStatus(totalsProjectionStatus);
+
+  const totalsProjectionHasValues = [subtotalAmount, taxAmount, discountAmount, totalAmount].some(
+    (value) => value !== null && value !== undefined,
+  );
+  const discountProjectionReady =
+    isStage7bReadyStatus(discountStateStatus) &&
+    isStage7bReadyStatus(totalsProjectionStatus) &&
+    (totalsProjectionHasValues || Boolean(discountRef));
+
+  const stage7aBaselineReady =
+    isHostedReadyStatus(normalizeText(stage7aStatus.hosted_billing_subscription_status)) &&
+    isHostedReadyStatus(normalizeText(stage7aStatus.checkout_payment_subscription_activation_status)) &&
+    isHostedReadyStatus(normalizeText(stage7aStatus.subscription_lifecycle_recovery_status));
+  const stage6cBaselineReady =
+    isHostedReadyStatus(normalizeText(stage6cStatus.hosted_plan_quota_status)) &&
+    isHostedReadyStatus(normalizeText(stage6cStatus.usage_quota_readiness_status));
+
+  const hostedBillingArtifactsDiscountReady =
+    invoiceTaxReceiptReady &&
+    couponPromotionDiscountReady &&
+    documentReadinessReady &&
+    receiptInvoiceRefsReady &&
+    discountProjectionReady &&
+    notificationReady &&
+    stage7aBaselineReady &&
+    stage6cBaselineReady;
+
+  const hostedBillingArtifactsDiscountStatus = resolveStage7bHostedStatus(hostedBillingArtifactsDiscountReady, hostedAccessStatus);
+  const invoiceTaxReceiptStatus = resolveStage7bHostedStatus(invoiceTaxReceiptReady, hostedAccessStatus);
+  const couponPromotionDiscountStatus = resolveStage7bHostedStatus(couponPromotionDiscountReady, hostedAccessStatus);
+  const documentProjectionStatus = resolveStage7bHostedStatus(documentReadinessReady && receiptInvoiceRefsReady, hostedAccessStatus);
+  const discountProjectionStatus = resolveStage7bHostedStatus(discountProjectionReady, hostedAccessStatus);
+
+  const resolvedWorkspaceId =
+    normalizeText(invoiceTaxReceiptContract?.workspace_id) ||
+    normalizeText(couponPromotionDiscountContract?.workspace_id) ||
+    normalizeText(stage7aCheckoutActivation.workspace_id) ||
+    normalizeText(stage6cPlanSubscriptionLimit.workspace_id) ||
+    null;
+  const resolvedPlanRef =
+    normalizeText(stage7aCheckoutActivation.plan_ref) || normalizeText(stage6cPlanSubscriptionLimit.plan_ref) || null;
+  const resolvedQuotaState = normalizeText(stage6cUsageQuotaReadiness.quota_state) || "pending";
+  const resolvedChannelId =
+    normalizeText(stage6cPlanSubscriptionLimit.channel_id) || normalizeText(scope?.channelId) || null;
+  const resolvedTopicId = normalizeText(stage6cPlanSubscriptionLimit.topic_id) || normalizeText(scope?.topicId) || null;
+
+  return {
+    status: {
+      hosted_billing_artifacts_discount_status: hostedBillingArtifactsDiscountStatus,
+      workspace_invoice_tax_receipt_status: invoiceTaxReceiptStatus,
+      coupon_promotion_discount_application_status: couponPromotionDiscountStatus,
+      document_readiness_status: documentProjectionStatus,
+      receipt_invoice_refs_status: documentProjectionStatus,
+      discount_state_totals_projection_status: discountProjectionStatus,
+    },
+    hosted_billing_artifacts_discount: {
+      status: hostedBillingArtifactsDiscountStatus,
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      source: "stage7b_truth_fan_in",
+      no_shadow_truth: true,
+      truth_family: ["/v1/channels/*", "/v1/topics/*", "/v1/inbox/*"],
+      read_surfaces: [
+        "/v1/channels/:channelId/context",
+        "/v1/topics/:topicId/notifications",
+        "/v1/inbox/:actorId?topic_id=:topicId",
+      ],
+    },
+    workspace_invoice_tax_receipt: {
+      status: invoiceTaxReceiptStatus,
+      contract_version: normalizeText(invoiceTaxReceiptContract?.contract_version) || null,
+      workspace_id: resolvedWorkspaceId,
+      plan_ref: resolvedPlanRef,
+      invoice_status: invoiceStatus,
+      tax_profile_status: taxProfileStatus,
+      receipt_export_status: receiptExportStatus,
+      document_readiness_status: documentReadinessStatus,
+      receipt_invoice_refs_status: receiptInvoiceRefsStatus,
+      invoice_ref: invoiceRef,
+      receipt_ref: receiptRef,
+      receipt_export_ref: receiptExportRef,
+      billing_profile_ref: billingProfileRef,
+      tax_profile_ref: taxProfileRef,
+      currency,
+      subtotal_amount: subtotalAmount,
+      tax_amount: taxAmount,
+      discount_amount: discountAmount,
+      total_amount: totalAmount,
+      write_anchor: normalizeText(invoiceTaxReceiptContract?.write_anchor) || null,
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+    },
+    coupon_promotion_discount_application: {
+      status: couponPromotionDiscountStatus,
+      contract_version: normalizeText(couponPromotionDiscountContract?.contract_version) || null,
+      workspace_id: resolvedWorkspaceId,
+      coupon_status: couponStatus,
+      promotion_status: promotionStatus,
+      discount_application_status: discountApplicationStatus,
+      discount_state_status: discountStateStatus,
+      totals_projection_status: totalsProjectionStatus,
+      discount_state: discountState,
+      coupon_ref: couponRef,
+      promotion_ref: promotionRef,
+      discount_ref: discountRef,
+      currency,
+      subtotal_amount: subtotalAmount,
+      tax_amount: taxAmount,
+      discount_amount: discountAmount,
+      total_amount: totalAmount,
+      notification_access_status: notificationDeliveryStatus,
+      write_anchor: normalizeText(couponPromotionDiscountContract?.write_anchor) || null,
+      channel_id: resolvedChannelId,
+      topic_id: resolvedTopicId,
+    },
+    document_receipt_invoice_projection: {
+      status: documentProjectionStatus,
+      document_readiness_status: documentReadinessStatus,
+      receipt_invoice_refs_status: receiptInvoiceRefsStatus,
+      invoice_ref: invoiceRef,
+      receipt_ref: receiptRef,
+      receipt_export_ref: receiptExportRef,
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      plan_ref: resolvedPlanRef,
+      quota_state: resolvedQuotaState,
+      notification_delivery_status: notificationDeliveryStatus,
+      channel_context_truth_surface:
+        normalizeText(invoiceTaxReceiptContract?.read_anchors?.channel_context) || "/v1/channels/:channelId/context",
+      topic_notification_truth_surface:
+        normalizeText(invoiceTaxReceiptContract?.read_anchors?.notification) || "/v1/topics/:topicId/notifications",
+    },
+    discount_totals_projection: {
+      status: discountProjectionStatus,
+      discount_state_status: discountStateStatus,
+      totals_projection_status: totalsProjectionStatus,
+      discount_state: discountState,
+      subtotal_amount: subtotalAmount,
+      tax_amount: taxAmount,
+      discount_amount: discountAmount,
+      total_amount: totalAmount,
+      currency,
+      discount_ref: discountRef,
+      coupon_ref: couponRef,
+      promotion_ref: promotionRef,
+      plan_ref: resolvedPlanRef,
+      quota_state: resolvedQuotaState,
+      notification_delivery_status: notificationDeliveryStatus,
+      channel_context_truth_surface:
+        normalizeText(couponPromotionDiscountContract?.read_anchors?.channel_context) ||
+        "/v1/channels/:channelId/context",
+      inbox_truth_surface:
+        normalizeText(couponPromotionDiscountContract?.read_anchors?.inbox) ||
+        "/v1/inbox/:actorId?topic_id=:topicId",
+    },
+  };
+}
+
+function resolveStage5cHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
+}
+
+function resolveStage6aHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
+}
+
+function resolveStage6bHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
+}
+
+function resolveStage6cHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
+}
+
+function resolveStage7aHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
+}
+
+function resolveStage7bHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
+}
+
+function isHostedReadyStatus(value) {
+  return value === "ok" || value === "local_only";
+}
+
+function isStage6cReadyStatus(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "ready" ||
+    normalized === "ok" ||
+    normalized === "active" ||
+    normalized === "healthy" ||
+    normalized === "near_limit" ||
+    normalized === "within_limit" ||
+    normalized === "available" ||
+    normalized === "allowed"
+  );
+}
+
+function isStage7aReadyStatus(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "ready" ||
+    normalized === "ok" ||
+    normalized === "active" ||
+    normalized === "completed" ||
+    normalized === "configured" ||
+    normalized === "confirmed" ||
+    normalized === "available" ||
+    normalized === "enabled" ||
+    normalized === "allowed" ||
+    normalized === "server_owned" ||
+    normalized === "recovered" ||
+    normalized === "resumed" ||
+    normalized === "within_grace" ||
+    normalized === "auto_renewing"
+  );
+}
+
+function isStage7aPlanManageStatus(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "active" ||
+    normalized === "trialing" ||
+    normalized === "past_due" ||
+    normalized === "canceled" ||
+    normalized === "paused" ||
+    normalized === "grace_period" ||
+    normalized === "auto_renewing"
+  );
+}
+
+function isStage7bReadyStatus(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "ready" ||
+    normalized === "ok" ||
+    normalized === "active" ||
+    normalized === "completed" ||
+    normalized === "issued" ||
+    normalized === "exported" ||
+    normalized === "applied" ||
+    normalized === "projected" ||
+    normalized === "available" ||
+    normalized === "configured" ||
+    normalized === "confirmed" ||
+    normalized === "enabled" ||
+    normalized === "allowed" ||
+    normalized === "server_owned"
+  );
+}
+
+function isStage6bEndpointReadyByContract(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "ready" ||
+    normalized === "enabled" ||
+    normalized === "ok" ||
+    normalized === "server_owned"
+  );
+}
+
+function isStage6bEndpointEnabled(endpoints, channel) {
+  if (!Array.isArray(endpoints) || endpoints.length === 0) {
+    return false;
+  }
+  const normalizedChannel = normalizeStage4a2ChannelName(channel);
+  if (!normalizedChannel) {
+    return false;
+  }
+  for (const endpoint of endpoints) {
+    const endpointChannel = normalizeStage4a2ChannelName(endpoint?.channel);
+    if (endpointChannel !== normalizedChannel) {
+      continue;
+    }
+    if (endpoint?.enabled === false) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function hasStage6bRouteCoverage(routingRules, channel, requiredEvents) {
+  if (!Array.isArray(routingRules) || routingRules.length === 0) {
+    return false;
+  }
+  const normalizedChannel = normalizeStage4a2ChannelName(channel);
+  if (!normalizedChannel) {
+    return false;
+  }
+  const required = Array.isArray(requiredEvents)
+    ? requiredEvents.map((item) => normalizeText(item)).filter((item) => item.length > 0)
+    : [];
+  if (required.length === 0) {
+    return false;
+  }
+  const events = new Set();
+  for (const rule of routingRules) {
+    const ruleChannel = normalizeStage4a2ChannelName(rule?.channel);
+    if (ruleChannel !== normalizedChannel) {
+      continue;
+    }
+    if (rule?.enabled === false) {
+      continue;
+    }
+    const ruleEvents = normalizeStringArray(rule?.events || rule?.triggers || rule?.kinds);
+    for (const eventName of ruleEvents) {
+      events.add(eventName);
+    }
+  }
+  if (events.has("all_events")) {
+    return true;
+  }
+  return required.every((eventName) => events.has(eventName));
+}
+
+function areStage6bRouteChannelsReady(channels, endpointReadyByChannel) {
+  const normalizedChannels = Array.isArray(channels) ? channels.map((item) => normalizeStage4a2ChannelName(item)).filter(Boolean) : [];
+  if (normalizedChannels.length === 0) {
+    return false;
+  }
+  return normalizedChannels.every((channel) => endpointReadyByChannel[channel] === true);
+}
+
+function summarizeStage5bInboxItems(items) {
+  const summary = {
+    total: 0,
+    pending_total: 0,
+    acked_total: 0,
+    kind_counts: {
+      approval_hold_pending: 0,
+      conflict_unresolved: 0,
+      blocker_active: 0,
+      other: 0,
+    },
+  };
+  if (!Array.isArray(items)) {
+    return summary;
+  }
+  for (const item of items) {
+    const kind = normalizeText(item?.kind) || "other";
+    summary.total += 1;
+    if (item?.acked === true) {
+      summary.acked_total += 1;
+    } else {
+      summary.pending_total += 1;
+    }
+    if (kind in summary.kind_counts) {
+      summary.kind_counts[kind] += 1;
+    } else {
+      summary.kind_counts.other += 1;
+    }
+  }
+  return summary;
+}
+
+function resolvePrimaryStage5aAssignment(channelWorkAssignments, channelId) {
+  if (!Array.isArray(channelWorkAssignments) || channelWorkAssignments.length === 0) {
+    return null;
+  }
+  const normalizedChannelId = normalizeText(channelId);
+  if (normalizedChannelId) {
+    for (const item of channelWorkAssignments) {
+      if (normalizeText(item?.assigned_channel_id) === normalizedChannelId) {
+        return item;
+      }
+    }
+  }
+  return channelWorkAssignments[0];
+}
+
+function summarizeStage5aInboxSignals(topicNotifications) {
+  const summary = {
+    total: 0,
+    blocked: 0,
+    approval_required: 0,
+    mention: 0,
+    pr_pending_review: 0,
+  };
+  if (!Array.isArray(topicNotifications)) {
+    return summary;
+  }
+  for (const item of topicNotifications) {
+    const kind = normalizeText(item?.kind);
+    if (!kind) {
+      continue;
+    }
+    summary.total += 1;
+    if (kind.includes("blocked")) {
+      summary.blocked += 1;
+    }
+    if (kind.includes("approval")) {
+      summary.approval_required += 1;
+    }
+    if (kind.includes("mention")) {
+      summary.mention += 1;
+    }
+    if (kind.includes("pr") && kind.includes("review")) {
+      summary.pr_pending_review += 1;
+    }
+  }
+  return summary;
+}
+
+function countStage5aInterventionActions(channelOperatorActions) {
+  if (!Array.isArray(channelOperatorActions)) {
+    return 0;
+  }
+  let total = 0;
+  for (const item of channelOperatorActions) {
+    const actionType = normalizeText(item?.action_type);
+    if (actionType === "intervention") {
+      total += 1;
+    }
+  }
+  return total;
+}
+
+function findStage5aStatusSource({ context, governance }) {
+  return (
+    pickFirstDefinedValue([
+      governance.stage5a,
+      governance.stage5a_hosted_workbench,
+      governance.hosted_workbench,
+      governance.hostedWorkbench,
+      governance.hosted_access,
+      governance.hostedAccess,
+      context.stage5a,
+      context.stage5a_hosted_workbench,
+      context.hosted_workbench,
+      context.hostedWorkbench,
+      context.hosted_access,
+      context.hostedAccess,
+    ]) || {}
+  );
+}
+
+function findStage5bStatusSource({ context, governance }) {
+  return (
+    pickFirstDefinedValue([
+      governance.stage5b,
+      governance.stage5b_hosted_workbench,
+      governance.hosted_multi_human_workbench,
+      governance.hosted_multi_human,
+      governance.multi_human_workbench,
+      governance.multi_human_default_flow,
+      context.stage5b,
+      context.stage5b_hosted_workbench,
+      context.hosted_multi_human_workbench,
+      context.hosted_multi_human,
+      context.multi_human_workbench,
+      context.multi_human_default_flow,
+    ]) || {}
+  );
+}
+
+function resolveStage5aDeployRuntimeStatus(statusSource, runtimeSmoke) {
+  const explicitStatus =
+    normalizeText(statusSource?.deploy_runtime_status) ||
+    normalizeText(statusSource?.deploy_status) ||
+    normalizeText(statusSource?.runtime_status);
+  if (explicitStatus) {
+    return explicitStatus;
+  }
+  if (runtimeSmoke?.sampleTopicReady === true) {
+    return "ok";
+  }
+  return "pending";
+}
+
+function isNonLocalHttpUrl(rawUrl) {
+  const normalized = normalizeText(rawUrl);
+  if (!normalized) {
+    return false;
+  }
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (!hostname || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeStage4bExternalMemoryProviderContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+  const contract =
+    raw.external_memory_provider && typeof raw.external_memory_provider === "object" ? raw.external_memory_provider : raw;
+  return {
+    external_memory_provider: contract.external_memory_provider || null,
+    write_anchors: contract.write_anchors || {},
+    audit_anchor: contract.audit_anchor || {},
+  };
+}
+
+function normalizeStage4bExternalMemoryProvider(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  return {
+    provider_id: normalizeText(raw.provider_id) || null,
+    provider_type: normalizeText(raw.provider_type) || null,
+    status: normalizeText(raw.status) || "disabled",
+    read_scopes: normalizeStringArray(raw.read_scopes),
+    write_scopes: normalizeStringArray(raw.write_scopes),
+    recall_policy: raw.recall_policy && typeof raw.recall_policy === "object" ? raw.recall_policy : null,
+    retention_policy: raw.retention_policy && typeof raw.retention_policy === "object" ? raw.retention_policy : null,
+    sharing_policy: raw.sharing_policy && typeof raw.sharing_policy === "object" ? raw.sharing_policy : null,
+    capabilities: raw.capabilities && typeof raw.capabilities === "object" ? raw.capabilities : {},
+  };
+}
+
+function normalizeStage4bMemoryViewer(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {
+      summary: {
+        total_entries: 0,
+        active_entries: 0,
+        forgotten_entries: 0,
+      },
+      items: [],
+      write_anchors: {},
+      audit_anchor: {},
+    };
+  }
+  return {
+    summary: {
+      total_entries: Number(raw.summary?.total_entries || 0),
+      active_entries: Number(raw.summary?.active_entries || 0),
+      forgotten_entries: Number(raw.summary?.forgotten_entries || 0),
+    },
+    items: Array.isArray(raw.items)
+      ? raw.items.map((item) => ({
+          memory_id: normalizeText(item?.memory_id) || null,
+          provider_memory_id: normalizeText(item?.provider_memory_id) || null,
+          scope: normalizeText(item?.scope) || null,
+          content: normalizeText(item?.content) || null,
+          source_action: normalizeText(item?.source_action) || null,
+          source_ref: normalizeText(item?.source_ref) || null,
+          status: normalizeText(item?.status) || "active",
+          feedback:
+            item?.feedback && typeof item.feedback === "object"
+              ? {
+                  verdict: normalizeText(item.feedback.verdict) || null,
+                  note: normalizeText(item.feedback.note) || null,
+                }
+              : null,
+          promoted_at: item?.promoted_at || null,
+          forgotten_at: item?.forgotten_at || null,
+          created_at: item?.created_at || null,
+          updated_at: item?.updated_at || null,
+        }))
+      : [],
+    write_anchors: raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {},
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : {},
+  };
+}
+
+function normalizeStage4bSkillPolicyPlugin(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const registry = raw.registry && typeof raw.registry === "object" ? raw.registry : {};
+  return {
+    enabled: raw.enabled !== false,
+    scope: normalizeText(raw.scope) || null,
+    registry: {
+      skill_refs: normalizeStringArray(registry.skill_refs),
+      policy_refs: normalizeStringArray(registry.policy_refs),
+      plugin_refs: normalizeStringArray(registry.plugin_refs),
+    },
+    bindings: Array.isArray(raw.bindings)
+      ? raw.bindings.map((item) => ({
+          binding_id: normalizeText(item?.binding_id) || null,
+          plugin_ref: normalizeText(item?.plugin_ref) || null,
+          skill_ref: normalizeText(item?.skill_ref) || null,
+          policy_ref: normalizeText(item?.policy_ref) || null,
+          enabled: item?.enabled !== false,
+          scope: normalizeText(item?.scope) || null,
+        }))
+      : [],
+    updated_at: raw.updated_at || null,
+    updated_by: normalizeText(raw.updated_by) || null,
+  };
+}
+
+function normalizeStage4bTokenQuotaContext(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  return {
+    token_used: Number(raw.token_used || 0),
+    token_limit: raw.token_limit === null || raw.token_limit === undefined ? null : Number(raw.token_limit),
+    quota_state: normalizeText(raw.quota_state) || "healthy",
+    context_tokens: Number(raw.context_tokens || 0),
+    context_window_tokens:
+      raw.context_window_tokens === null || raw.context_window_tokens === undefined
+        ? null
+        : Number(raw.context_window_tokens),
+    recall_source: normalizeText(raw.recall_source) || null,
+    recall_hits: Number(raw.recall_hits || 0),
+    degrade_reason: normalizeText(raw.degrade_reason) || null,
+    updated_at: raw.updated_at || null,
+    updated_by: normalizeText(raw.updated_by) || null,
+  };
+}
+
+function summarizeStage4bTimeline(items) {
+  if (!Array.isArray(items)) {
+    return { total: 0, actions: [] };
+  }
+  const actions = [];
+  for (const item of items) {
+    const action = normalizeText(item?.action);
+    if (!action) {
+      continue;
+    }
+    if (
+      !action.includes("memory") &&
+      !action.includes("skill_policy_plugin") &&
+      !action.includes("token_quota_context")
+    ) {
+      continue;
+    }
+    actions.push({
+      action,
+      at: item?.at || null,
+    });
+    if (actions.length >= 10) {
+      break;
+    }
+  }
+  return {
+    total: actions.length,
+    actions,
+  };
+}
+
+function pickFirstDefinedValue(values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function normalizeStage4a2NotificationEndpoints(raw) {
+  const list = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const normalized = normalizeStage4a2NotificationEndpoint(item);
+      if (normalized) {
+        list.push(normalized);
+      }
+    }
+    return list;
+  }
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  if (Array.isArray(raw.items)) {
+    return normalizeStage4a2NotificationEndpoints(raw.items);
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value) || (value && typeof value === "object")) {
+      const normalized = normalizeStage4a2NotificationEndpoint(value, key);
+      if (normalized) {
+        list.push(normalized);
+      }
+      continue;
+    }
+    if (typeof value === "boolean") {
+      const channel = normalizeStage4a2ChannelName(key);
+      if (!channel) {
+        continue;
+      }
+      list.push({
+        channel,
+        enabled: value,
+        target: null,
+        status: value ? "enabled" : "disabled",
+      });
+    }
+  }
+  return list;
+}
+
+function normalizeStage4a2NotificationEndpoint(raw, fallbackChannel = "") {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const channel = normalizeStage4a2ChannelName(
+    raw.channel || raw.endpoint || raw.type || raw.kind || fallbackChannel,
+  );
+  if (!channel) {
+    return null;
+  }
+  const status = normalizeText(raw.status);
+  const enabled = typeof raw.enabled === "boolean" ? raw.enabled : status !== "disabled";
+  return {
+    channel,
+    enabled,
+    target:
+      normalizeText(
+        raw.target ||
+          raw.address ||
+          raw.endpoint_ref ||
+          raw.endpointRef ||
+          raw.endpoint_id ||
+          raw.endpointId ||
+          raw.uri ||
+          raw.url,
+      ) || null,
+    status: status || (enabled ? "enabled" : "disabled"),
+  };
+}
+
+function normalizeStage4a2RoutingRules(raw) {
+  const list = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const channel = normalizeStage4a2ChannelName(item?.channel || item?.endpoint || item?.kind);
+      if (!channel) {
+        continue;
+      }
+      list.push({
+        channel,
+        enabled: item?.enabled !== false,
+        events: normalizeStringArray(item?.events || item?.triggers || item?.kinds),
+        delivery: normalizeText(item?.delivery) || null,
+      });
+    }
+    return list;
+  }
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  if (Array.isArray(raw.items)) {
+    return normalizeStage4a2RoutingRules(raw.items);
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    const channel = normalizeStage4a2ChannelName(key);
+    if (!channel) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      list.push({
+        channel,
+        enabled: true,
+        events: normalizeStringArray(value),
+        delivery: null,
+      });
+      continue;
+    }
+    if (value && typeof value === "object") {
+      list.push({
+        channel,
+        enabled: value.enabled !== false,
+        events: normalizeStringArray(value.events || value.triggers || value.kinds),
+        delivery: normalizeText(value.delivery) || null,
+      });
+      continue;
+    }
+  }
+  return list;
+}
+
+function normalizeStage4a2ApprovalContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const anchors = raw.anchors && typeof raw.anchors === "object" ? raw.anchors : {};
+  return {
+    source: normalizeText(raw.source) || null,
+    trigger_events: normalizeStringArray(raw.trigger_events || raw.triggerEvents),
+    anchors: {
+      inbox: normalizeText(anchors.inbox) || null,
+      approval_holds: normalizeText(anchors.approval_holds || anchors.approvalHolds) || null,
+      approval_decisions: normalizeText(anchors.approval_decisions || anchors.approvalDecisions) || null,
+      run_timeline: normalizeText(anchors.run_timeline || anchors.runTimeline) || null,
+      channel_audit_trail: normalizeText(anchors.channel_audit_trail || anchors.channelAuditTrail) || null,
+    },
+  };
+}
+
+function normalizeStage6bNotificationAccessContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const endpointStatusSource = raw.endpoint_status && typeof raw.endpoint_status === "object" ? raw.endpoint_status : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    status: {
+      notification_access_status:
+        normalizeText(statusSource.notification_access_status || statusSource.notificationAccessStatus) || null,
+      invite_status: normalizeText(statusSource.invite_status || statusSource.inviteStatus) || null,
+      verify_status: normalizeText(statusSource.verify_status || statusSource.verifyStatus) || null,
+      reset_password_status:
+        normalizeText(statusSource.reset_password_status || statusSource.resetPasswordStatus) || null,
+    },
+    endpoint_status: {
+      inbox: normalizeText(endpointStatusSource.inbox) || null,
+      browser_push: normalizeText(endpointStatusSource.browser_push || endpointStatusSource.browserPush) || null,
+      email: normalizeText(endpointStatusSource.email) || null,
+    },
+    read_anchors: {
+      channel_context: normalizeText(readAnchors.channel_context || readAnchors.channelContext) || null,
+      notification_endpoint: normalizeText(readAnchors.notification_endpoint || readAnchors.notificationEndpoint) || null,
+    },
+    write_anchor: normalizeText(raw.write_anchor || raw.writeAnchor) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage6bAgentMailboxRoutingContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const blockedEscalation =
+    raw.blocked_escalation && typeof raw.blocked_escalation === "object" ? raw.blocked_escalation : {};
+  const approvalRequired =
+    raw.approval_required && typeof raw.approval_required === "object" ? raw.approval_required : {};
+  const prReady = raw.pr_ready && typeof raw.pr_ready === "object" ? raw.pr_ready : {};
+  const agentMailbox = raw.agent_mailbox && typeof raw.agent_mailbox === "object" ? raw.agent_mailbox : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    truth_family: normalizeStringArray(raw.truth_family || raw.truthFamily),
+    blocked_escalation: {
+      channels: normalizeStringArray(blockedEscalation.channels),
+      mailbox_ref: normalizeText(blockedEscalation.mailbox_ref || blockedEscalation.mailboxRef) || null,
+    },
+    approval_required: {
+      channels: normalizeStringArray(approvalRequired.channels),
+      mailbox_ref: normalizeText(approvalRequired.mailbox_ref || approvalRequired.mailboxRef) || null,
+    },
+    pr_ready: {
+      channels: normalizeStringArray(prReady.channels),
+      mailbox_ref: normalizeText(prReady.mailbox_ref || prReady.mailboxRef) || null,
+    },
+    agent_mailbox: {
+      channels: normalizeStringArray(agentMailbox.channels),
+      mailbox_ref: normalizeText(agentMailbox.mailbox_ref || agentMailbox.mailboxRef) || null,
+    },
+    read_anchors: {
+      inbox: normalizeText(readAnchors.inbox) || null,
+      topic_notifications: normalizeText(readAnchors.topic_notifications || readAnchors.topicNotifications) || null,
+      topic_prs: normalizeText(readAnchors.topic_prs || readAnchors.topicPrs) || null,
+      execution_inbox: normalizeText(readAnchors.execution_inbox || readAnchors.executionInbox) || null,
+    },
+    write_anchors: {
+      notification_endpoint_upsert:
+        normalizeText(writeAnchors.notification_endpoint_upsert || writeAnchors.notificationEndpointUpsert) || null,
+      inbox_attention_routing:
+        normalizeText(writeAnchors.inbox_attention_routing || writeAnchors.inboxAttentionRouting) || null,
+      inbox_follow_ups: normalizeText(writeAnchors.inbox_follow_ups || writeAnchors.inboxFollowUps) || null,
+    },
+    updated_at: raw.updated_at || raw.updatedAt || null,
+    updated_by: normalizeText(raw.updated_by || raw.updatedBy) || null,
+  };
+}
+
+function normalizeStage6cWorkspacePlanSubscriptionLimitContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const refs = raw.refs && typeof raw.refs === "object" ? raw.refs : {};
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const limits = raw.limits && typeof raw.limits === "object" ? raw.limits : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    workspace_id: normalizeText(raw.workspace_id || raw.workspaceId || refs.workspace_id || refs.workspaceId) || null,
+    plan_ref: normalizeText(raw.plan_ref || raw.planRef || refs.plan_ref || refs.planRef) || null,
+    plan_id: normalizeText(raw.plan_id || raw.planId) || null,
+    plan_code: normalizeText(raw.plan_code || raw.planCode) || null,
+    subscription_status:
+      normalizeText(
+        raw.subscription_status ||
+          raw.subscriptionStatus ||
+          statusSource.subscription_status ||
+          statusSource.subscriptionStatus ||
+          statusSource.subscription_readiness_status ||
+          statusSource.subscriptionReadinessStatus,
+      ) || null,
+    plan_status:
+      normalizeText(
+        raw.plan_status ||
+          raw.planStatus ||
+          statusSource.plan_status ||
+          statusSource.planStatus ||
+          statusSource.workspace_plan_contract_status ||
+          statusSource.workspacePlanContractStatus ||
+          statusSource.workspace_access_status ||
+          statusSource.workspaceAccessStatus,
+      ) || null,
+    limit_status:
+      normalizeText(raw.limit_status || raw.limitStatus || statusSource.limit_status || statusSource.limitStatus) || null,
+    token_limit:
+      raw.token_limit === null || raw.token_limit === undefined
+        ? limits.token_limit === null || limits.token_limit === undefined
+          ? null
+          : Number(limits.token_limit)
+        : Number(raw.token_limit),
+    token_used:
+      raw.token_used === null || raw.token_used === undefined
+        ? limits.token_used === null || limits.token_used === undefined
+          ? null
+          : Number(limits.token_used)
+        : Number(raw.token_used),
+    read_anchors: {
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context ||
+            readAnchors.channelContext ||
+            readAnchors.workspace_context ||
+            readAnchors.workspaceContext,
+        ) || null,
+      token_quota_context:
+        normalizeText(readAnchors.token_quota_context || readAnchors.tokenQuotaContext) || null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.workspace_context_upsert ||
+          writeAnchors.workspaceContextUpsert ||
+          writeAnchors.token_quota_context_upsert ||
+          writeAnchors.tokenQuotaContextUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage6cUsageQuotaReadinessContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const usageSource = raw.usage && typeof raw.usage === "object" ? raw.usage : {};
+  const remainingCapacitySource =
+    raw.remaining_capacity && typeof raw.remaining_capacity === "object" ? raw.remaining_capacity : {};
+  const blockReasonSource = raw.block_reason && typeof raw.block_reason === "object" ? raw.block_reason : {};
+  const upgradeReadinessSource =
+    raw.upgrade_readiness && typeof raw.upgrade_readiness === "object" ? raw.upgrade_readiness : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const rawRemainingCapacityValue =
+    raw.remaining_capacity !== null && raw.remaining_capacity !== undefined && typeof raw.remaining_capacity !== "object"
+      ? raw.remaining_capacity
+      : undefined;
+  const rawBlockReasonValue =
+    typeof raw.block_reason === "string" || typeof raw.blockReason === "string"
+      ? raw.block_reason || raw.blockReason
+      : undefined;
+  const rawUpgradeReadinessValue =
+    typeof raw.upgrade_readiness === "string" || typeof raw.upgradeReadiness === "string"
+      ? raw.upgrade_readiness || raw.upgradeReadiness
+      : undefined;
+  const rawStatusValue = typeof raw.status === "string" ? raw.status : undefined;
+  const resolvedRemainingCapacity = pickFirstDefinedValue([
+    rawRemainingCapacityValue,
+    raw.remaining,
+    raw.capacity_remaining,
+    remainingCapacitySource.token_remaining,
+    remainingCapacitySource.tokenRemaining,
+  ]);
+  const resolvedBlockReason = normalizeText(
+    rawBlockReasonValue || blockReasonSource.code || blockReasonSource.detail || blockReasonSource.source,
+  );
+  const resolvedUpgradeReadiness = normalizeText(
+    rawUpgradeReadinessValue || raw.upgrade_readiness_status || upgradeReadinessSource.status,
+  );
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    usage_status:
+      normalizeText(
+        raw.usage_status ||
+          raw.usageStatus ||
+          statusSource.usage_quota_readiness_status ||
+          statusSource.usageQuotaReadinessStatus ||
+          statusSource.usage_status ||
+          statusSource.usageStatus,
+      ) || null,
+    status:
+      normalizeText(
+        rawStatusValue ||
+          statusSource.usage_quota_readiness_status ||
+          statusSource.usageQuotaReadinessStatus ||
+          statusSource.usage_status ||
+          statusSource.usageStatus,
+      ) || null,
+    quota_state: normalizeText(raw.quota_state || raw.quotaState || statusSource.quota_state || statusSource.quotaState) || null,
+    remaining_capacity:
+      resolvedRemainingCapacity === null || resolvedRemainingCapacity === undefined
+        ? null
+        : Number(resolvedRemainingCapacity),
+    remaining:
+      raw.remaining === null || raw.remaining === undefined
+        ? null
+        : Number(raw.remaining),
+    capacity_remaining:
+      raw.capacity_remaining === null || raw.capacity_remaining === undefined
+        ? null
+        : Number(raw.capacity_remaining),
+    capacity_limit:
+      raw.capacity_limit === null || raw.capacity_limit === undefined
+        ? usageSource.token_limit === null || usageSource.token_limit === undefined
+          ? null
+          : Number(usageSource.token_limit)
+        : Number(raw.capacity_limit),
+    block_reason: resolvedBlockReason || null,
+    upgrade_readiness:
+      resolvedUpgradeReadiness || null,
+    upgrade_path_ref:
+      normalizeText(raw.upgrade_path_ref || raw.upgradePathRef || raw.upgrade_ref || raw.upgradeRef) || null,
+    context_tokens:
+      raw.context_tokens === null || raw.context_tokens === undefined
+        ? usageSource.context_tokens === null || usageSource.context_tokens === undefined
+          ? null
+          : Number(usageSource.context_tokens)
+        : Number(raw.context_tokens),
+    context_window_tokens:
+      raw.context_window_tokens === null || raw.context_window_tokens === undefined
+        ? usageSource.context_window_tokens === null || usageSource.context_window_tokens === undefined
+          ? null
+          : Number(usageSource.context_window_tokens)
+        : Number(raw.context_window_tokens),
+    recall_source: normalizeText(raw.recall_source || usageSource.recall_source) || null,
+    recall_hits:
+      raw.recall_hits === null || raw.recall_hits === undefined
+        ? usageSource.recall_hits === null || usageSource.recall_hits === undefined
+          ? null
+          : Number(usageSource.recall_hits)
+        : Number(raw.recall_hits),
+    read_anchors: {
+      token_quota_context:
+        normalizeText(
+          readAnchors.token_quota_context ||
+            readAnchors.tokenQuotaContext ||
+            readAnchors.channel_context ||
+            readAnchors.channelContext,
+        ) || null,
+      runtime_registry:
+        normalizeText(readAnchors.runtime_registry || readAnchors.runtimeRegistry || readAnchors.runtime_deploy_runtime) ||
+        null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.token_quota_context_upsert ||
+          writeAnchors.tokenQuotaContextUpsert ||
+          writeAnchors.runtime_deploy_runtime_upsert ||
+          writeAnchors.runtimeDeployRuntimeUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage7aCheckoutPaymentActivationContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const refs = raw.refs && typeof raw.refs === "object" ? raw.refs : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const checkout = raw.checkout && typeof raw.checkout === "object" ? raw.checkout : {};
+  const paymentMethod = raw.payment_method && typeof raw.payment_method === "object" ? raw.payment_method : {};
+  const planManage = raw.plan_manage && typeof raw.plan_manage === "object" ? raw.plan_manage : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    workspace_id: normalizeText(raw.workspace_id || raw.workspaceId || refs.workspace_id || refs.workspaceId) || null,
+    checkout_status:
+      normalizeText(
+        raw.checkout_status ||
+          raw.checkoutStatus ||
+          raw.checkout_session_status ||
+          raw.checkoutSessionStatus ||
+          statusSource.checkout_status ||
+          statusSource.checkoutStatus ||
+          statusSource.checkout_session_status ||
+          statusSource.checkoutSessionStatus ||
+          statusSource.paid_conversion_status ||
+          statusSource.paidConversionStatus,
+      ) || null,
+    payment_method_status:
+      normalizeText(
+        raw.payment_method_status ||
+          raw.paymentMethodStatus ||
+          statusSource.payment_method_status ||
+          statusSource.paymentMethodStatus,
+      ) || null,
+    subscription_activation_status:
+      normalizeText(
+        raw.subscription_activation_status ||
+          raw.subscriptionActivationStatus ||
+          statusSource.subscription_activation_status ||
+          statusSource.subscriptionActivationStatus ||
+          statusSource.activation_status ||
+          statusSource.activationStatus,
+      ) || null,
+    checkout_activation_status:
+      normalizeText(
+        raw.checkout_activation_status ||
+          raw.checkoutActivationStatus ||
+          statusSource.checkout_activation_status ||
+          statusSource.checkoutActivationStatus,
+      ) || null,
+    paid_conversion_status:
+      normalizeText(
+        raw.paid_conversion_status ||
+          raw.paidConversionStatus ||
+          statusSource.paid_conversion_status ||
+          statusSource.paidConversionStatus,
+      ) || null,
+    workspace_access_status:
+      normalizeText(
+        raw.workspace_access_status ||
+          raw.workspaceAccessStatus ||
+          statusSource.workspace_access_status ||
+          statusSource.workspaceAccessStatus,
+      ) || null,
+    plan_contract_status:
+      normalizeText(
+        raw.plan_contract_status ||
+          raw.planContractStatus ||
+          statusSource.plan_contract_status ||
+          statusSource.planContractStatus,
+      ) || null,
+    notification_access_status:
+      normalizeText(
+        raw.notification_access_status ||
+          raw.notificationAccessStatus ||
+          statusSource.notification_access_status ||
+          statusSource.notificationAccessStatus,
+      ) || null,
+    status:
+      normalizeText(raw.status_value || statusSource.status || statusSource.contract_status || statusSource.contractStatus) ||
+      null,
+    checkout_url:
+      normalizeText(
+        raw.checkout_url ||
+          raw.checkoutUrl ||
+          raw.checkout_session_ref ||
+          raw.checkoutSessionRef ||
+          refs.checkout_session_ref ||
+          refs.checkoutSessionRef ||
+          checkout.url ||
+          checkout.checkout_url ||
+          checkout.checkoutUrl,
+      ) || null,
+    checkout_session_ref:
+      normalizeText(
+        raw.checkout_session_ref || raw.checkoutSessionRef || refs.checkout_session_ref || refs.checkoutSessionRef,
+      ) || null,
+    payment_method_ref:
+      normalizeText(
+        raw.payment_method_ref ||
+          raw.paymentMethodRef ||
+          refs.payment_method_ref ||
+          refs.paymentMethodRef ||
+          paymentMethod.method_ref ||
+          paymentMethod.methodRef,
+      ) || null,
+    subscription_ref:
+      normalizeText(raw.subscription_ref || raw.subscriptionRef || refs.subscription_ref || refs.subscriptionRef) || null,
+    plan_ref: normalizeText(raw.plan_ref || raw.planRef || refs.plan_ref || refs.planRef) || null,
+    plan_manage_url:
+      normalizeText(raw.plan_manage_url || raw.planManageUrl || planManage.url || planManage.manage_url || planManage.manageUrl) ||
+      null,
+    upgrade_cta_ref:
+      normalizeText(raw.upgrade_cta_ref || raw.upgradeCtaRef || raw.upgrade_path_ref || raw.upgradePathRef || raw.upgrade_ref) ||
+      null,
+    notification_policy_ref:
+      normalizeText(raw.notification_policy_ref || raw.notificationPolicyRef || refs.notification_policy_ref) || null,
+    read_anchors: {
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context || readAnchors.channelContext || readAnchors.workspace_context || readAnchors.workspaceContext,
+        ) || null,
+      workspace_member_access:
+        normalizeText(readAnchors.workspace_member_access || readAnchors.workspaceMemberAccess) || null,
+      notification:
+        normalizeText(readAnchors.notification || readAnchors.topic_notifications || readAnchors.topicNotifications) || null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.checkout_create ||
+          writeAnchors.checkoutCreate ||
+          writeAnchors.payment_method_upsert ||
+          writeAnchors.paymentMethodUpsert ||
+          writeAnchors.subscription_activation_upsert ||
+          writeAnchors.subscriptionActivationUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage7aSubscriptionLifecycleRecoveryContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const renewal = raw.renewal && typeof raw.renewal === "object" ? raw.renewal : {};
+  const cancellation = raw.cancel && typeof raw.cancel === "object" ? raw.cancel : {};
+  const resume = raw.resume && typeof raw.resume === "object" ? raw.resume : {};
+  const graceRecovery = raw.grace_recovery && typeof raw.grace_recovery === "object" ? raw.grace_recovery : {};
+  const paymentPending = raw.payment_pending && typeof raw.payment_pending === "object" ? raw.payment_pending : {};
+  const paymentFailed = raw.payment_failed && typeof raw.payment_failed === "object" ? raw.payment_failed : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    renewal_status:
+      normalizeText(
+        raw.renewal_status ||
+          raw.renewalStatus ||
+          raw.renewal_failure_status ||
+          raw.renewalFailureStatus ||
+          renewal.status ||
+          statusSource.renewal_status ||
+          statusSource.renewal_failure_status ||
+          statusSource.renewalFailureStatus,
+      ) || null,
+    cancel_status:
+      normalizeText(raw.cancel_status || raw.cancelStatus || cancellation.status || statusSource.cancel_status) || null,
+    resume_status:
+      normalizeText(raw.resume_status || raw.resumeStatus || resume.status || statusSource.resume_status) || null,
+    grace_recovery_status:
+      normalizeText(
+        raw.grace_recovery_status ||
+          raw.graceRecoveryStatus ||
+          graceRecovery.status ||
+          statusSource.grace_recovery_status ||
+          statusSource.graceRecoveryStatus,
+      ) || null,
+    payment_pending_status:
+      normalizeText(
+        raw.payment_pending_status ||
+          raw.paymentPendingStatus ||
+          paymentPending.status ||
+          statusSource.payment_pending_status ||
+          statusSource.paymentPendingStatus,
+      ) || null,
+    payment_failed_status:
+      normalizeText(
+        raw.payment_failed_status ||
+          raw.paymentFailedStatus ||
+          paymentFailed.status ||
+          statusSource.payment_failed_status ||
+          statusSource.paymentFailedStatus,
+      ) || null,
+    subscription_lifecycle_status:
+      normalizeText(
+        raw.subscription_lifecycle_status ||
+          raw.subscriptionLifecycleStatus ||
+          statusSource.subscription_lifecycle_status ||
+          statusSource.subscriptionLifecycleStatus,
+      ) || null,
+    payment_recovery_status:
+      normalizeText(
+        raw.payment_recovery_status ||
+          raw.paymentRecoveryStatus ||
+          statusSource.payment_recovery_status ||
+          statusSource.paymentRecoveryStatus,
+      ) || null,
+    subscription_status:
+      normalizeText(raw.subscription_status || raw.subscriptionStatus || statusSource.subscription_status) || null,
+    notification_access_status:
+      normalizeText(raw.notification_access_status || raw.notificationAccessStatus || raw.notification?.access_status) || null,
+    recovery_status: normalizeText(raw.recovery_status || raw.recoveryStatus || statusSource.recovery_status) || null,
+    status: normalizeText(statusSource.status || statusSource.contract_status || statusSource.contractStatus) || null,
+    upgrade_cta_ref:
+      normalizeText(raw.upgrade_cta_ref || raw.upgradeCtaRef || raw.upgrade_path_ref || raw.upgradePathRef) || null,
+    plan_manage_url: normalizeText(raw.plan_manage_url || raw.planManageUrl) || null,
+    read_anchors: {
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context || readAnchors.channelContext || readAnchors.workspace_context || readAnchors.workspaceContext,
+        ) || null,
+      topic_notifications:
+        normalizeText(readAnchors.topic_notifications || readAnchors.topicNotifications || readAnchors.notification) || null,
+      inbox:
+        normalizeText(readAnchors.inbox || readAnchors.inbox_attention || readAnchors.inboxAttention) || null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.subscription_update ||
+          writeAnchors.subscriptionUpdate ||
+          writeAnchors.recovery_retry ||
+          writeAnchors.recoveryRetry ||
+          writeAnchors.payment_method_upsert ||
+          writeAnchors.paymentMethodUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage7bInvoiceTaxReceiptContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const refs = raw.refs && typeof raw.refs === "object" ? raw.refs : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const invoice = raw.invoice && typeof raw.invoice === "object" ? raw.invoice : {};
+  const tax = raw.tax_profile && typeof raw.tax_profile === "object" ? raw.tax_profile : {};
+  const receipt = raw.receipt && typeof raw.receipt === "object" ? raw.receipt : {};
+  const totals = raw.totals && typeof raw.totals === "object" ? raw.totals : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    workspace_id: normalizeText(raw.workspace_id || raw.workspaceId || refs.workspace_id || refs.workspaceId) || null,
+    invoice_status:
+      normalizeText(raw.invoice_status || raw.invoiceStatus || invoice.status || statusSource.invoice_status || statusSource.invoiceStatus) ||
+      null,
+    tax_profile_status:
+      normalizeText(
+        raw.tax_profile_status ||
+          raw.taxProfileStatus ||
+          tax.status ||
+          statusSource.tax_profile_status ||
+          statusSource.taxProfileStatus,
+      ) || null,
+    receipt_export_status:
+      normalizeText(
+        raw.receipt_export_status ||
+          raw.receiptExportStatus ||
+          receipt.status ||
+          statusSource.receipt_export_status ||
+          statusSource.receiptExportStatus,
+      ) || null,
+    document_readiness_status:
+      normalizeText(
+        raw.document_readiness_status ||
+          raw.documentReadinessStatus ||
+          statusSource.document_readiness_status ||
+          statusSource.documentReadinessStatus,
+      ) || null,
+    receipt_invoice_refs_status:
+      normalizeText(
+        raw.receipt_invoice_refs_status ||
+          raw.receiptInvoiceRefsStatus ||
+          statusSource.receipt_invoice_refs_status ||
+          statusSource.receiptInvoiceRefsStatus,
+      ) || null,
+    invoice_tax_receipt_status:
+      normalizeText(
+        raw.invoice_tax_receipt_status ||
+          raw.invoiceTaxReceiptStatus ||
+          statusSource.invoice_tax_receipt_status ||
+          statusSource.invoiceTaxReceiptStatus,
+      ) || null,
+    notification_access_status:
+      normalizeText(raw.notification_access_status || raw.notificationAccessStatus || statusSource.notification_access_status) ||
+      null,
+    status: normalizeText(statusSource.status || statusSource.contract_status || statusSource.contractStatus) || null,
+    invoice_ref:
+      normalizeText(raw.invoice_ref || raw.invoiceRef || refs.invoice_ref || refs.invoiceRef || invoice.ref || invoice.invoice_ref) ||
+      null,
+    receipt_ref:
+      normalizeText(raw.receipt_ref || raw.receiptRef || refs.receipt_ref || refs.receiptRef || receipt.ref || receipt.receipt_ref) ||
+      null,
+    receipt_export_ref:
+      normalizeText(
+        raw.receipt_export_ref ||
+          raw.receiptExportRef ||
+          refs.receipt_export_ref ||
+          refs.receiptExportRef ||
+          receipt.export_ref ||
+          receipt.exportRef,
+      ) || null,
+    billing_profile_ref:
+      normalizeText(raw.billing_profile_ref || raw.billingProfileRef || refs.billing_profile_ref || refs.billingProfileRef) ||
+      null,
+    tax_profile_ref:
+      normalizeText(raw.tax_profile_ref || raw.taxProfileRef || refs.tax_profile_ref || refs.taxProfileRef) || null,
+    currency: normalizeText(raw.currency || totals.currency || invoice.currency || receipt.currency) || null,
+    subtotal_amount: normalizeStage7bNumeric(raw.subtotal_amount || raw.subtotalAmount || totals.subtotal || totals.subtotal_amount),
+    tax_amount: normalizeStage7bNumeric(raw.tax_amount || raw.taxAmount || totals.tax || totals.tax_amount),
+    discount_amount:
+      normalizeStage7bNumeric(raw.discount_amount || raw.discountAmount || totals.discount || totals.discount_amount),
+    total_amount: normalizeStage7bNumeric(raw.total_amount || raw.totalAmount || totals.total || totals.total_amount),
+    read_anchors: {
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context || readAnchors.channelContext || readAnchors.workspace_context || readAnchors.workspaceContext,
+        ) || null,
+      workspace_member_access:
+        normalizeText(readAnchors.workspace_member_access || readAnchors.workspaceMemberAccess) || null,
+      notification:
+        normalizeText(readAnchors.notification || readAnchors.topic_notifications || readAnchors.topicNotifications) || null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.invoice_upsert ||
+          writeAnchors.invoiceUpsert ||
+          writeAnchors.tax_profile_upsert ||
+          writeAnchors.taxProfileUpsert ||
+          writeAnchors.receipt_export_upsert ||
+          writeAnchors.receiptExportUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage7bCouponPromotionDiscountContract(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const statusSource = raw.status && typeof raw.status === "object" ? raw.status : {};
+  const refs = raw.refs && typeof raw.refs === "object" ? raw.refs : {};
+  const readAnchors = raw.read_anchors && typeof raw.read_anchors === "object" ? raw.read_anchors : {};
+  const writeAnchors = raw.write_anchors && typeof raw.write_anchors === "object" ? raw.write_anchors : {};
+  const coupon = raw.coupon && typeof raw.coupon === "object" ? raw.coupon : {};
+  const promotion = raw.promotion && typeof raw.promotion === "object" ? raw.promotion : {};
+  const discount = raw.discount && typeof raw.discount === "object" ? raw.discount : {};
+  const totals = raw.totals && typeof raw.totals === "object" ? raw.totals : {};
+  return {
+    contract_version: normalizeText(raw.contract_version || raw.contractVersion) || null,
+    workspace_id: normalizeText(raw.workspace_id || raw.workspaceId || refs.workspace_id || refs.workspaceId) || null,
+    coupon_status:
+      normalizeText(raw.coupon_status || raw.couponStatus || coupon.status || statusSource.coupon_status || statusSource.couponStatus) ||
+      null,
+    promotion_status:
+      normalizeText(
+        raw.promotion_status || raw.promotionStatus || promotion.status || statusSource.promotion_status || statusSource.promotionStatus,
+      ) || null,
+    discount_application_status:
+      normalizeText(
+        raw.discount_application_status ||
+          raw.discountApplicationStatus ||
+          discount.status ||
+          statusSource.discount_application_status ||
+          statusSource.discountApplicationStatus,
+      ) || null,
+    discount_state_status:
+      normalizeText(
+        raw.discount_state_status ||
+          raw.discountStateStatus ||
+          statusSource.discount_state_status ||
+          statusSource.discountStateStatus,
+      ) || null,
+    totals_projection_status:
+      normalizeText(
+        raw.totals_projection_status ||
+          raw.totalsProjectionStatus ||
+          statusSource.totals_projection_status ||
+          statusSource.totalsProjectionStatus,
+      ) || null,
+    coupon_promotion_discount_application_status:
+      normalizeText(
+        raw.coupon_promotion_discount_application_status ||
+          raw.couponPromotionDiscountApplicationStatus ||
+          statusSource.coupon_promotion_discount_application_status ||
+          statusSource.couponPromotionDiscountApplicationStatus,
+      ) || null,
+    notification_access_status:
+      normalizeText(raw.notification_access_status || raw.notificationAccessStatus || statusSource.notification_access_status) ||
+      null,
+    status: normalizeText(statusSource.status || statusSource.contract_status || statusSource.contractStatus) || null,
+    discount_state: normalizeText(raw.discount_state || raw.discountState || discount.state || statusSource.discount_state) || null,
+    coupon_ref: normalizeText(raw.coupon_ref || raw.couponRef || refs.coupon_ref || refs.couponRef || coupon.ref) || null,
+    promotion_ref:
+      normalizeText(raw.promotion_ref || raw.promotionRef || refs.promotion_ref || refs.promotionRef || promotion.ref) || null,
+    discount_ref: normalizeText(raw.discount_ref || raw.discountRef || refs.discount_ref || refs.discountRef || discount.ref) || null,
+    currency: normalizeText(raw.currency || totals.currency || discount.currency) || null,
+    subtotal_amount: normalizeStage7bNumeric(raw.subtotal_amount || raw.subtotalAmount || totals.subtotal || totals.subtotal_amount),
+    tax_amount: normalizeStage7bNumeric(raw.tax_amount || raw.taxAmount || totals.tax || totals.tax_amount),
+    discount_amount:
+      normalizeStage7bNumeric(raw.discount_amount || raw.discountAmount || totals.discount || totals.discount_amount),
+    total_amount: normalizeStage7bNumeric(raw.total_amount || raw.totalAmount || totals.total || totals.total_amount),
+    read_anchors: {
+      channel_context:
+        normalizeText(
+          readAnchors.channel_context || readAnchors.channelContext || readAnchors.workspace_context || readAnchors.workspaceContext,
+        ) || null,
+      notification:
+        normalizeText(readAnchors.notification || readAnchors.topic_notifications || readAnchors.topicNotifications) || null,
+      inbox:
+        normalizeText(readAnchors.inbox || readAnchors.inbox_attention || readAnchors.inboxAttention) || null,
+    },
+    write_anchor:
+      normalizeText(
+        raw.write_anchor ||
+          raw.writeAnchor ||
+          writeAnchors.coupon_apply ||
+          writeAnchors.couponApply ||
+          writeAnchors.promotion_apply ||
+          writeAnchors.promotionApply ||
+          writeAnchors.discount_projection_upsert ||
+          writeAnchors.discountProjectionUpsert,
+      ) || null,
+    audit_anchor: raw.audit_anchor && typeof raw.audit_anchor === "object" ? raw.audit_anchor : null,
+  };
+}
+
+function normalizeStage7bNumeric(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  return numeric;
+}
+
+function normalizeStage4a2SandboxProfile(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const profileId =
+    normalizeText(raw.profile_id || raw.profileId || raw.profile || raw.id || raw.name) || null;
+  const mode = normalizeText(raw.mode || raw.scope) || null;
+  const commandAllow = normalizeStringArray(raw.allowed_commands || raw.command_allowlist || raw.commandAllowlist);
+  const networkAllow = normalizeStringArray(raw.allowed_network || raw.network_allowlist || raw.networkAllowlist);
+  const toolAllow = normalizeStringArray(raw.allowed_tools || raw.tool_allowlist || raw.toolAllowlist);
+  const secretClasses = normalizeStringArray(raw.allowed_secret_classes || raw.secret_classes || raw.secretClasses);
+  const approvalTriggers = normalizeStringArray(raw.approval_triggers || raw.approval_required_actions);
+  if (
+    !profileId &&
+    !mode &&
+    commandAllow.length === 0 &&
+    networkAllow.length === 0 &&
+    toolAllow.length === 0 &&
+    secretClasses.length === 0 &&
+    approvalTriggers.length === 0
+  ) {
+    return null;
+  }
+  return {
+    profile_id: profileId,
+    mode: mode || "restricted_local",
+    allowed_commands: commandAllow,
+    allowed_network: networkAllow,
+    allowed_tools: toolAllow,
+    allowed_secret_classes: secretClasses,
+    approval_triggers: approvalTriggers,
+  };
+}
+
+function normalizeStage4a2SecretsBindings(raw) {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => normalizeStage4a2SecretsBindingItem(item))
+      .filter((item) => item !== null);
+  }
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  if (Array.isArray(raw.items)) {
+    return normalizeStage4a2SecretsBindings(raw.items);
+  }
+  if (Array.isArray(raw.allowed_secret_refs)) {
+    const approvalRequired = raw.approval_required === true;
+    const injectionMode = normalizeText(raw.injection_mode) || null;
+    return raw.allowed_secret_refs
+      .filter((item) => typeof item === "string" && item.trim().length > 0)
+      .map((item) => ({
+        secret_class: item.trim(),
+        status: approvalRequired ? "approval_required" : "bound",
+        source: injectionMode,
+        approval_required: approvalRequired,
+        injection_mode: injectionMode,
+      }));
+  }
+  const classes = normalizeStringArray(raw.secret_classes || raw.classes);
+  if (classes.length > 0) {
+    return classes.map((secretClass) => ({
+      secret_class: secretClass,
+      status: "bound",
+      source: normalizeText(raw.source || raw.binding_source) || null,
+    }));
+  }
+  return [];
+}
+
+function normalizeStage4a2SecretsBindingItem(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const secretClass =
+    normalizeText(raw.secret_class || raw.secretClass || raw.class || raw.key) || null;
+  if (!secretClass) {
+    return null;
+  }
+  return {
+    secret_class: secretClass,
+    status: normalizeText(raw.status) || "bound",
+    source: normalizeText(raw.source || raw.binding_source) || null,
+    approval_required: raw.approval_required === true,
+    injection_mode: normalizeText(raw.injection_mode) || null,
+  };
+}
+
+function buildStage4a2UsageNotes({ context, sandboxProfile, secretsBindings }) {
+  const notes = [];
+  const ruleEntries = normalizeStringArray(context?.rule_entries || context?.ruleEntries);
+  const runtimeEntries = normalizeStringArray(context?.runtime_entries || context?.runtimeEntries);
+  for (const entry of ruleEntries) {
+    notes.push(`rule:${entry}`);
+  }
+  for (const entry of runtimeEntries) {
+    notes.push(`runtime:${entry}`);
+  }
+  if (sandboxProfile?.profile_id) {
+    notes.push(`sandbox_profile:${sandboxProfile.profile_id}`);
+  }
+  if (secretsBindings.length > 0) {
+    notes.push(
+      `secrets:${secretsBindings.map((item) => item.secret_class).join(",")}`,
+    );
+  }
+  return Array.from(new Set(notes));
+}
+
+function summarizeStage4a2NotificationSignals(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return {
+      total: 0,
+      blocked: 0,
+      approval_required: 0,
+      mention: 0,
+      pr_pending_review: 0,
+    };
+  }
+  const summary = {
+    total: items.length,
+    blocked: 0,
+    approval_required: 0,
+    mention: 0,
+    pr_pending_review: 0,
+  };
+  for (const item of items) {
+    const kind = normalizeText(item?.kind);
+    if (!kind) {
+      continue;
+    }
+    if (kind.includes("blocked")) {
+      summary.blocked += 1;
+    }
+    if (kind.includes("approval")) {
+      summary.approval_required += 1;
+    }
+    if (kind.includes("mention")) {
+      summary.mention += 1;
+    }
+    if (kind.includes("pr") && kind.includes("review")) {
+      summary.pr_pending_review += 1;
+    }
+  }
+  return summary;
+}
+
+function findLatestStage4a2Enforcement(items) {
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  for (const item of items) {
+    const payload = item?.payload && typeof item.payload === "object" ? item.payload : {};
+    const enforcementCandidate =
+      (item?.enforcement && typeof item.enforcement === "object" ? item.enforcement : null) ||
+      (payload?.enforcement && typeof payload.enforcement === "object" ? payload.enforcement : null);
+    const enforcement = enforcementCandidate;
+    if (!enforcement) {
+      continue;
+    }
+    return {
+      sandbox_profile: normalizeText(enforcement.sandbox_profile) || null,
+      secrets_injection: enforcement.secrets_injection === true,
+      secret_ref_count: Number(enforcement.secret_ref_count || 0),
+      approval_required: enforcement.approval_required === true,
+      approval_id: normalizeText(enforcement.approval_id) || null,
+      injection_mode: normalizeText(enforcement.injection_mode) || null,
+    };
+  }
+  return null;
+}
+
+function buildStage4a2AuditSummary({ auditAnchor, channelAuditTrail }) {
+  const latest = auditAnchor?.latest && typeof auditAnchor.latest === "object" ? auditAnchor.latest : {};
+  const notification =
+    normalizeStage4a2AuditAnchor(latest.notification_endpoint) ||
+    normalizeStage4a2AuditAnchor(latest.notification_routing) ||
+    normalizeStage4a2AuditEntry(findLatestChannelAuditByKeyword(channelAuditTrail, ["notification"]));
+  const approval =
+    normalizeStage4a2AuditAnchor(latest.approval) ||
+    normalizeStage4a2AuditAnchor(latest.approval_chain) ||
+    normalizeStage4a2AuditEntry(findLatestChannelAuditByKeyword(channelAuditTrail, ["approval"]));
+  const restrictedExecution =
+    normalizeStage4a2AuditAnchor(latest.sandbox_profile) ||
+    normalizeStage4a2AuditAnchor(latest.secrets_binding) ||
+    normalizeStage4a2AuditEntry(findLatestChannelAuditByKeyword(channelAuditTrail, ["sandbox", "secret"]));
+  return {
+    notification,
+    approval,
+    restricted_execution: restrictedExecution,
+  };
+}
+
+function findLatestChannelAuditByKeyword(items, keywords) {
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  for (const item of items) {
+    const action = normalizeText(item?.action);
+    if (!action) {
+      continue;
+    }
+    if (keywords.some((keyword) => action.includes(keyword))) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function normalizeStage4a2AuditAnchor(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const auditId = normalizeText(raw.audit_id || raw.auditId);
+  const action = normalizeText(raw.action);
+  const at = raw.at || null;
+  if (!auditId && !action && !at) {
+    return null;
+  }
+  return {
+    audit_id: auditId || null,
+    action: action || null,
+    at,
+  };
+}
+
+function normalizeStage4a2AuditEntry(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const auditId = normalizeText(raw.audit_id || raw.auditId);
+  const action = normalizeText(raw.action);
+  const at = raw.at || null;
+  if (!auditId && !action && !at) {
+    return null;
+  }
+  return {
+    audit_id: auditId || null,
+    action: action || null,
+    at,
+  };
+}
+
+function normalizeStage4a2ChannelName(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.replaceAll("-", "_").replaceAll(" ", "_");
+}
+
+function normalizeRuntimeAgents(items, runtimeRegistry) {
+  const merged = [];
+  if (Array.isArray(runtimeRegistry?.agents)) {
+    merged.push(...runtimeRegistry.agents);
+  }
+  if (Array.isArray(items)) {
+    merged.push(...items);
+  }
+  const byId = new Map();
+  for (const item of merged) {
+    const agentId = normalizeText(item?.agent_id || item?.agentId);
+    if (!agentId) {
+      continue;
+    }
+    const previous = byId.get(agentId) || {};
+    byId.set(agentId, {
+      ...previous,
+      agent_id: agentId,
+      machine_id: normalizeText(item?.machine_id || previous.machine_id) || null,
+      runtime_id: normalizeText(item?.runtime_id || previous.runtime_id) || null,
+      owner_operator_id: normalizeText(item?.owner_operator_id || previous.owner_operator_id) || null,
+      assigned_channel_id: normalizeText(item?.assigned_channel_id || previous.assigned_channel_id) || null,
+      assigned_thread_id: normalizeText(item?.assigned_thread_id || previous.assigned_thread_id) || null,
+      assigned_workitem_id: normalizeText(item?.assigned_workitem_id || previous.assigned_workitem_id) || null,
+      status: normalizeText(item?.status || previous.status) || "unknown",
+      pairing_state: normalizeText(item?.pairing_state || previous.pairing_state) || "unknown",
+      liveness: normalizeText(item?.liveness || previous.liveness) || "unknown",
+      updated_at: item?.updated_at || previous.updated_at || null,
+      last_seen_at: item?.last_seen_at || previous.last_seen_at || null,
+    });
+  }
+  return Array.from(byId.values()).sort((left, right) => left.agent_id.localeCompare(right.agent_id));
+}
+
+function normalizeRuntimeWorktreeClaims(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    claim_key: normalizeText(item?.claim_key) || "unknown_claim",
+    agent_id: normalizeText(item?.agent_id) || null,
+    owner_operator_id: normalizeText(item?.owner_operator_id) || null,
+    assigned_channel_id: normalizeText(item?.assigned_channel_id) || null,
+    assigned_thread_id: normalizeText(item?.assigned_thread_id) || null,
+    assigned_workitem_id: normalizeText(item?.assigned_workitem_id) || null,
+    repo_ref: normalizeText(item?.repo_ref) || null,
+    branch: normalizeText(item?.branch) || null,
+    lane_id: normalizeText(item?.lane_id) || null,
+    claim_status: normalizeText(item?.claim_status) || "unknown",
+    reclaimed_from_agent_id: normalizeText(item?.reclaimed_from_agent_id) || null,
+    updated_at: item?.updated_at || item?.claimed_at || null,
+  }));
+}
+
+function normalizeRuntimeRecoveryActions(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    action_id: normalizeText(item?.action_id) || "unknown_action",
+    action: normalizeText(item?.action) || "unknown",
+    status: normalizeText(item?.status) || "applied",
+    operator_id: normalizeText(item?.operator_id) || null,
+    agent_id: normalizeText(item?.agent_id) || null,
+    channel_id: normalizeText(item?.channel_id) || null,
+    thread_id: normalizeText(item?.thread_id) || null,
+    workitem_id: normalizeText(item?.workitem_id) || null,
+    reason: normalizeText(item?.reason) || null,
+    at: item?.at || null,
+    result: item?.result || null,
+  }));
+}
+
+function normalizeChannelAuditTrail(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    audit_id: normalizeText(item?.audit_id) || "unknown_audit",
+    channel_id: normalizeText(item?.channel_id) || null,
+    actor_id: normalizeText(item?.actor_id) || null,
+    action: normalizeText(item?.action) || "unknown_action",
+    target: normalizeText(item?.target) || "channel",
+    at: item?.at || null,
+    policy_snapshot: item?.policy_snapshot || {},
+    details: item?.details || {},
+  }));
+}
+
+function normalizeChannelWorkAssignments(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    channel_id: normalizeText(item?.channel_id) || null,
+    owner_operator_id: normalizeText(item?.owner_operator_id) || null,
+    agent_id: normalizeText(item?.agent_id) || "unknown_agent",
+    assigned_channel_id: normalizeText(item?.assigned_channel_id) || null,
+    assigned_thread_id: normalizeText(item?.assigned_thread_id) || null,
+    assigned_workitem_id: normalizeText(item?.assigned_workitem_id) || null,
+    default_duty: normalizeText(item?.default_duty) || null,
+    assignment_note: normalizeText(item?.assignment_note) || null,
+    runtime_agent_status: normalizeText(item?.runtime_agent_status) || "unknown",
+    pairing_state: normalizeText(item?.pairing_state) || "unknown",
+    machine_id: normalizeText(item?.machine_id) || null,
+    runtime_id: normalizeText(item?.runtime_id) || null,
+    status: normalizeText(item?.status) || "unknown",
+    last_action_at: item?.last_action_at || null,
+    assigned_at: item?.assigned_at || null,
+    updated_at: item?.updated_at || null,
+  }));
+}
+
+function normalizeChannelOperatorActions(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    action_id: normalizeText(item?.action_id) || "unknown_action",
+    channel_id: normalizeText(item?.channel_id) || null,
+    owner_operator_id: normalizeText(item?.owner_operator_id) || null,
+    operator_id: normalizeText(item?.operator_id) || null,
+    action_type: normalizeText(item?.action_type) || "unknown",
+    status: normalizeText(item?.status) || "accepted",
+    agent_id: normalizeText(item?.agent_id) || null,
+    thread_id: normalizeText(item?.thread_id) || null,
+    workitem_id: normalizeText(item?.workitem_id) || null,
+    note: normalizeText(item?.note) || null,
+    approval_id:
+      normalizeText(item?.approval_id) ||
+      normalizeText(item?.approvalId) ||
+      normalizeText(item?.payload?.approval_id) ||
+      normalizeText(item?.payload?.approvalId) ||
+      null,
+    payload: item?.payload && typeof item.payload === "object" ? item.payload : {},
+    enforcement: item?.enforcement && typeof item.enforcement === "object" ? item.enforcement : null,
+    target: normalizeText(item?.target) || null,
+    at: item?.at || null,
+    policy_snapshot: item?.policy_snapshot || {},
+  }));
+}
+
+function normalizeChannelRecentActions(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    recent_action_id: normalizeText(item?.recent_action_id) || "unknown_recent_action",
+    channel_id: normalizeText(item?.channel_id) || null,
+    owner_operator_id: normalizeText(item?.owner_operator_id) || null,
+    action: normalizeText(item?.action) || "unknown_action",
+    action_family: normalizeText(item?.action_family) || "unknown",
+    actor_id: normalizeText(item?.actor_id) || null,
+    target: normalizeText(item?.target) || null,
+    at: item?.at || null,
+    operator_scope: {
+      agent_id: normalizeText(item?.operator_scope?.agent_id) || null,
+      thread_id: normalizeText(item?.operator_scope?.thread_id) || null,
+      workitem_id: normalizeText(item?.operator_scope?.workitem_id) || null,
+    },
+    policy_snapshot: item?.policy_snapshot || {},
+    details: item?.details || {},
+  }));
+}
+
+function normalizeOperatorRepoBinding({ topicId, channelId, operatorId, channelRepoBindingConfig, topicRepoBindingProjection }) {
+  if (channelRepoBindingConfig && typeof channelRepoBindingConfig === "object") {
+    const inner = channelRepoBindingConfig.repo_binding || {};
+    return {
+      source: "channel",
+      channel_id: normalizeText(channelRepoBindingConfig.channel_id) || channelId || null,
+      owner_operator_id: normalizeText(channelRepoBindingConfig.owner_operator_id) || operatorId || null,
+      topic_id: normalizeText(inner.topic_id) || topicId,
+      provider: normalizeText(inner?.provider_ref?.provider) || "unknown",
+      repo_ref: normalizeText(inner?.provider_ref?.repo_ref) || null,
+      default_branch: normalizeText(inner.default_branch) || null,
+      fixed_directory: normalizeText(inner.fixed_directory) || null,
+      updated_at: inner.updated_at || channelRepoBindingConfig.updated_at || null,
+      updated_by: normalizeText(inner.updated_by) || null,
+    };
+  }
+  if (topicRepoBindingProjection && typeof topicRepoBindingProjection === "object") {
+    return {
+      source: "topic_projection",
+      channel_id: channelId || null,
+      owner_operator_id: operatorId || null,
+      topic_id: normalizeText(topicRepoBindingProjection.topic_id) || topicId,
+      provider: normalizeText(topicRepoBindingProjection?.provider_ref?.provider) || "unknown",
+      repo_ref: normalizeText(topicRepoBindingProjection?.provider_ref?.repo_ref) || null,
+      default_branch: normalizeText(topicRepoBindingProjection.default_branch) || null,
+      fixed_directory: normalizeText(topicRepoBindingProjection.fixed_directory) || null,
+      updated_at: topicRepoBindingProjection.updated_at || topicRepoBindingProjection.linked_at || null,
+      updated_by: normalizeText(topicRepoBindingProjection.bound_by) || null,
+    };
+  }
+  return null;
+}
+
+function resolveWorkspaceIdFromChannelContext(channelContextContract) {
+  if (!channelContextContract || typeof channelContextContract !== "object") {
+    return "";
+  }
+  const workspace = channelContextContract.workspace;
+  if (workspace && typeof workspace === "object") {
+    const fromWorkspace =
+      normalizeText(workspace.workspace_id) ||
+      normalizeText(workspace.workspaceId) ||
+      normalizeText(workspace.id);
+    if (fromWorkspace) {
+      return fromWorkspace;
+    }
+  }
+  return normalizeText(channelContextContract.workspace_id) || normalizeText(channelContextContract.workspaceId) || "";
+}
+
+function buildWorkspaceGovernanceProjectionFromChannelTruth({ workspaceId, channelContextRead, channelRepoBindingRead }) {
+  const context = channelContextRead?.payload?.context;
+  const governance = context?.governance && typeof context.governance === "object" ? context.governance : {};
+  const member = governance.member && typeof governance.member === "object" ? governance.member : null;
+  const authIdentity = governance.auth_identity && typeof governance.auth_identity === "object" ? governance.auth_identity : null;
+  const githubInstallation =
+    governance.github_installation && typeof governance.github_installation === "object" ? governance.github_installation : null;
+  const repoBinding = channelRepoBindingRead?.payload?.repo_binding;
+  const contextStatus = normalizeText(channelContextRead?.status) || "missing";
+  const repoBindingStatus = normalizeText(channelRepoBindingRead?.status) || "missing";
+  const contextOk = contextStatus === "ok";
+  const repoBindingOk = repoBindingStatus === "ok";
+  return {
+    workspace_id: normalizeText(workspaceId) || null,
+    members_status: contextOk ? (member ? "ok" : "pending") : contextStatus,
+    members_source: normalizeText(channelContextRead?.path) || null,
+    members_payload: { members: member ? [member] : [] },
+    identities_status: contextOk ? (authIdentity ? "ok" : "pending") : contextStatus,
+    identities_source: normalizeText(channelContextRead?.path) || null,
+    identities_payload: { auth_identities: authIdentity ? [authIdentity] : [] },
+    installations_status: contextOk ? (githubInstallation ? "ok" : "pending") : contextStatus,
+    installations_source: normalizeText(channelContextRead?.path) || null,
+    installations_payload: { github_installations: githubInstallation ? [githubInstallation] : [] },
+    repo_bindings_status: repoBindingOk ? (repoBinding ? "ok" : "pending") : repoBindingStatus,
+    repo_bindings_source: normalizeText(channelRepoBindingRead?.path) || null,
+    repo_bindings_payload: { repo_bindings: repoBinding ? [repoBinding] : [] },
+  };
+}
+
+function normalizeWorkspaceGovernance({ workspaceGovernance, workspaceId, operatorId, repoBinding }) {
+  const normalizedWorkspaceId = normalizeText(workspaceGovernance?.workspace_id) || normalizeText(workspaceId) || null;
+  const members = normalizeWorkspaceMembers(workspaceGovernance?.members_payload);
+  const authIdentities = normalizeWorkspaceAuthIdentities(workspaceGovernance?.identities_payload);
+  const githubInstallations = normalizeWorkspaceGithubInstallations(workspaceGovernance?.installations_payload);
+  const repoBindings = normalizeWorkspaceRepoBindings(workspaceGovernance?.repo_bindings_payload);
+  const repoBindingReady = Boolean(
+    (Array.isArray(repoBindings) && repoBindings.length > 0) || normalizeText(repoBinding?.repo_ref),
+  );
+  const installed = githubInstallations.some((installation) => {
+    const status = normalizeText(installation.status);
+    return status !== "removed" && status !== "revoked";
+  });
+  return {
+    workspace_id: normalizedWorkspaceId,
+    owner_operator_id: normalizeText(operatorId) || null,
+    status: {
+      members_status: normalizeText(workspaceGovernance?.members_status) || "missing",
+      identities_status: normalizeText(workspaceGovernance?.identities_status) || "missing",
+      installations_status: normalizeText(workspaceGovernance?.installations_status) || "missing",
+      repo_bindings_status: normalizeText(workspaceGovernance?.repo_bindings_status) || "missing",
+    },
+    source: {
+      members: normalizeText(workspaceGovernance?.members_source) || null,
+      identities: normalizeText(workspaceGovernance?.identities_source) || null,
+      installations: normalizeText(workspaceGovernance?.installations_source) || null,
+      repo_bindings: normalizeText(workspaceGovernance?.repo_bindings_source) || null,
+    },
+    chain: {
+      identity_link_status: authIdentities.length > 0 ? "ready" : "pending",
+      installation_status: installed ? "ready" : "pending",
+      repo_binding_status: repoBindingReady ? "ready" : "pending",
+    },
+    members,
+    auth_identities: authIdentities,
+    github_installations: githubInstallations,
+    repo_bindings: repoBindings,
+  };
+}
+
+function normalizeWorkspaceMembers(payload) {
+  const items = extractResourceItems(payload, ["members", "member"]);
+  return items.map((item) => ({
+    member_id:
+      normalizeText(item?.member_id) ||
+      normalizeText(item?.memberId) ||
+      normalizeText(item?.actor_id) ||
+      normalizeText(item?.user_id) ||
+      normalizeText(item?.id) ||
+      "unknown_member",
+    role: normalizeText(item?.role) || "member",
+    status: normalizeText(item?.status) || "active",
+    invited_by: normalizeText(item?.invited_by) || normalizeText(item?.invitedBy) || null,
+    invited_at: item?.invited_at || item?.invitedAt || null,
+    joined_at: item?.joined_at || item?.joinedAt || null,
+    updated_at: item?.updated_at || item?.updatedAt || null,
+  }));
+}
+
+function normalizeWorkspaceAuthIdentities(payload) {
+  const items = extractResourceItems(payload, ["auth_identities", "auth_identity", "identities"]);
+  return items.map((item) => ({
+    identity_id:
+      normalizeText(item?.identity_id) ||
+      normalizeText(item?.identityId) ||
+      normalizeText(item?.provider_identity_id) ||
+      normalizeText(item?.id) ||
+      "unknown_identity",
+    member_id: normalizeText(item?.member_id) || normalizeText(item?.memberId) || null,
+    provider: normalizeText(item?.provider) || "github",
+    github_login:
+      normalizeText(item?.github_login) ||
+      normalizeText(item?.githubLogin) ||
+      normalizeText(item?.provider_login) ||
+      normalizeText(item?.login) ||
+      null,
+    provider_user_id:
+      normalizeText(item?.provider_user_id) ||
+      normalizeText(item?.providerUserId) ||
+      normalizeText(item?.github_user_id) ||
+      normalizeText(item?.subject_ref) ||
+      null,
+    status: normalizeText(item?.status) || "linked",
+    linked_at: item?.linked_at || item?.linkedAt || null,
+    updated_at: item?.updated_at || item?.updatedAt || null,
+  }));
+}
+
+function normalizeWorkspaceGithubInstallations(payload) {
+  const items = extractResourceItems(payload, ["github_installations", "github_installation", "installations"]);
+  return items.map((item) => ({
+    installation_id:
+      normalizeText(item?.installation_id) ||
+      normalizeText(item?.installationId) ||
+      normalizeText(item?.id) ||
+      "unknown_installation",
+    workspace_id: normalizeText(item?.workspace_id) || normalizeText(item?.workspaceId) || null,
+    github_account_login:
+      normalizeText(item?.github_account_login) ||
+      normalizeText(item?.githubAccountLogin) ||
+      normalizeText(item?.account_login) ||
+      normalizeText(item?.account?.login) ||
+      null,
+    status: normalizeText(item?.status) || "installed",
+    permission_scope: normalizeText(item?.permission_scope) || normalizeText(item?.permissionScope) || null,
+    authorized_repos: normalizeStringArray(item?.authorized_repos),
+    installed_at: item?.installed_at || item?.installedAt || null,
+    updated_at: item?.updated_at || item?.updatedAt || null,
+  }));
+}
+
+function normalizeWorkspaceRepoBindings(payload) {
+  const items = extractResourceItems(payload, ["repo_bindings", "repo_binding"]);
+  return items.map((item) => {
+    const inner = item?.repo_binding && typeof item.repo_binding === "object" ? item.repo_binding : item;
+    return {
+      binding_id: normalizeText(inner?.binding_id) || normalizeText(inner?.bindingId) || normalizeText(inner?.id) || null,
+      provider: normalizeText(inner?.provider_ref?.provider) || normalizeText(inner?.provider) || "unknown",
+      repo_ref: normalizeText(inner?.provider_ref?.repo_ref) || normalizeText(inner?.repo_ref) || null,
+      default_branch: normalizeText(inner?.default_branch) || normalizeText(inner?.defaultBranch) || null,
+      workspace_installation_id:
+        normalizeText(inner?.workspace_installation_id) || normalizeText(inner?.workspaceInstallationId) || null,
+      authorization_scope: normalizeText(inner?.authorization_scope) || normalizeText(inner?.authorizationScope) || null,
+      status: normalizeText(inner?.status) || normalizeText(item?.status) || "active",
+      updated_at: inner?.updated_at || inner?.updatedAt || item?.updated_at || item?.updatedAt || null,
+    };
+  });
+}
+
+function extractResourceItems(payload, preferredKeys) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+  if (Array.isArray(payload.items)) {
+    return payload.items;
+  }
+  for (const key of preferredKeys) {
+    if (Array.isArray(payload[key])) {
+      return payload[key];
+    }
+  }
+  return [];
+}
+
+function buildAuditEntries({ channelAuditTrail, controlEvents }) {
+  if (Array.isArray(channelAuditTrail) && channelAuditTrail.length > 0) {
+    return channelAuditTrail.slice(0, 50).map((item) => ({
+      audit_id: item.audit_id || null,
+      event_id: item.audit_id || null,
+      source: "channel_audit_trail",
+      actor_id: item.actor_id || null,
+      action: item.action || "unknown_action",
+      target: item.target || "channel",
+      result_state: "accepted",
+      reason_code: null,
+      policy_snapshot: item.policy_snapshot || {},
+      details: item.details || {},
+      at: item.at,
+    }));
+  }
+  return controlEvents.slice(0, 20).map((item) => ({
+    audit_id: item.event_id || null,
+    event_id: item.event_id || null,
+    source: "control_event_projection",
+    actor_id: null,
+    action: item.event_type,
+    target:
+      item.related_resource_type && item.related_resource_id
+        ? `${item.related_resource_type}:${item.related_resource_id}`
+        : item.related_resource_type || "topic",
+    result_state: item.result_state || "accepted",
+    reason_code: item.reason_code || null,
+    policy_snapshot: {},
+    details: {},
+    at: item.at,
+  }));
+}
+
+function mapAgents(agents, nowMs) {
+  if (!Array.isArray(agents)) {
+    return [];
+  }
+  return agents.map((agent) => ({
+    displayName: agent.agentId || agent.actor_id || "unknown_actor",
+    role: agent.role || "unknown",
+    status: agent.status || "unknown",
+    currentLane: agent.laneId || agent.lane_id || "topic",
+    lastHeartbeatSec: secondsSince(agent.lastSeenAt || agent.last_seen_at, nowMs),
+    blockedOn: (agent.status || "").toLowerCase() === "blocked" ? "coordinator_blocker" : null,
+  }));
+}
+
+function secondsSince(timestamp, nowMs) {
+  const parsed = Date.parse(timestamp || "");
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  const diff = Math.floor((nowMs - parsed) / 1000);
+  if (!Number.isFinite(diff) || diff < 0) {
+    return 0;
+  }
+  return diff;
+}
+
+function computeTopicStatus({ pendingApprovals, blockers, openConflicts }) {
+  if ((blockers?.length || 0) > 0 || (openConflicts?.length || 0) > 0) {
+    return "blocked";
+  }
+  if ((pendingApprovals?.length || 0) > 0) {
+    return "approval_required";
+  }
+  return "active";
+}
+
+function computeRiskLevel({ blockers, openConflicts }) {
+  const blockerCount = blockers?.length || 0;
+  const conflictCount = openConflicts?.length || 0;
+  if (blockerCount > 0 || conflictCount > 0) {
+    return "high";
+  }
+  return "low";
+}
+
+function buildInterventionPoints(topicId, messages, coarse, pendingApprovalCount) {
+  const latestByPoint = new Map();
+  for (const message of messages) {
+    if (message?.type !== "status_report") {
+      continue;
+    }
+    const payload = message.payload || {};
+    if (payload.event !== "shell_intervention_point_action") {
+      continue;
+    }
+    if (typeof payload.pointId !== "string" || payload.pointId.length === 0) {
+      continue;
+    }
+    const previous = latestByPoint.get(payload.pointId);
+    if (!previous || Date.parse(previous.createdAt) < Date.parse(message.createdAt)) {
+      latestByPoint.set(payload.pointId, {
+        action: payload.action,
+        note: payload.note,
+        createdAt: message.createdAt,
+      });
+    }
+  }
+
+  return FIXED_INTERVENTION_POINTS.map((point) => {
+    const latest = latestByPoint.get(point.id);
+    return {
+      id: point.id,
+      name: point.name,
+      topicId,
+      owner: point.owner,
+      status: latest?.action ? mapInterventionPointStatus(latest.action) : defaultPointStatus(point.id, coarse, pendingApprovalCount),
+      note: latest?.note || defaultPointNote(point.id, coarse),
+      allowedActions: ["approve", "hold", "escalate"],
+    };
+  });
+}
+
+function defaultPointStatus(pointId, coarse, pendingApprovalCount) {
+  if (pointId === "lead_plan") {
+    return Number(coarse?.revision || 0) > 1 ? "approved" : "pending";
+  }
+  if (pointId === "worker_dispatch") {
+    const activeAgents = Array.isArray(coarse?.activeAgents) ? coarse.activeAgents.length : 0;
+    return activeAgents >= 2 ? "active" : "pending";
+  }
+  if (pointId === "merge_closeout") {
+    if (pendingApprovalCount > 0 || coarse?.deliveryState?.state === "awaiting_merge_gate") {
+      return "pending";
+    }
+    if (coarse?.deliveryState?.state === "pr_ready") {
+      return "approved";
+    }
+  }
+  return "pending";
+}
+
+function defaultPointNote(pointId, coarse) {
+  if (pointId === "merge_closeout") {
+    return `delivery=${coarse?.deliveryState?.state || "unknown"}`;
+  }
+  return "runtime-linked";
+}
+
+function mapInterventionPointStatus(action) {
+  if (action === "approve") {
+    return "approved";
+  }
+  if (action === "hold") {
+    return "hold";
+  }
+  if (action === "escalate") {
+    return "blocked";
+  }
+  return "pending";
+}
+
+function buildInterventions(topicId, blockers, openConflicts) {
+  const interventions = [];
+  for (const blocker of blockers || []) {
+    interventions.push({
+      id: blocker.blockerId || `blocker_${interventions.length + 1}`,
+      type: "blocker",
+      topicId,
+      runId: blocker.runId || "runtime",
+      requestedBy: blocker.messageId || "coordinator",
+      createdAt: blocker.createdAt || new Date().toISOString(),
+      note: blocker.reason || "runtime blocker",
+      status: "pending",
+      recommendedActions: ["request_report", "reroute"],
+    });
+  }
+  for (const conflict of openConflicts || []) {
+    interventions.push({
+      id: conflict.conflictId || `conflict_${interventions.length + 1}`,
+      type: "conflict",
+      topicId,
+      runId: "runtime",
+      requestedBy: conflict.challengeMessageId || "coordinator",
+      createdAt: conflict.createdAt || new Date().toISOString(),
+      note: "unresolved challenge",
+      status: "pending",
+      recommendedActions: ["request_report", "escalate"],
+    });
+  }
+  return interventions;
+}
+
+function buildMetrics(coarse, blockers, openConflicts) {
+  const activeAgents = Array.isArray(coarse?.activeAgents) ? coarse.activeAgents.length : 0;
+  const blockedAgents = Array.isArray(coarse?.blockedAgents) ? coarse.blockedAgents.length : 0;
+  const pendingApprovals = Number(coarse?.pendingApprovalCount || 0);
+  const blockerCount = Number(coarse?.blockerCount || (blockers?.length || 0));
+  const conflictCount = Number(coarse?.openConflictCount || (openConflicts?.length || 0));
+
+  return [
+    {
+      label: "Active Agents",
+      value: String(activeAgents),
+      delta: blockedAgents > 0 ? `${blockedAgents} blocked` : "all clear",
+      trend: blockedAgents > 0 ? "down" : "flat",
+    },
+    {
+      label: "Pending Approvals",
+      value: String(pendingApprovals),
+      delta: pendingApprovals > 0 ? "human gate waiting" : "none",
+      trend: pendingApprovals > 0 ? "up" : "flat",
+    },
+    {
+      label: "Blockers",
+      value: String(blockerCount),
+      delta: conflictCount > 0 ? `${conflictCount} open conflicts` : "stable",
+      trend: blockerCount > 0 || conflictCount > 0 ? "up" : "flat",
+    },
+  ];
+}
+
+function buildEvents(topicId, messages, blockers, openConflicts, runHistory, taskAllocation) {
+  const timeline = [];
+  for (const message of messages || []) {
+    const eventName = normalizeText(message?.payload?.event);
+    timeline.push({
+      at: message.createdAt || new Date().toISOString(),
+      topicId,
+      message: eventName
+        ? `${message.type} (${eventName}) · ${message.state}`
+        : `${message.type} · ${message.state}`,
+      severity: deriveSeverity(message),
+    });
+  }
+  for (const blocker of blockers || []) {
+    timeline.push({
+      at: blocker.createdAt || new Date().toISOString(),
+      topicId,
+      message: `blocker · ${blocker.reason || "runtime blocker"}`,
+      severity: "warning",
+    });
+  }
+  for (const conflict of openConflicts || []) {
+    timeline.push({
+      at: conflict.createdAt || new Date().toISOString(),
+      topicId,
+      message: `conflict · ${conflict.conflictId}`,
+      severity: "warning",
+    });
+  }
+  for (const runItem of runHistory || []) {
+    timeline.push({
+      at: runItem.updatedAt || new Date().toISOString(),
+      topicId,
+      message: `run_history · ${runItem.runId || "unknown"} · ${runItem.state}`,
+      severity: runItem.state === "failed" ? "warning" : "info",
+    });
+  }
+  if (taskAllocation?.summary) {
+    timeline.push({
+      at: new Date().toISOString(),
+      topicId,
+      message: `task_allocation · total=${taskAllocation.summary.total_tasks} assigned=${taskAllocation.summary.assigned_tasks}`,
+      severity: "info",
+    });
+  }
+
+  timeline.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  return timeline.slice(0, 20);
+}
+
+function deriveSeverity(message) {
+  if (message?.state === "rejected" || message?.state === "blocked_conflict") {
+    return "warning";
+  }
+  if (message?.type === "blocker_escalation" || message?.type === "challenge") {
+    return "warning";
+  }
+  return "info";
+}
+
+function writeJson(res, statusCode, payload) {
+  res.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(payload));
+}
