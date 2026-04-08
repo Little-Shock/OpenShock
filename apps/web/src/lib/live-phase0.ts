@@ -62,6 +62,16 @@ type RunControlInput = {
   note?: string;
 };
 
+type AgentProfileUpdateInput = {
+  role: string;
+  avatar: string;
+  prompt: string;
+  operatingInstructions?: string;
+  providerPreference: string;
+  recallPolicy: string;
+  memorySpaces: string[];
+};
+
 type PhaseZeroStreamPresence = {
   onlineMachines: number;
   busyMachines: number;
@@ -97,6 +107,7 @@ type PhaseZeroContextValue = {
   bindExternalIdentity: (input: { provider: string; handle: string; email?: string; memberId?: string }) => Promise<StateMutationResponse>;
   inviteWorkspaceMember: (input: { email: string; name?: string; role: string }) => Promise<StateMutationResponse>;
   updateWorkspaceMember: (memberId: string, input: { role?: string; status?: string }) => Promise<StateMutationResponse>;
+  updateAgentProfile: (agentId: string, input: AgentProfileUpdateInput) => Promise<StateMutationResponse>;
   createIssue: (input: CreateIssueInput) => Promise<StateMutationResponse>;
   postChannelMessage: (channelId: string, prompt: string) => Promise<StateMutationResponse>;
   postRoomMessage: (roomId: string, prompt: string, provider?: string) => Promise<StateMutationResponse>;
@@ -442,6 +453,18 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     return payload;
   }
 
+  async function updateAgentProfile(agentId: string, input: AgentProfileUpdateInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
   async function createIssue(input: CreateIssueInput) {
     const payload = await readJSON<StateMutationResponse>("/v1/issues", {
       method: "POST",
@@ -662,6 +685,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     bindExternalIdentity,
     inviteWorkspaceMember,
     updateWorkspaceMember,
+    updateAgentProfile,
     createIssue,
     postChannelMessage,
     postRoomMessage,

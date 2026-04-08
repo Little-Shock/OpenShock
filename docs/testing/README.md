@@ -52,6 +52,8 @@
   - `TKT-28` 的 installation-complete callback、repo binding refresh、tracked PR backfill 与 Setup callback return evidence
 - [Test Report 2026-04-08 Device Auth / Email Recovery](./Test-Report-2026-04-08-device-auth-email-recovery.md)
   - `TKT-29` 的 device authorization、email verification、password reset、session recovery 与 external identity binding headed evidence
+- [Test Report 2026-04-08 Agent Profile Editor](./Test-Report-2026-04-08-agent-profile-editor.md)
+  - `TKT-32` 的 Agent profile edit、memory binding / recall policy、next-run preview 与 profile audit headed evidence
 
 常用入口：
 
@@ -87,6 +89,8 @@
   - 验证 destructive git、越界写入、secret boundary 的 guard truth，以及 Inbox / Room / Run 三处同步
 - `pnpm test:headed-device-auth-email-recovery`
   - 验证 device authorization、email verification、password reset、session recovery 与 external identity binding
+- `pnpm test:headed-agent-profile-editor`
+  - 验证 Agent profile edit、memory binding / recall policy、next-run preview 与 audit persistence
 - `pnpm test:headed-multi-runtime-scheduler-failover`
   - 验证 multi-runtime scheduler、active lease、offline failover
 - `pnpm test:headed-quick-search`
