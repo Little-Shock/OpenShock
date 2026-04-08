@@ -1816,6 +1816,20 @@ function buildOperatorConsoleState({
             channelContextContract?.approval_contract ||
             channelNotificationEndpointContract?.approval_contract ||
             null,
+          notification_access_contract: channelContextContract?.notification_access_contract || null,
+          workspace_onboarding_access: channelContextContract?.workspace_onboarding_access || null,
+          workspace_plan_subscription_limit_contract:
+            channelContextContract?.workspace_plan_subscription_limit_contract ||
+            channelContextContract?.workspace_plan_subscription_limit ||
+            null,
+          usage_quota_readiness:
+            channelContextContract?.usage_quota_readiness ||
+            channelContextContract?.usage_quota_readiness_contract ||
+            null,
+          usage_quota_readiness_contract:
+            channelContextContract?.usage_quota_readiness_contract ||
+            channelContextContract?.usage_quota_readiness ||
+            null,
           write_anchors: mergedWriteAnchors,
           audit_anchor: contextAuditAnchor || notificationAuditAnchor,
           updated_at: channelContextContract?.updated_at || channelNotificationEndpointContract?.updated_at || null,
