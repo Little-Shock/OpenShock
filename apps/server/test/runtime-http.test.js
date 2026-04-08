@@ -6568,6 +6568,172 @@ test("v1 stage6b notification recovery access contract keeps invite/verify/reset
   });
 });
 
+test("v1 stage6b blocked escalation/approval required/pr ready/agent mailbox routing keeps cross-device recovery routing on notification/inbox truths", async () => {
+  const channelId = "channel_stage6b_notification_routing";
+  const operatorId = "human_operator_stage6b_notification";
+
+  await withRuntimeServer({}, async ({ port }) => {
+    const seeded = await requestJson({
+      port,
+      method: "POST",
+      path: "/runtime/fixtures/seed",
+      body: {}
+    });
+    assert.equal(seeded.statusCode, 200);
+
+    const context = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+      body: {
+        operator_id: operatorId,
+        workspace_id: "workspace_stage6b_notification",
+        workspace_root: "/Users/atou/.slock/agents",
+        baseline_ref: "feat/initial-implementation@8fda3e7",
+        fixed_directory: "/Users/atou/OpenShockSwarm"
+      }
+    });
+    assert.equal(context.statusCode, 200);
+
+    const defaultContract = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`
+    });
+    assert.equal(defaultContract.statusCode, 200);
+    assert.equal(defaultContract.body.notification_endpoint.contract_version, "v1.stage4a2");
+    assert.equal(
+      defaultContract.body.notification_endpoint.agent_mailbox_routing.contract_version,
+      "v1.stage6b"
+    );
+    assert.equal(
+      defaultContract.body.notification_endpoint.agent_mailbox_routing.blocked_escalation.channels.includes("email"),
+      true
+    );
+    assert.equal(
+      defaultContract.body.notification_endpoint.agent_mailbox_routing.approval_required.channels.includes("browser_push"),
+      true
+    );
+    assert.equal(
+      defaultContract.body.notification_endpoint.agent_mailbox_routing.pr_ready.mailbox_ref,
+      "/v1/topics/:topicId/prs"
+    );
+    assert.equal(
+      defaultContract.body.notification_endpoint.agent_mailbox_routing.agent_mailbox.mailbox_ref,
+      "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+    );
+
+    const upsertRouting = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        agent_mailbox_routing: {
+          blocked_escalation: {
+            channels: ["inbox", "email"]
+          },
+          approval_required: {
+            channels: ["inbox", "browser_push"]
+          },
+          pr_ready: {
+            channels: ["inbox", "email"],
+            mailbox_ref: "/v1/topics/:topicId/prs"
+          },
+          agent_mailbox: {
+            channels: ["inbox", "browser_push"],
+            mailbox_ref: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+          }
+        },
+        policy_snapshot: {
+          mode: "stage6b_notification_routing",
+          boundary: "notification_endpoint_inbox_topic_truth_only"
+        }
+      }
+    });
+    assert.equal(upsertRouting.statusCode, 200);
+    assert.equal(
+      upsertRouting.body.notification_endpoint.agent_mailbox_routing.blocked_escalation.channels.includes("browser_push"),
+      false
+    );
+    assert.equal(
+      upsertRouting.body.notification_endpoint.agent_mailbox_routing.pr_ready.channels.includes("email"),
+      true
+    );
+    assert.equal(
+      upsertRouting.body.notification_endpoint.audit_anchor.latest.agent_mailbox_routing.action,
+      "channel_agent_mailbox_routing_upsert"
+    );
+
+    const invalidRoutingField = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        agent_mailbox_routing: {
+          blocked_escalation: {
+            channels: ["inbox"],
+            fallback_channel: "sms"
+          }
+        }
+      }
+    });
+    assert.equal(invalidRoutingField.statusCode, 400);
+    assert.equal(invalidRoutingField.body.error.code, "invalid_notification_agent_mailbox_routing_event_field");
+
+    const invalidRoutingChannel = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        agent_mailbox_routing: {
+          pr_ready: {
+            channels: ["pager"]
+          }
+        }
+      }
+    });
+    assert.equal(invalidRoutingChannel.statusCode, 400);
+    assert.equal(invalidRoutingChannel.body.error.code, "invalid_notification_agent_mailbox_routing_channels");
+
+    const invalidMailboxRef = await requestJson({
+      port,
+      method: "PUT",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+      body: {
+        operator_id: operatorId,
+        agent_mailbox_routing: {
+          agent_mailbox: {
+            mailbox_ref: ""
+          }
+        }
+      }
+    });
+    assert.equal(invalidMailboxRef.statusCode, 400);
+    assert.equal(invalidMailboxRef.body.error.code, "invalid_notification_agent_mailbox_routing_mailbox_ref");
+
+    const auditTrail = await requestJson({
+      port,
+      method: "GET",
+      path: `/v1/channels/${encodeURIComponent(channelId)}/audit-trail?limit=30`
+    });
+    assert.equal(auditTrail.statusCode, 200);
+    assert.equal(
+      auditTrail.body.items.some((item) => item.action === "channel_agent_mailbox_routing_upsert"),
+      true
+    );
+
+    const payload = JSON.stringify({
+      notificationEndpoint: upsertRouting.body.notification_endpoint,
+      auditTrail: auditTrail.body
+    });
+    assert.equal(payload.includes("stage6b"), true);
+    assert.equal(payload.includes("\"stage6c\""), false);
+  });
+});
+
 test("v1 stage5b inbox attention contract keeps unified inbox/follow-up/mention routing under /v1/inbox truth family", async () => {
   const topicId = "topic_stage5b_inbox_contract";
   const actorId = "human_sample_01";

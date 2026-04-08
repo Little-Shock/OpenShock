@@ -243,6 +243,12 @@ const DEPLOY_RUNTIME_HOSTED_ENTRY_CHAIN_STATUSES = new Set(["pending", "ready", 
 const NOTIFICATION_ACCESS_STATUSES = new Set(["pending", "ready", "blocked"]);
 const INBOX_ATTENTION_CHANNELS = new Set(["inbox", "browser_push", "email"]);
 const INBOX_FOLLOW_UP_PRIORITIES = new Set(["normal", "high", "urgent"]);
+const CHANNEL_AGENT_MAILBOX_ROUTING_KEYS = Object.freeze([
+  "blockedEscalation",
+  "approvalRequired",
+  "prReady",
+  "agentMailbox"
+]);
 const EXTERNAL_MEMORY_PROVIDER_CAPABILITIES = Object.freeze({
   memory_search: true,
   memory_get: true,
@@ -346,6 +352,29 @@ function createEmptyChannelNotificationEndpoints() {
       updatedAt: null,
       updatedBy: null
     }
+  };
+}
+
+function createEmptyChannelAgentMailboxRouting() {
+  return {
+    blockedEscalation: {
+      channels: ["inbox", "browser_push", "email"],
+      mailboxRef: "/v1/inbox/:actorId?topic_id=:topicId"
+    },
+    approvalRequired: {
+      channels: ["inbox", "browser_push"],
+      mailboxRef: "/v1/inbox/:actorId?topic_id=:topicId"
+    },
+    prReady: {
+      channels: ["inbox", "browser_push", "email"],
+      mailboxRef: "/v1/topics/:topicId/prs"
+    },
+    agentMailbox: {
+      channels: ["inbox"],
+      mailboxRef: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+    },
+    updatedAt: null,
+    updatedBy: null
   };
 }
 
@@ -3728,6 +3757,39 @@ export class ServerCoordinator {
     return channel.notificationEndpoints;
   }
 
+  ensureChannelAgentMailboxRouting(channel) {
+    if (!channel.agentMailboxRouting || typeof channel.agentMailboxRouting !== "object") {
+      channel.agentMailboxRouting = createEmptyChannelAgentMailboxRouting();
+    }
+    const defaultRouting = createEmptyChannelAgentMailboxRouting();
+    const routing = channel.agentMailboxRouting;
+    const normalizeChannels = (channels, fallbackChannels) => {
+      if (!Array.isArray(channels)) {
+        return deepClone(fallbackChannels);
+      }
+      const normalized = Array.from(
+        new Set(
+          channels
+            .filter((item) => typeof item === "string" && item.trim().length > 0)
+            .map((item) => item.trim())
+            .filter((item) => INBOX_ATTENTION_CHANNELS.has(item))
+        )
+      );
+      return normalized.length > 0 ? normalized : deepClone(fallbackChannels);
+    };
+    for (const key of CHANNEL_AGENT_MAILBOX_ROUTING_KEYS) {
+      const existingEntry = routing[key];
+      const fallbackEntry = defaultRouting[key];
+      routing[key] = {
+        channels: normalizeChannels(existingEntry?.channels, fallbackEntry.channels),
+        mailboxRef: normalizeOptionalScopeId(existingEntry?.mailboxRef) ?? fallbackEntry.mailboxRef
+      };
+    }
+    routing.updatedAt = normalizeOptionalScopeId(routing.updatedAt);
+    routing.updatedBy = normalizeOptionalScopeId(routing.updatedBy);
+    return routing;
+  }
+
   ensureChannelExternalMemoryProvider(channel) {
     if (!channel.externalMemoryProvider || typeof channel.externalMemoryProvider !== "object") {
       channel.externalMemoryProvider = createEmptyChannelExternalMemoryProvider();
@@ -3876,6 +3938,9 @@ export class ServerCoordinator {
         humanUpgradeChain: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_human_upgrade_chain_upsert")),
         repoBinding: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_repo_binding_upsert")),
         notificationEndpoint: mapEntry(this.findLatestChannelAuditByAction(channel, "channel_notification_endpoint_upsert")),
+        agentMailboxRouting: mapEntry(
+          this.findLatestChannelAuditByAction(channel, "channel_agent_mailbox_routing_upsert")
+        ),
         externalMemoryProvider: mapEntry(
           this.findLatestChannelAuditByAction(channel, "channel_external_memory_provider_upsert")
         ),
@@ -5055,6 +5120,7 @@ export class ServerCoordinator {
         governance: createEmptyChannelGovernance(),
         orchestrationUpgrade: createEmptyChannelOrchestrationUpgrade(),
         notificationEndpoints: createEmptyChannelNotificationEndpoints(),
+        agentMailboxRouting: createEmptyChannelAgentMailboxRouting(),
         externalMemoryProvider: createEmptyChannelExternalMemoryProvider(),
         memoryLedger: [],
         repoBinding: null,
@@ -5950,6 +6016,7 @@ export class ServerCoordinator {
   getChannelNotificationEndpointContract(channelId) {
     const channel = this.requireChannelContext(channelId);
     this.ensureChannelNotificationEndpoints(channel);
+    const agentMailboxRouting = this.ensureChannelAgentMailboxRouting(channel);
     return deepClone({
       channelId: channel.channelId,
       ownerOperatorId: channel.ownerOperatorId,
@@ -5957,6 +6024,27 @@ export class ServerCoordinator {
       routingRules: NOTIFICATION_ROUTING_RULES,
       notificationRecoveryAccess: this.buildNotificationRecoveryAccessContract(channel),
       approvalContract: this.getChannelApprovalAuditAnchors(channel),
+      agentMailboxRouting: {
+        contractVersion: "v1.stage6b",
+        truthFamily: ["/v1/channels/*", "/v1/inbox/*", "/v1/topics/*"],
+        blockedEscalation: agentMailboxRouting.blockedEscalation,
+        approvalRequired: agentMailboxRouting.approvalRequired,
+        prReady: agentMailboxRouting.prReady,
+        agentMailbox: agentMailboxRouting.agentMailbox,
+        readAnchors: {
+          inbox: "/v1/inbox/:actorId?topic_id=:topicId",
+          topicNotifications: "/v1/topics/:topicId/notifications",
+          topicPrs: "/v1/topics/:topicId/prs",
+          executionInbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+        },
+        writeAnchors: {
+          notificationEndpointUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`,
+          inboxAttentionRouting: "/v1/inbox/:actorId/attention-routing?topic_id=:topicId",
+          inboxFollowUps: "/v1/inbox/:actorId/follow-ups?topic_id=:topicId"
+        },
+        updatedAt: agentMailboxRouting.updatedAt,
+        updatedBy: agentMailboxRouting.updatedBy
+      },
       writeAnchors: {
         notificationEndpointUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/notification-endpoint`,
         approvalDecision: "/v1/topics/:topicId/approval-holds/:holdId/decisions"
@@ -6055,7 +6143,7 @@ export class ServerCoordinator {
       "invalid_notification_endpoint",
       "notification endpoint payload must be object"
     );
-    const allowedKeys = new Set(["operatorId", "browserPush", "email", "policySnapshot"]);
+    const allowedKeys = new Set(["operatorId", "browserPush", "email", "agentMailboxRouting", "policySnapshot"]);
     for (const key of Object.keys(input)) {
       assertOrThrow(
         allowedKeys.has(key),
@@ -6064,13 +6152,14 @@ export class ServerCoordinator {
       );
     }
     assertOrThrow(
-      input.browserPush !== undefined || input.email !== undefined,
+      input.browserPush !== undefined || input.email !== undefined || input.agentMailboxRouting !== undefined,
       "invalid_notification_endpoint",
-      "notification endpoint payload must include browserPush or email"
+      "notification endpoint payload must include browserPush, email or agentMailboxRouting"
     );
     const channel = this.requireChannelContext(channelId);
     const operatorId = this.assertChannelOwner(channel, input.operatorId);
     const notificationEndpoint = this.ensureChannelNotificationEndpoints(channel);
+    const agentMailboxRouting = this.ensureChannelAgentMailboxRouting(channel);
 
     const applyLayer = (layerName, entryInput, currentEntry) => {
       assertOrThrow(
@@ -6116,6 +6205,80 @@ export class ServerCoordinator {
     }
     if (input.email !== undefined) {
       notificationEndpoint.email = applyLayer("email", input.email, notificationEndpoint.email);
+    }
+    if (input.agentMailboxRouting !== undefined) {
+      assertOrThrow(
+        input.agentMailboxRouting && typeof input.agentMailboxRouting === "object" && !Array.isArray(input.agentMailboxRouting),
+        "invalid_notification_agent_mailbox_routing",
+        "agent_mailbox_routing payload must be object"
+      );
+      const routingInput = input.agentMailboxRouting;
+      const allowedRoutingFields = new Set(CHANNEL_AGENT_MAILBOX_ROUTING_KEYS);
+      for (const key of Object.keys(routingInput)) {
+        assertOrThrow(
+          allowedRoutingFields.has(key),
+          "invalid_notification_agent_mailbox_routing_field",
+          `unsupported agent_mailbox_routing field: ${key}`
+        );
+      }
+      const parseRoutingEntry = (entryInput, key) => {
+        assertOrThrow(
+          entryInput && typeof entryInput === "object" && !Array.isArray(entryInput),
+          "invalid_notification_agent_mailbox_routing_event",
+          `${key} payload must be object`
+        );
+        const allowedEntryFields = new Set(["channels", "mailboxRef"]);
+        for (const fieldKey of Object.keys(entryInput)) {
+          assertOrThrow(
+            allowedEntryFields.has(fieldKey),
+            "invalid_notification_agent_mailbox_routing_event_field",
+            `unsupported ${key} field: ${fieldKey}`
+          );
+        }
+        const existingEntry = agentMailboxRouting[key];
+        return {
+          channels:
+            entryInput.channels !== undefined
+              ? normalizeInboxAttentionChannels(
+                  entryInput.channels,
+                  "invalid_notification_agent_mailbox_routing_channels"
+                )
+              : deepClone(existingEntry.channels),
+          mailboxRef:
+            entryInput.mailboxRef !== undefined
+              ? (() => {
+                  const nextMailboxRef = normalizeOptionalScopeId(entryInput.mailboxRef);
+                  assertOrThrow(
+                    nextMailboxRef,
+                    "invalid_notification_agent_mailbox_routing_mailbox_ref",
+                    `${key}.mailbox_ref must be non-empty string`
+                  );
+                  return nextMailboxRef;
+                })()
+              : existingEntry.mailboxRef
+        };
+      };
+      for (const key of CHANNEL_AGENT_MAILBOX_ROUTING_KEYS) {
+        if (routingInput[key] !== undefined) {
+          agentMailboxRouting[key] = parseRoutingEntry(routingInput[key], key);
+        }
+      }
+      const routingUpdatedAt = nowIso();
+      agentMailboxRouting.updatedAt = routingUpdatedAt;
+      agentMailboxRouting.updatedBy = operatorId;
+      this.appendChannelAuditEntry(channel, {
+        actorId: operatorId,
+        action: "channel_agent_mailbox_routing_upsert",
+        target: `channel:${channel.channelId}:agent_mailbox_routing`,
+        policySnapshot: input.policySnapshot,
+        details: {
+          blocked_escalation_channels: deepClone(agentMailboxRouting.blockedEscalation.channels),
+          approval_required_channels: deepClone(agentMailboxRouting.approvalRequired.channels),
+          pr_ready_channels: deepClone(agentMailboxRouting.prReady.channels),
+          agent_mailbox_channels: deepClone(agentMailboxRouting.agentMailbox.channels),
+          agent_mailbox_ref: agentMailboxRouting.agentMailbox.mailboxRef
+        }
+      });
     }
 
     channel.updatedAt = nowIso();

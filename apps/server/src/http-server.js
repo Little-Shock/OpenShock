@@ -1702,6 +1702,52 @@ function serializeChannelNotificationApprovalContract(input = {}) {
       }
     },
     notification_access_contract: serializeStage6bNotificationAccessContract(input.notificationRecoveryAccess, channelId),
+    agent_mailbox_routing: {
+      contract_version: input.agentMailboxRouting?.contractVersion ?? "v1.stage6b",
+      truth_family: deepClone(input.agentMailboxRouting?.truthFamily ?? ["/v1/channels/*", "/v1/inbox/*", "/v1/topics/*"]),
+      blocked_escalation: {
+        channels: deepClone(input.agentMailboxRouting?.blockedEscalation?.channels ?? ["inbox", "browser_push", "email"]),
+        mailbox_ref:
+          input.agentMailboxRouting?.blockedEscalation?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+      },
+      approval_required: {
+        channels: deepClone(input.agentMailboxRouting?.approvalRequired?.channels ?? ["inbox", "browser_push"]),
+        mailbox_ref:
+          input.agentMailboxRouting?.approvalRequired?.mailboxRef ?? "/v1/inbox/:actorId?topic_id=:topicId"
+      },
+      pr_ready: {
+        channels: deepClone(input.agentMailboxRouting?.prReady?.channels ?? ["inbox", "browser_push", "email"]),
+        mailbox_ref: input.agentMailboxRouting?.prReady?.mailboxRef ?? "/v1/topics/:topicId/prs"
+      },
+      agent_mailbox: {
+        channels: deepClone(input.agentMailboxRouting?.agentMailbox?.channels ?? ["inbox"]),
+        mailbox_ref:
+          input.agentMailboxRouting?.agentMailbox?.mailboxRef ??
+          "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+      },
+      read_anchors: {
+        inbox: input.agentMailboxRouting?.readAnchors?.inbox ?? "/v1/inbox/:actorId?topic_id=:topicId",
+        topic_notifications:
+          input.agentMailboxRouting?.readAnchors?.topicNotifications ?? "/v1/topics/:topicId/notifications",
+        topic_prs: input.agentMailboxRouting?.readAnchors?.topicPrs ?? "/v1/topics/:topicId/prs",
+        execution_inbox:
+          input.agentMailboxRouting?.readAnchors?.executionInbox ??
+          "/v1/topics/:topicId/execution-inbox?actor_id=:actorId"
+      },
+      write_anchors: {
+        notification_endpoint_upsert:
+          input.agentMailboxRouting?.writeAnchors?.notificationEndpointUpsert ??
+          `/v1/channels/${encodeURIComponent(channelId)}/notification-endpoint`,
+        inbox_attention_routing:
+          input.agentMailboxRouting?.writeAnchors?.inboxAttentionRouting ??
+          "/v1/inbox/:actorId/attention-routing?topic_id=:topicId",
+        inbox_follow_ups:
+          input.agentMailboxRouting?.writeAnchors?.inboxFollowUps ??
+          "/v1/inbox/:actorId/follow-ups?topic_id=:topicId"
+      },
+      updated_at: input.agentMailboxRouting?.updatedAt ?? null,
+      updated_by: input.agentMailboxRouting?.updatedBy ?? null
+    },
     write_anchors: {
       notification_endpoint_upsert:
         input.writeAnchors?.notificationEndpointUpsert ??
@@ -1717,6 +1763,13 @@ function serializeChannelNotificationApprovalContract(input = {}) {
               audit_id: input.auditAnchor.latest.notificationEndpoint.auditId ?? null,
               action: input.auditAnchor.latest.notificationEndpoint.action ?? null,
               at: input.auditAnchor.latest.notificationEndpoint.at ?? null
+            }
+          : null,
+        agent_mailbox_routing: input.auditAnchor?.latest?.agentMailboxRouting
+          ? {
+              audit_id: input.auditAnchor.latest.agentMailboxRouting.auditId ?? null,
+              action: input.auditAnchor.latest.agentMailboxRouting.action ?? null,
+              at: input.auditAnchor.latest.agentMailboxRouting.at ?? null
             }
           : null
       }
@@ -3772,7 +3825,7 @@ export function createHttpServer(coordinator, options = {}) {
       if (route.route === "V1_PUT_CHANNEL_NOTIFICATION_ENDPOINT") {
         const body = await readJsonBody(request);
         assertObjectBody(body, "invalid_notification_endpoint", "notification endpoint payload must be object");
-        const allowedFields = new Set(["operator_id", "browser_push", "email", "policy_snapshot"]);
+        const allowedFields = new Set(["operator_id", "browser_push", "email", "agent_mailbox_routing", "policy_snapshot"]);
         for (const key of Object.keys(body)) {
           if (key === "inbox") {
             throw new CoordinatorError(
@@ -3815,6 +3868,42 @@ export function createHttpServer(coordinator, options = {}) {
             }
           }
         }
+        if (body.agent_mailbox_routing !== undefined) {
+          assertObjectBody(
+            body.agent_mailbox_routing,
+            "invalid_notification_agent_mailbox_routing",
+            "agent_mailbox_routing payload must be object"
+          );
+          const allowedRoutingFields = new Set([
+            "blocked_escalation",
+            "approval_required",
+            "pr_ready",
+            "agent_mailbox"
+          ]);
+          for (const key of Object.keys(body.agent_mailbox_routing)) {
+            if (!allowedRoutingFields.has(key)) {
+              throw new CoordinatorError(
+                "invalid_notification_agent_mailbox_routing_field",
+                `unsupported agent_mailbox_routing field: ${key}`
+              );
+            }
+            const eventInput = body.agent_mailbox_routing[key];
+            assertObjectBody(
+              eventInput,
+              "invalid_notification_agent_mailbox_routing_event",
+              `${key} payload must be object`
+            );
+            const allowedEventFields = new Set(["channels", "mailbox_ref"]);
+            for (const eventField of Object.keys(eventInput)) {
+              if (!allowedEventFields.has(eventField)) {
+                throw new CoordinatorError(
+                  "invalid_notification_agent_mailbox_routing_event_field",
+                  `unsupported ${key} field: ${eventField}`
+                );
+              }
+            }
+          }
+        }
         const contract = coordinator.upsertChannelNotificationEndpointContract(route.channelId, {
           operatorId: body.operator_id,
           browserPush: body.browser_push
@@ -3827,6 +3916,34 @@ export function createHttpServer(coordinator, options = {}) {
             ? {
                 enabled: body.email.enabled,
                 endpointRef: body.email.endpoint_ref
+              }
+            : undefined,
+          agentMailboxRouting: body.agent_mailbox_routing
+            ? {
+                blockedEscalation: body.agent_mailbox_routing.blocked_escalation
+                  ? {
+                      channels: body.agent_mailbox_routing.blocked_escalation.channels,
+                      mailboxRef: body.agent_mailbox_routing.blocked_escalation.mailbox_ref
+                    }
+                  : undefined,
+                approvalRequired: body.agent_mailbox_routing.approval_required
+                  ? {
+                      channels: body.agent_mailbox_routing.approval_required.channels,
+                      mailboxRef: body.agent_mailbox_routing.approval_required.mailbox_ref
+                    }
+                  : undefined,
+                prReady: body.agent_mailbox_routing.pr_ready
+                  ? {
+                      channels: body.agent_mailbox_routing.pr_ready.channels,
+                      mailboxRef: body.agent_mailbox_routing.pr_ready.mailbox_ref
+                    }
+                  : undefined,
+                agentMailbox: body.agent_mailbox_routing.agent_mailbox
+                  ? {
+                      channels: body.agent_mailbox_routing.agent_mailbox.channels,
+                      mailboxRef: body.agent_mailbox_routing.agent_mailbox.mailbox_ref
+                    }
+                  : undefined
               }
             : undefined,
           policySnapshot: body.policy_snapshot
