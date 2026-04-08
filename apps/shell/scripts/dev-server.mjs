@@ -250,6 +250,7 @@ async function writeShellState(res) {
       topicNotificationsRead,
       runtimeConfigRead,
       runtimeSmokeRead,
+      runtimeDeployRuntimeRead,
       repoBindingRead,
       actorListRead,
       controlEventsRead,
@@ -268,6 +269,7 @@ async function writeShellState(res) {
         fetchOptionalUpstreamJson(`/v1/topics/${encodedTopicId}/notifications?limit=50`),
         fetchUpstreamJson("/runtime/config"),
         fetchUpstreamJson("/runtime/smoke"),
+        fetchOptionalUpstreamJson("/v1/runtime/deploy-runtime"),
         fetchUpstreamJson(`/v1/topics/${encodedTopicId}/repo-binding`),
         fetchUpstreamJson(`/v1/topics/${encodedTopicId}/actors?limit=100`),
         fetchUpstreamJson(`/v1/topics/${encodedTopicId}/events?limit=20`),
@@ -354,6 +356,7 @@ async function writeShellState(res) {
       topicNotifications: Array.isArray(topicNotificationsRead.payload?.items) ? topicNotificationsRead.payload.items : [],
       runtimeConfig: runtimeConfigRead ?? null,
       runtimeSmoke: runtimeSmokeRead ?? null,
+      runtimeDeployRuntimeRead,
       repoBindingProjection: repoBindingRead?.repo_binding ?? null,
       channelContextContract: channelContextRead.payload?.context ?? null,
       channelNotificationEndpointContract: channelNotificationEndpointRead.payload?.notification_endpoint ?? null,
@@ -1442,6 +1445,7 @@ function buildShellStatePayload({
   topicNotifications,
   runtimeConfig,
   runtimeSmoke,
+  runtimeDeployRuntimeRead,
   repoBindingProjection,
   channelContextContract,
   channelNotificationEndpointContract,
@@ -1487,6 +1491,7 @@ function buildShellStatePayload({
     topicId,
     runtimeConfig,
     runtimeSmoke,
+    runtimeDeployRuntimeRead,
     topicRepoBindingProjection: repoBindingProjection,
     channelContextContract,
     channelNotificationEndpointContract,
@@ -1726,6 +1731,7 @@ function buildOperatorConsoleState({
   topicId,
   runtimeConfig,
   runtimeSmoke,
+  runtimeDeployRuntimeRead,
   topicRepoBindingProjection,
   channelContextContract,
   channelNotificationEndpointContract,
@@ -1876,6 +1882,18 @@ function buildOperatorConsoleState({
     stage5a: normalizedWorkspaceGovernance.stage5a,
   });
   normalizedWorkspaceGovernance.stage5b_hosted_workbench = normalizedWorkspaceGovernance.stage5b;
+  normalizedWorkspaceGovernance.stage5c = buildStage5cHostedRuntimeProjection({
+    scope,
+    runtimeConfig,
+    runtimeSmoke,
+    runtimeRegistry,
+    runtimeAgents,
+    runtimeWorktreeClaims,
+    runtimeRecoveryActions,
+    runtimeDeployRuntimeRead,
+    stage5a: normalizedWorkspaceGovernance.stage5a,
+  });
+  normalizedWorkspaceGovernance.stage5c_hosted_runtime = normalizedWorkspaceGovernance.stage5c;
 
   const auditEntries = buildAuditEntries({
     channelAuditTrail,
@@ -3135,6 +3153,275 @@ function buildStage5bHostedWorkbenchProjection({
       source: "inbox_kind_projection",
     },
   };
+}
+
+function buildStage5cHostedRuntimeProjection({
+  scope,
+  runtimeConfig,
+  runtimeSmoke,
+  runtimeRegistry,
+  runtimeAgents,
+  runtimeWorktreeClaims,
+  runtimeRecoveryActions,
+  runtimeDeployRuntimeRead,
+  stage5a,
+}) {
+  const stage5aHostedAccess = stage5a?.hosted_access && typeof stage5a.hosted_access === "object"
+    ? stage5a.hosted_access
+    : {};
+  const deployRuntimeContract =
+    normalizeText(runtimeDeployRuntimeRead?.status) === "ok" &&
+    runtimeDeployRuntimeRead?.payload &&
+    typeof runtimeDeployRuntimeRead.payload === "object"
+      ? runtimeDeployRuntimeRead.payload.deploy_runtime
+      : null;
+  const deployHostedAccess =
+    deployRuntimeContract?.hosted_access && typeof deployRuntimeContract.hosted_access === "object"
+      ? deployRuntimeContract.hosted_access
+      : {};
+  const deployment =
+    deployRuntimeContract?.deployment && typeof deployRuntimeContract.deployment === "object"
+      ? deployRuntimeContract.deployment
+      : {};
+  const healthReadiness =
+    deployRuntimeContract?.health_readiness && typeof deployRuntimeContract.health_readiness === "object"
+      ? deployRuntimeContract.health_readiness
+      : {};
+  const releaseRecoveryUpgradeHandoff =
+    deployRuntimeContract?.release_recovery_upgrade_handoff &&
+    typeof deployRuntimeContract.release_recovery_upgrade_handoff === "object"
+      ? deployRuntimeContract.release_recovery_upgrade_handoff
+      : {};
+  const deployWriteAnchors =
+    deployRuntimeContract?.write_anchors && typeof deployRuntimeContract.write_anchors === "object"
+      ? deployRuntimeContract.write_anchors
+      : {};
+  const deployAuditAnchor =
+    deployRuntimeContract?.audit_anchor && typeof deployRuntimeContract.audit_anchor === "object"
+      ? deployRuntimeContract.audit_anchor
+      : {};
+  const deployTimelineAnchor =
+    deployRuntimeContract?.timeline_anchor && typeof deployRuntimeContract.timeline_anchor === "object"
+      ? deployRuntimeContract.timeline_anchor
+      : {};
+
+  const hostedEntryUrl =
+    normalizeText(stage5aHostedAccess.hosted_entry_url) ||
+    normalizeText(deployHostedAccess.hosted_entry_url) ||
+    null;
+  const hostedAccessStatus = isNonLocalHttpUrl(hostedEntryUrl)
+    ? "ok"
+    : hostedEntryUrl
+      ? "local_only"
+      : "pending";
+
+  const machines = Array.isArray(runtimeRegistry?.machines) ? runtimeRegistry.machines : [];
+  const summary = runtimeRegistry?.summary && typeof runtimeRegistry.summary === "object" ? runtimeRegistry.summary : {};
+  const agents = Array.isArray(runtimeAgents) ? runtimeAgents : [];
+  const claims = Array.isArray(runtimeWorktreeClaims) ? runtimeWorktreeClaims : [];
+  const recoveryActions = Array.isArray(runtimeRecoveryActions) ? runtimeRecoveryActions : [];
+  const scopeChannelId = normalizeText(scope?.channelId) || null;
+
+  const pairedStates = new Set(["paired", "ready", "active"]);
+  const pairedAgents = agents.filter((item) => pairedStates.has(normalizeText(item?.pairing_state)));
+  const onlineAgents = agents.filter((item) => normalizeText(item?.liveness) === "online");
+  const pendingPairingAgentIds = agents
+    .filter((item) => {
+      const pairingState = normalizeText(item?.pairing_state);
+      const agentId = normalizeText(item?.agent_id);
+      if (!agentId) {
+        return false;
+      }
+      return !pairedStates.has(pairingState);
+    })
+    .map((item) => normalizeText(item?.agent_id))
+    .filter((item) => item.length > 0);
+  const scopeBoundAgents = scopeChannelId
+    ? agents.filter((item) => normalizeText(item?.assigned_channel_id) === scopeChannelId)
+    : [];
+  const pairingTruthReady = agents.length > 0 && pendingPairingAgentIds.length === 0 && onlineAgents.length === agents.length;
+  const pairingStatus = resolveStage5cHostedStatus(pairingTruthReady, hostedAccessStatus);
+
+  const onlineMachines = machines.filter((item) => {
+    const machineStatus = normalizeText(item?.status);
+    const liveness = normalizeText(item?.liveness);
+    return machineStatus === "online" || liveness === "online";
+  });
+  const activeClaims = claims.filter((item) => normalizeText(item?.claim_status) !== "released");
+  const reclaimedClaims = claims.filter((item) => normalizeText(item?.reclaimed_from_agent_id).length > 0);
+  const machineFleetTruthReady = machines.length > 0 && onlineMachines.length === machines.length;
+  const machineFleetStatus = resolveStage5cHostedStatus(machineFleetTruthReady, hostedAccessStatus);
+
+  const deploymentStatus = normalizeText(deployment?.status) || "not_deployed";
+  const deployRuntimeTruthReady = Boolean(deployRuntimeContract) && deploymentStatus === "ready";
+  const deployRuntimeStatus = resolveStage5cHostedStatus(deployRuntimeTruthReady, hostedAccessStatus);
+
+  const healthStatus = normalizeText(healthReadiness?.health_status) || "unknown";
+  const readinessStatus = normalizeText(healthReadiness?.readiness_status) || "not_ready";
+  const healthReadinessTruthReady = Boolean(deployRuntimeContract) && healthStatus === "healthy" && readinessStatus === "ready";
+  const healthReadinessStatus = resolveStage5cHostedStatus(healthReadinessTruthReady, hostedAccessStatus);
+
+  const lifecycleStatus = normalizeText(releaseRecoveryUpgradeHandoff?.status) || "draft";
+  const lifecycleTruthReady = lifecycleStatus === "ready" || lifecycleStatus === "in_progress" || lifecycleStatus === "completed";
+  const releaseRecoveryUpgradeHandoffStatus = resolveStage5cHostedStatus(
+    Boolean(deployRuntimeContract) && lifecycleTruthReady,
+    hostedAccessStatus,
+  );
+
+  const hostedRuntimeControlVisibilityReady =
+    pairingTruthReady &&
+    machineFleetTruthReady &&
+    deployRuntimeTruthReady &&
+    healthReadinessTruthReady &&
+    lifecycleTruthReady;
+  const hostedRuntimeControlVisibilityStatus = resolveStage5cHostedStatus(
+    Boolean(deployRuntimeContract) && hostedRuntimeControlVisibilityReady,
+    hostedAccessStatus,
+  );
+
+  const latestRecoveryAction = recoveryActions.length > 0 ? recoveryActions[0] : null;
+  const projectionSource = deployRuntimeContract ? "runtime_deploy_runtime_projection" : "runtime_registry_projection";
+
+  return {
+    status: {
+      hosted_runtime_control_visibility_status: hostedRuntimeControlVisibilityStatus,
+      remote_daemon_pairing_status: pairingStatus,
+      machine_fleet_status: machineFleetStatus,
+      deploy_runtime_status: deployRuntimeStatus,
+      health_readiness_status: healthReadinessStatus,
+      release_recovery_upgrade_handoff_status: releaseRecoveryUpgradeHandoffStatus,
+    },
+    hosted_runtime_entry: {
+      hosted_entry_url: hostedEntryUrl,
+      hosted_access_status: hostedAccessStatus,
+      channel_id: normalizeText(stage5aHostedAccess.channel_id) || scopeChannelId || null,
+      source: projectionSource,
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    remote_daemon_pairing: {
+      status: pairingStatus,
+      total_agents: agents.length,
+      paired_agents: pairedAgents.length,
+      online_agents: onlineAgents.length,
+      channel_bound_agents: scopeBoundAgents.length,
+      pending_pairing_agent_ids: pendingPairingAgentIds.slice(0, 20),
+      source: "v1_runtime_agents_projection",
+      read_anchor: "/v1/runtime/agents",
+      truth_surfaces: {
+        agents: "/v1/runtime/agents",
+        registry: "/v1/runtime/registry",
+      },
+    },
+    machine_fleet: {
+      status: machineFleetStatus,
+      machine_count: machines.length,
+      online_machine_count: onlineMachines.length,
+      offline_machine_count: Math.max(0, machines.length - onlineMachines.length),
+      active_worktree_claim_count: activeClaims.length,
+      reclaimed_worktree_claim_count: reclaimedClaims.length,
+      total_runtime_agents:
+        Number.isFinite(Number(summary.agent_count)) && Number(summary.agent_count) >= 0
+          ? Number(summary.agent_count)
+          : agents.length,
+      summary,
+      sample_machines: machines.slice(0, 6).map((item) => ({
+        machine_id: normalizeText(item?.machine_id) || null,
+        runtime_id: normalizeText(item?.runtime_id) || null,
+        status: normalizeText(item?.status) || "unknown",
+        liveness: normalizeText(item?.liveness) || "unknown",
+        last_seen_at: item?.last_seen_at || null,
+      })),
+      source: "v1_runtime_registry_projection",
+      truth_surfaces: {
+        registry: "/v1/runtime/registry",
+        worktree_claims: "/v1/runtime/worktree-claims",
+      },
+    },
+    deploy_runtime: {
+      status: deployRuntimeStatus,
+      deployment_status: deploymentStatus,
+      runtime_version: normalizeText(deployment?.runtime_version) || null,
+      target_ref: normalizeText(deployment?.target_ref) || null,
+      release_channel: normalizeText(deployment?.release_channel) || null,
+      updated_at: deployment?.updated_at || null,
+      updated_by: normalizeText(deployment?.updated_by) || null,
+      write_anchor: normalizeText(deployWriteAnchors?.deploy_runtime_upsert) || "/v1/runtime/deploy-runtime",
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    health_readiness: {
+      status: healthReadinessStatus,
+      health_status: healthStatus,
+      readiness_status: readinessStatus,
+      checked_at: healthReadiness?.checked_at || null,
+      check_ref: normalizeText(healthReadiness?.check_ref) || null,
+      notes: normalizeText(healthReadiness?.notes) || null,
+      timeline_anchor: normalizeText(deployTimelineAnchor?.health) || "/health",
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    release_recovery_upgrade_handoff: {
+      status: releaseRecoveryUpgradeHandoffStatus,
+      lifecycle_status: lifecycleStatus,
+      release_ref: normalizeText(releaseRecoveryUpgradeHandoff?.release_ref) || null,
+      recovery_ref: normalizeText(releaseRecoveryUpgradeHandoff?.recovery_ref) || null,
+      upgrade_ref: normalizeText(releaseRecoveryUpgradeHandoff?.upgrade_ref) || null,
+      handoff_ref: normalizeText(releaseRecoveryUpgradeHandoff?.handoff_ref) || null,
+      runbook_ref: normalizeText(releaseRecoveryUpgradeHandoff?.runbook_ref) || null,
+      last_drill_at: releaseRecoveryUpgradeHandoff?.last_drill_at || null,
+      updated_at: releaseRecoveryUpgradeHandoff?.updated_at || null,
+      updated_by: normalizeText(releaseRecoveryUpgradeHandoff?.updated_by) || null,
+      latest_recovery_action: latestRecoveryAction
+        ? {
+            action_id: normalizeText(latestRecoveryAction.action_id) || null,
+            action: normalizeText(latestRecoveryAction.action) || "unknown",
+            status: normalizeText(latestRecoveryAction.status) || "unknown",
+            agent_id: normalizeText(latestRecoveryAction.agent_id) || null,
+            at: latestRecoveryAction.at || null,
+          }
+        : null,
+      write_anchors: {
+        deploy_runtime_upsert: normalizeText(deployWriteAnchors?.deploy_runtime_upsert) || "/v1/runtime/deploy-runtime",
+        runtime_recovery_action:
+          normalizeText(deployWriteAnchors?.runtime_recovery_action) || "/v1/runtime/agents/:agentId/recovery-actions",
+      },
+      audit_anchor:
+        deployAuditAnchor?.latest && typeof deployAuditAnchor.latest === "object" ? deployAuditAnchor.latest.deploy_runtime : null,
+      timeline_anchor: {
+        runtime_registry: normalizeText(deployTimelineAnchor?.runtime_registry) || "/v1/runtime/registry",
+        runtime_recovery_actions:
+          normalizeText(deployTimelineAnchor?.runtime_recovery_actions) || "/v1/runtime/recovery-actions",
+      },
+      truth_surface: "/v1/runtime/deploy-runtime",
+    },
+    hosted_control_visibility: {
+      status: hostedRuntimeControlVisibilityStatus,
+      shell_state_anchor: "/api/v0a/shell-state",
+      no_shadow_truth: true,
+      truth_family: ["/v1/runtime/*"],
+      read_surfaces: [
+        "/v1/runtime/registry",
+        "/v1/runtime/agents",
+        "/v1/runtime/worktree-claims",
+        "/v1/runtime/deploy-runtime",
+        "/v1/runtime/recovery-actions",
+      ],
+      runtime_name: normalizeText(runtimeConfig?.runtimeName) || null,
+      daemon_name: normalizeText(runtimeConfig?.daemonName) || null,
+      sample_topic_ready: runtimeSmoke?.sampleTopicReady === true,
+    },
+  };
+}
+
+function resolveStage5cHostedStatus(truthReady, hostedAccessStatus) {
+  if (!truthReady) {
+    return "pending";
+  }
+  if (hostedAccessStatus === "ok") {
+    return "ok";
+  }
+  if (hostedAccessStatus === "local_only") {
+    return "local_only";
+  }
+  return "pending";
 }
 
 function summarizeStage5bInboxItems(items) {

@@ -523,6 +523,11 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
     (governance.stage5b_hosted_workbench && typeof governance.stage5b_hosted_workbench === "object"
       ? governance.stage5b_hosted_workbench
       : null);
+  const stage5c =
+    (governance.stage5c && typeof governance.stage5c === "object" ? governance.stage5c : null) ||
+    (governance.stage5c_hosted_runtime && typeof governance.stage5c_hosted_runtime === "object"
+      ? governance.stage5c_hosted_runtime
+      : null);
 
   const chainCard = queueCard({
     title: `Workspace ${workspaceId}`,
@@ -962,6 +967,70 @@ function renderWorkspaceGovernance(operatorConsole, payload) {
           : "pending",
     });
     dom.workspaceGovernanceList.append(inboxCard);
+  }
+
+  if (stage5c) {
+    const stage5cStatus = stage5c.status && typeof stage5c.status === "object" ? stage5c.status : {};
+    const hostedRuntimeEntry =
+      stage5c.hosted_runtime_entry && typeof stage5c.hosted_runtime_entry === "object" ? stage5c.hosted_runtime_entry : {};
+    const remoteDaemonPairing =
+      stage5c.remote_daemon_pairing && typeof stage5c.remote_daemon_pairing === "object"
+        ? stage5c.remote_daemon_pairing
+        : {};
+    const machineFleet = stage5c.machine_fleet && typeof stage5c.machine_fleet === "object" ? stage5c.machine_fleet : {};
+    const deployRuntime = stage5c.deploy_runtime && typeof stage5c.deploy_runtime === "object" ? stage5c.deploy_runtime : {};
+    const healthReadiness =
+      stage5c.health_readiness && typeof stage5c.health_readiness === "object" ? stage5c.health_readiness : {};
+    const releaseRecoveryUpgradeHandoff =
+      stage5c.release_recovery_upgrade_handoff && typeof stage5c.release_recovery_upgrade_handoff === "object"
+        ? stage5c.release_recovery_upgrade_handoff
+        : {};
+    const hostedControlVisibility =
+      stage5c.hosted_control_visibility && typeof stage5c.hosted_control_visibility === "object"
+        ? stage5c.hosted_control_visibility
+        : {};
+
+    const pairingCard = queueCard({
+      title: "Stage5C Remote Daemon Pairing / Hosted Entry",
+      subtitle:
+        `pairing=${normalizeText(stage5cStatus.remote_daemon_pairing_status) || "pending"} · ` +
+        `hosted=${normalizeText(hostedRuntimeEntry.hosted_access_status) || "pending"}`,
+      note: `${formatStage5cHostedRuntimeEntry(hostedRuntimeEntry)} · ${formatStage5cRemotePairing(remoteDaemonPairing)}`,
+      status: normalizeText(stage5cStatus.remote_daemon_pairing_status) === "ok" ? "active" : "pending",
+    });
+    dom.workspaceGovernanceList.append(pairingCard);
+
+    const fleetCard = queueCard({
+      title: "Stage5C Machine Fleet Visibility",
+      subtitle:
+        `fleet=${normalizeText(stage5cStatus.machine_fleet_status) || "pending"} · ` +
+        `control=${normalizeText(stage5cStatus.hosted_runtime_control_visibility_status) || "pending"}`,
+      note: `${formatStage5cMachineFleet(machineFleet)} · ${formatStage5cControlVisibility(hostedControlVisibility)}`,
+      status:
+        normalizeText(stage5cStatus.machine_fleet_status) === "ok" &&
+        normalizeText(stage5cStatus.hosted_runtime_control_visibility_status) === "ok"
+          ? "active"
+          : "pending",
+    });
+    dom.workspaceGovernanceList.append(fleetCard);
+
+    const lifecycleCard = queueCard({
+      title: "Stage5C Recovery / Upgrade / Handoff",
+      subtitle:
+        `deploy=${normalizeText(stage5cStatus.deploy_runtime_status) || "pending"} · ` +
+        `health=${normalizeText(stage5cStatus.health_readiness_status) || "pending"} · ` +
+        `handoff=${normalizeText(stage5cStatus.release_recovery_upgrade_handoff_status) || "pending"}`,
+      note:
+        `${formatStage5cDeployRuntime(deployRuntime)} · ${formatStage5cHealthReadiness(healthReadiness)} · ` +
+        `${formatStage5cReleaseRecoveryUpgradeHandoff(releaseRecoveryUpgradeHandoff)}`,
+      status:
+        normalizeText(stage5cStatus.deploy_runtime_status) === "ok" &&
+        normalizeText(stage5cStatus.health_readiness_status) === "ok" &&
+        normalizeText(stage5cStatus.release_recovery_upgrade_handoff_status) === "ok"
+          ? "active"
+          : "pending",
+    });
+    dom.workspaceGovernanceList.append(lifecycleCard);
   }
 }
 
@@ -1890,6 +1959,100 @@ function formatStage5bAttentionRouting(raw) {
   const blockers = Number(raw.active_blockers || 0);
   const required = Number(raw.attention_required_total || approvals + conflicts + blockers);
   return `approvals=${approvals} · conflicts=${conflicts} · blockers=${blockers} · attention_required=${required}`;
+}
+
+function formatStage5cHostedRuntimeEntry(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "hosted runtime entry pending";
+  }
+  const hostedEntryUrl = normalizeText(raw.hosted_entry_url) || "n/a";
+  const channelId = normalizeText(raw.channel_id) || "unbound_channel";
+  const source = normalizeText(raw.source) || "runtime_projection";
+  const hostedAccessStatus = normalizeText(raw.hosted_access_status) || "pending";
+  return `entry=${hostedEntryUrl} · channel=${channelId} · hosted=${hostedAccessStatus} · source=${source}`;
+}
+
+function formatStage5cRemotePairing(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "remote daemon pairing pending";
+  }
+  const totalAgents = Number(raw.total_agents || 0);
+  const pairedAgents = Number(raw.paired_agents || 0);
+  const onlineAgents = Number(raw.online_agents || 0);
+  const channelBoundAgents = Number(raw.channel_bound_agents || 0);
+  const pendingIds = Array.isArray(raw.pending_pairing_agent_ids) ? raw.pending_pairing_agent_ids : [];
+  return (
+    `agents=${pairedAgents}/${totalAgents} paired · online=${onlineAgents} · channel_bound=${channelBoundAgents}` +
+    (pendingIds.length > 0 ? ` · pending=${pendingIds.slice(0, 4).join(",")}` : "")
+  );
+}
+
+function formatStage5cMachineFleet(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "machine fleet pending";
+  }
+  const machineCount = Number(raw.machine_count || 0);
+  const onlineMachineCount = Number(raw.online_machine_count || 0);
+  const activeClaims = Number(raw.active_worktree_claim_count || 0);
+  const reclaimedClaims = Number(raw.reclaimed_worktree_claim_count || 0);
+  const totalAgents = Number(raw.total_runtime_agents || 0);
+  return (
+    `machines=${onlineMachineCount}/${machineCount} online · runtime_agents=${totalAgents} · ` +
+    `claims active=${activeClaims} reclaimed=${reclaimedClaims}`
+  );
+}
+
+function formatStage5cControlVisibility(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "hosted control visibility pending";
+  }
+  const noShadowTruth = raw.no_shadow_truth === true ? "yes" : "no";
+  const runtimeName = normalizeText(raw.runtime_name) || "runtime";
+  const daemonName = normalizeText(raw.daemon_name) || "daemon";
+  const sampleReady = raw.sample_topic_ready === true ? "yes" : "no";
+  return `runtime=${runtimeName} · daemon=${daemonName} · sample_topic_ready=${sampleReady} · no_shadow_truth=${noShadowTruth}`;
+}
+
+function formatStage5cDeployRuntime(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "deploy runtime pending";
+  }
+  const deploymentStatus = normalizeText(raw.deployment_status) || "not_deployed";
+  const runtimeVersion = normalizeText(raw.runtime_version) || "n/a";
+  const targetRef = normalizeText(raw.target_ref) || "n/a";
+  const releaseChannel = normalizeText(raw.release_channel) || "n/a";
+  return `deploy=${deploymentStatus} · version=${runtimeVersion} · target=${targetRef} · channel=${releaseChannel}`;
+}
+
+function formatStage5cHealthReadiness(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "health/readiness pending";
+  }
+  const healthStatus = normalizeText(raw.health_status) || "unknown";
+  const readinessStatus = normalizeText(raw.readiness_status) || "not_ready";
+  const checkRef = normalizeText(raw.check_ref) || "n/a";
+  return `health=${healthStatus} · readiness=${readinessStatus} · check_ref=${checkRef}`;
+}
+
+function formatStage5cReleaseRecoveryUpgradeHandoff(raw) {
+  if (!raw || typeof raw !== "object") {
+    return "release/recovery/upgrade/handoff pending";
+  }
+  const lifecycleStatus = normalizeText(raw.lifecycle_status) || "draft";
+  const releaseRef = normalizeText(raw.release_ref) || "n/a";
+  const recoveryRef = normalizeText(raw.recovery_ref) || "n/a";
+  const upgradeRef = normalizeText(raw.upgrade_ref) || "n/a";
+  const handoffRef = normalizeText(raw.handoff_ref) || "n/a";
+  const latestRecoveryAction = raw.latest_recovery_action && typeof raw.latest_recovery_action === "object"
+    ? raw.latest_recovery_action
+    : null;
+  const actionSummary = latestRecoveryAction
+    ? `${normalizeText(latestRecoveryAction.action) || "action"}:${normalizeText(latestRecoveryAction.status) || "unknown"}`
+    : "none";
+  return (
+    `lifecycle=${lifecycleStatus} · release=${releaseRef} · recovery=${recoveryRef} · ` +
+    `upgrade=${upgradeRef} · handoff=${handoffRef} · latest_recovery_action=${actionSummary}`
+  );
 }
 
 function queueCard({ title, subtitle, note, status = "pending" }) {
