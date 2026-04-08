@@ -4722,6 +4722,12 @@ test("v1 stage4a1 enforcement blocks missing installation, forbidden role, stale
           operator_id: operatorId,
           workspace_id: "workspace_stage4a1_missing_install",
           workspace_root: "/Users/atou/.slock/agents",
+          auth_identity: {
+            identity_id: "auth_identity_stage4a1_missing_install",
+            provider: "github",
+            subject_ref: "github_user_stage4a1_missing_install",
+            status: "bound"
+          },
           member: {
             member_id: "member_stage4a1_missing_install",
             role: "owner",
@@ -6174,6 +6180,284 @@ test("v1 stage6a device authorization/runtime attach contract keeps hosted attac
     assert.equal(payload.includes("\"stage6b\""), false);
     assert.equal(payload.includes("\"stage6c\""), false);
   });
+});
+
+test("v1 stage6a workspace onboarding access contract keeps identity/invite/install/repo-binding access on stage4 truth", async () => {
+  const channelId = "channel_stage6a_onboarding";
+  const topicId = "topic_stage6a_onboarding";
+  const operatorId = "human_operator_stage6a_onboarding";
+  const workspaceId = "workspace_stage6a_onboarding";
+  const installationId = "gh_ins_stage6a_onboarding";
+
+  await withRuntimeServer(
+    {
+      fixture: {
+        topicId
+      }
+    },
+    async ({ port }) => {
+      const seeded = await requestJson({
+        port,
+        method: "POST",
+        path: "/runtime/fixtures/seed",
+        body: {}
+      });
+      assert.equal(seeded.statusCode, 200);
+
+      const baseContext = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          workspace_id: workspaceId,
+          workspace_root: "/Users/atou/.slock/agents",
+          baseline_ref: "feat/initial-implementation@6b14ad0",
+          fixed_directory: "/Users/atou/OpenShockSwarm"
+        }
+      });
+      assert.equal(baseContext.statusCode, 200);
+      assert.equal(baseContext.body.context.workspace_onboarding_access.contract_version, "v1.stage6a");
+      assert.equal(baseContext.body.context.workspace_onboarding_access.status.onboarding_entry_status, "pending");
+      assert.equal(baseContext.body.context.workspace_onboarding_access.status.repo_binding_access_status, "pending");
+
+      const invitedContext = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          auth_identity: {
+            identity_id: "auth_identity_stage6a_onboarding",
+            provider: "github",
+            subject_ref: "github_user_stage6a_onboarding",
+            github_login: "atou",
+            status: "bound"
+          },
+          member: {
+            member_id: "member_stage6a_onboarding",
+            role: "owner",
+            status: "invited"
+          },
+          github_installation: {
+            installation_id: installationId,
+            provider: "github_app",
+            workspace_id: workspaceId,
+            status: "active",
+            authorized_repos: ["Little-Shock/OpenShockSwarm"]
+          }
+        }
+      });
+      assert.equal(invitedContext.statusCode, 200);
+      assert.equal(invitedContext.body.context.workspace_onboarding_access.status.invite_status, "ready");
+      assert.equal(invitedContext.body.context.workspace_onboarding_access.status.verify_status, "ready");
+      assert.equal(invitedContext.body.context.workspace_onboarding_access.status.join_status, "pending");
+      assert.equal(
+        invitedContext.body.context.workspace_onboarding_access.status.github_installation_status,
+        "ready"
+      );
+      assert.equal(
+        invitedContext.body.context.workspace_onboarding_access.status.repo_binding_access_status,
+        "pending"
+      );
+
+      const invitedBindingBlocked = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
+        body: {
+          operator_id: operatorId,
+          topic_id: topicId,
+          provider_ref: {
+            provider: "github",
+            repo_ref: "Little-Shock/OpenShockSwarm"
+          },
+          workspace_installation_id: installationId
+        }
+      });
+      assert.equal(invitedBindingBlocked.statusCode, 422);
+      assert.equal(invitedBindingBlocked.body.error.code, "workspace_member_required");
+
+      const activateMember = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          member: {
+            member_id: "member_stage6a_onboarding",
+            role: "owner",
+            status: "active"
+          }
+        }
+      });
+      assert.equal(activateMember.statusCode, 200);
+
+      const bindingReady = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
+        body: {
+          operator_id: operatorId,
+          topic_id: topicId,
+          provider_ref: {
+            provider: "github",
+            repo_ref: "Little-Shock/OpenShockSwarm"
+          },
+          workspace_installation_id: installationId
+        }
+      });
+      assert.equal(bindingReady.statusCode, 200);
+
+      const contextReady = await requestJson({
+        port,
+        method: "GET",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`
+      });
+      assert.equal(contextReady.statusCode, 200);
+      assert.equal(contextReady.body.context.workspace_onboarding_access.status.repo_binding_status, "ready");
+      assert.equal(contextReady.body.context.workspace_onboarding_access.status.repo_binding_access_status, "ready");
+      assert.equal(contextReady.body.context.workspace_onboarding_access.status.onboarding_entry_status, "ready");
+      assert.equal(
+        contextReady.body.context.workspace_onboarding_access.refs.github_installation_id,
+        installationId
+      );
+      assert.equal(
+        contextReady.body.context.workspace_onboarding_access.read_anchors.channel_repo_binding,
+        `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`
+      );
+
+      const revokeIdentity = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/context`,
+        body: {
+          operator_id: operatorId,
+          auth_identity: {
+            identity_id: "auth_identity_stage6a_onboarding",
+            provider: "github",
+            subject_ref: "github_user_stage6a_onboarding",
+            github_login: "atou",
+            status: "revoked"
+          }
+        }
+      });
+      assert.equal(revokeIdentity.statusCode, 200);
+
+      const revokedIdentityBinding = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(channelId)}/repo-binding`,
+        body: {
+          operator_id: operatorId,
+          topic_id: topicId,
+          provider_ref: {
+            provider: "github",
+            repo_ref: "Little-Shock/OpenShockSwarm"
+          },
+          workspace_installation_id: installationId
+        }
+      });
+      assert.equal(revokedIdentityBinding.statusCode, 422);
+      assert.equal(revokedIdentityBinding.body.error.code, "workspace_auth_identity_not_bound");
+
+      const revokedTopicBindingUse = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/topics/${encodeURIComponent(topicId)}/repo-binding`,
+        body: {
+          provider_ref: {
+            provider: "github",
+            repo_ref: "Little-Shock/OpenShockSwarm"
+          },
+          default_branch: "feat/initial-implementation",
+          bound_by: operatorId
+        }
+      });
+      assert.equal(revokedTopicBindingUse.statusCode, 422);
+      assert.equal(revokedTopicBindingUse.body.error.code, "workspace_auth_identity_not_bound");
+
+      const missingIdentityTopicId = "topic_stage6a_onboarding_missing_identity";
+      const createMissingIdentityTopic = await requestJson({
+        port,
+        method: "POST",
+        path: "/v1/topics",
+        headers: {
+          "Idempotency-Key": "stage6a-missing-identity-topic"
+        },
+        body: {
+          topic_id: missingIdentityTopicId,
+          goal: "stage6a onboarding missing identity guard",
+          constraints: ["stage6a", "onboarding"]
+        }
+      });
+      assert.equal(createMissingIdentityTopic.statusCode, 201);
+
+      const missingIdentityChannel = "channel_stage6a_onboarding_missing_identity";
+      const missingIdentityContext = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(missingIdentityChannel)}/context`,
+        body: {
+          operator_id: operatorId,
+          workspace_id: "workspace_stage6a_onboarding_missing_identity",
+          workspace_root: "/Users/atou/.slock/agents",
+          member: {
+            member_id: "member_stage6a_onboarding_missing_identity",
+            role: "owner",
+            status: "active"
+          },
+          github_installation: {
+            installation_id: "gh_ins_stage6a_onboarding_missing_identity",
+            provider: "github_app",
+            workspace_id: "workspace_stage6a_onboarding_missing_identity",
+            status: "active",
+            authorized_repos: ["Little-Shock/OpenShockSwarm"]
+          }
+        }
+      });
+      assert.equal(missingIdentityContext.statusCode, 200);
+
+      const missingIdentityBinding = await requestJson({
+        port,
+        method: "PUT",
+        path: `/v1/channels/${encodeURIComponent(missingIdentityChannel)}/repo-binding`,
+        body: {
+          operator_id: operatorId,
+          topic_id: missingIdentityTopicId,
+          provider_ref: {
+            provider: "github",
+            repo_ref: "Little-Shock/OpenShockSwarm"
+          }
+        }
+      });
+      assert.equal(missingIdentityBinding.statusCode, 422);
+      assert.equal(missingIdentityBinding.body.error.code, "workspace_auth_identity_required");
+
+      const shellCompatibility = await requestJson({
+        port,
+        method: "GET",
+        path: "/v1/compatibility/shell-adapter"
+      });
+      assert.equal(shellCompatibility.statusCode, 200);
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.projection_surfaces.includes("/v1/channels/:channelId/repo-binding"),
+        true
+      );
+      assert.equal(
+        shellCompatibility.body.backend_derived_projection.lineage_anchors.channel_repo_binding,
+        "/v1/channels/:channelId/repo-binding"
+      );
+
+      const payload = JSON.stringify({
+        context: contextReady.body.context,
+        shellCompatibility: shellCompatibility.body
+      });
+      assert.equal(payload.includes("stage6a"), true);
+      assert.equal(payload.includes("\"stage6b\""), false);
+      assert.equal(payload.includes("\"stage6c\""), false);
+    }
+  );
 });
 
 test("v1 stage5b inbox attention contract keeps unified inbox/follow-up/mention routing under /v1/inbox truth family", async () => {

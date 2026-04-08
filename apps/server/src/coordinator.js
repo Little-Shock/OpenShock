@@ -3900,6 +3900,90 @@ export class ServerCoordinator {
     };
   }
 
+  buildWorkspaceOnboardingAccessContract(channel) {
+    this.ensureChannelGovernance(channel);
+    const member = channel.governance.member;
+    const authIdentity = channel.governance.authIdentity;
+    const installation = channel.governance.githubInstallation;
+    const repoBinding = channel.repoBinding;
+    const permissionMatrix = WORKSPACE_GOVERNANCE_PERMISSION_MATRIX;
+    const memberRole = normalizeOptionalScopeId(member?.role);
+    const memberPermissions = memberRole ? permissionMatrix[memberRole] ?? null : null;
+    const inviteStatus = !member ? "pending" : member.status === "invited" || member.status === "active" ? "ready" : "blocked";
+    const verifyStatus = !authIdentity ? "pending" : authIdentity.status === "bound" ? "ready" : "blocked";
+    const joinStatus = !member ? "pending" : member.status === "active" ? "ready" : member.status === "invited" ? "pending" : "blocked";
+    const installationStatus = !installation ? "pending" : installation.status === "active" ? "ready" : "blocked";
+    const repoBindingStatus = repoBinding ? "ready" : "pending";
+    const roleCapabilityStatus = !member ? "pending" : memberPermissions?.manage_repo_binding === true ? "ready" : "blocked";
+    const hasBlockedStage = [inviteStatus, verifyStatus, joinStatus, installationStatus, roleCapabilityStatus].includes("blocked");
+    const repoBindingAccessStatus =
+      hasBlockedStage
+        ? "blocked"
+        : verifyStatus === "ready" && joinStatus === "ready" && installationStatus === "ready" && roleCapabilityStatus === "ready"
+          ? "ready"
+          : "pending";
+    const onboardingEntryStatus =
+      repoBindingAccessStatus === "blocked" || repoBindingStatus === "blocked"
+        ? "blocked"
+        : repoBindingAccessStatus === "ready" && repoBindingStatus === "ready"
+          ? "ready"
+          : "pending";
+    const auditAnchor = this.buildChannelAuditAnchor(channel);
+    return {
+      contractVersion: "v1.stage6a",
+      truthFamily: ["/v1/channels/*", "/v1/topics/*"],
+      status: {
+        onboardingEntryStatus,
+        inviteStatus,
+        verifyStatus,
+        joinStatus,
+        githubInstallationStatus: installationStatus,
+        repoBindingStatus,
+        repoBindingAccessStatus
+      },
+      chain: {
+        identityStatus: authIdentity?.status ?? null,
+        memberStatus: member?.status ?? null,
+        githubInstallationStatus: installation?.status ?? null
+      },
+      refs: {
+        workspaceId: channel.workspace.workspaceId,
+        authIdentityId: authIdentity?.identityId ?? null,
+        memberId: member?.memberId ?? null,
+        githubInstallationId: installation?.installationId ?? null,
+        repoRef: repoBinding?.providerRef?.repo_ref ?? null,
+        topicId: repoBinding?.topicId ?? null
+      },
+      accessPolicy: {
+        memberRole,
+        roleCanManageRepoBinding: memberPermissions?.manage_repo_binding === true,
+        requiredCapability: "manage_repo_binding"
+      },
+      writeAnchors: {
+        authIdentityUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        memberUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        githubInstallationUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        repoBindingUpsert: `/v1/channels/${encodeURIComponent(channel.channelId)}/repo-binding`
+      },
+      readAnchors: {
+        channelContext: `/v1/channels/${encodeURIComponent(channel.channelId)}/context`,
+        channelRepoBinding: `/v1/channels/${encodeURIComponent(channel.channelId)}/repo-binding`,
+        topicRepoBinding: "/v1/topics/:topicId/repo-binding",
+        channelAuditTrail: `/v1/channels/${encodeURIComponent(channel.channelId)}/audit-trail`
+      },
+      auditAnchor: {
+        trail: auditAnchor.trail,
+        latest: {
+          authIdentity: auditAnchor.latest?.authIdentity ?? null,
+          member: auditAnchor.latest?.member ?? null,
+          githubInstallation: auditAnchor.latest?.githubInstallation ?? null,
+          repoBinding: auditAnchor.latest?.repoBinding ?? null
+        }
+      },
+      updatedAt: channel.updatedAt
+    };
+  }
+
   upsertChannelGovernance(channel, input = {}, operatorId, policySnapshot) {
     const governance = this.ensureChannelGovernance(channel);
     if (input.authIdentity !== undefined) {
@@ -4613,9 +4697,10 @@ export class ServerCoordinator {
 
   assertChannelRepoBindingGovernance(channel, input = {}) {
     this.ensureChannelGovernance(channel);
+    const authIdentity = channel.governance.authIdentity;
     const member = channel.governance.member;
     const installation = channel.governance.githubInstallation;
-    const governanceConfigured = member !== null || installation !== null || channel.governance.authIdentity !== null;
+    const governanceConfigured = member !== null || installation !== null || authIdentity !== null;
 
     if (!governanceConfigured) {
       return {
@@ -4630,6 +4715,19 @@ export class ServerCoordinator {
       throw new CoordinatorError("workspace_member_required", "active workspace member is required", {
         channel_id: channel.channelId,
         workspace_id: channel.workspace.workspaceId
+      });
+    }
+    if (!authIdentity) {
+      throw new CoordinatorError("workspace_auth_identity_required", "bound auth identity is required before repo binding", {
+        channel_id: channel.channelId,
+        workspace_id: channel.workspace.workspaceId
+      });
+    }
+    if (authIdentity.status !== "bound") {
+      throw new CoordinatorError("workspace_auth_identity_not_bound", "auth identity must be bound before repo binding", {
+        channel_id: channel.channelId,
+        workspace_id: channel.workspace.workspaceId,
+        status: authIdentity.status
       });
     }
     const permissions = WORKSPACE_GOVERNANCE_PERMISSION_MATRIX[member.role] ?? null;
@@ -4716,6 +4814,28 @@ export class ServerCoordinator {
       channel.governance.authIdentity !== null;
     if (!governanceConfigured) {
       return;
+    }
+    const authIdentity = channel.governance.authIdentity;
+    if (!authIdentity) {
+      throw new CoordinatorError(
+        "workspace_auth_identity_required",
+        "bound auth identity is required before topic repo binding use",
+        {
+          topic_id: topicId,
+          channel_id: channel.channelId
+        }
+      );
+    }
+    if (authIdentity.status !== "bound") {
+      throw new CoordinatorError(
+        "workspace_auth_identity_not_bound",
+        "auth identity must be bound before topic repo binding use",
+        {
+          topic_id: topicId,
+          channel_id: channel.channelId,
+          status: authIdentity.status
+        }
+      );
     }
     const installation = channel.governance.githubInstallation;
     if (!installation) {
@@ -4875,6 +4995,7 @@ export class ServerCoordinator {
       notificationRoutingRules: NOTIFICATION_ROUTING_RULES,
       approvalContract: this.getChannelApprovalAuditAnchors(channel),
       externalMemoryProvider: channel.externalMemoryProvider,
+      workspaceOnboardingAccess: this.buildWorkspaceOnboardingAccessContract(channel),
       repoBinding: channel.repoBinding ?? null,
       auditAnchor: this.buildChannelAuditAnchor(channel),
       updatedAt: channel.updatedAt
@@ -7768,6 +7889,7 @@ export class ServerCoordinator {
         "/v1/inbox/:actorId?topic_id=:topicId",
         "/v1/inbox/:actorId/acks",
         "/v1/channels/:channelId/context",
+        "/v1/channels/:channelId/repo-binding",
         "/v1/inbox/:actorId/follow-ups?topic_id=:topicId",
         "/v1/inbox/:actorId/attention-routing?topic_id=:topicId",
         "/v1/channels/:channelId/notification-endpoint",
@@ -7810,6 +7932,7 @@ export class ServerCoordinator {
         execution_debug: "/v1/execution/runs/:runId/debug?topic_id=:topicId",
         execution_inbox: "/v1/topics/:topicId/execution-inbox?actor_id=:actorId",
         channel_context: "/v1/channels/:channelId/context",
+        channel_repo_binding: "/v1/channels/:channelId/repo-binding",
         inbox_follow_ups: "/v1/inbox/:actorId/follow-ups?topic_id=:topicId",
         inbox_attention_routing: "/v1/inbox/:actorId/attention-routing?topic_id=:topicId",
         channel_notification_endpoint: "/v1/channels/:channelId/notification-endpoint",

@@ -1084,6 +1084,95 @@ function serializeChannelCollaborationContract(input = {}, channelId = null) {
   };
 }
 
+function serializeWorkspaceOnboardingAccessContract(input = {}, channelId = null) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const encodedChannelId = channelId ? encodeURIComponent(channelId) : ":channelId";
+  const latest = input.auditAnchor?.latest ?? {};
+  return {
+    contract_version: input.contractVersion ?? "v1.stage6a",
+    truth_family: deepClone(input.truthFamily ?? ["/v1/channels/*", "/v1/topics/*"]),
+    status: {
+      onboarding_entry_status: input.status?.onboardingEntryStatus ?? "pending",
+      invite_status: input.status?.inviteStatus ?? "pending",
+      verify_status: input.status?.verifyStatus ?? "pending",
+      join_status: input.status?.joinStatus ?? "pending",
+      github_installation_status: input.status?.githubInstallationStatus ?? "pending",
+      repo_binding_status: input.status?.repoBindingStatus ?? "pending",
+      repo_binding_access_status: input.status?.repoBindingAccessStatus ?? "pending"
+    },
+    chain: {
+      identity_status: input.chain?.identityStatus ?? null,
+      member_status: input.chain?.memberStatus ?? null,
+      github_installation_status: input.chain?.githubInstallationStatus ?? null
+    },
+    refs: {
+      workspace_id: input.refs?.workspaceId ?? null,
+      auth_identity_id: input.refs?.authIdentityId ?? null,
+      member_id: input.refs?.memberId ?? null,
+      github_installation_id: input.refs?.githubInstallationId ?? null,
+      repo_ref: input.refs?.repoRef ?? null,
+      topic_id: input.refs?.topicId ?? null
+    },
+    access_policy: {
+      member_role: input.accessPolicy?.memberRole ?? null,
+      role_can_manage_repo_binding: input.accessPolicy?.roleCanManageRepoBinding === true,
+      required_capability: input.accessPolicy?.requiredCapability ?? "manage_repo_binding"
+    },
+    write_anchors: {
+      auth_identity_upsert:
+        input.writeAnchors?.authIdentityUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      member_upsert: input.writeAnchors?.memberUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      github_installation_upsert:
+        input.writeAnchors?.githubInstallationUpsert ?? `/v1/channels/${encodedChannelId}/context`,
+      repo_binding_upsert:
+        input.writeAnchors?.repoBindingUpsert ?? `/v1/channels/${encodedChannelId}/repo-binding`
+    },
+    read_anchors: {
+      channel_context: input.readAnchors?.channelContext ?? `/v1/channels/${encodedChannelId}/context`,
+      channel_repo_binding:
+        input.readAnchors?.channelRepoBinding ?? `/v1/channels/${encodedChannelId}/repo-binding`,
+      topic_repo_binding: input.readAnchors?.topicRepoBinding ?? "/v1/topics/:topicId/repo-binding",
+      channel_audit_trail: input.readAnchors?.channelAuditTrail ?? `/v1/channels/${encodedChannelId}/audit-trail`
+    },
+    audit_anchor: {
+      trail: input.auditAnchor?.trail ?? `/v1/channels/${encodedChannelId}/audit-trail`,
+      latest: {
+        auth_identity: latest.authIdentity
+          ? {
+              audit_id: latest.authIdentity.auditId ?? null,
+              action: latest.authIdentity.action ?? null,
+              at: latest.authIdentity.at ?? null
+            }
+          : null,
+        member: latest.member
+          ? {
+              audit_id: latest.member.auditId ?? null,
+              action: latest.member.action ?? null,
+              at: latest.member.at ?? null
+            }
+          : null,
+        github_installation: latest.githubInstallation
+          ? {
+              audit_id: latest.githubInstallation.auditId ?? null,
+              action: latest.githubInstallation.action ?? null,
+              at: latest.githubInstallation.at ?? null
+            }
+          : null,
+        repo_binding: latest.repoBinding
+          ? {
+              audit_id: latest.repoBinding.auditId ?? null,
+              action: latest.repoBinding.action ?? null,
+              at: latest.repoBinding.at ?? null
+            }
+          : null
+      }
+    },
+    updated_at: input.updatedAt ?? null
+  };
+}
+
 function serializeChannelContextContract(input = {}) {
   const channelId = input.channelId;
   return {
@@ -1117,6 +1206,7 @@ function serializeChannelContextContract(input = {}) {
         : null,
       collaboration_contract: serializeChannelCollaborationContract(input.context?.collaborationContract, channelId)
     },
+    workspace_onboarding_access: serializeWorkspaceOnboardingAccessContract(input.workspaceOnboardingAccess, channelId),
     governance: {
       auth_identity: input.governance?.authIdentity
         ? {
