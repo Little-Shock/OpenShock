@@ -34,3 +34,5 @@ The visual language incorporates a moderate level of roundedness for UI elements
 The spacing within the UI is set to a normal density, ensuring clarity and comfortable information consumption.
 
 * **Spacing:** `2` (Normal spacing, providing a balanced layout for content and components.)
+
+布局和交互逻辑以及功能板块划分参考 imgage.png

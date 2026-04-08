@@ -1,0 +1,765 @@
+openapi: 3.1.0
+info:
+  title: OpenShock True P0 MVP API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/bootstrap:
+    get:
+      summary: Load workspace shell bootstrap data
+      operationId: getBootstrap
+      responses:
+        "200":
+          description: Workspace bootstrap payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapResponse"
+  /api/v1/issues/{issueId}:
+    get:
+      summary: Load one issue room detail
+      operationId: getIssue
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Issue room payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+        "404":
+          description: Issue not found
+  /api/v1/task-board:
+    get:
+      summary: Load the task board view
+      operationId: getTaskBoard
+      responses:
+        "200":
+          description: Task board payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskBoardResponse"
+  /api/v1/inbox:
+    get:
+      summary: Load human inbox items
+      operationId: getInbox
+      responses:
+        "200":
+          description: Inbox payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxResponse"
+  /api/v1/actions:
+    post:
+      summary: Submit a member or agent action
+      operationId: submitAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionRequest"
+      responses:
+        "200":
+          description: Action accepted or completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResponse"
+        "400":
+          description: Invalid action
+  /api/v1/runtimes/register:
+    post:
+      summary: Register a runtime from a daemon
+      operationId: registerRuntime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRuntimeRequest"
+      responses:
+        "200":
+          description: Runtime registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterRuntimeResponse"
+  /api/v1/runtimes/{runtimeId}/heartbeat:
+    post:
+      summary: Record runtime heartbeat
+      operationId: heartbeatRuntime
+      parameters:
+        - name: runtimeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeHeartbeatRequest"
+      responses:
+        "200":
+          description: Runtime heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeHeartbeatResponse"
+  /api/v1/runs/claim:
+    post:
+      summary: Claim the next queued run for a runtime
+      operationId: claimRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunClaimRequest"
+      responses:
+        "200":
+          description: Run claim result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunClaimResponse"
+  /api/v1/runs/{runId}/events:
+    post:
+      summary: Ingest a daemon run event
+      operationId: ingestRunEvent
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunEventRequest"
+      responses:
+        "200":
+          description: Run event accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunEventResponse"
+  /api/v1/merges/claim:
+    post:
+      summary: Claim the next queued merge attempt for a runtime
+      operationId: claimMerge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeClaimRequest"
+      responses:
+        "200":
+          description: Merge attempt claim result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeClaimResponse"
+  /api/v1/merges/{mergeAttemptId}/events:
+    post:
+      summary: Ingest a daemon merge event
+      operationId: ingestMergeEvent
+      parameters:
+        - name: mergeAttemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeEventRequest"
+      responses:
+        "200":
+          description: Merge event accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeEventResponse"
+  /api/v1/webhooks/repo:
+    post:
+      summary: Ingest a repo integration webhook
+      operationId: ingestRepoWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoWebhookRequest"
+      responses:
+        "200":
+          description: Repo webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoWebhookResponse"
+components:
+  schemas:
+    BootstrapResponse:
+      type: object
+      required:
+        - workspace
+        - defaultIssueId
+        - rooms
+        - agents
+        - runtimes
+        - issueSummaries
+      properties:
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+        defaultIssueId:
+          type: string
+        rooms:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomSummary"
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Agent"
+        runtimes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Runtime"
+        issueSummaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/IssueSummary"
+    IssueDetailResponse:
+      type: object
+      required:
+        - issue
+        - room
+        - channel
+        - messages
+        - tasks
+        - runs
+        - runOutputChunks
+        - toolCalls
+        - mergeAttempts
+        - integrationBranch
+        - deliveryPr
+      properties:
+        issue:
+          $ref: "#/components/schemas/Issue"
+        room:
+          $ref: "#/components/schemas/RoomSummary"
+        channel:
+          $ref: "#/components/schemas/RoomChannel"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Run"
+        runOutputChunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunOutputChunk"
+        toolCalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCall"
+        mergeAttempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeAttempt"
+        integrationBranch:
+          $ref: "#/components/schemas/IntegrationBranch"
+        deliveryPr:
+          oneOf:
+            - $ref: "#/components/schemas/DeliveryPR"
+            - type: "null"
+    TaskBoardResponse:
+      type: object
+      required:
+        - columns
+        - tasks
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+    InboxResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InboxItem"
+    ActionRequest:
+      type: object
+      required:
+        - actorType
+        - actorId
+        - actionType
+        - targetType
+        - targetId
+        - payload
+        - idempotencyKey
+      properties:
+        actorType:
+          type: string
+          enum: [member, agent, system]
+        actorId:
+          type: string
+        actionType:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        idempotencyKey:
+          type: string
+    ActionResponse:
+      type: object
+      required:
+        - actionId
+        - status
+        - resultCode
+        - resultMessage
+        - affectedEntities
+      properties:
+        actionId:
+          type: string
+        status:
+          type: string
+          enum: [accepted, completed, rejected, approval_required, failed]
+        resultCode:
+          type: string
+        resultMessage:
+          type: string
+        affectedEntities:
+          type: array
+          items:
+            type: object
+            required: [type, id]
+            properties:
+              type:
+                type: string
+              id:
+                type: string
+    RegisterRuntimeRequest:
+      type: object
+      required: [name, provider, slotCount]
+      properties:
+        name:
+          type: string
+        provider:
+          type: string
+        slotCount:
+          type: integer
+    RegisterRuntimeResponse:
+      type: object
+      required: [runtime]
+      properties:
+        runtime:
+          $ref: "#/components/schemas/Runtime"
+    RuntimeHeartbeatRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+        currentRunId:
+          type: string
+    RuntimeHeartbeatResponse:
+      type: object
+      required: [runtimeId, status]
+      properties:
+        runtimeId:
+          type: string
+        status:
+          type: string
+    RunClaimRequest:
+      type: object
+      required: [runtimeId]
+      properties:
+        runtimeId:
+          type: string
+    RunClaimResponse:
+      type: object
+      required: [claimed]
+      properties:
+        claimed:
+          type: boolean
+        run:
+          oneOf:
+            - $ref: "#/components/schemas/Run"
+            - type: "null"
+    RunEventRequest:
+      type: object
+      required: [runtimeId, eventType]
+      properties:
+        runtimeId:
+          type: string
+        eventType:
+          type: string
+          enum: [started, output, tool_call, blocked, approval_required, completed, failed]
+        outputPreview:
+          type: string
+        message:
+          type: string
+        stream:
+          type: string
+          enum: [stdout, stderr]
+        toolCall:
+          $ref: "#/components/schemas/ToolCallInput"
+    RunEventResponse:
+      type: object
+      required: [runId, status]
+      properties:
+        runId:
+          type: string
+        status:
+          type: string
+    ToolCallInput:
+      type: object
+      required: [toolName]
+      properties:
+        toolName:
+          type: string
+        arguments:
+          type: string
+        status:
+          type: string
+    MergeClaimRequest:
+      type: object
+      required: [runtimeId]
+      properties:
+        runtimeId:
+          type: string
+    MergeClaimResponse:
+      type: object
+      required: [claimed]
+      properties:
+        claimed:
+          type: boolean
+        mergeAttempt:
+          oneOf:
+            - $ref: "#/components/schemas/MergeAttempt"
+            - type: "null"
+    MergeEventRequest:
+      type: object
+      required: [runtimeId, eventType]
+      properties:
+        runtimeId:
+          type: string
+        eventType:
+          type: string
+          enum: [started, succeeded, conflicted, failed]
+        resultSummary:
+          type: string
+    MergeEventResponse:
+      type: object
+      required: [mergeAttemptId, status]
+      properties:
+        mergeAttemptId:
+          type: string
+        status:
+          type: string
+    Workspace:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    RoomSummary:
+      type: object
+      required: [id, issueId, title, unreadCount]
+      properties:
+        id:
+          type: string
+        issueId:
+          type: string
+        title:
+          type: string
+        unreadCount:
+          type: integer
+    RoomChannel:
+      type: object
+      required: [id, roomId, name]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        name:
+          type: string
+    IssueSummary:
+      type: object
+      required: [id, title, status]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+    Issue:
+      allOf:
+        - $ref: "#/components/schemas/IssueSummary"
+        - type: object
+          required: [priority, summary]
+          properties:
+            priority:
+              type: string
+            summary:
+              type: string
+    Agent:
+      type: object
+      required: [id, name, role, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+    Runtime:
+      type: object
+      required: [id, name, status, provider]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        provider:
+          type: string
+    Message:
+      type: object
+      required: [id, actorType, actorName, body, kind, createdAt]
+      properties:
+        id:
+          type: string
+        actorType:
+          type: string
+        actorName:
+          type: string
+        body:
+          type: string
+        kind:
+          type: string
+        createdAt:
+          type: string
+    Task:
+      type: object
+      required: [id, issueId, title, status, assigneeAgentId, branchName]
+      properties:
+        id:
+          type: string
+        issueId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        assigneeAgentId:
+          type: string
+        branchName:
+          type: string
+        runCount:
+          type: integer
+    Run:
+      type: object
+      required: [id, taskId, agentId, runtimeId, status, title]
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        agentId:
+          type: string
+        issueId:
+          type: string
+        branchName:
+          type: string
+        baseBranch:
+          type: string
+        repoPath:
+          type: string
+        instruction:
+          type: string
+        runtimeId:
+          type: string
+        status:
+          type: string
+        title:
+          type: string
+        outputPreview:
+          type: string
+    RunOutputChunk:
+      type: object
+      required: [id, runId, sequence, stream, content, createdAt]
+      properties:
+        id:
+          type: string
+        runId:
+          type: string
+        sequence:
+          type: integer
+        stream:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+    ToolCall:
+      type: object
+      required: [id, runId, sequence, toolName, status, createdAt]
+      properties:
+        id:
+          type: string
+        runId:
+          type: string
+        sequence:
+          type: integer
+        toolName:
+          type: string
+        arguments:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+    MergeAttempt:
+      type: object
+      required: [id, issueId, taskId, sourceBranch, targetBranch, status, runtimeId]
+      properties:
+        id:
+          type: string
+        issueId:
+          type: string
+        taskId:
+          type: string
+        sourceRunId:
+          type: string
+        sourceBranch:
+          type: string
+        targetBranch:
+          type: string
+        repoPath:
+          type: string
+        status:
+          type: string
+        runtimeId:
+          type: string
+        resultSummary:
+          type: string
+    IntegrationBranch:
+      type: object
+      required: [id, issueId, name, status, mergedTaskIds]
+      properties:
+        id:
+          type: string
+        issueId:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        mergedTaskIds:
+          type: array
+          items:
+            type: string
+    DeliveryPR:
+      type: object
+      required: [id, issueId, title, status]
+      properties:
+        id:
+          type: string
+        issueId:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        externalPrId:
+          type: string
+        externalUrl:
+          type: string
+    RepoWebhookRequest:
+      type: object
+      required: [eventId, provider, externalPrId, status]
+      properties:
+        eventId:
+          type: string
+        provider:
+          type: string
+        externalPrId:
+          type: string
+        status:
+          type: string
+    RepoWebhookResponse:
+      type: object
+      required: [deliveryPrId, status, replayed]
+      properties:
+        deliveryPrId:
+          type: string
+        status:
+          type: string
+        replayed:
+          type: boolean
+    InboxItem:
+      type: object
+      required: [id, title, kind, severity, summary]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+        severity:
+          type: string
+        summary:
+          type: string
+        relatedEntityType:
+          type: string
+        relatedEntityId:
+          type: string
+        primaryActionType:
+          type: string
