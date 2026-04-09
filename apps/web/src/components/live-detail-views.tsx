@@ -21,9 +21,18 @@ import {
 } from "@/components/phase-zero-views";
 import { RunControlSurface } from "@/components/run-control-surface";
 import { usePhaseZeroState } from "@/lib/live-phase0";
-import { buildRunHistoryEntries, sanitizeRunHistoryPage } from "@/lib/phase-zero-helpers";
+import { buildRunHistoryEntries, sanitizePlannerQueue, sanitizeRunHistoryPage } from "@/lib/phase-zero-helpers";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
-import type { AgentHandoff, Issue, Message, Room, Run, RunHistoryPage, Session } from "@/lib/phase-zero-types";
+import type {
+  AgentHandoff,
+  Issue,
+  Message,
+  PlannerQueueItem,
+  Room,
+  Run,
+  RunHistoryPage,
+  Session,
+} from "@/lib/phase-zero-types";
 
 type PanelTone = "white" | "paper" | "yellow" | "lime" | "pink" | "ink";
 const CONTROL_API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
@@ -107,6 +116,18 @@ async function readRunHistoryPage(limit: number, cursor?: string) {
     throw new Error(payload.error || `request failed: ${response.status}`);
   }
   return sanitizeRunHistoryPage(payload);
+}
+
+async function readPlannerQueue() {
+  const response = await fetch(`${CONTROL_API_BASE}/v1/planner/queue`, {
+    cache: "no-store",
+  });
+  const payload = (await response.json()) as PlannerQueueItem[] | { error?: string };
+  if (!response.ok) {
+    const message = Array.isArray(payload) ? undefined : payload.error;
+    throw new Error(message || `request failed: ${response.status}`);
+  }
+  return sanitizePlannerQueue(Array.isArray(payload) ? payload : []);
 }
 
 function readRuntimeRegistry(state: unknown): RuntimeRegistryRecord[] {
@@ -512,6 +533,18 @@ export function LiveAgentsPageContent() {
   const runtimes = loading || error ? [] : readRuntimeRegistry(state);
   const sessions = loading || error ? [] : state.sessions;
   const runtimeLeases = loading || error ? [] : state.runtimeLeases;
+  const plannerRefreshKey =
+    loading || error
+      ? ""
+      : [
+          state.sessions.map((item) => `${item.id}:${item.status}:${item.updatedAt}`).join("|"),
+          state.pullRequests.map((item) => `${item.id}:${item.status}:${item.reviewDecision ?? ""}:${item.updatedAt}`).join("|"),
+          state.mailbox.map((item) => `${item.id}:${item.status}:${item.updatedAt}`).join("|"),
+          state.inbox.map((item) => `${item.id}:${item.kind}:${item.title}:${item.summary}`).join("|"),
+        ].join("::");
+  const [plannerQueue, setPlannerQueue] = useState<PlannerQueueItem[]>([]);
+  const [plannerLoading, setPlannerLoading] = useState(true);
+  const [plannerError, setPlannerError] = useState<string | null>(null);
   const runtimeScheduler =
     loading || error
       ? {
@@ -524,6 +557,37 @@ export function LiveAgentsPageContent() {
           candidates: [],
         }
       : state.runtimeScheduler;
+
+  useEffect(() => {
+    if (loading || error) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void readPlannerQueue()
+      .then((queue) => {
+        if (cancelled) {
+          return;
+        }
+        startTransition(() => {
+          setPlannerQueue(queue);
+          setPlannerError(null);
+          setPlannerLoading(false);
+        });
+      })
+      .catch((fetchError) => {
+        if (cancelled) {
+          return;
+        }
+        setPlannerError(fetchError instanceof Error ? fetchError.message : "planner queue fetch failed");
+        setPlannerLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [error, loading, plannerRefreshKey]);
 
   return (
     <OpenShockShell
@@ -563,6 +627,10 @@ export function LiveAgentsPageContent() {
             sessions={sessions}
             leases={runtimeLeases}
             scheduler={runtimeScheduler}
+            governance={state.workspace.governance}
+            plannerQueue={plannerQueue}
+            plannerLoading={plannerLoading}
+            plannerError={plannerError}
           />
           <AgentsListView agentsList={agents} />
         </div>

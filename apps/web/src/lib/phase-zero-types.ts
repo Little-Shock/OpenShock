@@ -563,6 +563,48 @@ export type RuntimeScheduler = {
   candidates: RuntimeSchedulerCandidate[];
 };
 
+export type PlannerQueueGate = {
+  kind: InboxKind;
+  title: string;
+  summary: string;
+  href: string;
+};
+
+export type PlannerAutoMergeGuard = {
+  status: string;
+  reason: string;
+  canRequest: boolean;
+  canApply: boolean;
+  requiresPermission?: string;
+  reviewDecision?: string;
+  pullRequestId?: string;
+  roomId?: string;
+  runId?: string;
+};
+
+export type PlannerQueueItem = {
+  sessionId: string;
+  issueKey: string;
+  roomId: string;
+  runId: string;
+  status: RunStatus | string;
+  summary: string;
+  owner: string;
+  agentId?: string;
+  agentName?: string;
+  provider: string;
+  runtime: string;
+  machine: string;
+  worktreePath?: string;
+  pullRequestId?: string;
+  pullRequestLabel?: string;
+  pullRequestStatus?: PullRequestStatus | string;
+  reviewDecision?: string;
+  approvalRequired: boolean;
+  gates: PlannerQueueGate[];
+  autoMerge: PlannerAutoMergeGuard;
+};
+
 export type InboxItem = {
   id: string;
   title: string;
