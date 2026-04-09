@@ -17,6 +17,7 @@ import (
 
 type Config struct {
 	DaemonURL           string
+	ControlURL          string
 	WorkspaceRoot       string
 	GitHub              githubsvc.Client
 	GitHubWebhookSecret string
@@ -27,6 +28,7 @@ type Server struct {
 	httpClient          *http.Client
 	defaultDaemonURL    string
 	daemonURL           string
+	controlURL          string
 	daemonMu            sync.RWMutex
 	workspaceRoot       string
 	github              githubsvc.Client
@@ -152,6 +154,7 @@ func New(s *store.Store, httpClient *http.Client, cfg Config) *Server {
 		httpClient:          httpClient,
 		defaultDaemonURL:    strings.TrimRight(cfg.DaemonURL, "/"),
 		daemonURL:           daemonURL,
+		controlURL:          strings.TrimRight(strings.TrimSpace(cfg.ControlURL), "/"),
 		workspaceRoot:       cfg.WorkspaceRoot,
 		github:              githubService,
 		githubWebhookSecret: strings.TrimSpace(cfg.GitHubWebhookSecret),

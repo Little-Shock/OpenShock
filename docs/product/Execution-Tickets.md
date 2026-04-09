@@ -238,6 +238,23 @@
   - 多 runtime 不会因为 lease 漂移或 stale state 做出错误调度
   - `/setup` 与 `/agents` 能稳定显示当前决策原因
   - 对应 release / browser verify 能稳定回放
+
+## TKT-57 GitHub Public Ingress Callback / Webhook Delivery Verification
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把 GitHub installation callback / webhook delivery 从近实机 contract 推到 public ingress 级 exact evidence。
+- 范围:
+  - Setup surface 暴露 public callback URL / webhook URL
+  - installation callback 通过同一 public ingress root 回流
+  - signed webhook delivery + bad-signature fail-closed 走 public ingress 回放
+- 依赖: `TKT-28`
+- Done When:
+  - `/v1/github/connection` 与 Setup UI 会明确给出 public callback / webhook URL
+  - `/setup/github/callback` 能在 public ingress root 下把 installation truth 写回 Setup
+  - `/v1/github/webhook` 的 signed delivery 与 bad-signature fail-closed 都有同一 public root 下的 exact artifact
+- Checklist: `CHK-07`
+- Test Cases: `TC-015` `TC-045`
 - Checklist: `CHK-14` `CHK-15`
 - Test Cases: `TC-020` `TC-021`
 

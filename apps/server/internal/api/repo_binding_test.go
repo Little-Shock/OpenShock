@@ -135,6 +135,7 @@ func TestRepoBindingPromotesToGitHubAppWhenConnectionIsReady(t *testing.T) {
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
+		ControlURL:    "https://public.openshock.dev/",
 		WorkspaceRoot: root,
 		GitHub: fakeGitHubProber{
 			status: githubsvc.Status{
@@ -185,6 +186,12 @@ func TestRepoBindingPromotesToGitHubAppWhenConnectionIsReady(t *testing.T) {
 	}
 	if payload.Connection.AuthMode != "github-app" {
 		t.Fatalf("connection auth mode = %q, want github-app", payload.Connection.AuthMode)
+	}
+	if payload.Connection.CallbackURL != "https://public.openshock.dev/setup/github/callback" {
+		t.Fatalf("connection callback URL = %q, want public callback URL", payload.Connection.CallbackURL)
+	}
+	if payload.Connection.WebhookURL != "https://public.openshock.dev/v1/github/webhook" {
+		t.Fatalf("connection webhook URL = %q, want public webhook URL", payload.Connection.WebhookURL)
 	}
 }
 

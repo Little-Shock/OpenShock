@@ -206,7 +206,20 @@
   2. 触发 webhook 事件。
   3. 检查 state / inbox / room / PR 是否同步更新。
 - 预期结果: GitHub 事件可以持续同步回 OpenShock。
-- 业务结论: 2026 年 4 月 8 日 `TKT-28` 新增 `/v1/github/installation-callback` 与 `/setup/github/callback`，把 installation-complete 回跳直接写回 installation truth，并在同一次 callback 内前滚 repo binding 与 tracked PR backfill；同日 exact-head 还新增了 fail-closed 的空 `installationId` 探测与 `repo.admin` 权限 guard。结合 2026 年 4 月 7 日 `TKT-05` 已通过的 signed webhook replay harness，当前 `installation-complete callback -> repo sync -> UI update -> webhook replay` 已具备近实机闭环证据，因此这条用例现在可按 Pass 收口；剩余未覆盖的是 GitHub-hosted 公网 callback / webhook delivery 的生产态复核，而不是产品 contract 缺失。
+- 业务结论: 2026 年 4 月 8 日 `TKT-28` 新增 `/v1/github/installation-callback` 与 `/setup/github/callback`，把 installation-complete 回跳直接写回 installation truth，并在同一次 callback 内前滚 repo binding 与 tracked PR backfill；同日 exact-head 还新增了 fail-closed 的空 `installationId` 探测与 `repo.admin` 权限 guard。2026 年 4 月 9 日 `TKT-57` 又补了 production-style public ingress harness：Setup 直接暴露 public callback / webhook URL，`/setup/github/callback` 与 signed webhook delivery 都能通过同一 public root exact replay，bad-signature 继续 401 fail-closed。因此这条用例现在不只停在近实机 contract，而是已经有 public ingress 级证据。
+
+## TC-045 GitHub Public Ingress Callback / Webhook Delivery
+
+- 业务目标: 确认 GitHub callback / webhook 不只在内网 server contract 可用，而是能在 public ingress 根路径下被同一套产品 surface 复核。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-07`
+- 前置条件: server 已配置 `OPENSHOCK_CONTROL_URL`、GitHub App install surface、webhook secret 与本地 public ingress proxy。
+- 测试步骤:
+  1. 在 Setup 检查 surfaced public callback URL / webhook URL。
+  2. 通过 public ingress 打开 `/setup/github/callback?installation_id=...`，确认 installation truth 写回并回跳 Setup。
+  3. 通过 public ingress POST signed webhook，并再做一次 bad-signature adversarial probe。
+- 预期结果: callback / webhook 都能走同一 public ingress 根路径；错误签名继续 fail-closed。
+- 业务结论: 2026 年 4 月 9 日 `TKT-57` 新增 `pnpm test:headed-github-public-ingress`，用 local ingress proxy 同时代理 web + API，验证 public callback / webhook URL surface、callback return page 回流，以及 signed webhook / bad-signature 都走 ingress `/v1/github/webhook`。这条 public ingress exact evidence 现已可独立复核并通过；若后续还要做真正 Internet / DNS / TLS 演练，那属于环境级演练，不再是产品 contract GAP。
 
 ## TC-016 真实远端 PR 创建、同步与合并
 

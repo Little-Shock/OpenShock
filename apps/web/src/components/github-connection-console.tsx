@@ -20,6 +20,8 @@ type GitHubConnectionStatus = {
   appInstalled: boolean;
   installationId?: string;
   installationUrl?: string;
+  callbackUrl?: string;
+  webhookUrl?: string;
   missing?: string[];
   ready: boolean;
   authMode: string;
@@ -71,6 +73,8 @@ export function GitHubConnectionConsole() {
       appInstalled: false,
       installationId: "",
       installationUrl: "",
+      callbackUrl: "",
+      webhookUrl: "",
       ready: state.workspace.repoBindingStatus === "bound",
       authMode: state.workspace.repoAuthMode,
       preferredAuthMode: state.workspace.repoAuthMode,
@@ -251,6 +255,32 @@ export function GitHubConnectionConsole() {
               打开 installation 页面
             </a>
           ) : null}
+          <div className="mt-4 space-y-3 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">Public Callback</p>
+              {status?.callbackUrl ? (
+                <a
+                  data-testid="setup-github-callback-link"
+                  href={status.callbackUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex break-all text-sm leading-6 underline underline-offset-2"
+                >
+                  {status.callbackUrl}
+                </a>
+              ) : (
+                <p data-testid="setup-github-callback-missing" className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                  当前还没配置 public callback URL；GitHub-hosted callback 还不能按 ingress 口径复核。
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">Public Webhook</p>
+              <p data-testid="setup-github-webhook-url" className="mt-2 break-all text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
+                {valueOrFallback(status?.webhookUrl, "当前还没配置 public webhook URL")}
+              </p>
+            </div>
+          </div>
           <p
             data-testid="setup-github-return-steps"
             className="mt-4 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]"
