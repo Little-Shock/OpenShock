@@ -1,7 +1,7 @@
 # Test Report 2026-04-09 Memory Viewer / Correction / Forget Surface
 
 - Command: `pnpm test:headed-memory-viewer-correction-forget -- --report docs/testing/Test-Report-2026-04-09-memory-viewer-correction-forget.md`
-- Artifacts Dir: `/tmp/openshock-tkt42-memory-viewer-PANGSC`
+- Artifacts Dir: `/tmp/openshock-tkt42-memory-viewer-FZQg1P`
 - Scope: `TKT-42 / CHK-10 / CHK-22 / TC-023 / TC-036`
 - Result: `PASS`
 
@@ -24,6 +24,6 @@
 
 ### Screenshots
 
-- initial-memory-viewer: /tmp/openshock-tkt42-memory-viewer-PANGSC/run/screenshots/01-initial-memory-viewer.png
-- memory-correction-written: /tmp/openshock-tkt42-memory-viewer-PANGSC/run/screenshots/02-memory-correction-written.png
-- memory-forgotten: /tmp/openshock-tkt42-memory-viewer-PANGSC/run/screenshots/03-memory-forgotten.png
+- initial-memory-viewer: /tmp/openshock-tkt42-memory-viewer-FZQg1P/run/screenshots/01-initial-memory-viewer.png
+- memory-correction-written: /tmp/openshock-tkt42-memory-viewer-FZQg1P/run/screenshots/02-memory-correction-written.png
+- memory-forgotten: /tmp/openshock-tkt42-memory-viewer-FZQg1P/run/screenshots/03-memory-forgotten.png
