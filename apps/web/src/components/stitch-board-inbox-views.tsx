@@ -980,7 +980,7 @@ export function StitchInboxView() {
                                     guard={guard}
                                     compact
                                     contextHref={item.runId && item.roomId ? `/rooms/${item.roomId}?tab=run` : roomHref}
-                                    testIdPrefix="approval-center-guard"
+                                    testIdPrefix="approval-center-mobile-guard"
                                   />
                                 ) : null}
                                 {detailLinks.length > 0 ? (

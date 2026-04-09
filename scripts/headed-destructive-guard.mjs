@@ -21,6 +21,7 @@ const parsedArgs = parseArgs(process.argv.slice(2));
 const reportPath = parsedArgs.reportPath
   ? path.resolve(projectRoot, parsedArgs.reportPath)
   : path.join(artifactsDir, "report.md");
+const reportDate = path.basename(reportPath).match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? new Date().toISOString().slice(0, 10);
 const screenshotsDir = path.join(artifactsDir, "screenshots");
 const logsDir = path.join(artifactsDir, "logs");
 
@@ -264,6 +265,15 @@ try {
   await page.goto(`${webURL}/inbox`, { waitUntil: "domcontentloaded" });
   await waitForVisible(page.getByTestId("approval-center-signal-inbox-approval-runtime"), "runtime approval card did not render");
   await waitForVisible(page.getByTestId("approval-center-signal-inbox-blocked-memory"), "memory blocked card did not render");
+  assert(
+    (await page.getByTestId("approval-center-guard-status-guard-runtime-destructive-git").count()) === 1,
+    "desktop destructive guard status should keep a single strict-mode-safe test id"
+  );
+  assert(
+    (await page.getByTestId("approval-center-mobile-guard-status-guard-runtime-destructive-git").count()) === 1,
+    "mobile destructive guard status should keep its own distinct test id"
+  );
+  results.push("- Approval center desktop/mobile guard mirrors now keep distinct test ids, so the destructive-guard replay stays strict-mode stable instead of resolving duplicate status badges.");
   await expectTextIncludes(
     page.getByTestId("approval-center-guard-status-guard-runtime-destructive-git"),
     "approval required",
@@ -371,7 +381,7 @@ try {
   results.push("- Resolving the blocked write boundary propagates the same guard truth back to room and run: the guard flips to `ready`, and the run can continue without pretending the scope issue never existed.");
 
   const report = [
-    "# 2026-04-08 Destructive Guard / Secret Boundary Report",
+    `# ${reportDate} Destructive Guard / Secret Boundary Report`,
     "",
     `- Command: \`pnpm test:headed-destructive-guard -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
