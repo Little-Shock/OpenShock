@@ -546,10 +546,13 @@ function LiveSettingsContextRail({ notifications }: { notifications: LiveNotific
 }
 
 function WorkspacePlanObservabilityPanel() {
-  const { state } = usePhaseZeroState();
+  const { state, loading, error } = usePhaseZeroState();
   const workspace = state.workspace;
   const quota = workspace.quota;
   const usage = workspace.usage;
+  const loadingValue = loading ? "同步中" : error ? "读取失败" : null;
+  const metricValue = (value: string) => loadingValue ?? value;
+  const metricTone = (tone: "white" | "yellow" | "lime" | "pink") => (loadingValue ? "white" : tone);
   const quotaTone = quotaStatusTone(quota?.status);
   const usageTone = typeof usage?.totalTokens === "number" && usage.totalTokens >= 14000 ? "pink" : "yellow";
 
@@ -573,7 +576,7 @@ function WorkspacePlanObservabilityPanel() {
                   : "bg-white text-[var(--shock-ink)]"
           )}
         >
-          {quotaStatusLabel(quota?.status)}
+          {metricValue(quotaStatusLabel(quota?.status))}
         </span>
       </div>
       <p className="mt-3 max-w-4xl text-sm leading-6 text-white/84">
@@ -581,16 +584,16 @@ function WorkspacePlanObservabilityPanel() {
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <FactTile label="Plan" value={valueOrPlaceholder(workspace.plan, "未声明")} testID="settings-workspace-plan-value" />
+        <FactTile label="Plan" value={metricValue(valueOrPlaceholder(workspace.plan, "未声明"))} testID="settings-workspace-plan-value" />
         <FactTile
           label="Usage Window"
-          value={formatWorkspaceUsageWindow(usage)}
+          value={metricValue(formatWorkspaceUsageWindow(usage))}
           testID="settings-workspace-usage-window"
         />
-        <FactTile label="Retention" value={formatRetentionSummary(quota)} testID="settings-workspace-retention" />
+        <FactTile label="Retention" value={metricValue(formatRetentionSummary(quota))} testID="settings-workspace-retention" />
         <FactTile
           label="Usage Detail"
-          value={`${formatCount(usage?.runCount)} runs / ${formatCount(usage?.messageCount)} msgs`}
+          value={metricValue(`${formatCount(usage?.runCount)} runs / ${formatCount(usage?.messageCount)} msgs`)}
           testID="settings-workspace-usage-detail"
         />
       </div>
@@ -599,26 +602,26 @@ function WorkspacePlanObservabilityPanel() {
         <div className="grid gap-3">
           <StatusRow
             label="Machines"
-            value={formatQuotaCounter(quota?.usedMachines, quota?.maxMachines, "machines")}
-            tone={quotaCounterTone(quota?.usedMachines, quota?.maxMachines)}
+            value={metricValue(formatQuotaCounter(quota?.usedMachines, quota?.maxMachines, "machines"))}
+            tone={metricTone(quotaCounterTone(quota?.usedMachines, quota?.maxMachines))}
             testID="settings-workspace-machines"
           />
           <StatusRow
             label="Agents"
-            value={formatQuotaCounter(quota?.usedAgents, quota?.maxAgents, "agents")}
-            tone={quotaCounterTone(quota?.usedAgents, quota?.maxAgents)}
+            value={metricValue(formatQuotaCounter(quota?.usedAgents, quota?.maxAgents, "agents"))}
+            tone={metricTone(quotaCounterTone(quota?.usedAgents, quota?.maxAgents))}
             testID="settings-workspace-agents"
           />
           <StatusRow
             label="Channels"
-            value={formatQuotaCounter(quota?.usedChannels, quota?.maxChannels, "channels")}
-            tone={quotaCounterTone(quota?.usedChannels, quota?.maxChannels)}
+            value={metricValue(formatQuotaCounter(quota?.usedChannels, quota?.maxChannels, "channels"))}
+            tone={metricTone(quotaCounterTone(quota?.usedChannels, quota?.maxChannels))}
             testID="settings-workspace-channels"
           />
           <StatusRow
             label="Rooms"
-            value={formatQuotaCounter(quota?.usedRooms, quota?.maxRooms, "rooms")}
-            tone={quotaCounterTone(quota?.usedRooms, quota?.maxRooms)}
+            value={metricValue(formatQuotaCounter(quota?.usedRooms, quota?.maxRooms, "rooms"))}
+            tone={metricTone(quotaCounterTone(quota?.usedRooms, quota?.maxRooms))}
             testID="settings-workspace-rooms"
           />
         </div>
@@ -626,26 +629,26 @@ function WorkspacePlanObservabilityPanel() {
         <div className="grid gap-3">
           <StatusRow
             label="Workspace Usage"
-            value={`${formatCount(usage?.totalTokens)} tokens / ${formatCount(usage?.runCount)} runs / ${formatCount(usage?.messageCount)} msgs`}
-            tone={usageTone}
+            value={metricValue(`${formatCount(usage?.totalTokens)} tokens / ${formatCount(usage?.runCount)} runs / ${formatCount(usage?.messageCount)} msgs`)}
+            tone={metricTone(usageTone)}
             testID="settings-workspace-usage-summary"
           />
           <StatusRow
             label="Last Refresh"
-            value={formatTimestamp(usage?.refreshedAt)}
+            value={metricValue(formatTimestamp(usage?.refreshedAt))}
             tone="white"
             testID="settings-workspace-usage-refresh"
           />
           <StatusRow
             label="Quota Warning"
-            value={valueOrPlaceholder(quota?.warning, "当前还没有 quota warning。")}
-            tone={quotaTone}
+            value={metricValue(valueOrPlaceholder(quota?.warning, "当前还没有 quota warning。"))}
+            tone={metricTone(quotaTone)}
             testID="settings-workspace-quota-warning"
           />
           <StatusRow
             label="Usage Warning"
-            value={valueOrPlaceholder(usage?.warning, "当前还没有 usage warning。")}
-            tone={usageTone}
+            value={metricValue(valueOrPlaceholder(usage?.warning, "当前还没有 usage warning。"))}
+            tone={metricTone(usageTone)}
             testID="settings-workspace-usage-warning"
           />
         </div>
