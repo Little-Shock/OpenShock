@@ -1,4 +1,4 @@
-import type { Issue, PhaseZeroState, RunDetail, RunHistoryPage } from "@/lib/phase-zero-types";
+import type { Issue, PhaseZeroState, PlannerQueueItem, RunDetail, RunHistoryPage } from "@/lib/phase-zero-types";
 
 const LIVE_TRUTH_QUESTION_BURST = /\?{2,}/;
 const LIVE_TRUTH_E2E_RESIDUE = /\bE2E\b.*\b20\d{6,}\b/i;
@@ -29,6 +29,7 @@ type PullRequestConversationEntry = NonNullable<PullRequest["conversation"]>[num
 type Session = PhaseZeroState["sessions"][number];
 type RuntimeLease = PhaseZeroState["runtimeLeases"][number];
 type MemoryArtifact = PhaseZeroState["memory"][number];
+type PlannerQueueRecord = PlannerQueueItem;
 
 export function buildBoardColumns(issueList: Issue[]) {
   return [
@@ -133,6 +134,10 @@ export function sanitizePhaseZeroState(state: PhaseZeroState): PhaseZeroState {
     runtimeLeases: state.runtimeLeases.map(sanitizeRuntimeLease),
     memory: state.memory.map(sanitizeMemoryArtifact),
   };
+}
+
+export function sanitizePlannerQueue(items: PlannerQueueItem[]) {
+  return items.map(sanitizePlannerQueueItem);
 }
 
 function mapRecord<T>(record: Record<string, T[]>, sanitize: (item: T) => T) {
@@ -423,6 +428,34 @@ function sanitizeRuntimeLease(item: RuntimeLease): RuntimeLease {
     worktreePath: sanitizeDisplayText(item.worktreePath ?? "", "当前 worktree 路径正在整理中。"),
     cwd: sanitizeDisplayText(item.cwd ?? "", "当前工作目录正在整理中。"),
     summary: sanitizeDisplayText(item.summary ?? "", "当前 runtime lease 摘要正在整理中。"),
+  };
+}
+
+function sanitizePlannerQueueItem(item: PlannerQueueRecord): PlannerQueueRecord {
+  return {
+    ...item,
+    issueKey: sanitizeDisplayText(item.issueKey, "待整理 issue"),
+    summary: sanitizeDisplayText(item.summary, "当前 planner queue 摘要正在整理中。"),
+    owner: sanitizeDisplayText(item.owner, "待整理 owner"),
+    agentName: sanitizeDisplayText(item.agentName ?? "", ""),
+    provider: sanitizeDisplayText(item.provider, "待整理 provider"),
+    runtime: sanitizeDisplayText(item.runtime, "待整理 runtime"),
+    machine: sanitizeDisplayText(item.machine, "待整理 machine"),
+    worktreePath: sanitizeDisplayText(item.worktreePath ?? "", "当前 worktree 路径正在整理中。"),
+    pullRequestLabel: sanitizeDisplayText(item.pullRequestLabel ?? "", ""),
+    reviewDecision: sanitizeDisplayText(item.reviewDecision ?? "", ""),
+    gates: (item.gates ?? []).map((gate) => ({
+      ...gate,
+      title: sanitizeDisplayText(gate.title, "待整理 gate"),
+      summary: sanitizeDisplayText(gate.summary, "当前 planner gate 摘要正在整理中。"),
+      href: sanitizeDisplayText(gate.href, ""),
+    })),
+    autoMerge: {
+      ...item.autoMerge,
+      reason: sanitizeDisplayText(item.autoMerge.reason, "当前 auto-merge guard 正在整理中。"),
+      requiresPermission: sanitizeDisplayText(item.autoMerge.requiresPermission ?? "", ""),
+      reviewDecision: sanitizeDisplayText(item.autoMerge.reviewDecision ?? "", ""),
+    },
   };
 }
 

@@ -78,9 +78,10 @@
 - 测试步骤:
   1. 创建一条新 issue。
   2. 检查是否自动生成 room、run、session。
-  3. 检查 daemon 是否尝试创建对应 worktree lane。
-- 预期结果: issue 创建后进入完整执行主链，不停留在纯数据记录。
-- 业务结论: Phase 0 主链已站住。
+  3. 打开 `/agents`，检查 planner queue / governance replay 是否围同一条 issue 前滚。
+  4. 检查 daemon 是否尝试创建对应 worktree lane。
+- 预期结果: issue 创建后进入完整执行主链；人类能在 orchestration page 看到 planner dispatch、blocked escalation 与 closeout replay，而不是只剩隐式状态。
+- 业务结论: 2026 年 4 月 9 日 `TKT-53` 新增 `pnpm test:headed-planner-dispatch-replay -- --report docs/testing/Test-Report-2026-04-09-planner-dispatch-replay.md`。当前 exact replay 已记录 `/board` 创建 issue、`/v1/planner/queue` visible item、`/agents` 上的 assignment / auto-merge guard / governed walkthrough，以及 `blocked` without note 的 `400` fail-closed probe 与 final response aggregation，因此这条工作流 B 主链现在不再只停在 Phase 0 的 room/run/session 基线，而是已经有 planner dispatch / first-instruction replay 证据。
 
 ## TC-006 Room / Run 详情可见性
 

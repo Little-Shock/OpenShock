@@ -128,9 +128,9 @@
   - [x] daemon 会尝试为 lane 创建 worktree
   - [x] room 和 run 页面可承接后续协作
   - [x] headed Setup harness 已可从 `/board` 创建 issue 并进入 room，PR entry 保持可继续推进状态
+  - [x] `/agents` orchestration board 已直连 `/v1/planner/queue` 与 `workspace.governance`，创建 issue 后可同页看到 assignment、blocked escalation、human override 与 final response replay
 - 当前 GAP:
-  - [ ] 多 Agent 自动派发仍未建立
-  - [ ] “进入讨论间并发送第一条指令” 之后的 agent 协作回放仍未进入 headed 自动化
+  - [x] 当前工作流 B 主链无新增 blocker；`pnpm test:headed-planner-dispatch-replay` 已覆盖 create issue -> planner dispatch -> blocked escalation -> final response 的 exact replay
 - 对应 Test Cases: `TC-005` `TC-006` `TC-026`
 
 ### CHK-06 工作流 C: Topic 执行与 Run 真相
