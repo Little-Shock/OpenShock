@@ -12,6 +12,7 @@ func TestTopicRoutesExposeStandaloneTopicDetailAndGuidanceWriteback(t *testing.T
 	root := t.TempDir()
 	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
 	defer server.Close()
+	originalIssueSummary := "把 runtime 状态、最近 heartbeat 和本机 CLI 执行能力真实带进壳层和讨论间。"
 
 	detailResp, err := http.Get(server.URL + "/v1/topics/topic-runtime")
 	if err != nil {
@@ -56,6 +57,10 @@ func TestTopicRoutesExposeStandaloneTopicDetailAndGuidanceWriteback(t *testing.T
 	session := findSessionByID(updatePayload.State, "session-runtime")
 	if session == nil || session.Summary != summary {
 		t.Fatalf("session = %#v, want updated summary", session)
+	}
+	issue := findIssueByRoomID(updatePayload.State, "room-runtime")
+	if issue == nil || issue.Summary != originalIssueSummary {
+		t.Fatalf("issue = %#v, want durable issue summary preserved", issue)
 	}
 	messages := updatePayload.State.RoomMessages["room-runtime"]
 	if len(messages) == 0 || !strings.Contains(messages[len(messages)-1].Message, "runtime heartbeat truth") {

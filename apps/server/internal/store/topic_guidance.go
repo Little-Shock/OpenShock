@@ -56,9 +56,6 @@ func (s *Store) UpdateTopicGuidance(topicID string, input TopicGuidanceUpdateInp
 		s.state.Sessions[sessionIndex].Summary = summary
 		s.state.Sessions[sessionIndex].UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	if issueIndex := s.findIssueIndexByRoomLocked(roomID); issueIndex != -1 {
-		s.state.Issues[issueIndex].Summary = summary
-	}
 
 	actor := defaultString(strings.TrimSpace(input.UpdatedBy), "Operator")
 	s.appendRoomMessageLocked(roomID, Message{
@@ -113,15 +110,6 @@ func (s *Store) findSessionIndexForTopicUpdateLocked(topicID, roomID, runID stri
 	}
 	for index := range s.state.Sessions {
 		if s.state.Sessions[index].TopicID == topicID || s.state.Sessions[index].RoomID == roomID {
-			return index
-		}
-	}
-	return -1
-}
-
-func (s *Store) findIssueIndexByRoomLocked(roomID string) int {
-	for index := range s.state.Issues {
-		if s.state.Issues[index].RoomID == roomID {
 			return index
 		}
 	}
