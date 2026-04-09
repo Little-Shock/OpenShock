@@ -14,6 +14,7 @@ func TestUpdateTopicGuidancePersistsTopicContinuityAndLedger(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
+	originalIssueSummary := "把 runtime 状态、最近 heartbeat 和本机 CLI 执行能力真实带进壳层和讨论间。"
 	nextSummary := "先锁 runtime heartbeat truth，再决定 PR surface 是否继续推进。"
 	nextState, room, err := s.UpdateTopicGuidance("topic-runtime", TopicGuidanceUpdateInput{
 		Summary:   nextSummary,
@@ -38,8 +39,8 @@ func TestUpdateTopicGuidancePersistsTopicContinuityAndLedger(t *testing.T) {
 	}
 
 	issue := findTopicGuidanceIssueByRoomID(nextState, "room-runtime")
-	if issue == nil || issue.Summary != nextSummary {
-		t.Fatalf("issue = %#v, want summary updated", issue)
+	if issue == nil || issue.Summary != originalIssueSummary {
+		t.Fatalf("issue = %#v, want durable issue summary preserved", issue)
 	}
 
 	messages := nextState.RoomMessages["room-runtime"]
@@ -54,6 +55,10 @@ func TestUpdateTopicGuidancePersistsTopicContinuityAndLedger(t *testing.T) {
 	topicSearch := findSearchResultByKindAndID(nextState.QuickSearchEntries, "topic", "topic-runtime")
 	if topicSearch == nil || topicSearch.Summary != nextSummary {
 		t.Fatalf("topic quick search = %#v, want updated topic summary", topicSearch)
+	}
+	issueSearch := findSearchResultByKindAndID(nextState.QuickSearchEntries, "issue", "issue-runtime")
+	if issueSearch == nil || issueSearch.Summary != "OPS-12 · "+originalIssueSummary {
+		t.Fatalf("issue quick search = %#v, want durable issue summary preserved", issueSearch)
 	}
 }
 
