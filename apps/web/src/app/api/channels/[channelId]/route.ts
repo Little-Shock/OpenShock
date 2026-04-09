@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { Message, PhaseZeroState } from "@/lib/mock-data";
+import type { Message, PhaseZeroState } from "@/lib/phase-zero-types";
 import { readControlJSON } from "@/lib/server-api";
 
 export async function GET(

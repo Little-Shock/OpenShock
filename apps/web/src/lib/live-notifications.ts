@@ -2,7 +2,7 @@
 
 import { startTransition, useCallback, useEffect, useState } from "react";
 
-import type { ApprovalCenterState } from "@/lib/mock-data";
+import type { ApprovalCenterState } from "@/lib/phase-zero-types";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 
@@ -38,6 +38,8 @@ export type NotificationDelivery = {
   id: string;
   inboxItemId: string;
   signalKind: string;
+  templateId?: string;
+  templateLabel?: string;
   priority: "critical" | "high" | "info";
   channel: NotificationChannel;
   subscriberId: string;
@@ -53,9 +55,14 @@ export type NotificationFanoutReceipt = {
   id: string;
   deliveryId: string;
   inboxItemId: string;
+  signalKind?: string;
+  templateId?: string;
+  templateLabel?: string;
   subscriberId: string;
   channel: NotificationChannel;
   status: NotificationReceiptStatus;
+  title?: string;
+  href?: string;
   attemptedAt: string;
   deliveredAt?: string;
   payloadPath?: string;

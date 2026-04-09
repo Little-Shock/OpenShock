@@ -22,6 +22,8 @@ type Status struct {
 	AppInstalled      bool     `json:"appInstalled"`
 	InstallationID    string   `json:"installationId"`
 	InstallationURL   string   `json:"installationUrl"`
+	CallbackURL       string   `json:"callbackUrl,omitempty"`
+	WebhookURL        string   `json:"webhookUrl,omitempty"`
 	Missing           []string `json:"missing,omitempty"`
 	Ready             bool     `json:"ready"`
 	AuthMode          string   `json:"authMode"`
@@ -65,17 +67,19 @@ type MergePullRequestInput struct {
 }
 
 type PullRequest struct {
-	Number         int    `json:"number"`
-	URL            string `json:"url"`
-	Title          string `json:"title"`
-	State          string `json:"state"`
-	IsDraft        bool   `json:"isDraft"`
-	ReviewDecision string `json:"reviewDecision"`
-	HeadRefName    string `json:"headRefName"`
-	BaseRefName    string `json:"baseRefName"`
-	Author         string `json:"author"`
-	UpdatedAt      string `json:"updatedAt"`
-	Merged         bool   `json:"merged"`
+	Number           int    `json:"number"`
+	URL              string `json:"url"`
+	Title            string `json:"title"`
+	State            string `json:"state"`
+	IsDraft          bool   `json:"isDraft"`
+	Mergeable        string `json:"mergeable"`
+	MergeStateStatus string `json:"mergeStateStatus"`
+	ReviewDecision   string `json:"reviewDecision"`
+	HeadRefName      string `json:"headRefName"`
+	BaseRefName      string `json:"baseRefName"`
+	Author           string `json:"author"`
+	UpdatedAt        string `json:"updatedAt"`
+	Merged           bool   `json:"merged"`
 }
 
 type Service struct {
@@ -111,7 +115,7 @@ func (s *Service) Probe(workspaceRoot string) (Status, error) {
 		status.Branch = branch
 	}
 
-	appStatus := detectGitHubAppProbe()
+	appStatus := detectGitHubAppProbe(workspaceRoot)
 	status.AppID = appStatus.AppID
 	status.AppSlug = appStatus.AppSlug
 	status.AppConfigured = appStatus.Configured
@@ -241,7 +245,7 @@ func (s *Service) SyncPullRequest(workspaceRoot string, input SyncPullRequestInp
 		return PullRequest{}, fmt.Errorf("pull request number is required")
 	}
 	if status, err := s.Probe(workspaceRoot); err == nil && strings.EqualFold(strings.TrimSpace(status.AuthMode), "github-app") {
-		return s.viewPullRequestWithGitHubApp(input.Repo, input.Number, true)
+		return s.viewPullRequestWithGitHubApp(workspaceRoot, input.Repo, input.Number, true)
 	}
 	return s.syncPullRequestWithGHCLI(input)
 }
@@ -261,7 +265,7 @@ func (s *Service) MergePullRequest(workspaceRoot string, input MergePullRequestI
 		return PullRequest{}, fmt.Errorf("pull request number is required")
 	}
 	if status, err := s.Probe(workspaceRoot); err == nil && strings.EqualFold(strings.TrimSpace(status.AuthMode), "github-app") {
-		return s.mergePullRequestWithGitHubApp(input)
+		return s.mergePullRequestWithGitHubApp(workspaceRoot, input)
 	}
 	return s.mergePullRequestWithGHCLI(workspaceRoot, input)
 }
@@ -305,24 +309,26 @@ func (s *Service) viewPullRequest(repo, identifier string) (PullRequest, error) 
 		"pr", "view",
 		identifier,
 		"--repo", repo,
-		"--json", "number,title,url,state,isDraft,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt",
+		"--json", "number,title,url,state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt",
 	)
 	if err != nil {
 		return PullRequest{}, fmt.Errorf("%s", strings.TrimSpace(string(output)))
 	}
 
 	var payload struct {
-		Number         int    `json:"number"`
-		Title          string `json:"title"`
-		URL            string `json:"url"`
-		State          string `json:"state"`
-		IsDraft        bool   `json:"isDraft"`
-		ReviewDecision string `json:"reviewDecision"`
-		HeadRefName    string `json:"headRefName"`
-		BaseRefName    string `json:"baseRefName"`
-		UpdatedAt      string `json:"updatedAt"`
-		MergedAt       string `json:"mergedAt"`
-		Author         struct {
+		Number           int    `json:"number"`
+		Title            string `json:"title"`
+		URL              string `json:"url"`
+		State            string `json:"state"`
+		IsDraft          bool   `json:"isDraft"`
+		Mergeable        string `json:"mergeable"`
+		MergeStateStatus string `json:"mergeStateStatus"`
+		ReviewDecision   string `json:"reviewDecision"`
+		HeadRefName      string `json:"headRefName"`
+		BaseRefName      string `json:"baseRefName"`
+		UpdatedAt        string `json:"updatedAt"`
+		MergedAt         string `json:"mergedAt"`
+		Author           struct {
 			Login string `json:"login"`
 		} `json:"author"`
 	}
@@ -331,17 +337,19 @@ func (s *Service) viewPullRequest(repo, identifier string) (PullRequest, error) 
 	}
 
 	return PullRequest{
-		Number:         payload.Number,
-		URL:            payload.URL,
-		Title:          payload.Title,
-		State:          payload.State,
-		IsDraft:        payload.IsDraft,
-		ReviewDecision: payload.ReviewDecision,
-		HeadRefName:    payload.HeadRefName,
-		BaseRefName:    payload.BaseRefName,
-		Author:         payload.Author.Login,
-		UpdatedAt:      payload.UpdatedAt,
-		Merged:         strings.TrimSpace(payload.MergedAt) != "",
+		Number:           payload.Number,
+		URL:              payload.URL,
+		Title:            payload.Title,
+		State:            payload.State,
+		IsDraft:          payload.IsDraft,
+		Mergeable:        strings.TrimSpace(payload.Mergeable),
+		MergeStateStatus: strings.TrimSpace(payload.MergeStateStatus),
+		ReviewDecision:   payload.ReviewDecision,
+		HeadRefName:      payload.HeadRefName,
+		BaseRefName:      payload.BaseRefName,
+		Author:           payload.Author.Login,
+		UpdatedAt:        payload.UpdatedAt,
+		Merged:           strings.TrimSpace(payload.MergedAt) != "",
 	}, nil
 }
 
@@ -400,13 +408,21 @@ type appProbeStatus struct {
 	Missing         []string
 }
 
-func detectGitHubAppProbe() appProbeStatus {
+func detectGitHubAppProbe(workspaceRoot string) appProbeStatus {
 	appID := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_ID"))
 	appSlug := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_SLUG"))
 	installationID := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_INSTALLATION_ID"))
 	privateKey := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_PRIVATE_KEY"))
 	privateKeyPath := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_PRIVATE_KEY_PATH"))
 	installationURL := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_INSTALL_URL"))
+	persisted := loadInstallationStateFallback(workspaceRoot)
+
+	if installationID == "" {
+		installationID = strings.TrimSpace(persisted.InstallationID)
+	}
+	if installationURL == "" {
+		installationURL = strings.TrimSpace(persisted.InstallationURL)
+	}
 
 	enabled := appID != "" || appSlug != "" || installationID != "" || privateKey != "" || privateKeyPath != "" || installationURL != ""
 	configured := appID != "" && (privateKey != "" || privateKeyPath != "")

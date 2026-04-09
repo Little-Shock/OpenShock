@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,8 @@ import (
 
 type Config struct {
 	DaemonURL           string
+	ControlURL          string
+	ActualLiveURL       string
 	WorkspaceRoot       string
 	GitHub              githubsvc.Client
 	GitHubWebhookSecret string
@@ -26,6 +29,8 @@ type Server struct {
 	httpClient          *http.Client
 	defaultDaemonURL    string
 	daemonURL           string
+	controlURL          string
+	actualLiveURL       string
 	daemonMu            sync.RWMutex
 	workspaceRoot       string
 	github              githubsvc.Client
@@ -82,12 +87,26 @@ type RunControlRequest struct {
 	Note   string `json:"note,omitempty"`
 }
 
+type SandboxPolicyRequest struct {
+	Profile         string   `json:"profile"`
+	AllowedHosts    []string `json:"allowedHosts"`
+	AllowedCommands []string `json:"allowedCommands"`
+	AllowedTools    []string `json:"allowedTools"`
+}
+
+type RunSandboxCheckRequest struct {
+	Kind     string `json:"kind"`
+	Target   string `json:"target"`
+	Override bool   `json:"override,omitempty"`
+}
+
 type RuntimeSnapshotResponse struct {
 	RuntimeID          string                  `json:"runtimeId,omitempty"`
 	DaemonURL          string                  `json:"daemonUrl,omitempty"`
 	Machine            string                  `json:"machine"`
 	DetectedCLI        []string                `json:"detectedCli"`
 	Providers          []store.RuntimeProvider `json:"providers"`
+	Shell              string                  `json:"shell,omitempty"`
 	State              string                  `json:"state"`
 	WorkspaceRoot      string                  `json:"workspaceRoot"`
 	ReportedAt         string                  `json:"reportedAt"`
@@ -110,6 +129,22 @@ type PairingStatusResponse struct {
 
 type SelectRuntimeRequest struct {
 	Machine string `json:"machine"`
+}
+
+type WorkspaceOnboardingRequest struct {
+	Status         string   `json:"status"`
+	TemplateID     string   `json:"templateId"`
+	CurrentStep    string   `json:"currentStep"`
+	CompletedSteps []string `json:"completedSteps"`
+	ResumeURL      string   `json:"resumeUrl"`
+}
+
+type WorkspaceUpdateRequest struct {
+	Plan        string                      `json:"plan"`
+	BrowserPush string                      `json:"browserPush"`
+	MemoryMode  string                      `json:"memoryMode"`
+	Sandbox     *SandboxPolicyRequest       `json:"sandbox,omitempty"`
+	Onboarding  *WorkspaceOnboardingRequest `json:"onboarding,omitempty"`
 }
 
 type RuntimeSelectionResponse struct {
@@ -135,6 +170,8 @@ func New(s *store.Store, httpClient *http.Client, cfg Config) *Server {
 		httpClient:          httpClient,
 		defaultDaemonURL:    strings.TrimRight(cfg.DaemonURL, "/"),
 		daemonURL:           daemonURL,
+		controlURL:          strings.TrimRight(strings.TrimSpace(cfg.ControlURL), "/"),
+		actualLiveURL:       strings.TrimRight(strings.TrimSpace(cfg.ActualLiveURL), "/"),
 		workspaceRoot:       cfg.WorkspaceRoot,
 		github:              githubService,
 		githubWebhookSecret: strings.TrimSpace(cfg.GitHubWebhookSecret),
@@ -167,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/runtime/selection", s.handleRuntimeSelection)
 	mux.HandleFunc("/v1/repo/binding", s.handleRepoBinding)
 	mux.HandleFunc("/v1/github/connection", s.handleGitHubConnection)
+	mux.HandleFunc("/v1/github/installation-callback", s.handleGitHubInstallationCallback)
 	mux.HandleFunc("/v1/github/webhook", s.handleGitHubWebhook)
 	mux.HandleFunc("/v1/exec", s.handleExecRoute)
 	for _, register := range serverRouteRegistrars {
@@ -183,14 +221,69 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot())
+	writeJSON(w, http.StatusOK, sanitizeLiveState(s.store.Snapshot()))
 }
 
 func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.store.Snapshot().Workspace)
+	case http.MethodPatch:
+		if !s.requireSessionPermission(w, "workspace.manage") {
+			return
+		}
+		var req WorkspaceUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		var onboarding *store.WorkspaceOnboardingSnapshot
+		if req.Onboarding != nil {
+			onboarding = &store.WorkspaceOnboardingSnapshot{
+				Status:         req.Onboarding.Status,
+				TemplateID:     req.Onboarding.TemplateID,
+				CurrentStep:    req.Onboarding.CurrentStep,
+				CompletedSteps: req.Onboarding.CompletedSteps,
+				ResumeURL:      req.Onboarding.ResumeURL,
+			}
+		}
+		var sandbox *store.SandboxPolicy
+		if req.Sandbox != nil {
+			sandbox = &store.SandboxPolicy{
+				Profile:         req.Sandbox.Profile,
+				AllowedHosts:    req.Sandbox.AllowedHosts,
+				AllowedCommands: req.Sandbox.AllowedCommands,
+				AllowedTools:    req.Sandbox.AllowedTools,
+			}
+		}
+		nextState, workspace, err := s.store.UpdateWorkspaceConfig(store.WorkspaceConfigUpdateInput{
+			Plan:        req.Plan,
+			BrowserPush: req.BrowserPush,
+			MemoryMode:  req.MemoryMode,
+			Sandbox:     sandbox,
+			Onboarding:  onboarding,
+			UpdatedBy:   currentAuthActor(s.store.Snapshot().Auth.Session),
+		})
+		if err != nil {
+			writeWorkspaceConfigError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"workspace": workspace, "state": nextState})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Workspace)
+}
+
+func writeWorkspaceConfigError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, store.ErrWorkspaceOnboardingStatusInvalid),
+		errors.Is(err, store.ErrWorkspaceResumeURLInvalid),
+		errors.Is(err, store.ErrWorkspaceStartRouteInvalid),
+		errors.Is(err, store.ErrWorkspacePreferredAgentNotFound):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	default:
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
 }
 
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
@@ -333,9 +426,24 @@ func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
 			var daemonErr *daemonHTTPError
 			if errors.As(ensureErr, &daemonErr) && daemonErr.Status == http.StatusConflict {
 				status = http.StatusConflict
-				message = buildConflictRoomMessage("runtime lease 冲突", ensureErr)
+				message = runtimeLeaseConflictMessage(daemonErr.Conflict)
 			}
-			nextState, appendErr := s.store.AppendSystemRoomMessage(result.RoomID, "System", message, "blocked")
+			var (
+				nextState store.State
+				appendErr error
+			)
+			if daemonErr != nil && daemonErr.Conflict != nil {
+				nextState, appendErr = s.store.AppendRuntimeLeaseConflict(
+					result.RoomID,
+					"System",
+					message,
+					runtimeLeaseConflictInboxTitle(daemonErr.Conflict),
+					runtimeLeaseConflictNextAction(daemonErr.Conflict),
+					runtimeLeaseConflictControlNote(daemonErr.Conflict),
+				)
+			} else {
+				nextState, appendErr = s.store.AppendSystemRoomMessage(result.RoomID, "System", message, "blocked")
+			}
 			if appendErr != nil {
 				writeJSON(w, status, map[string]string{"error": ensureErr.Error()})
 				return
@@ -435,9 +543,24 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			var daemonErr *daemonHTTPError
 			if errors.As(err, &daemonErr) && daemonErr.Status == http.StatusConflict {
 				status = http.StatusConflict
-				message = buildConflictRoomMessage("runtime lease 冲突", err)
+				message = runtimeLeaseConflictMessage(daemonErr.Conflict)
 			}
-			nextState, appendErr := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+			var (
+				nextState store.State
+				appendErr error
+			)
+			if daemonErr != nil && daemonErr.Conflict != nil {
+				nextState, appendErr = s.store.AppendRuntimeLeaseConflict(
+					roomID,
+					"System",
+					message,
+					runtimeLeaseConflictInboxTitle(daemonErr.Conflict),
+					runtimeLeaseConflictNextAction(daemonErr.Conflict),
+					runtimeLeaseConflictControlNote(daemonErr.Conflict),
+				)
+			} else {
+				nextState, appendErr = s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+			}
 			if appendErr != nil {
 				writeJSON(w, status, map[string]string{"error": err.Error()})
 				return
@@ -533,6 +656,16 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1/runs/")
+	if path == "history" {
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+		cursor, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("cursor")))
+		roomID := strings.TrimSpace(r.URL.Query().Get("roomId"))
+		writeJSON(w, http.StatusOK, sanitizeLivePayload(s.store.RunHistory(limit, cursor, roomID)))
+		return
+	}
 	if strings.HasSuffix(path, "/control") {
 		runID := strings.TrimSuffix(path, "/control")
 		if r.Method != http.MethodPost {
@@ -585,6 +718,97 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if strings.HasSuffix(path, "/credentials") {
+		s.handleRunCredentialRoutes(w, r, strings.TrimSuffix(path, "/credentials"))
+		return
+	}
+	if strings.HasSuffix(path, "/sandbox") {
+		runID := strings.TrimSuffix(path, "/sandbox")
+		switch r.Method {
+		case http.MethodPatch:
+			if !runExecuteGuard(s, w) {
+				return
+			}
+			var req SandboxPolicyRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+				return
+			}
+			nextState, run, err := s.store.UpdateRunSandbox(runID, store.SandboxPolicy{
+				Profile:         req.Profile,
+				AllowedHosts:    req.AllowedHosts,
+				AllowedCommands: req.AllowedCommands,
+				AllowedTools:    req.AllowedTools,
+			}, currentAuthActor(s.store.Snapshot().Auth.Session))
+			if err != nil {
+				switch {
+				case errors.Is(err, store.ErrSandboxRunNotFound):
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				case errors.Is(err, store.ErrSandboxProfileInvalid):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				default:
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				}
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"state": nextState, "run": run, "sandbox": run.Sandbox})
+			return
+		case http.MethodPost:
+			if !runExecuteGuard(s, w) {
+				return
+			}
+			var req RunSandboxCheckRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+				return
+			}
+			session := s.store.Snapshot().Auth.Session
+			if req.Override && !authSessionHasPermission(session, "workspace.manage") {
+				writeJSON(w, http.StatusForbidden, map[string]any{
+					"error":      "permission \"workspace.manage\" required for sandbox override",
+					"permission": "workspace.manage",
+					"session":    session,
+					"state":      s.store.Snapshot(),
+				})
+				return
+			}
+			nextState, run, decision, err := s.store.EvaluateRunSandbox(runID, store.RunSandboxCheckInput{
+				Kind:        req.Kind,
+				Target:      req.Target,
+				RequestedBy: currentAuthActor(session),
+				Override:    req.Override,
+			})
+			if err != nil {
+				switch {
+				case errors.Is(err, store.ErrSandboxRunNotFound):
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				case errors.Is(err, store.ErrSandboxActionKindInvalid),
+					errors.Is(err, store.ErrSandboxActionTargetRequired),
+					errors.Is(err, store.ErrSandboxOverrideRequiresReview):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				default:
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				}
+				return
+			}
+			status := http.StatusOK
+			switch decision.Status {
+			case "approval_required":
+				status = http.StatusAccepted
+			case "denied":
+				status = http.StatusConflict
+			}
+			writeJSON(w, status, map[string]any{"state": nextState, "run": run, "decision": decision})
+			return
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+	}
+	if strings.HasSuffix(path, "/detail") {
+		s.handleRunDetail(w, r, strings.TrimSuffix(path, "/detail"))
+		return
+	}
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
@@ -596,6 +820,70 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "run not found"})
+}
+
+func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request, runID string) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	runID = strings.TrimSuffix(strings.TrimSpace(runID), "/")
+	if runID == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "run not found"})
+		return
+	}
+
+	detail, ok := s.store.RunDetail(runID)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "run not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, sanitizeLivePayload(detail))
+}
+
+type RunCredentialBindingRequest struct {
+	CredentialProfileIDs []string `json:"credentialProfileIds"`
+}
+
+func (s *Server) handleRunCredentialRoutes(w http.ResponseWriter, r *http.Request, runID string) {
+	runID = strings.Trim(strings.TrimSpace(runID), "/")
+	if runID == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "run not found"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPatch:
+		if !s.requireSessionPermission(w, "run.execute") {
+			return
+		}
+		var req RunCredentialBindingRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		nextState, run, err := s.store.UpdateRunCredentialBindings(runID, store.RunCredentialBindingInput{
+			CredentialProfileIDs: req.CredentialProfileIDs,
+			UpdatedBy:            currentAuthActor(s.store.Snapshot().Auth.Session),
+		})
+		if err != nil {
+			switch {
+			case errors.Is(err, store.ErrCredentialRunNotFound):
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			case errors.Is(err, store.ErrCredentialProfileBindingInvalid):
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			default:
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"run":   run,
+			"state": nextState,
+		})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
 }
 
 func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
@@ -648,11 +936,16 @@ func (s *Server) handlePullRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request) {
-	pullRequestID := strings.TrimPrefix(r.URL.Path, "/v1/pull-requests/")
-	if pullRequestID == "" {
+	path := strings.TrimPrefix(r.URL.Path, "/v1/pull-requests/")
+	if path == "" {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
 		return
 	}
+	if strings.HasSuffix(path, "/detail") {
+		s.handlePullRequestDetail(w, r, strings.TrimSuffix(path, "/detail"))
+		return
+	}
+	pullRequestID := path
 	if r.Method == http.MethodGet {
 		snapshot := s.store.Snapshot()
 		item, ok := findPullRequest(snapshot, pullRequestID)
@@ -728,6 +1021,38 @@ func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"state": nextState})
 }
 
+func (s *Server) handlePullRequestDetail(w http.ResponseWriter, r *http.Request, pullRequestID string) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	pullRequestID = strings.TrimSuffix(strings.TrimSpace(pullRequestID), "/")
+	if pullRequestID == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
+		return
+	}
+
+	snapshot := s.store.Snapshot()
+	item, ok := findPullRequest(snapshot, pullRequestID)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
+		return
+	}
+
+	nextState, err := s.syncStoredPullRequest(item)
+	if err != nil {
+		writePullRequestFailure(w, "sync", item.RoomID, pullRequestID, err, nextState)
+		return
+	}
+
+	detail, ok := s.store.PullRequestDetail(pullRequestID)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, sanitizeLivePayload(detail))
+}
+
 func (s *Server) syncStoredPullRequests(items []store.PullRequest) (store.State, error) {
 	finalState := s.store.Snapshot()
 	for _, item := range items {
@@ -793,16 +1118,61 @@ func mapGitHubPullRequest(pullRequest githubsvc.PullRequest) store.PullRequestRe
 	}
 
 	return store.PullRequestRemoteSnapshot{
-		Number:         pullRequest.Number,
-		Title:          pullRequest.Title,
-		Status:         status,
-		Branch:         pullRequest.HeadRefName,
-		BaseBranch:     pullRequest.BaseRefName,
-		Author:         pullRequest.Author,
-		Provider:       "github",
-		URL:            pullRequest.URL,
-		ReviewDecision: pullRequest.ReviewDecision,
-		UpdatedAt:      pullRequest.UpdatedAt,
+		Number:           pullRequest.Number,
+		Title:            pullRequest.Title,
+		Status:           status,
+		Branch:           pullRequest.HeadRefName,
+		BaseBranch:       pullRequest.BaseRefName,
+		Author:           pullRequest.Author,
+		Provider:         "github",
+		URL:              pullRequest.URL,
+		Mergeable:        pullRequest.Mergeable,
+		MergeStateStatus: pullRequest.MergeStateStatus,
+		ReviewDecision:   pullRequest.ReviewDecision,
+		ReviewSummary:    summarizeMappedGitHubPullRequest(status, pullRequest.ReviewDecision, pullRequest.Mergeable, pullRequest.MergeStateStatus),
+		UpdatedAt:        pullRequest.UpdatedAt,
+	}
+}
+
+func summarizeMappedGitHubPullRequest(status, reviewDecision, mergeable, mergeStateStatus string) string {
+	switch strings.TrimSpace(status) {
+	case "merged":
+		return "PR 已在 GitHub 合并，Issue 与讨论间进入完成状态。"
+	case "changes_requested":
+		return "GitHub Review 要求补充修改，等待 follow-up run。"
+	case "draft":
+		return "远端草稿 PR 已创建，等待进入正式评审。"
+	default:
+		mergeable = strings.ToUpper(strings.TrimSpace(mergeable))
+		mergeStateStatus = strings.ToUpper(strings.TrimSpace(mergeStateStatus))
+		reviewDecision = strings.TrimSpace(reviewDecision)
+
+		switch {
+		case mergeStateStatus == "DIRTY" || mergeable == "CONFLICTING":
+			return "当前 PR 与 base 存在冲突，需 refresh current base 后再继续 review / merge。"
+		case mergeStateStatus == "BEHIND":
+			return "当前 PR 已落后 base，需先 refresh 到 current base 后再继续合并。"
+		case mergeStateStatus == "BLOCKED":
+			if strings.EqualFold(reviewDecision, "APPROVED") {
+				return "GitHub Review 已批准，但 branch protections / required checks 仍阻塞 merge。"
+			}
+			return "当前 merge 仍被 branch protections / required checks 阻塞。"
+		case mergeStateStatus == "HAS_HOOKS":
+			return "GitHub 当前仍在等待 required hooks / protections 收敛，merge 还不能放行。"
+		case mergeStateStatus == "UNSTABLE":
+			return "GitHub 当前 merge safety 仍不稳定，需等待 checks 收敛后再继续合并。"
+		case mergeStateStatus == "UNKNOWN" || mergeable == "UNKNOWN":
+			return "GitHub 正在计算 merge safety，暂不允许贸然合并。"
+		}
+
+		switch reviewDecision {
+		case "APPROVED":
+			return "GitHub Review 已批准，等待最终合并。"
+		case "CHANGES_REQUESTED":
+			return "GitHub Review 要求补充修改，等待 follow-up run。"
+		default:
+			return "远端 PR 已创建，等待 GitHub Review 或合并。"
+		}
 	}
 }
 
@@ -978,6 +1348,7 @@ func (s *Server) handleRuntimePairing(w http.ResponseWriter, r *http.Request) {
 			Machine:       runtimeSnapshot.Machine,
 			DetectedCLI:   runtimeSnapshot.DetectedCLI,
 			Providers:     runtimeSnapshot.Providers,
+			Shell:         runtimeSnapshot.Shell,
 			State:         runtimeSnapshot.State,
 			WorkspaceRoot: runtimeSnapshot.WorkspaceRoot,
 			ReportedAt:    runtimeSnapshot.ReportedAt,
@@ -1110,6 +1481,12 @@ func (s *Server) handleExecRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
+	if strings.TrimSpace(req.RunID) != "" {
+		if err := s.store.RecordCredentialUse(req.RunID, currentAuthActor(s.store.Snapshot().Auth.Session)); err != nil && !errors.Is(err, store.ErrCredentialRunNotFound) {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, payload)
 }
 
@@ -1146,9 +1523,24 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 		message := fmt.Sprintf("CLI 连接失败：%s", err.Error())
 		var daemonErr *daemonHTTPError
 		if errors.As(err, &daemonErr) && daemonErr.Status == http.StatusConflict {
-			message = buildConflictRoomMessage("runtime lease 冲突", err)
+			message = runtimeLeaseConflictMessage(daemonErr.Conflict)
 		}
-		nextState, appendErr := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+		var (
+			nextState store.State
+			appendErr error
+		)
+		if daemonErr != nil && daemonErr.Conflict != nil {
+			nextState, appendErr = s.store.AppendRuntimeLeaseConflict(
+				roomID,
+				"System",
+				message,
+				runtimeLeaseConflictInboxTitle(daemonErr.Conflict),
+				runtimeLeaseConflictNextAction(daemonErr.Conflict),
+				runtimeLeaseConflictControlNote(daemonErr.Conflict),
+			)
+		} else {
+			nextState, appendErr = s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+		}
 		if appendErr != nil {
 			_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "error", Error: err.Error()})
 			return
@@ -1217,6 +1609,7 @@ func runtimeHeartbeatInputFromSnapshot(snapshot RuntimeSnapshotResponse) store.R
 		Machine:            strings.TrimSpace(snapshot.Machine),
 		DetectedCLI:        snapshot.DetectedCLI,
 		Providers:          snapshot.Providers,
+		Shell:              strings.TrimSpace(snapshot.Shell),
 		State:              strings.TrimSpace(snapshot.State),
 		WorkspaceRoot:      strings.TrimSpace(snapshot.WorkspaceRoot),
 		ReportedAt:         strings.TrimSpace(snapshot.ReportedAt),
@@ -1232,6 +1625,7 @@ func runtimeSnapshotFromRecord(record store.RuntimeRecord) RuntimeSnapshotRespon
 		Machine:            record.Machine,
 		DetectedCLI:        record.DetectedCLI,
 		Providers:          record.Providers,
+		Shell:              record.Shell,
 		State:              record.State,
 		WorkspaceRoot:      record.WorkspaceRoot,
 		ReportedAt:         record.ReportedAt,
@@ -1361,6 +1755,13 @@ func (s *Server) daemonURLValue() string {
 	return strings.TrimRight(s.daemonURL, "/")
 }
 
+func (s *Server) actualLiveURLValue() string {
+	if value := strings.TrimRight(strings.TrimSpace(s.actualLiveURL), "/"); value != "" {
+		return value
+	}
+	return "http://127.0.0.1:8080"
+}
+
 func (s *Server) setDaemonURL(url string) {
 	s.daemonMu.Lock()
 	defer s.daemonMu.Unlock()
@@ -1376,6 +1777,7 @@ func offlineRuntimeSnapshot(machine, reportedAt string) RuntimeSnapshotResponse 
 		Machine:       machine,
 		DetectedCLI:   []string{},
 		Providers:     nil,
+		Shell:         "",
 		State:         "offline",
 		WorkspaceRoot: "",
 		ReportedAt:    reportedAt,

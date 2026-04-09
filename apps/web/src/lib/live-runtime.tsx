@@ -8,7 +8,7 @@ import type {
   RuntimeProviderStatus,
   RuntimeRegistryRecord,
   RuntimeScheduler,
-} from "@/lib/mock-data";
+} from "@/lib/phase-zero-types";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 
@@ -18,6 +18,7 @@ export type LiveRuntimeSnapshot = {
   machine: string;
   detectedCli: string[];
   providers: RuntimeProviderStatus[] | null;
+  shell: string;
   state: string;
   workspaceRoot: string;
   reportedAt: string;
@@ -31,6 +32,7 @@ export type LiveRuntimeMachine = {
   state: string;
   daemonUrl: string;
   cli: string;
+  shell: string;
   os: string;
   lastHeartbeat: string;
 };
@@ -175,6 +177,7 @@ function runtimeSnapshotFromRecord(record: RuntimeRegistryRecord): LiveRuntimeSn
     machine: record.machine,
     detectedCli: record.detectedCli,
     providers: record.providers,
+    shell: record.shell,
     state: record.state,
     workspaceRoot: record.workspaceRoot,
     reportedAt: record.reportedAt,

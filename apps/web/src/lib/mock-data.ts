@@ -6,6 +6,31 @@ export type PresenceState = "running" | "idle" | "blocked";
 export type MachineState = "online" | "busy" | "offline";
 export type InboxKind = "blocked" | "approval" | "review" | "status";
 export type PullRequestStatus = "draft" | "open" | "in_review" | "changes_requested" | "merged";
+export type DestructiveGuardStatus = "approval_required" | "blocked" | "ready";
+export type DestructiveGuardRisk = "destructive_git" | "filesystem_write" | "secret_scope";
+export type SandboxProfile = "trusted" | "restricted";
+export type SandboxDecisionStatus = "idle" | "allowed" | "denied" | "approval_required" | "overridden";
+export type SandboxActionKind = "command" | "network" | "tool";
+
+export type SandboxPolicy = {
+  profile: SandboxProfile;
+  allowedHosts?: string[];
+  allowedCommands?: string[];
+  allowedTools?: string[];
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+export type SandboxDecision = {
+  status: SandboxDecisionStatus;
+  kind?: SandboxActionKind;
+  target?: string;
+  reason?: string;
+  requestedBy?: string;
+  overrideBy?: string;
+  checkedAt?: string;
+  retryHint?: string;
+};
 
 export type WorkspaceSnapshot = {
   name: string;
@@ -16,6 +41,8 @@ export type WorkspaceSnapshot = {
   repoBindingStatus: string;
   repoAuthMode: string;
   plan: string;
+  quota?: WorkspaceQuotaSnapshot;
+  usage?: WorkspaceUsageSnapshot;
   pairedRuntime: string;
   pairedRuntimeUrl: string;
   pairingStatus: string;
@@ -23,6 +50,84 @@ export type WorkspaceSnapshot = {
   lastPairedAt: string;
   browserPush: string;
   memoryMode: string;
+  sandbox: SandboxPolicy;
+  repoBinding: WorkspaceRepoBindingSnapshot;
+  githubInstallation: WorkspaceGitHubInstallSnapshot;
+  onboarding: WorkspaceOnboardingSnapshot;
+};
+
+export type WorkspaceRepoBindingSnapshot = {
+  repo: string;
+  repoUrl: string;
+  branch: string;
+  provider: string;
+  bindingStatus: string;
+  authMode: string;
+  detectedAt?: string;
+  syncedAt?: string;
+};
+
+export type WorkspaceGitHubInstallSnapshot = {
+  provider: string;
+  preferredAuthMode?: string;
+  connectionReady: boolean;
+  appConfigured: boolean;
+  appInstalled: boolean;
+  installationId?: string;
+  installationUrl?: string;
+  missing?: string[];
+  connectionMessage?: string;
+  syncedAt?: string;
+};
+
+export type WorkspaceOnboardingSnapshot = {
+  status: string;
+  templateId?: string;
+  currentStep?: string;
+  completedSteps?: string[];
+  resumeUrl?: string;
+  materialization?: WorkspaceOnboardingMaterialization;
+  updatedAt?: string;
+};
+
+export type WorkspaceOnboardingMaterialization = {
+  label?: string;
+  channels?: string[];
+  roles?: string[];
+  agents?: string[];
+  notificationPolicy?: string;
+  notes?: string[];
+};
+
+export type WorkspaceMemberPreferences = {
+  preferredAgentId?: string;
+  startRoute?: string;
+  updatedAt?: string;
+};
+
+export type WorkspaceQuotaSnapshot = {
+  usedMachines: number;
+  maxMachines: number;
+  usedAgents: number;
+  maxAgents: number;
+  usedChannels: number;
+  maxChannels: number;
+  usedRooms: number;
+  maxRooms: number;
+  messageHistoryDays: number;
+  runLogDays: number;
+  memoryDraftDays: number;
+  status: string;
+  warning?: string;
+};
+
+export type WorkspaceUsageSnapshot = {
+  windowLabel: string;
+  totalTokens: number;
+  runCount: number;
+  messageCount: number;
+  refreshedAt: string;
+  warning?: string;
 };
 
 export type AuthSession = {
@@ -35,6 +140,18 @@ export type AuthSession = {
   authMethod?: string;
   signedInAt?: string;
   lastSeenAt?: string;
+  deviceId?: string;
+  deviceLabel?: string;
+  deviceAuthStatus?: string;
+  emailVerificationStatus?: string;
+  emailVerifiedAt?: string;
+  passwordResetStatus?: string;
+  passwordResetRequestedAt?: string;
+  passwordResetCompletedAt?: string;
+  recoveryStatus?: string;
+  githubIdentity?: AuthExternalIdentity;
+  preferences: WorkspaceMemberPreferences;
+  linkedIdentities?: AuthExternalIdentity[];
   permissions: string[];
 };
 
@@ -54,13 +171,42 @@ export type WorkspaceMember = {
   source?: string;
   addedAt?: string;
   lastSeenAt?: string;
+  recoveryEmail?: string;
+  emailVerificationStatus?: string;
+  emailVerifiedAt?: string;
+  passwordResetStatus?: string;
+  passwordResetRequestedAt?: string;
+  passwordResetCompletedAt?: string;
+  recoveryStatus?: string;
+  githubIdentity?: AuthExternalIdentity;
+  preferences: WorkspaceMemberPreferences;
+  linkedIdentities?: AuthExternalIdentity[];
+  trustedDeviceIds?: string[];
   permissions: string[];
+};
+
+export type AuthExternalIdentity = {
+  provider: string;
+  handle: string;
+  status: string;
+  boundAt?: string;
+};
+
+export type AuthDevice = {
+  id: string;
+  memberId: string;
+  label: string;
+  status: string;
+  requestedAt?: string;
+  authorizedAt?: string;
+  lastSeenAt?: string;
 };
 
 export type AuthSnapshot = {
   session: AuthSession;
   roles: WorkspaceRole[];
   members: WorkspaceMember[];
+  devices?: AuthDevice[];
 };
 
 export type Channel = {
@@ -71,6 +217,17 @@ export type Channel = {
   purpose: string;
 };
 
+export type DirectMessage = {
+  id: string;
+  name: string;
+  summary: string;
+  purpose: string;
+  unread: number;
+  presence: PresenceState;
+  counterpart: string;
+  messageIds: string[];
+};
+
 export type Message = {
   id: string;
   speaker: string;
@@ -78,6 +235,31 @@ export type Message = {
   tone: "human" | "agent" | "blocked" | "system";
   message: string;
   time: string;
+};
+
+export type MessageSurfaceEntry = {
+  id: string;
+  channelId: string;
+  messageId: string;
+  channelLabel: string;
+  title: string;
+  summary: string;
+  note: string;
+  updatedAt: string;
+  unread: number;
+};
+
+export type SearchResultKind = "channel" | "dm" | "room" | "issue" | "run" | "agent" | "followed" | "saved";
+
+export type SearchResult = {
+  id: string;
+  kind: SearchResultKind;
+  title: string;
+  summary: string;
+  meta: string;
+  href: string;
+  keywords: string;
+  order: number;
 };
 
 export type Issue = {
@@ -112,6 +294,17 @@ export type Room = {
   topic: Topic;
   runId: string;
   messageIds: string[];
+  usage?: RoomUsageSnapshot;
+};
+
+export type RoomUsageSnapshot = {
+  windowLabel: string;
+  messageCount: number;
+  humanTurns: number;
+  agentTurns: number;
+  totalTokens: number;
+  refreshedAt: string;
+  warning?: string;
 };
 
 export type RunEvent = {
@@ -119,6 +312,25 @@ export type RunEvent = {
   label: string;
   at: string;
   tone: "paper" | "yellow" | "lime" | "pink";
+};
+
+export type GuardBoundary = {
+  label: string;
+  value: string;
+};
+
+export type DestructiveGuard = {
+  id: string;
+  title: string;
+  summary: string;
+  status: DestructiveGuardStatus;
+  risk: DestructiveGuardRisk;
+  scope: string;
+  roomId?: string;
+  runId?: string;
+  inboxItemId?: string;
+  approvalRequired: boolean;
+  boundaries: GuardBoundary[];
 };
 
 export type ToolCall = {
@@ -147,12 +359,26 @@ export type Run = {
   duration: string;
   summary: string;
   approvalRequired: boolean;
+  sandbox: SandboxPolicy;
+  sandboxDecision: SandboxDecision;
   stdout: string[];
   stderr: string[];
   toolCalls: ToolCall[];
   timeline: RunEvent[];
+  usage?: RunUsageSnapshot;
   nextAction: string;
   pullRequest: string;
+};
+
+export type RunUsageSnapshot = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  toolCallCount: number;
+  contextWindow: number;
+  budgetStatus: string;
+  refreshedAt: string;
+  warning?: string;
 };
 
 export type AgentStatus = {
@@ -162,10 +388,29 @@ export type AgentStatus = {
   mood: string;
   state: PresenceState;
   lane: string;
+  role: string;
+  avatar: string;
+  prompt: string;
+  operatingInstructions: string;
   provider: string;
+  providerPreference: string;
+  modelPreference: string;
+  recallPolicy: string;
   runtimePreference: string;
   memorySpaces: string[];
+  sandbox: SandboxPolicy;
   recentRunIds: string[];
+  profileAudit: Array<{
+    id: string;
+    updatedAt: string;
+    updatedBy: string;
+    summary: string;
+    changes: Array<{
+      field: string;
+      previous: string;
+      current: string;
+    }>;
+  }>;
 };
 
 export type MachineStatus = {
@@ -173,6 +418,7 @@ export type MachineStatus = {
   name: string;
   state: MachineState;
   cli: string;
+  shell: string;
   os: string;
   lastHeartbeat: string;
 };
@@ -182,6 +428,7 @@ export type RuntimeProviderStatus = {
   label: string;
   mode: string;
   capabilities: string[];
+  models: string[];
   transport: string;
 };
 
@@ -191,6 +438,7 @@ export type RuntimeRegistryRecord = {
   daemonUrl: string;
   detectedCli: string[];
   providers: RuntimeProviderStatus[];
+  shell: string;
   state: string;
   pairingState: string;
   workspaceRoot: string;
@@ -250,6 +498,7 @@ export type InboxItem = {
   summary: string;
   action: string;
   href: string;
+  guardId?: string;
 };
 
 export type InboxDecision =
@@ -272,6 +521,7 @@ export type ApprovalCenterItem = {
   room: string;
   roomId?: string;
   runId?: string;
+  guardId?: string;
   title: string;
   summary: string;
   action: string;
@@ -309,6 +559,8 @@ export type PullRequest = {
   author: string;
   provider?: string;
   url?: string;
+  mergeable?: string;
+  mergeStateStatus?: string;
   reviewDecision?: string;
   reviewSummary: string;
   updatedAt: string;
@@ -377,6 +629,11 @@ export type PhaseZeroState = {
   auth: AuthSnapshot;
   channels: Channel[];
   channelMessages: Record<string, Message[]>;
+  directMessages: DirectMessage[];
+  directMessageMessages: Record<string, Message[]>;
+  followedThreads: MessageSurfaceEntry[];
+  savedLaterItems: MessageSurfaceEntry[];
+  quickSearchEntries: SearchResult[];
   issues: Issue[];
   rooms: Room[];
   roomMessages: Record<string, Message[]>;
@@ -389,6 +646,7 @@ export type PhaseZeroState = {
   sessions: Session[];
   runtimeLeases: RuntimeLeaseRecord[];
   runtimeScheduler: RuntimeScheduler;
+  guards: DestructiveGuard[];
   memory: MemoryArtifact[];
 };
 
@@ -401,6 +659,29 @@ export const workspace: WorkspaceSnapshot = {
   repoBindingStatus: "bound",
   repoAuthMode: "local-git-origin",
   plan: "Builder P0",
+  quota: {
+    usedMachines: 2,
+    maxMachines: 4,
+    usedAgents: 3,
+    maxAgents: 8,
+    usedChannels: 3,
+    maxChannels: 12,
+    usedRooms: 3,
+    maxRooms: 16,
+    messageHistoryDays: 30,
+    runLogDays: 14,
+    memoryDraftDays: 90,
+    status: "healthy",
+    warning: "当前 workspace 仍在 Builder P0；先把 limits / retention / usage truth 摆到人类可见面。",
+  },
+  usage: {
+    windowLabel: "过去 24h",
+    totalTokens: 13418,
+    runCount: 3,
+    messageCount: 13,
+    refreshedAt: "2026-04-08T11:02:00Z",
+    warning: "Builder P0 当前以 workspace plan 为主、usage 为辅；先把观察面做清，再决定是否要更重的 billing flow。",
+  },
   pairedRuntime: "shock-main",
   pairedRuntimeUrl: "http://127.0.0.1:8090",
   pairingStatus: "paired",
@@ -408,6 +689,40 @@ export const workspace: WorkspaceSnapshot = {
   lastPairedAt: "刚刚",
   browserPush: "只推高优先级",
   memoryMode: "MEMORY.md + notes/ + decisions/",
+  sandbox: {
+    profile: "restricted",
+    allowedHosts: ["github.com", "api.openai.com"],
+    allowedCommands: ["git status", "pnpm test"],
+    allowedTools: ["read_file", "rg"],
+    updatedAt: "2026-04-08T11:02:00Z",
+    updatedBy: "Larkspur",
+  },
+  repoBinding: {
+    repo: "Larkspur-Wang/OpenShock",
+    repoUrl: "https://github.com/Larkspur-Wang/OpenShock",
+    branch: "main",
+    provider: "github",
+    bindingStatus: "bound",
+    authMode: "local-git-origin",
+    syncedAt: "2026-04-07T05:35:00Z",
+  },
+  githubInstallation: {
+    provider: "github",
+    preferredAuthMode: "github-app",
+    connectionReady: false,
+    appConfigured: false,
+    appInstalled: false,
+    connectionMessage: "当前还没有 GitHub App install truth；保持沿本地 repo binding 推进。",
+    syncedAt: "2026-04-07T05:35:00Z",
+  },
+  onboarding: {
+    status: "in_progress",
+    templateId: "delivery-ops",
+    currentStep: "repo-binding",
+    completedSteps: ["workspace-created", "member-seeded"],
+    resumeUrl: "/setup",
+    updatedAt: "2026-04-07T05:35:00Z",
+  },
 };
 
 export const auth: AuthSnapshot = {
@@ -421,6 +736,17 @@ export const auth: AuthSnapshot = {
     authMethod: "email-link",
     signedInAt: "2026-04-07T04:12:00Z",
     lastSeenAt: "2026-04-07T05:35:00Z",
+    githubIdentity: {
+      provider: "github",
+      handle: "@larkspur",
+      status: "bound",
+      boundAt: "2026-04-07T05:35:00Z",
+    },
+    preferences: {
+      preferredAgentId: "agent-codex-dockmaster",
+      startRoute: "/setup",
+      updatedAt: "2026-04-07T05:35:00Z",
+    },
     permissions: [
       "workspace.manage",
       "members.manage",
@@ -491,6 +817,17 @@ export const auth: AuthSnapshot = {
       source: "seed",
       addedAt: "2026-04-07T04:10:00Z",
       lastSeenAt: "2026-04-07T05:35:00Z",
+      githubIdentity: {
+        provider: "github",
+        handle: "@larkspur",
+        status: "bound",
+        boundAt: "2026-04-07T05:35:00Z",
+      },
+      preferences: {
+        preferredAgentId: "agent-codex-dockmaster",
+        startRoute: "/setup",
+        updatedAt: "2026-04-07T05:35:00Z",
+      },
       permissions: [
         "workspace.manage",
         "members.manage",
@@ -517,6 +854,9 @@ export const auth: AuthSnapshot = {
       source: "seed",
       addedAt: "2026-04-07T04:10:00Z",
       lastSeenAt: "2026-04-07T05:18:00Z",
+      preferences: {
+        startRoute: "/access",
+      },
       permissions: [
         "issue.create",
         "room.reply",
@@ -536,6 +876,9 @@ export const auth: AuthSnapshot = {
       source: "seed",
       addedAt: "2026-04-07T04:10:00Z",
       lastSeenAt: "2026-04-07T05:05:00Z",
+      preferences: {
+        startRoute: "/access",
+      },
       permissions: ["room.read", "run.read", "inbox.read", "memory.read", "pull_request.read"],
     },
   ],
@@ -709,6 +1052,15 @@ export const rooms: Room[] = [
       owner: "Codex Dockmaster",
       summary: "壳层正在推进中。Agent 正在把机器在线状态、branch 和 Run 详情接进前端。",
     },
+    usage: {
+      windowLabel: "过去 6h",
+      messageCount: 3,
+      humanTurns: 1,
+      agentTurns: 1,
+      totalTokens: 6130,
+      refreshedAt: "2026-04-08T11:02:00Z",
+      warning: "房间 usage 仍在可读范围，消息密度与 run cost 可以继续并排观察。",
+    },
   },
   {
     id: "room-inbox",
@@ -726,6 +1078,15 @@ export const rooms: Room[] = [
       owner: "Claude Review Runner",
       summary: "文案已经准备好，正在等产品确认后合并。",
     },
+    usage: {
+      windowLabel: "过去 6h",
+      messageCount: 2,
+      humanTurns: 1,
+      agentTurns: 1,
+      totalTokens: 4972,
+      refreshedAt: "2026-04-08T11:02:00Z",
+      warning: "这间房已进入 review；下一条消息优先围绕 blocker / no-blocker，而不是继续扩 scope。",
+    },
   },
   {
     id: "room-memory",
@@ -742,6 +1103,15 @@ export const rooms: Room[] = [
       status: "blocked",
       owner: "Memory Clerk",
       summary: "Agent 在写回房间笔记前，需要一个正式的优先级规则。",
+    },
+    usage: {
+      windowLabel: "过去 6h",
+      messageCount: 2,
+      humanTurns: 0,
+      agentTurns: 1,
+      totalTokens: 2488,
+      refreshedAt: "2026-04-08T11:02:00Z",
+      warning: "这间房当前是 blocked 态；继续追加消息前先确认是否该升级到 Inbox。",
     },
   },
 ];
@@ -828,6 +1198,23 @@ export const runs: Run[] = [
     duration: "24m",
     summary: "把 runtime 心跳、讨论间上下文和分支元信息同步进主壳层。",
     approvalRequired: false,
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com", "api.openai.com"],
+      allowedCommands: ["git status", "pnpm test"],
+      allowedTools: ["read_file", "rg"],
+      updatedAt: "2026-04-08T09:26:00Z",
+      updatedBy: "Codex Dockmaster",
+    },
+    sandboxDecision: {
+      status: "approval_required",
+      kind: "command",
+      target: "git push --force",
+      reason: "restricted sandbox 没有放行这个 action；需要 owner 显式批准后再 retry。",
+      requestedBy: "Codex Dockmaster",
+      checkedAt: "2026-04-08T09:45:00Z",
+      retryHint: "保持 target 不变，由具备 workspace.manage 的人批准 override 后重试。",
+    },
     stdout: [
       "[09:26:11] 正在克隆 worktree wt-runtime-shell",
       "[09:27:08] 已在 shock-main 上发现 codex 与 claude code",
@@ -846,6 +1233,16 @@ export const runs: Run[] = [
       { id: "ev-3", label: "Runtime 心跳已可见", at: "09:33", tone: "lime" },
       { id: "ev-4", label: "PR 摘要生成中", at: "09:46", tone: "paper" },
     ],
+    usage: {
+      promptTokens: 4368,
+      completionTokens: 1212,
+      totalTokens: 5580,
+      toolCallCount: 2,
+      contextWindow: 16000,
+      budgetStatus: "watch",
+      refreshedAt: "2026-04-08T11:02:00Z",
+      warning: "这条 Run 当前已用 5580 tokens；继续拉长协作前先看 context headroom。",
+    },
     nextAction: "等视觉核对通过后发起 PR。",
     pullRequest: "PR #18",
   },
@@ -865,6 +1262,17 @@ export const runs: Run[] = [
     duration: "18m",
     summary: "把批准、阻塞和评审卡片收成一个人类决策收件箱。",
     approvalRequired: false,
+    sandbox: {
+      profile: "trusted",
+      allowedHosts: [],
+      allowedCommands: [],
+      allowedTools: [],
+      updatedAt: "2026-04-08T09:58:00Z",
+      updatedBy: "Claude Review Runner",
+    },
+    sandboxDecision: {
+      status: "idle",
+    },
     stdout: [
       "[09:58:03] 已打开讨论间上下文",
       "[10:01:14] 已重写批准卡片语气",
@@ -880,6 +1288,16 @@ export const runs: Run[] = [
       { id: "ev-6", label: "房间跳转已接通", at: "10:06", tone: "lime" },
       { id: "ev-7", label: "已发起评审", at: "10:12", tone: "paper" },
     ],
+    usage: {
+      promptTokens: 3540,
+      completionTokens: 1062,
+      totalTokens: 4602,
+      toolCallCount: 1,
+      contextWindow: 32000,
+      budgetStatus: "healthy",
+      refreshedAt: "2026-04-08T11:02:00Z",
+      warning: "当前 token / context headroom 仍健康，可继续沿 Room / Run / PR 收口。",
+    },
     nextAction: "等待人类确认语气与通知默认值。",
     pullRequest: "PR #22",
   },
@@ -899,6 +1317,23 @@ export const runs: Run[] = [
     duration: "11m",
     summary: "把 Run 摘要写回 MEMORY.md，同时保留可检查的房间上下文。",
     approvalRequired: true,
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com"],
+      allowedCommands: ["git status"],
+      allowedTools: ["read_file"],
+      updatedAt: "2026-04-08T10:27:00Z",
+      updatedBy: "Memory Clerk",
+    },
+    sandboxDecision: {
+      status: "denied",
+      kind: "network",
+      target: "mem0.dev",
+      reason: "restricted sandbox 未允许这个 network target；先补 host allowlist，再 retry。",
+      requestedBy: "Memory Clerk",
+      checkedAt: "2026-04-08T10:31:00Z",
+      retryHint: "更新 run / agent / workspace 的 allowed hosts 后重试。",
+    },
     stdout: [
       "[10:27:02] 已打开 MEMORY.md",
       "[10:30:44] 已收集房间笔记和用户记忆范围",
@@ -913,6 +1348,16 @@ export const runs: Run[] = [
       { id: "ev-9", label: "检测到冲突", at: "10:31", tone: "pink" },
       { id: "ev-10", label: "已创建 Inbox 升级项", at: "10:33", tone: "paper" },
     ],
+    usage: {
+      promptTokens: 2824,
+      completionTokens: 412,
+      totalTokens: 3236,
+      toolCallCount: 1,
+      contextWindow: 16000,
+      budgetStatus: "healthy",
+      refreshedAt: "2026-04-08T11:02:00Z",
+      warning: "当前 run 虽未逼近 token 上限，但仍被人工批准闸门锁住。",
+    },
     nextAction: "先定优先级规则，再恢复写回。",
     pullRequest: "草稿 PR",
   },
@@ -926,10 +1371,26 @@ export const agents: AgentStatus[] = [
     mood: "正在接 runtime 卡片",
     state: "running",
     lane: "OPS-12",
+    role: "Platform Architect",
+    avatar: "control-tower",
+    prompt: "先给出 live truth，再给最短可执行动作。",
+    operatingInstructions: "对 shared shell / runtime truth 保持谨慎，不把 stale head 当 current truth。",
     provider: "Codex CLI",
+    providerPreference: "Codex CLI",
+    modelPreference: "gpt-5.3-codex",
+    recallPolicy: "governed-first",
     runtimePreference: "shock-main",
     memorySpaces: ["workspace", "issue-room", "topic"],
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com", "api.openai.com"],
+      allowedCommands: ["git status", "pnpm test"],
+      allowedTools: ["read_file", "rg"],
+      updatedAt: "2026-04-08T09:20:00Z",
+      updatedBy: "Larkspur",
+    },
     recentRunIds: ["run_runtime_01"],
+    profileAudit: [],
   },
   {
     id: "agent-claude-review-runner",
@@ -938,10 +1399,26 @@ export const agents: AgentStatus[] = [
     mood: "等待产品核对",
     state: "idle",
     lane: "OPS-19",
+    role: "Review Runner",
+    avatar: "review-lantern",
+    prompt: "优先给 exact-head reviewer verdict 和 scope-local blocker。",
+    operatingInstructions: "把 current truth 和 stale window 分开，不把旧 blocker 带回当前 head。",
     provider: "Claude Code CLI",
+    providerPreference: "Claude Code CLI",
+    modelPreference: "claude-sonnet-4",
+    recallPolicy: "balanced",
     runtimePreference: "shock-sidecar",
     memorySpaces: ["workspace", "issue-room"],
+    sandbox: {
+      profile: "trusted",
+      allowedHosts: [],
+      allowedCommands: [],
+      allowedTools: [],
+      updatedAt: "2026-04-08T09:48:00Z",
+      updatedBy: "Larkspur",
+    },
     recentRunIds: ["run_inbox_01"],
+    profileAudit: [],
   },
   {
     id: "agent-memory-clerk",
@@ -950,16 +1427,69 @@ export const agents: AgentStatus[] = [
     mood: "等待策略输入",
     state: "blocked",
     lane: "OPS-27",
+    role: "Memory Steward",
+    avatar: "ledger-stack",
+    prompt: "把 next-run injection、promotion 和 version audit 保持成可解释真值。",
+    operatingInstructions: "任何 memory write 先过 governance，再决定是否 promotion 或 escalation。",
     provider: "Codex CLI",
+    providerPreference: "Codex CLI",
+    modelPreference: "gpt-5.1-codex-mini",
+    recallPolicy: "agent-first",
     runtimePreference: "shock-main",
-    memorySpaces: ["workspace", "user", "room-notes"],
+    memorySpaces: ["workspace", "user", "room-notes", "topic"],
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com"],
+      allowedCommands: ["git status"],
+      allowedTools: ["read_file"],
+      updatedAt: "2026-04-08T10:20:00Z",
+      updatedBy: "Larkspur",
+    },
     recentRunIds: ["run_memory_01"],
+    profileAudit: [],
   },
 ];
 
 export const machines: MachineStatus[] = [
-  { id: "machine-main", name: "shock-main", state: "busy", cli: "Codex + Claude Code", os: "Windows 11", lastHeartbeat: "8 秒前" },
-  { id: "machine-sidecar", name: "shock-sidecar", state: "online", cli: "Codex", os: "macOS", lastHeartbeat: "21 秒前" },
+  { id: "machine-main", name: "shock-main", state: "busy", cli: "Codex + Claude Code", shell: "pwsh", os: "Windows 11", lastHeartbeat: "8 秒前" },
+  { id: "machine-sidecar", name: "shock-sidecar", state: "online", cli: "Codex", shell: "zsh", os: "macOS", lastHeartbeat: "21 秒前" },
+];
+
+export const guards: DestructiveGuard[] = [
+  {
+    id: "guard-runtime-destructive-git",
+    title: "Destructive Git Cleanup Guard",
+    summary: "这次请求会删除过时 branch / worktree；系统先把动作停在 approval_required，不会直接执行。",
+    status: "approval_required",
+    risk: "destructive_git",
+    scope: "当前 repo 清理",
+    roomId: "room-runtime",
+    runId: "run_runtime_01",
+    inboxItemId: "inbox-approval-runtime",
+    approvalRequired: true,
+    boundaries: [
+      { label: "Action", value: "git branch -D / git worktree remove / clean stale files" },
+      { label: "Sandbox", value: "只允许当前 workspace root；越界写入继续被拦截" },
+      { label: "Secrets", value: "GitHub token / workspace secret 在批准前不会注入" },
+    ],
+  },
+  {
+    id: "guard-memory-boundary",
+    title: "Cross-scope Write Boundary",
+    summary: "写回同时命中 room / workspace / user memory；系统先阻断跨 scope 写入，等待人类确认优先级规则。",
+    status: "blocked",
+    risk: "filesystem_write",
+    scope: "记忆写回",
+    roomId: "room-memory",
+    runId: "run_memory_01",
+    inboxItemId: "inbox-blocked-memory",
+    approvalRequired: true,
+    boundaries: [
+      { label: "Target", value: "MEMORY.md / notes/work-log.md / notes/rooms/room-memory.md" },
+      { label: "Sandbox", value: "跨 scope 写入先 blocked，不会直接落盘" },
+      { label: "Secrets", value: "用户私有记忆与后续 credential scope 保持封闭" },
+    ],
+  },
 ];
 
 export const runtimes: RuntimeRegistryRecord[] = [
@@ -974,16 +1504,19 @@ export const runtimes: RuntimeRegistryRecord[] = [
         label: "Codex CLI",
         mode: "native",
         capabilities: ["exec", "review", "apply-patch"],
+        models: ["gpt-5.2", "gpt-5.3-codex", "gpt-5.1-codex-mini"],
         transport: "stdio",
       },
       {
         id: "claude",
-        label: "Claude Code",
+        label: "Claude Code CLI",
         mode: "native",
         capabilities: ["exec", "review"],
+        models: ["claude-sonnet-4", "claude-opus-4.1"],
         transport: "stdio",
       },
     ],
+    shell: "pwsh",
     state: "busy",
     pairingState: "paired",
     workspaceRoot: "/home/lark/OpenShock",
@@ -1003,9 +1536,11 @@ export const runtimes: RuntimeRegistryRecord[] = [
         label: "Codex CLI",
         mode: "native",
         capabilities: ["exec", "review"],
+        models: ["gpt-5.2", "gpt-5.3-codex", "gpt-5.1-codex-mini"],
         transport: "stdio",
       },
     ],
+    shell: "zsh",
     state: "online",
     pairingState: "available",
     workspaceRoot: "/home/lark/OpenShock",
@@ -1026,6 +1561,7 @@ export const inboxItems: InboxItem[] = [
     summary: "这个 Run 想在视觉核对通过后清理过时分支。",
     action: "查看批准",
     href: "/runs/run_runtime_01",
+    guardId: "guard-runtime-destructive-git",
   },
   {
     id: "inbox-blocked-memory",
@@ -1036,6 +1572,7 @@ export const inboxItems: InboxItem[] = [
     summary: "写回前需要先确定 topic、房间、工作区、用户和 agent 的优先级规则。",
     action: "解除阻塞",
     href: "/runs/run_memory_01",
+    guardId: "guard-memory-boundary",
   },
   {
     id: "inbox-review-copy",
@@ -1220,6 +1757,11 @@ export const fallbackState: PhaseZeroState = {
   auth,
   channels,
   channelMessages,
+  directMessages: [],
+  directMessageMessages: {},
+  followedThreads: [],
+  savedLaterItems: [],
+  quickSearchEntries: [],
   issues,
   rooms,
   roomMessages,
@@ -1240,5 +1782,6 @@ export const fallbackState: PhaseZeroState = {
     summary: "当前 fallback state 仍按 workspace selection 指向 shock-main。",
     candidates: [],
   },
+  guards,
   memory: [],
 };

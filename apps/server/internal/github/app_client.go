@@ -47,7 +47,9 @@ type githubGraphQLPullRequestResponse struct {
 	Data struct {
 		Repository struct {
 			PullRequest *struct {
-				ReviewDecision string `json:"reviewDecision"`
+				ReviewDecision   string `json:"reviewDecision"`
+				Mergeable        string `json:"mergeable"`
+				MergeStateStatus string `json:"mergeStateStatus"`
 			} `json:"pullRequest"`
 		} `json:"repository"`
 	} `json:"data"`
@@ -60,12 +62,18 @@ type githubAPIError struct {
 	Message string `json:"message"`
 }
 
+type githubPullRequestSafetySnapshot struct {
+	ReviewDecision   string
+	Mergeable        string
+	MergeStateStatus string
+}
+
 func (s *Service) createPullRequestWithGitHubApp(workspaceRoot string, input CreatePullRequestInput) (PullRequest, error) {
 	if _, err := s.git(workspaceRoot, "push", "-u", "origin", input.HeadBranch); err != nil {
 		return PullRequest{}, fmt.Errorf("push branch to origin: %w", err)
 	}
 
-	token, err := githubAppInstallationToken()
+	token, err := githubAppInstallationToken(workspaceRoot)
 	if err != nil {
 		return PullRequest{}, err
 	}
@@ -85,11 +93,11 @@ func (s *Service) createPullRequestWithGitHubApp(workspaceRoot string, input Cre
 		return PullRequest{}, fmt.Errorf("github app create returned invalid pull request number")
 	}
 
-	return s.viewPullRequestWithGitHubApp(input.Repo, created.Number, false)
+	return s.viewPullRequestWithGitHubApp(workspaceRoot, input.Repo, created.Number, false)
 }
 
-func (s *Service) mergePullRequestWithGitHubApp(input MergePullRequestInput) (PullRequest, error) {
-	token, err := githubAppInstallationToken()
+func (s *Service) mergePullRequestWithGitHubApp(workspaceRoot string, input MergePullRequestInput) (PullRequest, error) {
+	token, err := githubAppInstallationToken(workspaceRoot)
 	if err != nil {
 		return PullRequest{}, err
 	}
@@ -101,11 +109,11 @@ func (s *Service) mergePullRequestWithGitHubApp(input MergePullRequestInput) (Pu
 		return PullRequest{}, err
 	}
 
-	return s.viewPullRequestWithGitHubApp(input.Repo, input.Number, false)
+	return s.viewPullRequestWithGitHubApp(workspaceRoot, input.Repo, input.Number, false)
 }
 
-func (s *Service) viewPullRequestWithGitHubApp(repo string, number int, requireReviewDecision bool) (PullRequest, error) {
-	token, err := githubAppInstallationToken()
+func (s *Service) viewPullRequestWithGitHubApp(workspaceRoot, repo string, number int, requireReviewDecision bool) (PullRequest, error) {
+	token, err := githubAppInstallationToken(workspaceRoot)
 	if err != nil {
 		return PullRequest{}, err
 	}
@@ -115,33 +123,35 @@ func (s *Service) viewPullRequestWithGitHubApp(repo string, number int, requireR
 		return PullRequest{}, err
 	}
 
-	reviewDecision, err := fetchGitHubAppReviewDecision(token, repo, number)
+	safetySnapshot, err := fetchGitHubAppPullRequestSafety(token, repo, number)
 	if err != nil {
 		if requireReviewDecision {
 			return PullRequest{}, err
 		}
-		reviewDecision = ""
+		safetySnapshot = githubPullRequestSafetySnapshot{}
 	}
 
 	return PullRequest{
-		Number:         payload.Number,
-		URL:            payload.HTMLURL,
-		Title:          payload.Title,
-		State:          strings.ToUpper(strings.TrimSpace(payload.State)),
-		IsDraft:        payload.Draft,
-		ReviewDecision: strings.TrimSpace(reviewDecision),
-		HeadRefName:    payload.Head.Ref,
-		BaseRefName:    payload.Base.Ref,
-		Author:         payload.User.Login,
-		UpdatedAt:      payload.UpdatedAt,
-		Merged:         payload.Merged || strings.TrimSpace(payload.MergedAt) != "",
+		Number:           payload.Number,
+		URL:              payload.HTMLURL,
+		Title:            payload.Title,
+		State:            strings.ToUpper(strings.TrimSpace(payload.State)),
+		IsDraft:          payload.Draft,
+		Mergeable:        strings.TrimSpace(safetySnapshot.Mergeable),
+		MergeStateStatus: strings.TrimSpace(safetySnapshot.MergeStateStatus),
+		ReviewDecision:   strings.TrimSpace(safetySnapshot.ReviewDecision),
+		HeadRefName:      payload.Head.Ref,
+		BaseRefName:      payload.Base.Ref,
+		Author:           payload.User.Login,
+		UpdatedAt:        payload.UpdatedAt,
+		Merged:           payload.Merged || strings.TrimSpace(payload.MergedAt) != "",
 	}, nil
 }
 
-func fetchGitHubAppReviewDecision(token, repo string, number int) (string, error) {
+func fetchGitHubAppPullRequestSafety(token, repo string, number int) (githubPullRequestSafetySnapshot, error) {
 	parts := strings.SplitN(strings.TrimSpace(repo), "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", fmt.Errorf("invalid repo path %q", repo)
+		return githubPullRequestSafetySnapshot{}, fmt.Errorf("invalid repo path %q", repo)
 	}
 
 	query := map[string]any{
@@ -149,6 +159,8 @@ func fetchGitHubAppReviewDecision(token, repo string, number int) (string, error
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviewDecision
+      mergeable
+      mergeStateStatus
     }
   }
 }`,
@@ -161,19 +173,23 @@ func fetchGitHubAppReviewDecision(token, repo string, number int) (string, error
 
 	var payload githubGraphQLPullRequestResponse
 	if err := doGitHubAPIJSONRequest(http.MethodPost, githubGraphQLURL(), token, query, &payload); err != nil {
-		return "", err
+		return githubPullRequestSafetySnapshot{}, err
 	}
 	if len(payload.Errors) > 0 && strings.TrimSpace(payload.Errors[0].Message) != "" {
-		return "", errors.New(strings.TrimSpace(payload.Errors[0].Message))
+		return githubPullRequestSafetySnapshot{}, errors.New(strings.TrimSpace(payload.Errors[0].Message))
 	}
 	if payload.Data.Repository.PullRequest == nil {
-		return "", nil
+		return githubPullRequestSafetySnapshot{}, nil
 	}
-	return strings.TrimSpace(payload.Data.Repository.PullRequest.ReviewDecision), nil
+	return githubPullRequestSafetySnapshot{
+		ReviewDecision:   strings.TrimSpace(payload.Data.Repository.PullRequest.ReviewDecision),
+		Mergeable:        strings.TrimSpace(payload.Data.Repository.PullRequest.Mergeable),
+		MergeStateStatus: strings.TrimSpace(payload.Data.Repository.PullRequest.MergeStateStatus),
+	}, nil
 }
 
-func githubAppInstallationToken() (string, error) {
-	appID, installationID, privateKey, err := loadGitHubAppCredentials()
+func githubAppInstallationToken(workspaceRoot string) (string, error) {
+	appID, installationID, privateKey, err := loadGitHubAppCredentials(workspaceRoot)
 	if err != nil {
 		return "", err
 	}
@@ -243,9 +259,12 @@ func doGitHubAPIJSONRequest(method, requestURL, bearerToken string, requestBody 
 	return nil
 }
 
-func loadGitHubAppCredentials() (string, string, *rsa.PrivateKey, error) {
+func loadGitHubAppCredentials(workspaceRoot string) (string, string, *rsa.PrivateKey, error) {
 	appID := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_ID"))
 	installationID := strings.TrimSpace(os.Getenv("OPENSHOCK_GITHUB_APP_INSTALLATION_ID"))
+	if installationID == "" {
+		installationID = strings.TrimSpace(loadInstallationStateFallback(workspaceRoot).InstallationID)
+	}
 	if appID == "" {
 		return "", "", nil, fmt.Errorf("github app id is not configured")
 	}

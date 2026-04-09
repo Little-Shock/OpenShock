@@ -7,7 +7,10 @@ import type {
   AuthSession,
   InboxDecision,
   PhaseZeroState,
-} from "@/lib/mock-data";
+  SandboxDecision,
+  SandboxPolicy,
+} from "@/lib/phase-zero-types";
+import { sanitizePhaseZeroState } from "@/lib/phase-zero-helpers";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 const STATE_STREAM_PATH = "/v1/state/stream";
@@ -62,6 +65,80 @@ type RunControlInput = {
   note?: string;
 };
 
+type AgentProfileUpdateInput = {
+  role: string;
+  avatar: string;
+  prompt: string;
+  operatingInstructions?: string;
+  providerPreference: string;
+  modelPreference: string;
+  recallPolicy: string;
+  runtimePreference: string;
+  memorySpaces: string[];
+  credentialProfileIds: string[];
+  sandbox: SandboxPolicy;
+};
+
+type CredentialProfileCreateInput = {
+  label: string;
+  summary: string;
+  secretKind: string;
+  secretValue: string;
+  workspaceDefault: boolean;
+};
+
+type CredentialProfileUpdateInput = CredentialProfileCreateInput;
+
+type RunCredentialBindingInput = {
+  credentialProfileIds: string[];
+};
+
+type WorkspaceConfigUpdateInput = {
+  plan: string;
+  browserPush: string;
+  memoryMode: string;
+  sandbox: SandboxPolicy;
+  onboarding: {
+    status: string;
+    templateId: string;
+    currentStep: string;
+    completedSteps: string[];
+    resumeUrl: string;
+  };
+};
+
+type WorkspaceMemberPreferencesInput = {
+  preferredAgentId: string;
+  startRoute: string;
+  githubHandle: string;
+};
+
+type UpdateTopicGuidanceInput = {
+  summary: string;
+};
+
+type RunSandboxUpdateInput = SandboxPolicy;
+
+type RunSandboxCheckInput = {
+  kind: "command" | "network" | "tool";
+  target: string;
+  override?: boolean;
+};
+
+type CreateHandoffInput = {
+  roomId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  title: string;
+  summary: string;
+};
+
+type UpdateHandoffInput = {
+  action: "acknowledged" | "blocked" | "completed";
+  actingAgentId: string;
+  note?: string;
+};
+
 type PhaseZeroStreamPresence = {
   onlineMachines: number;
   busyMachines: number;
@@ -71,12 +148,22 @@ type PhaseZeroStreamPresence = {
   unread: number;
 };
 
-type PhaseZeroStreamEvent = {
+type PhaseZeroSnapshotStreamEvent = {
   type: "snapshot";
   sequence: number;
   sentAt: string;
   presence: PhaseZeroStreamPresence;
   state: PhaseZeroState;
+};
+
+type PhaseZeroDeltaStreamEvent = {
+  type: "delta";
+  sequence: number;
+  sentAt: string;
+  presence: PhaseZeroStreamPresence;
+  kinds: string[];
+  events: string[];
+  delta: Partial<PhaseZeroState>;
 };
 
 type PhaseZeroContextValue = {
@@ -88,12 +175,33 @@ type PhaseZeroContextValue = {
   approvalCenterError: string | null;
   refresh: () => Promise<void>;
   refreshApprovalCenter: () => Promise<void>;
-  loginAuthSession: (input: { email: string; name?: string }) => Promise<StateMutationResponse>;
+  loginAuthSession: (input: { email: string; name?: string; deviceId?: string; deviceLabel?: string; authMethod?: string }) => Promise<StateMutationResponse>;
   logoutAuthSession: () => Promise<StateMutationResponse>;
+  verifyMemberEmail: (input?: { email?: string; memberId?: string }) => Promise<StateMutationResponse>;
+  authorizeAuthDevice: (input?: { deviceId?: string; deviceLabel?: string; memberId?: string }) => Promise<StateMutationResponse>;
+  requestPasswordReset: (input?: { email?: string; memberId?: string }) => Promise<StateMutationResponse>;
+  completePasswordReset: (input?: { email?: string; memberId?: string; deviceId?: string; deviceLabel?: string }) => Promise<StateMutationResponse>;
+  bindExternalIdentity: (input: { provider: string; handle: string; email?: string; memberId?: string }) => Promise<StateMutationResponse>;
   inviteWorkspaceMember: (input: { email: string; name?: string; role: string }) => Promise<StateMutationResponse>;
   updateWorkspaceMember: (memberId: string, input: { role?: string; status?: string }) => Promise<StateMutationResponse>;
+  updateWorkspaceConfig: (input: WorkspaceConfigUpdateInput) => Promise<StateMutationResponse>;
+  updateWorkspaceMemberPreferences: (memberId: string, input: WorkspaceMemberPreferencesInput) => Promise<StateMutationResponse>;
+  updateAgentProfile: (agentId: string, input: AgentProfileUpdateInput) => Promise<StateMutationResponse>;
+  createCredentialProfile: (input: CredentialProfileCreateInput) => Promise<StateMutationResponse>;
+  updateCredentialProfile: (credentialId: string, input: CredentialProfileUpdateInput) => Promise<StateMutationResponse>;
+  updateRunCredentialBindings: (runId: string, input: RunCredentialBindingInput) => Promise<StateMutationResponse>;
+  updateRunSandbox: (runId: string, input: RunSandboxUpdateInput) => Promise<StateMutationResponse>;
+  checkRunSandbox: (runId: string, input: RunSandboxCheckInput) => Promise<StateMutationResponse & { decision?: SandboxDecision }>;
   createIssue: (input: CreateIssueInput) => Promise<StateMutationResponse>;
   postChannelMessage: (channelId: string, prompt: string) => Promise<StateMutationResponse>;
+  postDirectMessage: (directMessageId: string, prompt: string) => Promise<StateMutationResponse>;
+  updateMessageSurfaceCollection: (input: {
+    kind: "followed" | "saved";
+    channelId: string;
+    messageId: string;
+    enabled: boolean;
+  }) => Promise<StateMutationResponse>;
+  updateTopicGuidance: (topicId: string, input: UpdateTopicGuidanceInput) => Promise<StateMutationResponse>;
   postRoomMessage: (roomId: string, prompt: string, provider?: string) => Promise<StateMutationResponse>;
   streamRoomMessage: (
     roomId: string,
@@ -105,6 +213,8 @@ type PhaseZeroContextValue = {
   updatePullRequest: (pullRequestId: string, input: UpdatePullRequestInput) => Promise<StateMutationResponse>;
   controlRun: (runId: string, input: RunControlInput) => Promise<StateMutationResponse>;
   applyInboxDecision: (inboxItemId: string, decision: InboxDecision) => Promise<StateMutationResponse>;
+  createHandoff: (input: CreateHandoffInput) => Promise<StateMutationResponse>;
+  updateHandoff: (handoffId: string, input: UpdateHandoffInput) => Promise<StateMutationResponse>;
 };
 
 const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
@@ -117,6 +227,29 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
     repoBindingStatus: "",
     repoAuthMode: "",
     plan: "",
+    quota: {
+      usedMachines: 0,
+      maxMachines: 0,
+      usedAgents: 0,
+      maxAgents: 0,
+      usedChannels: 0,
+      maxChannels: 0,
+      usedRooms: 0,
+      maxRooms: 0,
+      messageHistoryDays: 0,
+      runLogDays: 0,
+      memoryDraftDays: 0,
+      status: "",
+      warning: "",
+    },
+    usage: {
+      windowLabel: "",
+      totalTokens: 0,
+      runCount: 0,
+      messageCount: 0,
+      refreshedAt: "",
+      warning: "",
+    },
     pairedRuntime: "",
     pairedRuntimeUrl: "",
     pairingStatus: "",
@@ -124,11 +257,58 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
     lastPairedAt: "",
     browserPush: "",
     memoryMode: "",
+    sandbox: {
+      profile: "trusted",
+      allowedHosts: [],
+      allowedCommands: [],
+      allowedTools: [],
+    },
+    repoBinding: {
+      repo: "",
+      repoUrl: "",
+      branch: "",
+      provider: "",
+      bindingStatus: "",
+      authMode: "",
+    },
+    githubInstallation: {
+      provider: "",
+      connectionReady: false,
+      appConfigured: false,
+      appInstalled: false,
+    },
+    onboarding: {
+      status: "",
+      completedSteps: [],
+      materialization: {},
+    },
+    governance: {
+      teamTopology: [],
+      handoffRules: [],
+      responseAggregation: {
+        status: "",
+        summary: "",
+        sources: [],
+        finalResponse: "",
+      },
+      humanOverride: {
+        status: "",
+        summary: "",
+      },
+      walkthrough: [],
+      stats: {
+        openHandoffs: 0,
+        blockedEscalations: 0,
+        reviewGates: 0,
+        humanOverrideGates: 0,
+      },
+    },
   },
   auth: {
     session: {
       id: "auth-session-current",
       status: "signed_out",
+      preferences: {},
       permissions: [],
     },
     roles: [],
@@ -136,6 +316,11 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
   },
   channels: [],
   channelMessages: {},
+  directMessages: [],
+  directMessageMessages: {},
+  followedThreads: [],
+  savedLaterItems: [],
+  quickSearchEntries: [],
   issues: [],
   rooms: [],
   roomMessages: {},
@@ -144,6 +329,7 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
   machines: [],
   runtimes: [],
   inbox: [],
+  mailbox: [],
   pullRequests: [],
   sessions: [],
   runtimeLeases: [],
@@ -156,7 +342,9 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
     summary: "",
     candidates: [],
   },
+  guards: [],
   memory: [],
+  credentials: [],
 };
 
 const EMPTY_APPROVAL_CENTER_STATE: ApprovalCenterState = {
@@ -190,6 +378,13 @@ async function readJSON<T>(path: string, init?: RequestInit) {
   return payload;
 }
 
+function mergePhaseZeroState(current: PhaseZeroState, delta: Partial<PhaseZeroState>): PhaseZeroState {
+  return sanitizePhaseZeroState({
+    ...current,
+    ...delta,
+  } as PhaseZeroState);
+}
+
 function useProvidePhaseZeroState(): PhaseZeroContextValue {
   const [state, setState] = useState<PhaseZeroState>(EMPTY_PHASE_ZERO_STATE);
   const [approvalCenter, setApprovalCenter] = useState<ApprovalCenterState>(EMPTY_APPROVAL_CENTER_STATE);
@@ -199,8 +394,9 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   const [approvalCenterError, setApprovalCenterError] = useState<string | null>(null);
 
   const commitState = useCallback((next: PhaseZeroState) => {
+    const sanitized = sanitizePhaseZeroState(next);
     startTransition(() => {
-      setState(next);
+      setState(sanitized);
       setError(null);
       setLoading(false);
     });
@@ -222,6 +418,14 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   const commitApprovalCenterError = useCallback((nextError: unknown) => {
     setApprovalCenterError(nextError instanceof Error ? nextError.message : "approval center fetch failed");
     setApprovalCenterLoading(false);
+  }, []);
+
+  const commitStateDelta = useCallback((delta: Partial<PhaseZeroState>) => {
+    startTransition(() => {
+      setState((current) => mergePhaseZeroState(current, delta));
+      setError(null);
+      setLoading(false);
+    });
   }, []);
 
   const refresh = useCallback(async () => {
@@ -259,6 +463,11 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     commitState(next);
     void refreshApprovalCenter().catch(() => {});
   }, [commitState, refreshApprovalCenter]);
+
+  const commitStateDeltaAndRefreshApprovalCenter = useCallback((delta: Partial<PhaseZeroState>) => {
+    commitStateDelta(delta);
+    void refreshApprovalCenter().catch(() => {});
+  }, [commitStateDelta, refreshApprovalCenter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,8 +508,19 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
         return;
       }
       try {
-        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroStreamEvent;
+        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroSnapshotStreamEvent;
         commitStateAndRefreshApprovalCenter(payload.state);
+      } catch {
+        // Ignore malformed stream payloads and wait for the next reconnect/update.
+      }
+    });
+    source.addEventListener("delta", (event) => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroDeltaStreamEvent;
+        commitStateDeltaAndRefreshApprovalCenter(payload.delta);
       } catch {
         // Ignore malformed stream payloads and wait for the next reconnect/update.
       }
@@ -320,7 +540,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
       }
       source?.close();
     };
-  }, [commitStateAndRefreshApprovalCenter, refresh]);
+  }, [commitStateAndRefreshApprovalCenter, commitStateDeltaAndRefreshApprovalCenter, refresh]);
 
   useEffect(() => {
     const poll = window.setInterval(() => {
@@ -332,8 +552,20 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     };
   }, [refresh]);
 
-  async function loginAuthSession(input: { email: string; name?: string }) {
+  async function loginAuthSession(input: { email: string; name?: string; deviceId?: string; deviceLabel?: string; authMethod?: string }) {
     const payload = await readJSON<StateMutationResponse>("/v1/auth/session", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function runAuthRecovery(input: Record<string, string | undefined>) {
+    const payload = await readJSON<StateMutationResponse>("/v1/auth/recovery", {
       method: "POST",
       body: JSON.stringify(input),
     });
@@ -353,6 +585,51 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
       commitStateAndRefreshApprovalCenter(payload.state);
     }
     return payload;
+  }
+
+  async function verifyMemberEmail(input: { email?: string; memberId?: string } = {}) {
+    return runAuthRecovery({
+      action: "verify_email",
+      email: input.email,
+      memberId: input.memberId,
+    });
+  }
+
+  async function authorizeAuthDevice(input: { deviceId?: string; deviceLabel?: string; memberId?: string } = {}) {
+    return runAuthRecovery({
+      action: "authorize_device",
+      deviceId: input.deviceId,
+      deviceLabel: input.deviceLabel,
+      memberId: input.memberId,
+    });
+  }
+
+  async function requestPasswordReset(input: { email?: string; memberId?: string } = {}) {
+    return runAuthRecovery({
+      action: "request_password_reset",
+      email: input.email,
+      memberId: input.memberId,
+    });
+  }
+
+  async function completePasswordReset(input: { email?: string; memberId?: string; deviceId?: string; deviceLabel?: string } = {}) {
+    return runAuthRecovery({
+      action: "complete_password_reset",
+      email: input.email,
+      memberId: input.memberId,
+      deviceId: input.deviceId,
+      deviceLabel: input.deviceLabel,
+    });
+  }
+
+  async function bindExternalIdentity(input: { provider: string; handle: string; email?: string; memberId?: string }) {
+    return runAuthRecovery({
+      action: "bind_external_identity",
+      provider: input.provider,
+      handle: input.handle,
+      email: input.email,
+      memberId: input.memberId,
+    });
   }
 
   async function inviteWorkspaceMember(input: { email: string; name?: string; role: string }) {
@@ -377,6 +654,112 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
       commitStateAndRefreshApprovalCenter(payload.state);
     }
     return payload;
+  }
+
+  async function updateWorkspaceConfig(input: WorkspaceConfigUpdateInput) {
+    const payload = await readJSON<StateMutationResponse>("/v1/workspace", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateWorkspaceMemberPreferences(memberId: string, input: WorkspaceMemberPreferencesInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/workspace/members/${memberId}/preferences`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateAgentProfile(agentId: string, input: AgentProfileUpdateInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function createCredentialProfile(input: CredentialProfileCreateInput) {
+    const payload = await readJSON<StateMutationResponse>("/v1/credentials", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateCredentialProfile(credentialId: string, input: CredentialProfileUpdateInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/credentials/${credentialId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateRunCredentialBindings(runId: string, input: RunCredentialBindingInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/runs/${runId}/credentials`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateRunSandbox(runId: string, input: RunSandboxUpdateInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/runs/${runId}/sandbox`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function checkRunSandbox(runId: string, input: RunSandboxCheckInput) {
+    try {
+      const payload = await readJSON<StateMutationResponse & { decision?: SandboxDecision }>(`/v1/runs/${runId}/sandbox`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+
+      if (payload.state) {
+        commitStateAndRefreshApprovalCenter(payload.state);
+      }
+      return payload;
+    } catch (mutationError) {
+      if (mutationError instanceof StateMutationError && mutationError.payload.state) {
+        commitStateAndRefreshApprovalCenter(mutationError.payload.state);
+      }
+      if (mutationError instanceof StateMutationError && "decision" in mutationError.payload) {
+        return mutationError.payload as StateMutationResponse & { decision?: SandboxDecision };
+      }
+      throw mutationError;
+    }
   }
 
   async function createIssue(input: CreateIssueInput) {
@@ -408,6 +791,47 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
       }
       throw mutationError;
     }
+  }
+
+  async function postDirectMessage(directMessageId: string, prompt: string) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/direct-messages/${directMessageId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateMessageSurfaceCollection(input: {
+    kind: "followed" | "saved";
+    channelId: string;
+    messageId: string;
+    enabled: boolean;
+  }) {
+    const payload = await readJSON<StateMutationResponse>("/v1/message-surface/collections", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateTopicGuidance(topicId: string, input: UpdateTopicGuidanceInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/topics/${topicId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
   }
 
   async function postRoomMessage(roomId: string, prompt: string, provider = "claude") {
@@ -581,6 +1005,30 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     }
   }
 
+  async function createHandoff(input: CreateHandoffInput) {
+    const payload = await readJSON<StateMutationResponse>("/v1/mailbox", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateHandoff(handoffId: string, input: UpdateHandoffInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/mailbox/${handoffId}`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
   return {
     state,
     approvalCenter,
@@ -592,16 +1040,34 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     refreshApprovalCenter,
     loginAuthSession,
     logoutAuthSession,
+    verifyMemberEmail,
+    authorizeAuthDevice,
+    requestPasswordReset,
+    completePasswordReset,
+    bindExternalIdentity,
     inviteWorkspaceMember,
     updateWorkspaceMember,
+    updateWorkspaceConfig,
+    updateWorkspaceMemberPreferences,
+    updateAgentProfile,
+    createCredentialProfile,
+    updateCredentialProfile,
+    updateRunCredentialBindings,
+    updateRunSandbox,
+    checkRunSandbox,
     createIssue,
     postChannelMessage,
+    postDirectMessage,
+    updateMessageSurfaceCollection,
+    updateTopicGuidance,
     postRoomMessage,
     streamRoomMessage,
     createPullRequest,
     updatePullRequest,
     controlRun,
     applyInboxDecision,
+    createHandoff,
+    updateHandoff,
   };
 }
 

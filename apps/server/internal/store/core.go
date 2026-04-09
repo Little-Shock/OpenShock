@@ -64,6 +64,44 @@ func (s *Store) RoomDetail(roomID string) (RoomDetail, bool) {
 	return RoomDetail{}, false
 }
 
+func (s *Store) PullRequestDetail(pullRequestID string) (PullRequestDetail, bool) {
+	snapshot := s.Snapshot()
+	notificationCenter := s.NotificationCenter()
+	for _, item := range snapshot.PullRequests {
+		if item.ID != pullRequestID {
+			continue
+		}
+
+		room, run, issue, ok := findRoomRunIssueSnapshot(snapshot, item.RoomID)
+		if !ok {
+			return PullRequestDetail{}, false
+		}
+
+		relatedInbox := make([]InboxItem, 0, len(snapshot.Inbox))
+		for _, inboxItem := range snapshot.Inbox {
+			if isTrackedPullRequestInboxItem(inboxItem, item) {
+				relatedInbox = append(relatedInbox, inboxItem)
+			}
+		}
+
+		conversation := append([]PullRequestConversationEntry{}, item.Conversation...)
+		if conversation == nil {
+			conversation = []PullRequestConversationEntry{}
+		}
+
+		return PullRequestDetail{
+			PullRequest:  item,
+			Room:         room,
+			Run:          run,
+			Issue:        issue,
+			Conversation: conversation,
+			RelatedInbox: relatedInbox,
+			Delivery:     buildPullRequestDeliveryEntry(snapshot, notificationCenter, item, room, run, issue, relatedInbox, conversation),
+		}, true
+	}
+	return PullRequestDetail{}, false
+}
+
 func (s *Store) hydrateMissingDefaults() {
 	defaults := seedState()
 	if strings.TrimSpace(s.state.Workspace.RepoProvider) == "" {
@@ -90,16 +128,91 @@ func (s *Store) hydrateMissingDefaults() {
 	if len(s.state.Machines) == 0 {
 		s.state.Machines = defaults.Machines
 	}
+	if s.state.DirectMessages == nil {
+		s.state.DirectMessages = defaults.DirectMessages
+	}
+	if s.state.DirectMessageMessages == nil {
+		s.state.DirectMessageMessages = defaults.DirectMessageMessages
+	}
+	if s.state.FollowedThreads == nil {
+		s.state.FollowedThreads = defaults.FollowedThreads
+	}
+	if s.state.SavedLaterItems == nil {
+		s.state.SavedLaterItems = defaults.SavedLaterItems
+	}
+	if len(s.state.Agents) == 0 {
+		s.state.Agents = defaults.Agents
+	}
+	for index := range s.state.Agents {
+		defaultAgent, ok := findAgentByID(defaults.Agents, s.state.Agents[index].ID)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(s.state.Agents[index].Role) == "" {
+			s.state.Agents[index].Role = defaultAgent.Role
+		}
+		if strings.TrimSpace(s.state.Agents[index].Avatar) == "" {
+			s.state.Agents[index].Avatar = defaultAgent.Avatar
+		}
+		if strings.TrimSpace(s.state.Agents[index].Prompt) == "" {
+			s.state.Agents[index].Prompt = defaultAgent.Prompt
+		}
+		if strings.TrimSpace(s.state.Agents[index].OperatingInstructions) == "" {
+			s.state.Agents[index].OperatingInstructions = defaultAgent.OperatingInstructions
+		}
+		if strings.TrimSpace(s.state.Agents[index].ProviderPreference) == "" {
+			s.state.Agents[index].ProviderPreference = defaultAgent.ProviderPreference
+		}
+		if strings.TrimSpace(s.state.Agents[index].ModelPreference) == "" {
+			s.state.Agents[index].ModelPreference = defaultAgent.ModelPreference
+		}
+		if strings.TrimSpace(s.state.Agents[index].RuntimePreference) == "" {
+			s.state.Agents[index].RuntimePreference = defaultAgent.RuntimePreference
+		}
+		if strings.TrimSpace(s.state.Agents[index].RecallPolicy) == "" {
+			s.state.Agents[index].RecallPolicy = defaultAgent.RecallPolicy
+		}
+		if len(s.state.Agents[index].MemorySpaces) == 0 {
+			s.state.Agents[index].MemorySpaces = append([]string{}, defaultAgent.MemorySpaces...)
+		}
+		if s.state.Agents[index].CredentialProfileIDs == nil {
+			s.state.Agents[index].CredentialProfileIDs = []string{}
+		}
+		if s.state.Agents[index].ProfileAudit == nil {
+			s.state.Agents[index].ProfileAudit = []AgentProfileAuditEntry{}
+		}
+	}
 	for index := range s.state.Machines {
 		if strings.TrimSpace(s.state.Machines[index].DaemonURL) == "" && machineMatches(s.state.Machines[index], s.state.Workspace.PairedRuntime) {
 			s.state.Machines[index].DaemonURL = s.state.Workspace.PairedRuntimeURL
+		}
+		if defaultMachine, ok := findMachineByID(defaults.Machines, s.state.Machines[index].ID, s.state.Machines[index].Name); ok && strings.TrimSpace(s.state.Machines[index].Shell) == "" {
+			s.state.Machines[index].Shell = defaultMachine.Shell
 		}
 	}
 	if len(s.state.PullRequests) == 0 {
 		s.state.PullRequests = defaults.PullRequests
 	}
+	for index := range s.state.PullRequests {
+		if s.state.PullRequests[index].Conversation == nil {
+			s.state.PullRequests[index].Conversation = []PullRequestConversationEntry{}
+		}
+	}
+	if s.state.Mailbox == nil {
+		s.state.Mailbox = defaults.Mailbox
+	}
+	for index := range s.state.Mailbox {
+		if s.state.Mailbox[index].Messages == nil {
+			s.state.Mailbox[index].Messages = []MailboxMessage{}
+		}
+	}
 	if len(s.state.Sessions) == 0 {
 		s.state.Sessions = defaults.Sessions
+	}
+	for index := range s.state.Runs {
+		if s.state.Runs[index].CredentialProfileIDs == nil {
+			s.state.Runs[index].CredentialProfileIDs = []string{}
+		}
 	}
 	if len(s.state.Memory) == 0 {
 		s.state.Memory = defaults.Memory
@@ -107,15 +220,89 @@ func (s *Store) hydrateMissingDefaults() {
 	if s.state.MemoryVersions == nil {
 		s.state.MemoryVersions = defaults.MemoryVersions
 	}
+	if s.state.Credentials == nil {
+		s.state.Credentials = []CredentialProfile{}
+	}
 	if s.state.ChannelMessages == nil {
 		s.state.ChannelMessages = defaults.ChannelMessages
 	}
 	if s.state.RoomMessages == nil {
 		s.state.RoomMessages = defaults.RoomMessages
 	}
+	for index := range s.state.Agents {
+		syncSandboxPolicyDefaults(&s.state.Agents[index].Sandbox)
+	}
+	for index := range s.state.Runs {
+		syncSandboxPolicyDefaults(&s.state.Runs[index].Sandbox)
+		syncSandboxDecisionDefaults(&s.state.Runs[index].SandboxDecision)
+	}
 	s.ensureRuntimeRegistryState()
 	s.ensureSessionConsistency()
 	s.ensureAuthConsistency()
+	syncWorkspaceSnapshotDefaults(&s.state.Workspace)
+	s.refreshUsageObservabilityLocked()
+}
+
+func findRoomRunIssueSnapshot(state State, roomID string) (Room, Run, Issue, bool) {
+	var room Room
+	var run Run
+	var issue Issue
+	var roomFound bool
+	var runFound bool
+	var issueFound bool
+
+	for _, candidate := range state.Rooms {
+		if candidate.ID == roomID {
+			room = candidate
+			roomFound = true
+			break
+		}
+	}
+	if !roomFound {
+		return Room{}, Run{}, Issue{}, false
+	}
+
+	for _, candidate := range state.Runs {
+		if candidate.RoomID == roomID {
+			run = candidate
+			runFound = true
+			break
+		}
+	}
+	if !runFound {
+		return Room{}, Run{}, Issue{}, false
+	}
+
+	for _, candidate := range state.Issues {
+		if candidate.RoomID == roomID {
+			issue = candidate
+			issueFound = true
+			break
+		}
+	}
+	if !issueFound {
+		return Room{}, Run{}, Issue{}, false
+	}
+
+	return room, run, issue, true
+}
+
+func findAgentByID(items []Agent, agentID string) (Agent, bool) {
+	for _, item := range items {
+		if item.ID == agentID {
+			return item, true
+		}
+	}
+	return Agent{}, false
+}
+
+func findMachineByID(items []Machine, machineID, machineName string) (Machine, bool) {
+	for _, item := range items {
+		if item.ID == machineID || item.Name == machineName {
+			return item, true
+		}
+	}
+	return Machine{}, false
 }
 
 func (s *Store) ensureFilesystemArtifacts() error {
@@ -128,6 +315,9 @@ func (s *Store) ensureFilesystemArtifacts() error {
 }
 
 func (s *Store) ensureFilesystemArtifactsLocked() error {
+	if err := s.ensureCredentialVaultLocked(); err != nil {
+		return err
+	}
 	artifacts, err := ensureWorkspaceScaffold(s.workspaceRoot, s.state.Agents, s.state.Memory)
 	if err != nil {
 		return err
@@ -155,6 +345,7 @@ func (s *Store) ensureFilesystemArtifactsLocked() error {
 
 	s.state.Memory = artifacts
 	s.ensureMemorySubsystemLocked()
+	s.syncAllCredentialGuardsLocked()
 	return nil
 }
 
@@ -293,18 +484,55 @@ func (s *Store) markMemoryArtifactWritesLocked(paths []string, latest string) {
 }
 
 func (s *Store) persistLocked() error {
-	body, err := json.MarshalIndent(s.state, "", "  ")
+	s.refreshUsageObservabilityLocked()
+	// Persist the same derived runtime/message/governance truth exposed by Snapshot()
+	// so restart artifacts and offline inspection do not drift from live surfaces.
+	body, err := json.MarshalIndent(cloneState(s.state), "", "  ")
 	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(s.path, body, 0o644); err != nil {
 		return err
 	}
+	if err := s.persistCredentialVaultLocked(); err != nil {
+		return err
+	}
 	s.publishSnapshotLocked()
 	return nil
 }
 
-func cloneState(state State) State {
+func (s *Store) RewriteState(rewrite func(State) State) (bool, error) {
+	if rewrite == nil {
+		return false, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	before, err := json.Marshal(s.state)
+	if err != nil {
+		return false, err
+	}
+
+	next := rewrite(cloneStoredState(s.state))
+	s.state = cloneStoredState(next)
+	s.hydrateMissingDefaults()
+
+	after, err := json.Marshal(s.state)
+	if err != nil {
+		return false, err
+	}
+	if bytes.Equal(before, after) {
+		return false, nil
+	}
+
+	if err := s.persistLocked(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func cloneStoredState(state State) State {
 	body, err := json.Marshal(state)
 	if err != nil {
 		return state
@@ -313,9 +541,16 @@ func cloneState(state State) State {
 	if err := json.Unmarshal(body, &clone); err != nil {
 		return state
 	}
+	return clone
+}
+
+func cloneState(state State) State {
+	clone := cloneStoredState(state)
 	applyRuntimeDerivedTruth(&clone, time.Now())
 	clone.RuntimeLeases = buildRuntimeLeases(clone)
 	clone.RuntimeScheduler = buildRuntimeScheduler(clone, "").Scheduler
+	clone.QuickSearchEntries = buildMessageSurfaceQuickSearchEntries(clone)
+	hydrateWorkspaceGovernance(&clone.Workspace, &clone)
 	return clone
 }
 

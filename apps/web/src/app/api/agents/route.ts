@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { AgentStatus } from "@/lib/mock-data";
+import type { AgentStatus } from "@/lib/phase-zero-types";
 import { readControlJSON } from "@/lib/server-api";
 
 export async function GET() {

@@ -13,7 +13,9 @@ import (
 
 func main() {
 	addr := envOr("OPENSHOCK_SERVER_ADDR", ":8080")
+	controlURL := envOr("OPENSHOCK_CONTROL_URL", "")
 	daemonURL := envOr("OPENSHOCK_DAEMON_URL", "http://127.0.0.1:8090")
+	actualLiveURL := envOr("OPENSHOCK_ACTUAL_LIVE_URL", "http://127.0.0.1:8080")
 	workspaceRoot := envOr("OPENSHOCK_WORKSPACE_ROOT", `E:\00.Lark_Projects\00_OpenShock`)
 	statePath := envOr("OPENSHOCK_STATE_FILE", filepath.Join(workspaceRoot, "data", "phase0", "state.json"))
 	githubWebhookSecret := envOr("OPENSHOCK_GITHUB_WEBHOOK_SECRET", "")
@@ -23,9 +25,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if changed, err := sanitizePersistedStateOnStartup(stateStore); err != nil {
+		log.Fatal(err)
+	} else if changed {
+		log.Printf("sanitized persisted live state at startup: %s", statePath)
+	}
 
 	server := api.New(stateStore, httpClient, api.Config{
+		ControlURL:          controlURL,
 		DaemonURL:           daemonURL,
+		ActualLiveURL:       actualLiveURL,
 		WorkspaceRoot:       workspaceRoot,
 		GitHubWebhookSecret: githubWebhookSecret,
 	})
@@ -34,6 +43,10 @@ func main() {
 	if err := http.ListenAndServe(addr, server.Handler()); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func sanitizePersistedStateOnStartup(stateStore *store.Store) (bool, error) {
+	return stateStore.RewriteState(api.SanitizeLiveState)
 }
 
 func envOr(key, fallback string) string {

@@ -1,7 +1,7 @@
 # OpenShock Test Cases
 
-**版本:** 1.3
-**更新日期:** 2026 年 4 月 8 日
+**版本:** 1.4
+**更新日期:** 2026 年 4 月 9 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
 ---
@@ -78,9 +78,10 @@
 - 测试步骤:
   1. 创建一条新 issue。
   2. 检查是否自动生成 room、run、session。
-  3. 检查 daemon 是否尝试创建对应 worktree lane。
-- 预期结果: issue 创建后进入完整执行主链，不停留在纯数据记录。
-- 业务结论: Phase 0 主链已站住。
+  3. 打开 `/agents`，检查 planner queue / governance replay 是否围同一条 issue 前滚。
+  4. 检查 daemon 是否尝试创建对应 worktree lane。
+- 预期结果: issue 创建后进入完整执行主链；人类能在 orchestration page 看到 planner dispatch、blocked escalation 与 closeout replay，而不是只剩隐式状态。
+- 业务结论: 2026 年 4 月 9 日 `TKT-53` 新增 `pnpm test:headed-planner-dispatch-replay -- --report docs/testing/Test-Report-2026-04-09-planner-dispatch-replay.md`。当前 exact replay 已记录 `/board` 创建 issue、`/v1/planner/queue` visible item、`/agents` 上的 assignment / auto-merge guard / governed walkthrough，以及 `blocked` without note 的 `400` fail-closed probe 与 final response aggregation，因此这条工作流 B 主链现在不再只停在 Phase 0 的 room/run/session 基线，而是已经有 planner dispatch / first-instruction replay 证据。
 
 ## TC-006 Room / Run 详情可见性
 
@@ -198,7 +199,7 @@
 ## TC-015 GitHub App 安装与 Webhook
 
 - 业务目标: 确认 GitHub 授权和事件回流进入真实产品闭环。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-07` `CHK-13`
 - 前置条件: 存在 GitHub App 安装流、webhook ingest 与签名校验。
 - 测试步骤:
@@ -206,7 +207,20 @@
   2. 触发 webhook 事件。
   3. 检查 state / inbox / room / PR 是否同步更新。
 - 预期结果: GitHub 事件可以持续同步回 OpenShock。
-- 业务结论: 2026 年 4 月 7 日已同时补齐 installation pending 的 blocked-path 浏览器验收，以及 `TKT-05` 的 signed webhook exact replay harness；但它们仍不是 installation-complete 后的真实 GitHub callback，所以这条完整安装 + webhook 用例继续保持 Blocked。
+- 业务结论: 2026 年 4 月 8 日 `TKT-28` 新增 `/v1/github/installation-callback` 与 `/setup/github/callback`，把 installation-complete 回跳直接写回 installation truth，并在同一次 callback 内前滚 repo binding 与 tracked PR backfill；同日 exact-head 还新增了 fail-closed 的空 `installationId` 探测与 `repo.admin` 权限 guard。2026 年 4 月 9 日 `TKT-57` 又补了 production-style public ingress harness：Setup 直接暴露 public callback / webhook URL，`/setup/github/callback` 与 signed webhook delivery 都能通过同一 public root exact replay，bad-signature 继续 401 fail-closed。因此这条用例现在不只停在近实机 contract，而是已经有 public ingress 级证据。
+
+## TC-045 GitHub Public Ingress Callback / Webhook Delivery
+
+- 业务目标: 确认 GitHub callback / webhook 不只在内网 server contract 可用，而是能在 public ingress 根路径下被同一套产品 surface 复核。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-07`
+- 前置条件: server 已配置 `OPENSHOCK_CONTROL_URL`、GitHub App install surface、webhook secret 与本地 public ingress proxy。
+- 测试步骤:
+  1. 在 Setup 检查 surfaced public callback URL / webhook URL。
+  2. 通过 public ingress 打开 `/setup/github/callback?installation_id=...`，确认 installation truth 写回并回跳 Setup。
+  3. 通过 public ingress POST signed webhook，并再做一次 bad-signature adversarial probe。
+- 预期结果: callback / webhook 都能走同一 public ingress 根路径；错误签名继续 fail-closed。
+- 业务结论: 2026 年 4 月 9 日 `TKT-57` 新增 `pnpm test:headed-github-public-ingress`，用 local ingress proxy 同时代理 web + API，验证 public callback / webhook URL surface、callback return page 回流，以及 signed webhook / bad-signature 都走 ingress `/v1/github/webhook`。这条 public ingress exact evidence 现已可独立复核并通过；若后续还要做真正 Internet / DNS / TLS 演练，那属于环境级演练，不再是产品 contract GAP。
 
 ## TC-016 真实远端 PR 创建、同步与合并
 
@@ -351,14 +365,14 @@
 ## TC-027 Sandbox / Destructive Approval Guard
 
 - 业务目标: 确认 destructive git、越界写入、敏感凭证使用会进入审批保护，而不是默认执行。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-12`
 - 前置条件: 存在 sandbox mode 与 approval-required contract。
 - 测试步骤:
   1. 触发 destructive git 或越界写入动作。
   2. 检查系统是否拦截并生成 approval item。
 - 预期结果: 高风险动作不会直接执行，系统产生显式审批记录。
-- 业务结论: 2026 年 4 月 7 日 `TKT-09` 已把 role / permission action matrix 收进真实前台与后端 guard，但 destructive git、越界写入、敏感凭证使用的 approval-required contract 仍未系统化产品化；因此这条安全 gate 继续保留 `Not Run`，由下一轮 `TKT-30` 继续吸收。
+- 业务结论: 2026 年 4 月 8 日 `TKT-30` 已新增 `pnpm test:headed-destructive-guard -- --report docs/testing/Test-Report-2026-04-08-destructive-guard.md`。当前 destructive git 与跨 scope 写入都会先进入显式 guard truth，`/inbox` 能看到 `Action / Sandbox / Secrets / Target` 边界，`/rooms/:roomId` 与 `/runs/:runId` 也会复用同一 guard 状态；并且 non-happy `defer` 路径会把 destructive run 保持在 `blocked + approval_required`，不会静默继续执行。因此这条安全 gate 当前转为 `Pass`。
 
 ## TC-028 app.slock.ai Shell / Sidebar / Search Entry
 
@@ -376,7 +390,7 @@
 ## TC-029 DM / Thread / Saved Workflow
 
 - 业务目标: 确认 DM、followed thread、saved/later 已形成完整消息工作流。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-16` `CHK-17`
 - 前置条件: 存在 DM、线程关注和 saved/later 的前台入口与状态模型。
 - 测试步骤:
@@ -384,12 +398,12 @@
   2. 在频道中打开并 follow 一条 thread。
   3. 从 saved/later 或 followed threads 再次回到该 thread。
 - 预期结果: DM、线程回访和暂存面在同一套壳层里闭环可用。
-- 业务结论: 当前 repo 还没有完整 DM / followed thread / saved 工作流，这条用例继续保持 `Blocked`，留给下一轮 `TKT-22` 和 `TKT-27`。
+- 业务结论: 2026 年 4 月 8 日 `TKT-22` 已用 `pnpm test:headed-dm-followed-thread-saved-later -- --report docs/testing/Test-Report-2026-04-08-dm-followed-thread-saved-later.md` 完成有头 exact replay；当前 sidebar 已能直达 DM，channel thread rail 可直接 `follow` 与 `save later`，并且 `Followed Threads` / `Saved Later` 两个回访面都能把同一条 thread 重新打开回 chat，因此这条用例当前转为 `Pass`。`TKT-27` 继续负责把这条前台工作流补成正式 server contract，而不是否定当前前台闭环已经成立。
 
 ## TC-030 Agent / Machine / Human Profile Surface
 
 - 业务目标: 确认人物与机器不只是列表项，而是可直接 drill-in 的资料面。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-02` `CHK-17`
 - 前置条件: `Agent / Machine / Human` 至少都有 profile route 或 profile panel。
 - 测试步骤:
@@ -397,12 +411,12 @@
   2. 再点击一个 Machine 和一个 Human。
   3. 检查 presence、activity、runtime/capability、最近 run/room 关系是否可见。
 - 预期结果: `Agent / Machine / Human` 都成为可导航的一等对象。
-- 业务结论: 当前 repo 只有部分 Agent 页面和 machine summary，还没有统一 profile surface；这条用例保留 `Not Run`，留给 `TKT-25`。
+- 业务结论: `TKT-25` 已把 shell / room 的 Agent、Machine、Human summary 接成统一 profile drill-in；这条用例现在按 headed `room -> agent profile -> machine profile -> human profile` 回放转 `Pass`，后续 editor / persistence 仍留 `TKT-32/33/37`。
 
 ## TC-031 Room Context Tabs / Topic Workbench
 
 - 业务目标: 确认 Room 已经成为主工作台，而不是聊天页再跳多个详情页。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-06` `CHK-17`
 - 前置条件: room workbench 已提供 `Chat / Topic / Run / PR / Context` tabs 或等价切换面。
 - 测试步骤:
@@ -410,12 +424,12 @@
   2. 在不离开 room 的情况下切换 `Chat / Topic / Run / PR / Context`。
   3. 验证 run control、PR entry、inbox back-link 仍保持可用。
 - 预期结果: 用户围绕同一条 room 完成讨论、执行、交付和回溯，不需要频繁跨页。
-- 业务结论: 当前 room / run / PR truth 虽已存在，但 workbench tabs 还未成型；这条用例保留 `Not Run`，留给 `TKT-23` 继续收口。
+- 业务结论: 2026 年 4 月 8 日 `TKT-23` 已用 `pnpm test:headed-room-workbench-topic-context -- --report docs/testing/Test-Report-2026-04-08-room-workbench-topic-context.md` 完成有头 exact replay；当前 `/rooms/:roomId` 已成为 query-driven room workbench，`Chat / Topic / Run / PR / Context` 可在同一页切换，`follow_thread` 可在 Run tab 保持可用，PR entry 不再强制跳独立详情页，Context tab 也能在 reload 与 inbox 往返后保留 room-first 状态，因此这条用例当前转为 `Pass`。
 
 ## TC-032 Board Secondary Planning Surface
 
 - 业务目标: 确认 Board 仍可用，但已经退到次级 planning surface。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-05` `CHK-18`
 - 前置条件: board 已与 room / issue context 建立回跳关系，且主导航优先级已下调。
 - 测试步骤:
@@ -423,25 +437,25 @@
   2. 查看 board lane 并创建或打开一条 issue。
   3. 返回 room，确认 Board 不是默认首页心智中心。
 - 预期结果: Board 服务于规划，不抢占协作壳主路径。
-- 业务结论: 当前 `/board` 已经退到左下角次级入口，但 planning card 语言和 room / issue 回跳还没完全收平；这条用例保留 `Not Run`，留给 `TKT-26`。
+- 业务结论: 2026 年 4 月 9 日 `TKT-26` 已新增 `pnpm test:headed-board-planning-surface -- --report docs/testing/Test-Report-2026-04-09-board-planning-surface.md`，在 headed Chromium 下完成 `room -> board -> issue -> board -> room` exact replay。当前 `/board` 会带上 room / issue context 并显式提供回跳按钮，planning card 语言也已压缩成轻量 mirror，因此这条用例当前转为 `Pass`。
 
 ## TC-033 Quick Search / Search Result Surface
 
 - 业务目标: 确认 Quick Search 不只是静态入口，而是可真正切换 channel / room / issue / run / agent 的结果面。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-16`
 - 前置条件: 存在 Quick Search 数据源、结果列表与跳转动作。
 - 测试步骤:
   1. 打开 Quick Search。
-  2. 输入 channel、room、issue、run、agent 关键词。
-  3. 选择结果并验证跳转与高亮。
-- 预期结果: 用户不需要人工翻左栏，就能快速切换到目标工作面。
-- 业务结论: 当前 Quick Search 仍只是静态入口，没有真正的结果面与切换动作；这条用例留给下一轮 search / command palette 票。
+  2. 输入 channel、room、issue、run、agent、dm、followed-thread、saved-later 关键词。
+  3. 选择结果并验证跳转、reopen 与高亮。
+- 预期结果: 用户不需要人工翻左栏，就能快速切换到目标工作面，并能从 search result 直接重新打开 followed / saved 的消息回访面。
+- 业务结论: 2026 年 4 月 8 日 `TKT-21` 新增 `pnpm test:headed-quick-search`，先在 headed Chromium 里完成 `channel -> room -> issue -> run -> agent` 的跨类型搜索回放，并验证三种打开方式（侧栏 trigger、顶部 trigger、`Ctrl+K`）、命中高亮与 `No matches yet` empty state。2026 年 4 月 9 日 `TKT-27` 再用同一条脚本把 `dm -> followed -> saved` 三类 message-surface result 补成 server-backed exact replay，报告见 `docs/testing/Test-Report-2026-04-09-quick-search-message-surface-contract.md`。当前 Quick Search 已不再只是静态入口，而是可独立复核的真实 search result surface。
 
 ## TC-034 Frontend Interaction Polish Sweep
 
 - 业务目标: 确认聊天工作台的滚动、下拉、字号、输入框与高亮位置都符合高频使用习惯。
-- 当前执行状态: Not Run
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-01` `CHK-16` `CHK-17`
 - 前置条件: 统一壳层已经存在，并可在浏览器里持续操作 channel / room / inbox / setup。
 - 测试步骤:
@@ -449,12 +463,12 @@
   2. 检查 sidebar / channel / room 下拉与高亮位置是否稳定、紧凑、易读。
   3. 检查 composer 是否始终可见，字号和间距是否不会把信息打散。
 - 预期结果: 产品在高频聊天和切换场景下保持顺手，而不是只有静态截图好看。
-- 业务结论: 这轮已经收掉共享壳体的白缝和 Work 页密度，但完整的人机工学扫尾还没系统化，因此这条用例保留 `Not Run`，作为下一轮前端 polish 主票的验收面。
+- 业务结论: 2026 年 4 月 8 日 `TKT-24` 已新增 `pnpm test:headed-frontend-interaction-polish`，在 headed Chromium 下连续复核了 sidebar / topbar 命中区、`channel / room` scrollback、composer 常驻、room 现有 `Issue / Board / Thread` 动作命中区，以及 `1180px` 窄屏无横向溢出。当前 `docs/testing/Test-Report-2026-04-08-frontend-interaction-polish.md` 已记录命中区尺寸、viewport 可见性与截图证据，因此这条用例当前转为 `Pass`。
 
 ## TC-035 Device Authorization / Email Verification Lifecycle
 
 - 业务目标: 确认设备授权、邮箱验证、密码重置和外部身份绑定进入同一条产品化身份链。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-13`
 - 前置条件: 存在 device authorization、email verify / reset、session recovery 的真实产品流。
 - 测试步骤:
@@ -462,12 +476,12 @@
   2. 在另一设备上恢复登录并验证权限链。
   3. 触发邮箱重置并确认 session / member state 同步更新。
 - 预期结果: 身份链不再只停留在 invite / role / quick login，而是具备完整恢复和验证能力。
-- 业务结论: 当前 repo 已站住 invite / role / status / authz matrix，但 device auth / email verify / reset 仍未产品化，所以这条用例保持 `Blocked`。
+- 业务结论: 2026 年 4 月 8 日 `TKT-29` 已新增 `pnpm test:headed-device-auth-email-recovery`，在 headed Chromium 下把 invited member 登录、email verify、current-device authorization、password reset on another device、external identity binding 串成同一条 exact replay。当前 `docs/testing/Test-Report-2026-04-08-device-auth-email-recovery.md` 已记录 recovery badge、authorized device、reset recovery 与 identity chip 证据，因此这条用例当前转为 `Pass`。
 
 ## TC-036 Agent Profile / Prompt / Avatar / Memory Binding Edit
 
 - 业务目标: 确认 Agent 已经从只读对象升级成可配置执行者。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-02` `CHK-10` `CHK-19`
 - 前置条件: 至少存在一个可编辑的 Agent profile surface。
 - 测试步骤:
@@ -475,25 +489,25 @@
   2. 编辑 `role / avatar / prompt / memory binding / provider preference`。
   3. 保存后刷新页面，并检查 next-run preview 是否读取新配置。
 - 预期结果: Agent profile edit 会持久化并影响下一次 run 的配置注入。
-- 业务结论: 当前 repo 只有 Agent 列表与部分详情，还没有完整的 profile editor 和 memory binding 编辑链，所以这条用例保持 `Blocked`，留给 `TKT-32`。
+- 业务结论: `TKT-32` 已把 Agent profile editor、memory binding / recall policy / provider preference、next-run preview 与 profile audit 接成同一条链；这条用例现在按 headed `profile -> edit -> save -> reload` 回放转 `Pass`，machine inventory 继续留 `TKT-33`，更宽的 workspace / member durable config 与 recovery truth 继续留 `TKT-37`。
 
 ## TC-037 Machine Profile / Local CLI Model Capability Binding
 
 - 业务目标: 确认 Runtime / Machine 的真实能力可以被人类看到，并和 Agent 偏好绑定。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-14` `CHK-19` `CHK-22`
-- 前置条件: 存在 machine profile、capability inventory 和 Agent capability preference surface。
+- 前置条件: 存在 machine profile、capability catalog 和 Agent capability preference surface。
 - 测试步骤:
   1. 打开 machine profile 或 setup capability 面。
-  2. 读取本地 CLI / provider / model inventory。
-  3. 为某个 Agent 绑定 default provider / model / runtime affinity，并验证保存结果。
-- 预期结果: Machine capability truth 和 Agent 偏好使用同一份后端配置真相。
-- 业务结论: 当前 repo 已能探测部分 CLI 与 runtime truth，但还没有完整 machine profile 和 capability binding surface，所以这条用例保持 `Blocked`，留给 `TKT-33`。
+  2. 读取本地 CLI / provider truth 与 provider model catalog suggestion。
+  3. 为某个 Agent 绑定 default provider / model / runtime affinity，并验证保存结果；model 字段允许输入 catalog 外的本机配置值。
+- 预期结果: Machine capability truth 和 Agent 偏好使用同一份后端配置真相；provider/model catalog 只做 suggestion，不按静态列表硬拒绝。
+- 业务结论: 2026 年 4 月 9 日 `TKT-33` 已新增 `pnpm test:headed-machine-profile-capability-binding`，在 headed Chromium 下把 `/setup`、machine profile、Agent profile editor 和 `/agents` 串成同一条 exact replay。当前 `docs/testing/Test-Report-2026-04-09-machine-profile-capability-binding.md` 已记录 shell / daemon / provider-model catalog 与 agent provider+model+runtime affinity 的同源读写证据，并覆盖 catalog 外 model 仍可保存的回放，因此这条用例当前转为 `Pass`；更重的 durable config / database recovery 继续留给 `TKT-37 / TC-040`。
 
 ## TC-038 Onboarding Wizard / Scenario Template Bootstrap
 
 - 业务目标: 确认新团队可以通过模板完成首次启动，而不是手工拼页面。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-20`
 - 前置条件: 存在 onboarding wizard、template selection 与 resumable progress。
 - 测试步骤:
@@ -501,12 +515,12 @@
   2. 选择 `开发团队`、`研究团队` 或 `空白自定义` 模板。
   3. 完成 repo / GitHub / runtime pairing，并检查默认 channels、roles、agents、policy 是否被物化。
 - 预期结果: 用户可以在一个连续 flow 内完成团队启动，并在中断后继续。
-- 业务结论: 当前 repo 只有 Setup / Access 的基础启动骨架，没有真正模板化 onboarding，所以这条用例保持 `Blocked`，留给 `TKT-34`。
+- 业务结论: 2026 年 4 月 9 日 `TKT-34` 已新增 `pnpm test:headed-onboarding-studio`，把 `/setup` 上的模板选择、onboarding progress refresh、finish flow 与 durable recovery 串成 exact replay。当前 `docs/testing/Test-Report-2026-04-09-onboarding-studio.md` 已记录 `研究团队` 模板的 bootstrap package、finish 后 `/rooms` resume route，以及 browser reload、server restart、second browser context 继续读取同一份 onboarding truth 的证据，因此这条用例当前转为 `Pass`；更重的多 Agent team topology / reviewer-tester loop 继续留给 `TC-041 / TKT-36`。
 
 ## TC-039 Agent Mailbox / Handoff Governance Ledger
 
 - 业务目标: 确认 Agent-to-Agent 正式通信和交接可被追踪，而不是藏在隐式提示词里。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-21`
 - 前置条件: 存在 Agent Mailbox、handoff lifecycle 和 human-visible ledger。
 - 测试步骤:
@@ -514,25 +528,25 @@
   2. 观察 `ack / blocked / complete` 生命周期。
   3. 在 Room / Inbox / Mailbox 中检查上下文回链和人类 override。
 - 预期结果: 正式交接可见、可回放、可审计。
-- 业务结论: 当前 repo 已有 room / inbox / stop-resume 基线，但还没有正式 Agent Mailbox 与 handoff ledger，所以这条用例保持 `Blocked`，留给 `TKT-35`。
+- 业务结论: 2026 年 4 月 9 日 `TKT-35` 已新增 `/v1/mailbox` create/detail/update contract、Mailbox ledger UI，以及 headed `pnpm test:headed-agent-mailbox-handoff`。当前 `docs/testing/Test-Report-2026-04-09-agent-mailbox-handoff.md` 已记录 create -> blocked(note required) -> acknowledged -> completed 的 exact replay，并验证 room backlink、`/inbox?handoffId=...` 聚焦、owner transfer 与 closeout writeback 都读同一份 truth，因此这条用例当前转为 `Pass`；更重的多 Agent team topology / reviewer-tester loop 继续留给 `TC-041 / TKT-36`。
 
 ## TC-040 Config Persistence / Recovery
 
-- 业务目标: 确认 user / workspace / agent / machine 配置能跨刷新、重启和换设备恢复。
-- 当前执行状态: Blocked
+- 业务目标: 确认 workspace / member durable config 与 onboarding recovery truth 能跨刷新、重启和换设备恢复。
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-22`
 - 前置条件: 存在 durable store / database schema 与相关 API contract。
 - 测试步骤:
-  1. 编辑一组 workspace、agent 或 machine 配置。
+  1. 编辑一组 workspace 或 member 配置。
   2. 刷新浏览器并重启 server。
   3. 在同设备或另一设备重新进入，检查配置是否保持一致。
-- 预期结果: 配置真相不依赖浏览器本地临时状态，且恢复后下一次 run 继续使用同一份设置。
-- 业务结论: 当前 repo 只有 file state、auth session persistence 和 memory governance 的局部持久化，没有统一配置 durable truth，所以这条用例保持 `Blocked`，留给 `TKT-37`。
+- 预期结果: workspace / member 配置与 onboarding 恢复真相不依赖浏览器本地临时状态，且恢复后 `/settings`、`/access`、`/setup` 读取到同一份 durable snapshot。
+- 业务结论: 2026 年 4 月 9 日 `TKT-37` 已新增 `/v1/workspace` durable config patch、`/v1/workspace/members/:id/preferences` member preference patch，以及 headed `pnpm test:headed-config-persistence-recovery`。当前 `docs/testing/Test-Report-2026-04-09-config-persistence-recovery.md` 已记录 `/settings` 写回 workspace/member config 后，`/access` 与 `/setup` 同源投影、browser reload、server restart、second browser context recovery 的 exact evidence，因此这条用例当前转为 `Pass`。
 
 ## TC-041 Multi-Agent Role Topology / Reviewer-Tester Loop
 
 - 业务目标: 确认 `开发团队 / 研究团队` 这类模板不只是静态角色表，而能形成受治理的多 Agent 响应链。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-20` `CHK-21`
 - 前置条件: 存在 team topology、Agent Mailbox、handoff policy 和 response aggregation。
 - 测试步骤:
@@ -540,4 +554,58 @@
   2. 观察 PM / Architect / Developer / Reviewer / QA 或研究团队变体的 handoff 流。
   3. 检查 review / test / blocked escalation 与 human override 是否可见。
 - 预期结果: 多 Agent 分工和最终响应被治理，而不是只有一串不可解释的自动消息。
-- 业务结论: 当前 repo 还没有多 Agent team topology、mailbox 和 reviewer-tester loop，所以这条用例保持 `Blocked`，留给 `TKT-36`。
+- 业务结论: 2026 年 4 月 9 日 `TKT-36` 已新增 `workspace.governance` 派生快照、`/setup` governance preview、`/mailbox` 上的 topology / review-test-blocked-human-override surface，以及 headed `pnpm test:headed-multi-agent-governance -- --report docs/testing/Test-Report-2026-04-09-multi-agent-governance.md`。当前 exact replay 已记录模板起链、formal handoff、blocked escalation、final response aggregation 与显式 human override gate 的同源证据，因此这条用例当前转为 `Pass`。
+
+## TC-042 Live Truth Hygiene / Placeholder Leak Guard
+
+- 业务目标: 确认 `/v1/state`、`/v1/state/stream` 与前台 state adapter 不会把 placeholder、乱码、fixture / test residue 或内部 worktree 路径直接漏到用户可见面。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-03` `CHK-15`
+- 前置条件: 存在 dirty live-state copy，且前台通过 Phase Zero state / SSE 消费当前真相。
+- 测试步骤:
+  1. 用带 placeholder / E2E residue / internal path 的 dirty state copy 启动临时 server。
+  2. 读取 `/v1/state` 与 `/v1/state/stream`，只围用户可见字段做 negative scan。
+  3. 运行 `pnpm check:live-truth-hygiene` 与 `pnpm verify:release`，确认 release gate 会拦脏 truth 回灌。
+- 预期结果: 用户可见字段全部 fail-closed；release gate 对 placeholder wording、direct mock-data import 和 tracked live-truth residue 给出硬失败。
+- 业务结论: 2026 年 4 月 9 日 `TKT-38` 已把 state / SSE visible truth sanitization、client-side state adapter guard、copy cleanup 与 `check:live-truth-hygiene` release gate 接成同一条验证链。当前 `docs/testing/Test-Report-2026-04-09-live-truth-hygiene.md` 已记录 dirty-state adversarial probe、targeted go tests 和 `verify:release` 结果，因此这条用例转为 `Pass`。
+
+## TC-043 Run History / Incremental Fetch / Resume Context
+
+- 业务目标: 确认 `/runs` 不再一次性倾倒全量 run ledger，且人类可以围绕同一条 room 回看历史 run、打开 prior run，并拿到可恢复的 session context。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-06`
+- 前置条件: 存在 `/v1/runs/history`、`/v1/runs/:id/detail`、`Load Older Runs` UI，以及 run detail / room run tab 的 resume context surface。
+- 测试步骤:
+  1. 打开 `/runs`，确认首屏只显示最新一页 history，并通过 `Load Older Runs` 增量展开更早 run。
+  2. 打开当前 run detail，检查 session id、branch/worktree、memory paths 与同 room prior-run history。
+  3. 从 room history 里 reopen 一条 prior run，再跳回 room run tab，确认 room 重新锚定当前 active continuity，而不是停在旧 session。
+- 预期结果: `/runs` 是 paginated history surface；run detail / room run tab 能稳定暴露 resume context；prior-run reopen 不会把 room continuity 锚错到 stale session。
+- 业务结论: 2026 年 4 月 9 日 `TKT-40` 新增 `/v1/runs/history`、`/v1/runs/:id/detail`、`pnpm test:headed-run-history-resume-context` 与对应 `docs/testing/Test-Report-2026-04-09-run-history-resume-context.md`。当前浏览器 exact replay 已验证 `/runs` 首屏只展示最新 history page，`Load Older Runs` 才会展开 `run_runtime_00`，run detail 会显示 `session-runtime` 的 resume context 与 same-room history，reopen prior run 后 room run tab 也会重新锚定当前 `session-runtime` 而不是旧 continuity，因此这条用例当前转为 `Pass`。
+
+## TC-044 Mobile Web Notification Triage
+
+- 业务目标: 确认 mobile web 不需要独立工作台，也能在 `/inbox` 上完成轻量通知查看与处理，而不会被桌面密度直接压垮。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-11`
+- 前置条件: web、server 可启动，`/inbox` 已直接消费 `/v1/approval-center`。
+- 测试步骤:
+  1. 以 390px mobile viewport 打开 `/inbox`。
+  2. 检查 mobile triage 卡片是否直接给出 `open / unread / blocked / recent` 摘要，并保留回跳 `/settings` 的入口。
+  3. 抽查首张 signal card 的 `Open Context`、decision 与 details disclosure，确认 guard / backlinks 展开后仍无横向溢出。
+  4. 展开 mobile recent ledger，确认 recent resolution/status 回写仍可被查看。
+- 预期结果: `/inbox` 在手机上可以被打开、查看并完成轻量 triage；更重的策略编辑继续回 `/settings`，而不是把桌面工作台整块复制到 mobile。
+- 业务结论: 2026 年 4 月 9 日 `TKT-47` 新增 `pnpm test:headed-mobile-notification-triage` 与对应 `docs/testing/Test-Report-2026-04-09-mobile-notification-triage.md`。当前 headed Chromium mobile replay 已验证 `/inbox` 在 390px 视口下无横向溢出、mobile triage 摘要初始值为 `3 / 3 / 1 / 1`，首张 signal card 高度压到 640px 以下，并把 guard / backlinks / recent ledger 收成按需展开，因此这条 mobile light-notification 路径当前可按 `Pass` 收口。
+
+## TC-045 Topic Route / Edit Lifecycle / Resume Deep Link
+
+- 业务目标: 确认 Topic 不再只作为 room workbench 的子 tab 存在，而是可独立直达、可写回 guidance、可直接恢复 continuity 的一等 route。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-06`
+- 前置条件: 存在 `/topics/:topicId`、topic guidance edit surface、room/run backlink 与 same-topic run control。
+- 测试步骤:
+  1. 从 run detail 或 Quick Search 打开某条 Topic。
+  2. 在 Topic route 提交一条 guidance，并确认最近 guidance ledger 直接回写到同一条 room truth。
+  3. 在 Topic route 上暂停当前 run，刷新页面，再从同一路由恢复执行。
+  4. 从 Topic route 回跳到 room topic workbench，确认 route drill-in 与 room-first collaboration 没有断链。
+- 预期结果: Topic 成为可独立直达的一等对象；人类可在同一路由完成 guidance edit、reload persistence 与 resume，不需要再绕回 room tab 才能继续。
+- 业务结论: 2026 年 4 月 9 日 `TKT-52` 新增 `pnpm test:headed-topic-route-resume-lifecycle` 与对应 `docs/testing/Test-Report-2026-04-09-topic-route-resume-lifecycle.md`。当前 headed Chromium exact replay 已验证 `run detail -> /topics/topic-runtime` deep link、topic guidance 写回、topic route 上的 stop/reload/resume continuity，以及回跳 `/rooms/room-runtime?tab=topic` 的 backlink，因此这条 Topic route / edit lifecycle / resume deep-link 路径当前可按 `Pass` 收口。

@@ -2,6 +2,8 @@ package github
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -134,6 +136,39 @@ func TestProbePrefersGitHubAppInstallTruthWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestProbeFallsBackToPersistedInstallationState(t *testing.T) {
+	t.Setenv("OPENSHOCK_GITHUB_APP_ID", "12345")
+	t.Setenv("OPENSHOCK_GITHUB_APP_SLUG", "openshock-app")
+	t.Setenv("OPENSHOCK_GITHUB_APP_PRIVATE_KEY", "inline-private-key")
+
+	root := t.TempDir()
+	if err := SaveInstallationState(root, InstallationState{InstallationID: "67890"}); err != nil {
+		t.Fatalf("SaveInstallationState() error = %v", err)
+	}
+
+	service := NewService(fakeRunner{
+		lookPaths: map[string]string{},
+		outputs: map[string]fakeOutput{
+			"git -C " + root + " remote get-url origin":       {text: "https://github.com/Larkspur-Wang/OpenShock.git"},
+			"git -C " + root + " rev-parse --abbrev-ref HEAD": {text: "main"},
+		},
+	})
+
+	status, err := service.Probe(root)
+	if err != nil {
+		t.Fatalf("Probe() error = %v", err)
+	}
+	if !status.AppInstalled {
+		t.Fatalf("status.AppInstalled = false, want true from persisted installation")
+	}
+	if status.InstallationID != "67890" {
+		t.Fatalf("status.InstallationID = %q, want 67890", status.InstallationID)
+	}
+	if status.InstallationURL != "https://github.com/settings/installations/67890" {
+		t.Fatalf("status.InstallationURL = %q, want persisted installation settings URL", status.InstallationURL)
+	}
+}
+
 func TestProbeSurfacesIncompleteGitHubAppContract(t *testing.T) {
 	t.Setenv("OPENSHOCK_GITHUB_APP_ID", "12345")
 	t.Setenv("OPENSHOCK_GITHUB_APP_SLUG", "openshock-app")
@@ -227,6 +262,30 @@ func TestParseRepoIdentitySupportsHTTPSAndSSH(t *testing.T) {
 	}
 }
 
+func TestLoadInstallationStateRoundTrips(t *testing.T) {
+	root := t.TempDir()
+	wantPath := filepath.Join(root, "data", "phase0", "github-app-installation.json")
+
+	if err := SaveInstallationState(root, InstallationState{
+		InstallationID:  "67890",
+		InstallationURL: "https://github.com/settings/installations/67890",
+		SetupAction:     "install",
+	}); err != nil {
+		t.Fatalf("SaveInstallationState() error = %v", err)
+	}
+
+	got, err := LoadInstallationState(root)
+	if err != nil {
+		t.Fatalf("LoadInstallationState() error = %v", err)
+	}
+	if got.InstallationID != "67890" || got.SetupAction != "install" {
+		t.Fatalf("loaded state = %#v, want persisted installation data", got)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("expected persisted installation state at %s: %v", wantPath, err)
+	}
+}
+
 func TestCreatePullRequestPushesBranchAndLoadsRemoteSnapshot(t *testing.T) {
 	service := NewService(fakeRunner{
 		lookPaths: map[string]string{
@@ -237,8 +296,8 @@ func TestCreatePullRequestPushesBranchAndLoadsRemoteSnapshot(t *testing.T) {
 			"gh pr create --repo Larkspur-Wang/OpenShock --base main --head feat/runtime-shell --title runtime: surface heartbeat and lane state --body issue: OPS-12": {
 				text: "https://github.com/Larkspur-Wang/OpenShock/pull/42",
 			},
-			"gh pr view https://github.com/Larkspur-Wang/OpenShock/pull/42 --repo Larkspur-Wang/OpenShock --json number,title,url,state,isDraft,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt": {
-				text: `{"number":42,"title":"runtime: surface heartbeat and lane state","url":"https://github.com/Larkspur-Wang/OpenShock/pull/42","state":"OPEN","isDraft":false,"reviewDecision":"REVIEW_REQUIRED","headRefName":"feat/runtime-shell","baseRefName":"main","updatedAt":"2026-04-06T11:20:00Z","mergedAt":"","author":{"login":"CodexDockmaster"}}`,
+			"gh pr view https://github.com/Larkspur-Wang/OpenShock/pull/42 --repo Larkspur-Wang/OpenShock --json number,title,url,state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt": {
+				text: `{"number":42,"title":"runtime: surface heartbeat and lane state","url":"https://github.com/Larkspur-Wang/OpenShock/pull/42","state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"REVIEW_REQUIRED","headRefName":"feat/runtime-shell","baseRefName":"main","updatedAt":"2026-04-06T11:20:00Z","mergedAt":"","author":{"login":"CodexDockmaster"}}`,
 			},
 		},
 	})
@@ -262,6 +321,9 @@ func TestCreatePullRequestPushesBranchAndLoadsRemoteSnapshot(t *testing.T) {
 	if pullRequest.Author != "CodexDockmaster" {
 		t.Fatalf("pullRequest.Author = %q, want CodexDockmaster", pullRequest.Author)
 	}
+	if pullRequest.Mergeable != "MERGEABLE" || pullRequest.MergeStateStatus != "CLEAN" {
+		t.Fatalf("pullRequest safety truth = %#v, want MERGEABLE/CLEAN", pullRequest)
+	}
 }
 
 func TestMergePullRequestReturnsMergedSnapshot(t *testing.T) {
@@ -271,8 +333,8 @@ func TestMergePullRequestReturnsMergedSnapshot(t *testing.T) {
 		},
 		outputs: map[string]fakeOutput{
 			"gh pr merge 42 --repo Larkspur-Wang/OpenShock --merge --delete-branch=false": {text: "merged"},
-			"gh pr view 42 --repo Larkspur-Wang/OpenShock --json number,title,url,state,isDraft,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt": {
-				text: `{"number":42,"title":"runtime: surface heartbeat and lane state","url":"https://github.com/Larkspur-Wang/OpenShock/pull/42","state":"MERGED","isDraft":false,"reviewDecision":"APPROVED","headRefName":"feat/runtime-shell","baseRefName":"main","updatedAt":"2026-04-06T11:24:00Z","mergedAt":"2026-04-06T11:24:00Z","author":{"login":"CodexDockmaster"}}`,
+			"gh pr view 42 --repo Larkspur-Wang/OpenShock --json number,title,url,state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt": {
+				text: `{"number":42,"title":"runtime: surface heartbeat and lane state","url":"https://github.com/Larkspur-Wang/OpenShock/pull/42","state":"MERGED","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","headRefName":"feat/runtime-shell","baseRefName":"main","updatedAt":"2026-04-06T11:24:00Z","mergedAt":"2026-04-06T11:24:00Z","author":{"login":"CodexDockmaster"}}`,
 			},
 		},
 	})
@@ -289,5 +351,8 @@ func TestMergePullRequestReturnsMergedSnapshot(t *testing.T) {
 	}
 	if pullRequest.State != "MERGED" {
 		t.Fatalf("pullRequest.State = %q, want MERGED", pullRequest.State)
+	}
+	if pullRequest.Mergeable != "MERGEABLE" || pullRequest.MergeStateStatus != "CLEAN" {
+		t.Fatalf("pullRequest safety truth = %#v, want MERGEABLE/CLEAN", pullRequest)
 	}
 }

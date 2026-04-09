@@ -1,7 +1,7 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.4
-**更新日期:** 2026 年 4 月 8 日
+**版本:** 1.6
+**更新日期:** 2026 年 4 月 9 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -141,7 +141,7 @@
 
 ## TKT-26 Board Light Planning Cleanup
 
-- 状态: `todo`
+- 状态: `in_review`
 - 优先级: `P2`
 - 目标: 保留 Board 的次级位置，但把 planning card 和回跳关系做轻。
 - 范围:
@@ -162,13 +162,14 @@
 - 优先级: `P1`
 - 目标: 给下一轮消息型前端补最小 server truth，不靠纯本地 mock 撑 DM / followed thread / search。
 - 范围:
-  - DM / thread follow / saved later 的 state contract
-  - search result contract
+  - `directMessages / directMessageMessages / followedThreads / savedLaterItems` 的 state contract
+  - `quickSearchEntries` search result contract
   - unread / reopen / jump target contract
 - 依赖: 无
 - Done When:
   - 前端不需要再拿硬编码占位结构伪装 DM / thread search
-  - 基础 browser flow 能直接打 live API
+  - DM composer、thread follow、saved later 能直接打 live API
+  - Quick Search 能直接消费 server-backed `dm / followed / saved` result truth
   - 合同有对应后端 tests
 - Checklist: `CHK-03` `CHK-16` `CHK-17`
 - Test Cases: `TC-029` `TC-033`
@@ -237,6 +238,23 @@
   - 多 runtime 不会因为 lease 漂移或 stale state 做出错误调度
   - `/setup` 与 `/agents` 能稳定显示当前决策原因
   - 对应 release / browser verify 能稳定回放
+
+## TKT-57 GitHub Public Ingress Callback / Webhook Delivery Verification
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把 GitHub installation callback / webhook delivery 从近实机 contract 推到 public ingress 级 exact evidence。
+- 范围:
+  - Setup surface 暴露 public callback URL / webhook URL
+  - installation callback 通过同一 public ingress root 回流
+  - signed webhook delivery + bad-signature fail-closed 走 public ingress 回放
+- 依赖: `TKT-28`
+- Done When:
+  - `/v1/github/connection` 与 Setup UI 会明确给出 public callback / webhook URL
+  - `/setup/github/callback` 能在 public ingress root 下把 installation truth 写回 Setup
+  - `/v1/github/webhook` 的 signed delivery 与 bad-signature fail-closed 都有同一 public root 下的 exact artifact
+- Checklist: `CHK-07`
+- Test Cases: `TC-015` `TC-045`
 - Checklist: `CHK-14` `CHK-15`
 - Test Cases: `TC-020` `TC-021`
 
@@ -264,12 +282,12 @@
 - 目标: 把 Runtime / Machine 的本地能力发现与 Agent 偏好绑定做成正式产品面。
 - 范围:
   - machine profile：hostname / OS / shell / daemon / capability summary
-  - 本地 CLI / provider / model inventory
+  - 本地 CLI / provider truth + provider model catalog
   - Agent default provider / model / runtime affinity 绑定
 - 依赖: `TKT-14`
 - Done When:
   - `/setup`、`/agents` 或 machine profile 能看到 machine capability truth
-  - Agent 可声明 default provider / model / runtime affinity，并和 machine inventory 对齐
+  - Agent 可声明 default provider / model / runtime affinity，并与 machine/provider truth 对齐；model catalog 只作 suggestion，不按静态列表硬拒绝
   - 有 store / API tests 加浏览器级 walkthrough
 - Checklist: `CHK-14` `CHK-19` `CHK-22`
 - Test Cases: `TC-037` `TC-040`
@@ -327,12 +345,12 @@
 
 ## TKT-37 Workspace / User / Agent Config Persistence + Database Truth
 
-- 状态: `todo`
+- 状态: `in_review`
 - 优先级: `P1`
-- 目标: 把 user / workspace / agent / machine 配置从临时前端状态补成 durable store truth。
+- 目标: 把 workspace / member / agent profile 的配置读写与治理快照从临时前端状态补成 durable store truth。
 - 范围:
-  - database schema / store / migration
-  - preference / onboarding / profile / mailbox state persistence
+  - workspace / member durable config schema / store / migration
+  - preference / onboarding / profile / repo-binding / GitHub-installation snapshot persistence
   - restart / reload / device switch recovery contract
 - 依赖: 无
 - Done When:
@@ -341,6 +359,78 @@
   - 至少有一条测试覆盖 persistence + recovery
 - Checklist: `CHK-22`
 - Test Cases: `TC-040`
+
+## TKT-38 Live Truth Hygiene / Placeholder Leak Guard
+
+- 状态: `active`
+- 优先级: `P0`
+- 目标: 把 live truth 面里的 placeholder、乱码、fixture / test residue 和内部路径泄漏收成 fail-closed contract，不再把脏 seed/fallback 直接送到用户面前。
+- 范围:
+  - `/v1/state` 与 `/v1/state/stream` 的 visible truth sanitization
+  - mutation-returned state 的前台 state adapter guard
+  - live detail / room / setup / settings / orchestration / inbox 的 placeholder wording cleanup
+  - `check:live-truth-hygiene` release gate
+- 依赖: 无
+- Done When:
+  - `/chat/all`、`/issues`、`/rooms`、`/runs`、`/inbox` 用户可见文案不再出现 placeholder、乱码、fixture、test residue 或内部 worktree 路径
+  - 如果底层 state 含脏值，前台回退到产品级 fallback，而不是把 seed/fallback 真值直接吐给用户
+  - release gate 能稳定拦下 direct mock-data import、placeholder wording 和 tracked live-truth residue
+- Checklist: `CHK-03` `CHK-15`
+- Test Cases: `TC-042`
+
+## TKT-40 Run History / Incremental Fetch / Resume Context
+
+- 状态: `in_review`
+- 优先级: `P1`
+- 目标: 把 `/runs` 收成可渐进展开的历史面，并让 run detail / room run tab 直接暴露当前可恢复的 session continuity。
+- 范围:
+  - `/v1/runs/history` paginated contract
+  - `/v1/runs/:id/detail` resume-context + same-room history contract
+  - `/runs` incremental fetch / `Load Older Runs`
+  - run detail / room run tab 的 session-backed resume context 与 prior-run reopen
+- 依赖: `TKT-23`
+- Done When:
+  - `/runs` 首屏只展示最新一页 history，旧 run 通过显式增量展开
+  - run detail 能稳定显示 branch / worktree / memory paths / control note 这类 resume context
+  - 同一条 room 的前序 run 可被 reopen，且回到 room run tab 时仍锚定当前 active continuity
+- Checklist: `CHK-06`
+- Test Cases: `TC-043`
+
+## TKT-47 Mobile Web Light Observation / Notification Triage
+
+- 状态: `review`
+- 优先级: `P1`
+- 目标: 把 mobile web 上的 `/inbox` 收成“能打开、能查看、能处理轻量通知”的 exact triage 面，而不是把桌面 workbench 整套硬塞进手机。
+- 范围:
+  - mobile-only triage summary card（open / unread / blocked / recent）
+  - approval center signal card 的 mobile density 收缩
+  - guard / backlinks / recent ledger 的折叠式 reveal
+  - mobile headed verification for `/inbox`
+- 依赖: `TKT-10` `TKT-11`
+- Done When:
+  - 390px 级视口下 `/inbox` 不出现横向溢出
+  - 首屏能直接看到 open triage 摘要与 decision，不需要先横向滚动或穿过整块 guard copy
+  - 更重的 notification policy / subscriber / delivery truth 继续明确回跳到 `/settings`
+  - 有独立 headed mobile walkthrough 证据，而不是拿桌面截图代替
+- Checklist: `CHK-11`
+- Test Cases: `TC-044`
+
+## TKT-52 Topic Route / Edit Lifecycle / Resume Deep Link
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把 Topic 从 room workbench 子 tab 补成可独立直达、可注入 guidance、可直接恢复 continuity 的一等 route。
+- 范围:
+  - standalone topic route / quick-search backlinks
+  - topic guidance edit surface
+  - room / run continuity resume deep link
+- 依赖: `TKT-23` `TKT-40`
+- Done When:
+  - Topic 不再只能从 room `?tab=topic` 里打开
+  - 人类能直接在 Topic route 注入 guidance，并沿同一条 room / run truth 继续
+  - 至少有一条 walkthrough 覆盖 `open topic -> edit guidance -> reload -> resume`
+- Checklist: `CHK-06`
+- Test Cases: `TC-031` `TC-045`
 
 ---
 

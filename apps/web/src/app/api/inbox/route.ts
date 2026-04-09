@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { InboxItem } from "@/lib/mock-data";
+import type { InboxItem } from "@/lib/phase-zero-types";
 import { readControlJSON } from "@/lib/server-api";
 
 export async function GET() {

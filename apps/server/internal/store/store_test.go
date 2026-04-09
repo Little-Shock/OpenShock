@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,6 +111,63 @@ func TestCreateIssueSchedulesOwnerPreferredRuntime(t *testing.T) {
 	}
 	if session.Runtime != "shock-sidecar" || session.Machine != "shock-sidecar" || session.Provider != "Claude Code CLI" {
 		t.Fatalf("session scheduling = %#v, want shock-sidecar / Claude Code CLI", session)
+	}
+}
+
+func TestPersistedStateIncludesDerivedRuntimeTruth(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := s.UpdateRuntimePairing(RuntimePairingInput{
+		RuntimeID:  "shock-main",
+		DaemonURL:  "http://127.0.0.1:8090",
+		Machine:    "shock-main",
+		State:      "online",
+		ReportedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	created, err := s.CreateIssue(CreateIssueInput{
+		Title:    "Persisted Runtime Truth",
+		Summary:  "verify persisted state keeps derived lease and scheduler truth",
+		Owner:    "Codex Dockmaster",
+		Priority: "high",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssue() error = %v", err)
+	}
+
+	body, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(statePath) error = %v", err)
+	}
+
+	var persisted State
+	if err := json.Unmarshal(body, &persisted); err != nil {
+		t.Fatalf("json.Unmarshal(persisted state) error = %v", err)
+	}
+
+	if persisted.RuntimeScheduler.AssignedRuntime != "shock-main" {
+		t.Fatalf("persisted runtime scheduler = %#v, want assigned runtime shock-main", persisted.RuntimeScheduler)
+	}
+
+	var lease *RuntimeLease
+	for index := range persisted.RuntimeLeases {
+		if persisted.RuntimeLeases[index].SessionID == created.SessionID {
+			lease = &persisted.RuntimeLeases[index]
+			break
+		}
+	}
+	if lease == nil {
+		t.Fatalf("persisted runtime leases missing session %q: %#v", created.SessionID, persisted.RuntimeLeases)
+	}
+	if lease.Runtime != "shock-main" || lease.Machine != "shock-main" {
+		t.Fatalf("persisted runtime lease = %#v, want shock-main runtime/machine", lease)
 	}
 }
 
@@ -718,6 +776,58 @@ func TestMemorySubsystemHydratesExternalFileEditsOnRestart(t *testing.T) {
 	}
 	if workspaceArtifact.Digest != last.Digest || workspaceArtifact.SizeBytes != last.SizeBytes {
 		t.Fatalf("artifact digest/size = %q/%d, want latest snapshot %q/%d", workspaceArtifact.Digest, workspaceArtifact.SizeBytes, last.Digest, last.SizeBytes)
+	}
+}
+
+func TestMemorySubsystemSanitizesCustomerVisibleResidueOnExternalFileReplay(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	baseline := s.Snapshot()
+	workspaceArtifact := findMemoryArtifactByPath(baseline, "MEMORY.md")
+	if workspaceArtifact == nil {
+		t.Fatalf("workspace memory artifact missing")
+	}
+
+	dirtyContent := strings.Join([]string{
+		"# E2E ???? 20260405 讨论间",
+		"",
+		"- prompt: ???:???",
+		"- output: 我在 `E:\\00.Lark_Projects\\00_OpenShock` 项目中，可以帮您查看项目状态。",
+		"- summary: ??????????:Issue?Room?Run?PR?Inbox?Memory?",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "MEMORY.md"), []byte(dirtyContent), 0o644); err != nil {
+		t.Fatalf("write MEMORY.md: %v", err)
+	}
+
+	reloaded, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New(restart) error = %v", err)
+	}
+
+	detail, ok := reloaded.MemoryDetail(workspaceArtifact.ID)
+	if !ok || len(detail.Versions) == 0 {
+		t.Fatalf("memory detail missing after restart: %#v", detail)
+	}
+
+	last := detail.Versions[len(detail.Versions)-1]
+	if strings.Contains(last.Content, "E2E ???? 20260405") {
+		t.Fatalf("latest version content leaked e2e residue:\n%s", last.Content)
+	}
+	if strings.Contains(last.Content, "???:???") {
+		t.Fatalf("latest version content leaked garbled prompt:\n%s", last.Content)
+	}
+	if strings.Contains(last.Content, "E:\\00.Lark_Projects\\00_OpenShock") {
+		t.Fatalf("latest version content leaked internal path:\n%s", last.Content)
+	}
+	if !strings.Contains(last.Content, "这条历史记录包含测试残留或乱码，已从当前工作区隐藏。") {
+		t.Fatalf("latest version content = %q, want sanitized fallback", last.Content)
 	}
 }
 

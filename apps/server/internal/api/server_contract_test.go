@@ -102,6 +102,15 @@ func TestReadOnlySurfaceEndpointsServeSnapshotAndRejectMutations(t *testing.T) {
 				if payload.Workspace.Name == "" || len(payload.Issues) == 0 || len(payload.Inbox) == 0 {
 					t.Fatalf("state payload missing seeded data: %#v", payload.Workspace)
 				}
+				if payload.Workspace.Quota.MaxAgents == 0 || payload.Workspace.Usage.TotalTokens == 0 {
+					t.Fatalf("state payload missing usage/quota observability: %#v", payload.Workspace)
+				}
+				if len(payload.Runs) == 0 || payload.Runs[0].Usage.TotalTokens == 0 {
+					t.Fatalf("state payload missing run usage truth: %#v", payload.Runs)
+				}
+				if len(payload.Rooms) == 0 || payload.Rooms[0].Usage.MessageCount == 0 {
+					t.Fatalf("state payload missing room usage truth: %#v", payload.Rooms)
+				}
 			},
 		},
 		{
@@ -113,6 +122,12 @@ func TestReadOnlySurfaceEndpointsServeSnapshotAndRejectMutations(t *testing.T) {
 				decodeJSON(t, response, &payload)
 				if payload.Name == "" || payload.Repo == "" {
 					t.Fatalf("workspace payload missing repo identity: %#v", payload)
+				}
+				if payload.Quota.MaxAgents == 0 || payload.Quota.MessageHistoryDays == 0 {
+					t.Fatalf("workspace payload missing quota truth: %#v", payload)
+				}
+				if payload.Usage.TotalTokens == 0 || payload.Usage.MessageCount == 0 {
+					t.Fatalf("workspace payload missing usage truth: %#v", payload)
 				}
 			},
 		},
@@ -1151,6 +1166,261 @@ func TestPullRequestRouteSyncsAndMergesRemoteState(t *testing.T) {
 	}
 }
 
+func TestPullRequestDetailRouteReturnsConversationAndBacklinks(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	created, err := s.CreateIssue(store.CreateIssueInput{
+		Title:    "PR Detail Route",
+		Summary:  "verify PR detail backlinks",
+		Owner:    "Codex Dockmaster",
+		Priority: "high",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssue() error = %v", err)
+	}
+	if _, err := s.AttachLane(created.RunID, created.SessionID, store.LaneBinding{
+		Branch:       created.Branch,
+		WorktreeName: created.WorktreeName,
+		Path:         filepath.Join(root, ".openshock-worktrees", created.WorktreeName),
+	}); err != nil {
+		t.Fatalf("AttachLane() error = %v", err)
+	}
+	_, pullRequestID, err := s.CreatePullRequestFromRemote(created.RoomID, store.PullRequestRemoteSnapshot{
+		Number:         91,
+		Title:          "PR Detail Route",
+		Status:         "in_review",
+		Branch:         created.Branch,
+		BaseBranch:     "main",
+		Author:         "CodexDockmaster",
+		Provider:       "github",
+		URL:            "https://github.com/Larkspur-Wang/OpenShock/pull/91",
+		ReviewDecision: "APPROVED",
+	})
+	if err != nil {
+		t.Fatalf("CreatePullRequestFromRemote() error = %v", err)
+	}
+	if _, err := s.UpsertPullRequestConversationFromWebhook(pullRequestID, githubsvc.NormalizedWebhookEvent{
+		DeliveryID:        "delivery-pr-detail",
+		Event:             "pull_request_review_comment",
+		Kind:              "review_comment",
+		Action:            "created",
+		Sender:            "review-bot",
+		Repository:        "Larkspur-Wang/OpenShock",
+		PullRequestNumber: 91,
+		PullRequestTitle:  "PR Detail Route",
+		PullRequestURL:    "https://github.com/Larkspur-Wang/OpenShock/pull/91",
+		ConversationKey:   "review_comment:9101",
+		ConversationURL:   "https://github.com/Larkspur-Wang/OpenShock/pull/91#discussion_r9101",
+		ConversationPath:  "apps/server/internal/api/server.go",
+		ConversationLine:  742,
+		ConversationAt:    "2026-04-09T01:49:00Z",
+		CommentBody:       "please add PR detail route",
+	}); err != nil {
+		t.Fatalf("UpsertPullRequestConversationFromWebhook() error = %v", err)
+	}
+	if _, _, _, _, err := s.UpsertNotificationSubscriber(store.NotificationSubscriberUpsertInput{
+		Channel:    "browser_push",
+		Target:     "https://ops.example.test/review-console",
+		Label:      "Review Console",
+		Preference: "all",
+		Status:     "ready",
+		Source:     "contract-test",
+	}); err != nil {
+		t.Fatalf("UpsertNotificationSubscriber() error = %v", err)
+	}
+	if _, _, run, err := s.DispatchNotificationFanout(); err != nil {
+		t.Fatalf("DispatchNotificationFanout() error = %v", err)
+	} else if run.Delivered == 0 {
+		t.Fatalf("DispatchNotificationFanout() delivered = %d, want > 0", run.Delivered)
+	}
+
+	github := &fakeGitHubClient{
+		synced: map[int]githubsvc.PullRequest{
+			91: {
+				Number:           91,
+				URL:              "https://github.com/Larkspur-Wang/OpenShock/pull/91",
+				Title:            "PR Detail Route",
+				State:            "OPEN",
+				Mergeable:        "MERGEABLE",
+				MergeStateStatus: "CLEAN",
+				HeadRefName:      created.Branch,
+				BaseRefName:      "main",
+				Author:           "CodexDockmaster",
+				ReviewDecision:   "APPROVED",
+			},
+		},
+	}
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+		GitHub:        github,
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/pull-requests/" + pullRequestID + "/detail")
+	if err != nil {
+		t.Fatalf("GET pull request detail error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET pull request detail status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var detail store.PullRequestDetail
+	decodeJSON(t, resp, &detail)
+	if detail.PullRequest.ID != pullRequestID {
+		t.Fatalf("detail pull request = %#v, want %q", detail.PullRequest, pullRequestID)
+	}
+	if detail.PullRequest.Mergeable != "MERGEABLE" || detail.PullRequest.MergeStateStatus != "CLEAN" {
+		t.Fatalf("detail pull request safety = %#v, want MERGEABLE/CLEAN", detail.PullRequest)
+	}
+	if detail.Room.ID != created.RoomID || detail.Run.ID != created.RunID || detail.Issue.RoomID != created.RoomID {
+		t.Fatalf("detail backlinks malformed: %#v", detail)
+	}
+	if len(detail.Conversation) != 1 || detail.Conversation[0].ID != "review_comment:9101" {
+		t.Fatalf("detail conversation = %#v, want one review_comment entry", detail.Conversation)
+	}
+	if len(detail.RelatedInbox) == 0 {
+		t.Fatalf("detail related inbox = %#v, want PR-linked inbox card", detail.RelatedInbox)
+	}
+	if detail.Delivery.Status != "ready" || !detail.Delivery.ReleaseReady {
+		t.Fatalf("detail delivery gate status = %#v, want ready + releaseReady", detail.Delivery)
+	}
+	if len(detail.Delivery.Gates) != 4 {
+		t.Fatalf("detail delivery gates = %#v, want 4 gates", detail.Delivery.Gates)
+	}
+	gateByID := map[string]store.PullRequestDeliveryGate{}
+	for _, gate := range detail.Delivery.Gates {
+		gateByID[gate.ID] = gate
+	}
+	if gateByID["review-merge"].Status != "ready" {
+		t.Fatalf("review gate = %#v, want ready", gateByID["review-merge"])
+	}
+	if gateByID["notification-delivery"].Status != "ready" {
+		t.Fatalf("notification gate = %#v, want ready", gateByID["notification-delivery"])
+	}
+	if len(detail.Delivery.Templates) == 0 {
+		t.Fatalf("detail delivery templates = %#v, want review notification template", detail.Delivery.Templates)
+	}
+	template := detail.Delivery.Templates[0]
+	if template.TemplateID != "ops_review" || template.Status != "ready" || template.ReadyDeliveries == 0 || template.SentReceipts == 0 {
+		t.Fatalf("detail delivery template = %#v, want ready ops_review delivery with sent receipt", template)
+	}
+	if detail.Delivery.HandoffNote.Title == "" || len(detail.Delivery.HandoffNote.Lines) < 4 {
+		t.Fatalf("detail handoff note = %#v, want populated operator handoff note", detail.Delivery.HandoffNote)
+	}
+	evidenceByID := map[string]store.PullRequestDeliveryEvidence{}
+	for _, item := range detail.Delivery.Evidence {
+		evidenceByID[item.ID] = item
+	}
+	for _, evidenceID := range []string{"release-contract", "remote-pr", "review-conversation", "notification-templates"} {
+		if _, ok := evidenceByID[evidenceID]; !ok {
+			t.Fatalf("detail delivery evidence missing %q in %#v", evidenceID, detail.Delivery.Evidence)
+		}
+	}
+}
+
+func TestRunHistoryRouteSupportsIncrementalFetchAndRoomFilter(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	firstResp, err := http.Get(server.URL + "/v1/runs/history?limit=2")
+	if err != nil {
+		t.Fatalf("GET run history error = %v", err)
+	}
+	defer firstResp.Body.Close()
+	if firstResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET run history status = %d, want %d", firstResp.StatusCode, http.StatusOK)
+	}
+
+	var firstPage store.RunHistoryPage
+	decodeJSON(t, firstResp, &firstPage)
+	if len(firstPage.Items) != 2 || firstPage.TotalCount < 5 || firstPage.NextCursor == "" {
+		t.Fatalf("first history page malformed: %#v", firstPage)
+	}
+	if firstPage.Items[0].Session.ActiveRunID != firstPage.Items[0].Run.ID || len(firstPage.Items[0].Session.MemoryPaths) == 0 {
+		t.Fatalf("first history item missing resume context: %#v", firstPage.Items[0])
+	}
+
+	secondResp, err := http.Get(server.URL + "/v1/runs/history?limit=2&cursor=" + firstPage.NextCursor)
+	if err != nil {
+		t.Fatalf("GET second run history page error = %v", err)
+	}
+	defer secondResp.Body.Close()
+	if secondResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET second run history page status = %d, want %d", secondResp.StatusCode, http.StatusOK)
+	}
+
+	var secondPage store.RunHistoryPage
+	decodeJSON(t, secondResp, &secondPage)
+	if len(secondPage.Items) == 0 {
+		t.Fatalf("second history page empty: %#v", secondPage)
+	}
+	if secondPage.Items[0].Run.ID == firstPage.Items[0].Run.ID {
+		t.Fatalf("history cursor did not advance: first=%#v second=%#v", firstPage.Items, secondPage.Items)
+	}
+
+	roomResp, err := http.Get(server.URL + "/v1/runs/history?roomId=room-runtime&limit=5")
+	if err != nil {
+		t.Fatalf("GET room run history error = %v", err)
+	}
+	defer roomResp.Body.Close()
+	if roomResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET room run history status = %d, want %d", roomResp.StatusCode, http.StatusOK)
+	}
+
+	var roomPage store.RunHistoryPage
+	decodeJSON(t, roomResp, &roomPage)
+	if len(roomPage.Items) < 2 {
+		t.Fatalf("room history should include current + prior run: %#v", roomPage)
+	}
+	if roomPage.Items[0].Run.ID != "run_runtime_01" || !roomPage.Items[0].IsCurrent {
+		t.Fatalf("room history current entry = %#v, want current runtime run first", roomPage.Items[0])
+	}
+	if roomPage.Items[1].Run.ID != "run_runtime_00" || roomPage.Items[1].IsCurrent {
+		t.Fatalf("room history prior entry = %#v, want prior runtime run second", roomPage.Items[1])
+	}
+}
+
+func TestRunDetailRouteReturnsResumeContextAndRoomHistory(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/runs/run_runtime_01/detail")
+	if err != nil {
+		t.Fatalf("GET run detail envelope error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET run detail envelope status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var detail store.RunDetail
+	decodeJSON(t, resp, &detail)
+	if detail.Run.ID != "run_runtime_01" || detail.Room.ID != "room-runtime" || detail.Issue.Key != "OPS-12" {
+		t.Fatalf("run detail backlinks malformed: %#v", detail)
+	}
+	if detail.Session.ActiveRunID != detail.Run.ID || detail.Session.Worktree != detail.Run.Worktree || len(detail.Session.MemoryPaths) == 0 {
+		t.Fatalf("run detail resume context malformed: %#v", detail.Session)
+	}
+	if len(detail.History) < 2 {
+		t.Fatalf("run detail history too short: %#v", detail.History)
+	}
+	if detail.History[0].Run.ID != "run_runtime_01" || !detail.History[0].IsCurrent {
+		t.Fatalf("run detail current history entry = %#v, want current run first", detail.History[0])
+	}
+	if detail.History[1].Run.ID != "run_runtime_00" {
+		t.Fatalf("run detail prior history entry = %#v, want prior runtime run", detail.History[1])
+	}
+}
+
 func TestPullRequestRouteEscalatesBlockedOnGitHubSyncFailure(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -1568,6 +1838,9 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubMergeFailure(t *testing.T) {
 	}
 	if pr.Status != "changes_requested" || pr.ReviewDecision != "" || !strings.Contains(pr.ReviewSummary, "PR #96 合并失败：merge blocked by branch protections") {
 		t.Fatalf("merge failure pull request = %#v, want blocked GitHub failure semantics", pr)
+	}
+	if pr.MergeStateStatus != "BLOCKED" {
+		t.Fatalf("merge failure safety truth = %#v, want mergeStateStatus BLOCKED", pr)
 	}
 	if !strings.Contains(run.NextAction, "重试合并") {
 		t.Fatalf("run next action = %q, want GitHub merge retry guidance", run.NextAction)

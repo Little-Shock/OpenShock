@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -255,6 +256,31 @@ func TestRoomMessageRouteReturnsConflictStateWhenDaemonLeaseBlocksExec(t *testin
 	if room.Topic.Status != "blocked" || run.Status != "blocked" || issue.State != "blocked" {
 		t.Fatalf("conflict state = room %#v run %#v issue %#v, want blocked", room, run, issue)
 	}
+	if !strings.Contains(run.NextAction, "session-other") || !strings.Contains(run.NextAction, created.WorktreeName) {
+		t.Fatalf("run next action = %q, want holder + lane recovery guidance", run.NextAction)
+	}
+	if strings.Contains(run.NextAction, "``") {
+		t.Fatalf("run next action = %q, want clean quoting without nested backticks", run.NextAction)
+	}
+	if !strings.Contains(run.ControlNote, "session-other") || !strings.Contains(run.ControlNote, created.WorktreeName) {
+		t.Fatalf("run control note = %q, want holder + lane detail", run.ControlNote)
+	}
+	if strings.Contains(run.ControlNote, "``") {
+		t.Fatalf("run control note = %q, want clean quoting without nested backticks", run.ControlNote)
+	}
+	var session *store.Session
+	for index := range payload.State.Sessions {
+		if payload.State.Sessions[index].ActiveRunID == created.RunID {
+			session = &payload.State.Sessions[index]
+			break
+		}
+	}
+	if session == nil || !strings.Contains(session.ControlNote, "session-other") {
+		t.Fatalf("conflict session = %#v, want control note with holder detail", session)
+	}
+	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "Runtime lease 冲突，等待当前 lane 释放" {
+		t.Fatalf("inbox head = %#v, want runtime lease conflict title", payload.State.Inbox)
+	}
 	if seen.Cwd != lanePath || seen.LeaseID != created.SessionID {
 		t.Fatalf("daemon request = %#v, want lane path and created session lease", seen)
 	}
@@ -334,6 +360,31 @@ func TestCreateIssueEndpointReturnsConflictStateWhenWorktreeLeaseBlocksLane(t *t
 	}
 	if room.Topic.Status != "blocked" || run.Status != "blocked" || issue.State != "blocked" {
 		t.Fatalf("create issue conflict state = room %#v run %#v issue %#v, want blocked", room, run, issue)
+	}
+	if !strings.Contains(run.NextAction, "branch/worktree lane") || !strings.Contains(run.NextAction, "session-other") || !strings.Contains(run.NextAction, ensured.WorktreeName) {
+		t.Fatalf("run next action = %q, want worktree recovery guidance", run.NextAction)
+	}
+	if strings.Contains(run.NextAction, "``") {
+		t.Fatalf("run next action = %q, want clean quoting without nested backticks", run.NextAction)
+	}
+	if !strings.Contains(run.ControlNote, ensured.WorktreeName) || !strings.Contains(run.ControlNote, "session-other") {
+		t.Fatalf("run control note = %q, want worktree holder detail", run.ControlNote)
+	}
+	if strings.Contains(run.ControlNote, "``") {
+		t.Fatalf("run control note = %q, want clean quoting without nested backticks", run.ControlNote)
+	}
+	var session *store.Session
+	for index := range payload.State.Sessions {
+		if payload.State.Sessions[index].ActiveRunID == run.ID {
+			session = &payload.State.Sessions[index]
+			break
+		}
+	}
+	if session == nil || !strings.Contains(session.ControlNote, ensured.WorktreeName) {
+		t.Fatalf("conflict session = %#v, want worktree control note", session)
+	}
+	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "Runtime lease 冲突，等待 worktree lane 释放" {
+		t.Fatalf("inbox head = %#v, want worktree conflict title", payload.State.Inbox)
 	}
 }
 

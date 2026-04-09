@@ -55,10 +55,10 @@ func ensureWorkspaceScaffold(root string, agents []Agent, existing []MemoryArtif
 			content string
 		}{
 			{kind: "soul", path: filepath.Join(agentRoot, "SOUL.md"), summary: fmt.Sprintf("%s 的灵魂指令。", item.Name), content: buildAgentSoul(rootDirective, item)},
-			{kind: "memory", path: filepath.Join(agentRoot, "MEMORY.md"), summary: fmt.Sprintf("%s 的长期记忆。", item.Name), content: fmt.Sprintf("# %s Memory\n\n- Runtime preference: %s\n- Provider: %s\n", item.Name, item.RuntimePreference, item.Provider)},
+			{kind: "memory", path: filepath.Join(agentRoot, "MEMORY.md"), summary: fmt.Sprintf("%s 的长期记忆。", item.Name), content: fmt.Sprintf("# %s Memory\n\n- Runtime preference: %s\n- Provider: %s\n- Model: %s\n", item.Name, item.RuntimePreference, item.ProviderPreference, item.ModelPreference)},
 			{kind: "notes", path: filepath.Join(agentRoot, "notes", "channels.md"), summary: fmt.Sprintf("%s 的频道规则。", item.Name), content: fmt.Sprintf("# %s Channel Notes\n\n- 在频道内保持高信号，不抢占公共上下文。\n", item.Name)},
 			{kind: "notes", path: filepath.Join(agentRoot, "notes", "operating-rules.md"), summary: fmt.Sprintf("%s 的操作约束。", item.Name), content: fmt.Sprintf("# %s Operating Rules\n\n- 当前 lane: %s\n- Memory spaces: %s\n", item.Name, item.Lane, strings.Join(item.MemorySpaces, ", "))},
-			{kind: "notes", path: filepath.Join(agentRoot, "notes", "skills.md"), summary: fmt.Sprintf("%s 的技能记录。", item.Name), content: fmt.Sprintf("# %s Skills\n\n- Provider: %s\n", item.Name, item.Provider)},
+			{kind: "notes", path: filepath.Join(agentRoot, "notes", "skills.md"), summary: fmt.Sprintf("%s 的技能记录。", item.Name), content: fmt.Sprintf("# %s Skills\n\n- Provider: %s\n- Model: %s\n", item.Name, item.ProviderPreference, item.ModelPreference)},
 			{kind: "notes", path: filepath.Join(agentRoot, "notes", "work-log.md"), summary: fmt.Sprintf("%s 的运行日志。", item.Name), content: fmt.Sprintf("# %s Work Log\n\n", item.Name)},
 		}
 
@@ -162,7 +162,7 @@ func loadRootDirective(root string) string {
 }
 
 func buildAgentSoul(rootDirective string, item Agent) string {
-	return fmt.Sprintf("# SOUL.md\n\n## Inheritance\n\nThis agent inherits the root directive below.\n\n---\n\n%s\n\n---\n\n## Role-Specific Laws\n\n1. Current lane: %s\n2. Preferred runtime: %s\n3. Preferred provider: %s\n4. Memory spaces: %s\n5. Leave a cleaner room and a more legible work log after every run.\n", strings.TrimSpace(rootDirective), item.Lane, item.RuntimePreference, item.Provider, strings.Join(item.MemorySpaces, ", "))
+	return fmt.Sprintf("# SOUL.md\n\n## Inheritance\n\nThis agent inherits the root directive below.\n\n---\n\n%s\n\n---\n\n## Role-Specific Laws\n\n1. Current lane: %s\n2. Preferred runtime: %s\n3. Preferred provider: %s\n4. Preferred model: %s\n5. Memory spaces: %s\n6. Leave a cleaner room and a more legible work log after every run.\n", strings.TrimSpace(rootDirective), item.Lane, item.RuntimePreference, item.ProviderPreference, item.ModelPreference, strings.Join(item.MemorySpaces, ", "))
 }
 
 func ensureFile(path, content string) error {
@@ -223,6 +223,30 @@ func upsertMemoryArtifact(items []MemoryArtifact, artifact MemoryArtifact) []Mem
 			}
 			if artifact.SizeBytes == 0 {
 				artifact.SizeBytes = items[index].SizeBytes
+			}
+			if artifact.CorrectionCount == 0 {
+				artifact.CorrectionCount = items[index].CorrectionCount
+			}
+			if strings.TrimSpace(artifact.LastCorrectionAt) == "" {
+				artifact.LastCorrectionAt = items[index].LastCorrectionAt
+			}
+			if strings.TrimSpace(artifact.LastCorrectionBy) == "" {
+				artifact.LastCorrectionBy = items[index].LastCorrectionBy
+			}
+			if strings.TrimSpace(artifact.LastCorrectionNote) == "" {
+				artifact.LastCorrectionNote = items[index].LastCorrectionNote
+			}
+			if !artifact.Forgotten {
+				artifact.Forgotten = items[index].Forgotten
+			}
+			if strings.TrimSpace(artifact.ForgottenAt) == "" {
+				artifact.ForgottenAt = items[index].ForgottenAt
+			}
+			if strings.TrimSpace(artifact.ForgottenBy) == "" {
+				artifact.ForgottenBy = items[index].ForgottenBy
+			}
+			if strings.TrimSpace(artifact.ForgetReason) == "" {
+				artifact.ForgetReason = items[index].ForgetReason
 			}
 			if strings.TrimSpace(artifact.Governance.Mode) == "" {
 				artifact.Governance = items[index].Governance

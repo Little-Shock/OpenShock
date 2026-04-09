@@ -33,17 +33,29 @@ func TestMutationRoutesRequireActiveAuthSession(t *testing.T) {
 	}{
 		{name: "issue create", method: http.MethodPost, path: "/v1/issues", body: `{"title":"Blocked issue"}`, permission: "issue.create"},
 		{name: "room reply", method: http.MethodPost, path: "/v1/rooms/room-runtime/messages", body: `{"prompt":"继续推进"}`, permission: "room.reply"},
+		{name: "topic guidance", method: http.MethodPatch, path: "/v1/topics/topic-runtime", body: `{"summary":"继续沿当前 topic 收单值"}`, permission: "room.reply"},
 		{name: "room reply stream", method: http.MethodPost, path: "/v1/rooms/room-runtime/messages/stream", body: `{"prompt":"继续推进"}`, permission: "room.reply"},
 		{name: "run exec", method: http.MethodPost, path: "/v1/exec", body: `{"prompt":"继续推进"}`, permission: "run.execute"},
 		{name: "run control", method: http.MethodPost, path: "/v1/runs/run_runtime_01/control", body: `{"action":"stop","note":"先暂停"}`, permission: "run.execute"},
+		{name: "run sandbox patch", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/sandbox", body: `{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}`, permission: "run.execute"},
+		{name: "run sandbox check", method: http.MethodPost, path: "/v1/runs/run_runtime_01/sandbox", body: `{"kind":"command","target":"git push --force"}`, permission: "run.execute"},
 		{name: "room pull request", method: http.MethodPost, path: "/v1/rooms/room-runtime/pull-request", body: `{}`, permission: "pull_request.review"},
 		{name: "pull request merge", method: http.MethodPost, path: "/v1/pull-requests/pr-runtime-18", body: `{"status":"merged"}`, permission: "pull_request.merge"},
 		{name: "inbox review", method: http.MethodPost, path: "/v1/inbox/inbox-review-copy", body: `{"decision":"changes_requested"}`, permission: "inbox.review"},
 		{name: "inbox decide", method: http.MethodPost, path: "/v1/inbox/inbox-approval-runtime", body: `{"decision":"approved"}`, permission: "inbox.decide"},
+		{name: "mailbox create", method: http.MethodPost, path: "/v1/mailbox", body: `{"roomId":"room-runtime","fromAgentId":"agent-codex-dockmaster","toAgentId":"agent-claude-review-runner","title":"接住 reviewer lane","summary":"请你正式接住 reviewer lane。"}`, permission: "run.execute"},
+		{name: "mailbox advance", method: http.MethodPost, path: "/v1/mailbox/handoff-demo", body: `{"action":"acknowledged","actingAgentId":"agent-claude-review-runner"}`, permission: "run.execute"},
 		{name: "memory policy", method: http.MethodPost, path: "/v1/memory-center/policy", body: `{"mode":"governed-first","includeRoomNotes":true,"includeDecisionLedger":true,"includeAgentMemory":true,"includePromotedArtifacts":true,"maxItems":8}`, permission: "memory.write"},
+		{name: "memory cleanup", method: http.MethodPost, path: "/v1/memory-center/cleanup", body: "", permission: "memory.write"},
+		{name: "memory feedback", method: http.MethodPost, path: "/v1/memory/memory-demo/feedback", body: `{"summary":"Human Correction","note":"纠正旧记忆"}`, permission: "memory.write"},
+		{name: "memory forget", method: http.MethodPost, path: "/v1/memory/memory-demo/forget", body: `{"reason":"撤销这条过期记忆"}`, permission: "memory.write"},
 		{name: "memory promotion create", method: http.MethodPost, path: "/v1/memory-center/promotions", body: `{"memoryId":"memory-demo","kind":"skill","title":"demo","rationale":"demo"}`, permission: "memory.write"},
 		{name: "memory promotion review", method: http.MethodPost, path: "/v1/memory-center/promotions/memory-promotion-demo/review", body: `{"status":"approved"}`, permission: "memory.write"},
+		{name: "credential create", method: http.MethodPost, path: "/v1/credentials", body: `{"label":"GitHub App","summary":"repo sync","secretKind":"github-app","secretValue":"super-secret","workspaceDefault":true}`, permission: "workspace.manage"},
+		{name: "agent profile patch", method: http.MethodPatch, path: "/v1/agents/agent-codex-dockmaster", body: `{"role":"Platform Architect","avatar":"control-tower","prompt":"keep live truth first","operatingInstructions":"stay on current head","providerPreference":"Codex CLI","modelPreference":"gpt-5.3-codex","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"]}`, permission: "workspace.manage"},
+		{name: "run credential binding", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/credentials", body: `{"credentialProfileIds":[]}`, permission: "run.execute"},
 		{name: "repo binding", method: http.MethodPost, path: "/v1/repo/binding", body: `{"repo":"example/phase-zero","repoUrl":"https://github.com/example/phase-zero.git","branch":"main"}`, permission: "repo.admin"},
+		{name: "github installation callback", method: http.MethodPost, path: "/v1/github/installation-callback", body: `{"installationId":"67890","setupAction":"install"}`, permission: "repo.admin"},
 		{name: "runtime pairing", method: http.MethodPost, path: "/v1/runtime/pairing", body: `{"daemonUrl":"http://127.0.0.1:65531"}`, permission: "runtime.manage"},
 		{name: "runtime unpair", method: http.MethodDelete, path: "/v1/runtime/pairing", body: "", permission: "runtime.manage"},
 		{name: "runtime selection", method: http.MethodPost, path: "/v1/runtime/selection", body: `{"machine":"shock-main"}`, permission: "runtime.manage"},
@@ -143,6 +155,25 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 			},
 		},
 		{
+			name:   "topic guidance",
+			method: http.MethodPatch,
+			path:   "/v1/topics/topic-runtime",
+			body:   `{"summary":"先锁 runtime heartbeat truth，再决定是否继续收 PR surface。"}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("PATCH /v1/topics/topic-runtime status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					Topic store.Topic `json:"topic"`
+					State store.State `json:"state"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Topic.ID != "topic-runtime" || payload.Topic.Summary == "" {
+					t.Fatalf("topic guidance payload = %#v, want updated topic", payload)
+				}
+			},
+		},
+		{
 			name:   "run execute",
 			method: http.MethodPost,
 			path:   "/v1/exec",
@@ -173,6 +204,62 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 				decodeJSON(t, resp, &payload)
 				if payload.Run == nil || !payload.Run.FollowThread {
 					t.Fatalf("run control payload = %#v, want follow-thread true", payload)
+				}
+			},
+		},
+		{
+			name:   "run credential binding",
+			method: http.MethodPatch,
+			path:   "/v1/runs/run_runtime_01/credentials",
+			body:   `{"credentialProfileIds":[]}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("PATCH /v1/runs/run_runtime_01/credentials status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					Run *store.Run `json:"run"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Run == nil {
+					t.Fatalf("run credential binding payload = %#v, want run", payload)
+				}
+			},
+		},
+		{
+			name:   "run sandbox patch",
+			method: http.MethodPatch,
+			path:   "/v1/runs/run_runtime_01/sandbox",
+			body:   `{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("PATCH /v1/runs/run_runtime_01/sandbox status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					Run     store.Run           `json:"run"`
+					Sandbox store.SandboxPolicy `json:"sandbox"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Run.Sandbox.Profile != "restricted" || len(payload.Sandbox.AllowedCommands) != 1 {
+					t.Fatalf("sandbox patch payload = %#v, want restricted policy", payload)
+				}
+			},
+		},
+		{
+			name:   "run sandbox check",
+			method: http.MethodPost,
+			path:   "/v1/runs/run_runtime_01/sandbox",
+			body:   `{"kind":"tool","target":"read_file"}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("POST /v1/runs/run_runtime_01/sandbox status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					Run      store.Run             `json:"run"`
+					Decision store.SandboxDecision `json:"decision"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Decision.Status != "allowed" || payload.Run.SandboxDecision.Status != "allowed" {
+					t.Fatalf("sandbox check payload = %#v, want allowed decision", payload)
 				}
 			},
 		},
@@ -216,6 +303,28 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 				}
 			},
 		},
+		{
+			name:   "mailbox create",
+			method: http.MethodPost,
+			path:   "/v1/mailbox",
+			body:   `{"roomId":"room-runtime","fromAgentId":"agent-codex-dockmaster","toAgentId":"agent-claude-review-runner","title":"接住 reviewer lane","summary":"请你正式接住 reviewer lane。"}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusCreated {
+					t.Fatalf("POST /v1/mailbox status = %d, want %d", resp.StatusCode, http.StatusCreated)
+				}
+				var payload struct {
+					Handoff store.AgentHandoff `json:"handoff"`
+					State   store.State        `json:"state"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Handoff.Status != "requested" || payload.Handoff.ToAgentID != "agent-claude-review-runner" {
+					t.Fatalf("mailbox create payload = %#v, want requested handoff to Claude", payload)
+				}
+				if _, ok := findInboxByID(t, payload.State.Inbox, payload.Handoff.InboxItemID); !ok {
+					t.Fatalf("mailbox inbox item missing: %#v", payload.State.Inbox)
+				}
+			},
+		},
 	}
 
 	for _, testCase := range allowed {
@@ -236,9 +345,15 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 		{name: "pull request merge", method: http.MethodPost, path: "/v1/pull-requests/pr-runtime-18", body: `{"status":"merged"}`, permission: "pull_request.merge"},
 		{name: "inbox decide", method: http.MethodPost, path: "/v1/inbox/inbox-approval-runtime", body: `{"decision":"approved"}`, permission: "inbox.decide"},
 		{name: "memory policy", method: http.MethodPost, path: "/v1/memory-center/policy", body: `{"mode":"governed-first","includeRoomNotes":true,"includeDecisionLedger":true,"includeAgentMemory":true,"includePromotedArtifacts":true,"maxItems":8}`, permission: "memory.write"},
+		{name: "memory cleanup", method: http.MethodPost, path: "/v1/memory-center/cleanup", body: "", permission: "memory.write"},
+		{name: "memory feedback", method: http.MethodPost, path: "/v1/memory/memory-demo/feedback", body: `{"summary":"Human Correction","note":"纠正旧记忆"}`, permission: "memory.write"},
+		{name: "memory forget", method: http.MethodPost, path: "/v1/memory/memory-demo/forget", body: `{"reason":"撤销这条过期记忆"}`, permission: "memory.write"},
 		{name: "memory promotion create", method: http.MethodPost, path: "/v1/memory-center/promotions", body: `{"memoryId":"memory-demo","kind":"skill","title":"demo","rationale":"demo"}`, permission: "memory.write"},
 		{name: "memory promotion review", method: http.MethodPost, path: "/v1/memory-center/promotions/memory-promotion-demo/review", body: `{"status":"approved"}`, permission: "memory.write"},
+		{name: "credential create", method: http.MethodPost, path: "/v1/credentials", body: `{"label":"GitHub App","summary":"repo sync","secretKind":"github-app","secretValue":"super-secret","workspaceDefault":true}`, permission: "workspace.manage"},
+		{name: "agent profile patch", method: http.MethodPatch, path: "/v1/agents/agent-codex-dockmaster", body: `{"role":"Platform Architect","avatar":"control-tower","prompt":"keep live truth first","operatingInstructions":"stay on current head","providerPreference":"Codex CLI","modelPreference":"gpt-5.3-codex","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"]}`, permission: "workspace.manage"},
 		{name: "repo binding", method: http.MethodPost, path: "/v1/repo/binding", body: `{"repo":"example/phase-zero","repoUrl":"https://github.com/example/phase-zero.git","branch":"main"}`, permission: "repo.admin"},
+		{name: "github installation callback", method: http.MethodPost, path: "/v1/github/installation-callback", body: `{"installationId":"67890","setupAction":"install"}`, permission: "repo.admin"},
 		{name: "runtime pairing", method: http.MethodPost, path: "/v1/runtime/pairing", body: `{"daemonUrl":"http://127.0.0.1:65531"}`, permission: "runtime.manage"},
 		{name: "runtime unpair", method: http.MethodDelete, path: "/v1/runtime/pairing", body: "", permission: "runtime.manage"},
 		{name: "runtime selection", method: http.MethodPost, path: "/v1/runtime/selection", body: `{"machine":"shock-main"}`, permission: "runtime.manage"},
@@ -276,6 +391,81 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 			}
 		})
 	}
+
+	t.Run("member cannot sandbox override without workspace manage", func(t *testing.T) {
+		baseline := s.Snapshot()
+		resp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/runs/run_runtime_01/sandbox", `{"kind":"command","target":"git push --force","override":true}`)
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("POST sandbox override status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+		}
+
+		var payload struct {
+			Error      string            `json:"error"`
+			Permission string            `json:"permission"`
+			Session    store.AuthSession `json:"session"`
+			State      store.State       `json:"state"`
+		}
+		decodeJSON(t, resp, &payload)
+
+		if payload.Error != `permission "workspace.manage" required for sandbox override` {
+			t.Fatalf("error = %q, want sandbox override workspace.manage denial", payload.Error)
+		}
+		if payload.Permission != "workspace.manage" {
+			t.Fatalf("permission = %q, want workspace.manage", payload.Permission)
+		}
+		if payload.Session.Role != "member" || payload.Session.Email != "mina@openshock.dev" {
+			t.Fatalf("session = %#v, want member session", payload.Session)
+		}
+		if !reflect.DeepEqual(normalizeAuthGuardState(payload.State), normalizeAuthGuardState(baseline)) {
+			t.Fatalf("state mutated on forbidden sandbox override")
+		}
+	})
+}
+
+func TestMemberRoleCanAdvanceMailboxLifecycle(t *testing.T) {
+	root := t.TempDir()
+	s, _, server, cleanup := newAuthGuardTestServer(t, root)
+	defer cleanup()
+	defer server.Close()
+
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{Email: "mina@openshock.dev"}); err != nil {
+		t.Fatalf("LoginWithEmail(member) error = %v", err)
+	}
+
+	nextState, handoff, err := s.CreateHandoff(store.MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "接住 reviewer lane",
+		Summary:     "请你正式接住 reviewer lane。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+	if len(nextState.Mailbox) == 0 {
+		t.Fatalf("mailbox = %#v, want seeded handoff before route advance", nextState.Mailbox)
+	}
+
+	resp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/mailbox/"+handoff.ID, `{"action":"acknowledged","actingAgentId":"agent-claude-review-runner"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/mailbox/%s status = %d, want %d", handoff.ID, resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+		State   store.State        `json:"state"`
+	}
+	decodeJSON(t, resp, &payload)
+	if payload.Handoff.Status != "acknowledged" {
+		t.Fatalf("handoff = %#v, want acknowledged", payload.Handoff)
+	}
+	run := findRunByID(payload.State, "run_runtime_01")
+	if run == nil || run.Owner != "Claude Review Runner" {
+		t.Fatalf("run = %#v, want owner switched after member mailbox advance", run)
+	}
 }
 
 func TestViewerRoleCannotMutateProtectedSurfaces(t *testing.T) {
@@ -297,16 +487,28 @@ func TestViewerRoleCannotMutateProtectedSurfaces(t *testing.T) {
 	}{
 		{name: "issue create", method: http.MethodPost, path: "/v1/issues", body: `{"title":"Viewer blocked issue"}`, permission: "issue.create"},
 		{name: "room reply", method: http.MethodPost, path: "/v1/rooms/room-runtime/messages", body: `{"prompt":"viewer should not reply"}`, permission: "room.reply"},
+		{name: "topic guidance", method: http.MethodPatch, path: "/v1/topics/topic-runtime", body: `{"summary":"viewer should not guide topic"}`, permission: "room.reply"},
 		{name: "run execute", method: http.MethodPost, path: "/v1/exec", body: `{"prompt":"viewer should not exec"}`, permission: "run.execute"},
 		{name: "run control", method: http.MethodPost, path: "/v1/runs/run_runtime_01/control", body: `{"action":"stop","note":"viewer should not stop"}`, permission: "run.execute"},
+		{name: "run sandbox patch", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/sandbox", body: `{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}`, permission: "run.execute"},
+		{name: "run sandbox check", method: http.MethodPost, path: "/v1/runs/run_runtime_01/sandbox", body: `{"kind":"command","target":"git push --force"}`, permission: "run.execute"},
 		{name: "pull request review", method: http.MethodPost, path: "/v1/rooms/room-runtime/pull-request", body: `{}`, permission: "pull_request.review"},
 		{name: "pull request merge", method: http.MethodPost, path: "/v1/pull-requests/pr-runtime-18", body: `{"status":"merged"}`, permission: "pull_request.merge"},
 		{name: "inbox review", method: http.MethodPost, path: "/v1/inbox/inbox-review-copy", body: `{"decision":"changes_requested"}`, permission: "inbox.review"},
 		{name: "inbox decide", method: http.MethodPost, path: "/v1/inbox/inbox-approval-runtime", body: `{"decision":"approved"}`, permission: "inbox.decide"},
+		{name: "mailbox create", method: http.MethodPost, path: "/v1/mailbox", body: `{"roomId":"room-runtime","fromAgentId":"agent-codex-dockmaster","toAgentId":"agent-claude-review-runner","title":"接住 reviewer lane","summary":"请你正式接住 reviewer lane。"}`, permission: "run.execute"},
+		{name: "mailbox advance", method: http.MethodPost, path: "/v1/mailbox/handoff-demo", body: `{"action":"acknowledged","actingAgentId":"agent-claude-review-runner"}`, permission: "run.execute"},
 		{name: "memory policy", method: http.MethodPost, path: "/v1/memory-center/policy", body: `{"mode":"governed-first","includeRoomNotes":true,"includeDecisionLedger":true,"includeAgentMemory":true,"includePromotedArtifacts":true,"maxItems":8}`, permission: "memory.write"},
+		{name: "memory cleanup", method: http.MethodPost, path: "/v1/memory-center/cleanup", body: "", permission: "memory.write"},
+		{name: "memory feedback", method: http.MethodPost, path: "/v1/memory/memory-demo/feedback", body: `{"summary":"Human Correction","note":"纠正旧记忆"}`, permission: "memory.write"},
+		{name: "memory forget", method: http.MethodPost, path: "/v1/memory/memory-demo/forget", body: `{"reason":"撤销这条过期记忆"}`, permission: "memory.write"},
 		{name: "memory promotion create", method: http.MethodPost, path: "/v1/memory-center/promotions", body: `{"memoryId":"memory-demo","kind":"skill","title":"demo","rationale":"demo"}`, permission: "memory.write"},
 		{name: "memory promotion review", method: http.MethodPost, path: "/v1/memory-center/promotions/memory-promotion-demo/review", body: `{"status":"approved"}`, permission: "memory.write"},
+		{name: "credential create", method: http.MethodPost, path: "/v1/credentials", body: `{"label":"GitHub App","summary":"repo sync","secretKind":"github-app","secretValue":"super-secret","workspaceDefault":true}`, permission: "workspace.manage"},
+		{name: "agent profile patch", method: http.MethodPatch, path: "/v1/agents/agent-codex-dockmaster", body: `{"role":"Platform Architect","avatar":"control-tower","prompt":"keep live truth first","operatingInstructions":"stay on current head","providerPreference":"Codex CLI","modelPreference":"gpt-5.3-codex","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"]}`, permission: "workspace.manage"},
+		{name: "run credential binding", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/credentials", body: `{"credentialProfileIds":[]}`, permission: "run.execute"},
 		{name: "repo binding", method: http.MethodPost, path: "/v1/repo/binding", body: `{"repo":"example/phase-zero","repoUrl":"https://github.com/example/phase-zero.git","branch":"main"}`, permission: "repo.admin"},
+		{name: "github installation callback", method: http.MethodPost, path: "/v1/github/installation-callback", body: `{"installationId":"67890","setupAction":"install"}`, permission: "repo.admin"},
 		{name: "runtime pairing", method: http.MethodPost, path: "/v1/runtime/pairing", body: `{"daemonUrl":"http://127.0.0.1:65531"}`, permission: "runtime.manage"},
 		{name: "runtime unpair", method: http.MethodDelete, path: "/v1/runtime/pairing", body: "", permission: "runtime.manage"},
 		{name: "runtime selection", method: http.MethodPost, path: "/v1/runtime/selection", body: `{"machine":"shock-main"}`, permission: "runtime.manage"},

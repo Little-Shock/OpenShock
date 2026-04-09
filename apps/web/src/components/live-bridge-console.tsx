@@ -15,7 +15,6 @@ type ExecResult = {
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
-const DEFAULT_WORKSPACE_ROOT = "/home/lark/OpenShock";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -210,7 +209,6 @@ export function LiveBridgeConsole() {
         body: JSON.stringify({
           provider,
           prompt,
-          cwd: runtime?.workspaceRoot || selectedRuntimeRecord?.workspaceRoot || DEFAULT_WORKSPACE_ROOT,
         }),
       });
 
@@ -274,9 +272,9 @@ export function LiveBridgeConsole() {
             </p>
           </div>
           <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">工作区</p>
-            <p className="mt-2 break-all font-mono text-xs leading-5">
-              {runtime?.workspaceRoot || selectedRuntimeTruth?.workspaceRoot || "未返回"}
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">执行根</p>
+            <p className="mt-2 text-sm leading-6">
+              当前 bridge 直接走 daemon root；前台不再显示 runtime 内部工作区路径。
             </p>
           </div>
         </div>

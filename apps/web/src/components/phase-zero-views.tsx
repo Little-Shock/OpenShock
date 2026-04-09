@@ -1,10 +1,10 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 import { ClaudeAgentConsole } from "@/components/claude-agent-console";
+import { DestructiveGuardCard } from "@/components/destructive-guard-views";
 import {
   agents,
-  type AgentStatus,
   getBoardColumns,
   getIssueByRoomId,
   getRunById,
@@ -12,16 +12,24 @@ import {
   settingsSections,
   setupSteps,
   workspace,
-  type InboxItem,
-  type Issue,
-  type Message,
-  type Priority,
-  type Room,
-  type Run,
-  type RunStatus,
-  type SettingsSection,
-  type SetupStep,
 } from "@/lib/mock-data";
+import type {
+  AgentStatus,
+  DestructiveGuard,
+  InboxItem,
+  Issue,
+  Message,
+  Priority,
+  Room,
+  Run,
+  RunHistoryEntry,
+  RunStatus,
+  Session,
+  SettingsSection,
+  SetupStep,
+} from "@/lib/phase-zero-types";
+import { buildPlanningMirrorHref } from "@/lib/planning-mirror";
+import { buildProfileHref } from "@/lib/profile-surface";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -75,6 +83,34 @@ function runStatusLabel(status: RunStatus) {
       return "待评审";
     case "done":
       return "已完成";
+  }
+}
+
+function formatCount(value?: number) {
+  return typeof value === "number" ? value.toLocaleString("zh-CN") : "未返回";
+}
+
+function runBudgetStatusLabel(status?: string) {
+  switch (status) {
+    case "near_limit":
+      return "逼近上限";
+    case "watch":
+      return "进入观察";
+    case "healthy":
+      return "健康";
+    default:
+      return "待同步";
+  }
+}
+
+function runBudgetTone(status?: string): "white" | "paper" | "yellow" | "lime" | "pink" | "ink" {
+  switch (status) {
+    case "near_limit":
+      return "pink";
+    case "watch":
+      return "yellow";
+    default:
+      return "white";
   }
 }
 
@@ -141,13 +177,15 @@ export function Panel({
   children,
   tone = "white",
   className,
+  ...props
 }: {
   children: ReactNode;
   tone?: "white" | "paper" | "yellow" | "lime" | "pink" | "ink";
   className?: string;
-}) {
+} & ComponentPropsWithoutRef<"section">) {
   return (
     <section
+      {...props}
       className={cn(
         "border-2 border-[var(--shock-ink)] p-4 shadow-[var(--shock-shadow-sm)]",
         toneClass(tone),
@@ -372,10 +410,36 @@ export function RoomOverview({ room }: { room: Room }) {
 export function RunDetailView({
   run,
   statusTestId,
+  session,
+  history = [],
+  guards = [],
 }: {
   run: Run;
   statusTestId?: string;
+  session?: Session;
+  history?: RunHistoryEntry[];
+  guards?: DestructiveGuard[];
 }) {
+  const resumeSession = session ?? {
+    id: `session-${run.id}`,
+    issueKey: run.issueKey,
+    roomId: run.roomId,
+    topicId: run.topicId,
+    activeRunId: run.id,
+    status: run.status,
+    followThread: run.followThread,
+    controlNote: run.controlNote,
+    runtime: run.runtime,
+    machine: run.machine,
+    provider: run.provider,
+    branch: run.branch,
+    worktree: run.worktree,
+    worktreePath: run.worktreePath ?? "",
+    summary: run.summary,
+    updatedAt: run.startedAt,
+    memoryPaths: [],
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -417,6 +481,139 @@ export function RunDetailView({
         </Panel>
       </div>
 
+      {guards.length > 0 ? (
+        <Panel tone={run.approvalRequired ? "paper" : "white"}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">Guard Truth</p>
+              <h3 className="mt-2 font-display text-2xl font-bold">Destructive / Secret Boundary</h3>
+            </div>
+            <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+              {guards.length} active
+            </span>
+          </div>
+          <div className="mt-4 space-y-3">
+            {guards.map((guard) => (
+              <DestructiveGuardCard key={guard.id} guard={guard} testIdPrefix="run-detail-guard" />
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+        <Panel tone="yellow">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-display text-2xl font-bold">Resume Context</h3>
+            <span
+              data-testid="run-detail-resume-session"
+              className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em]"
+            >
+              {resumeSession.id}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <Metric label="Branch" value={resumeSession.branch} />
+            <Metric label="Worktree" value={resumeSession.worktree} />
+            <Metric
+              label="Worktree Path"
+              value={resumeSession.worktreePath || "当前 worktree 路径正在整理中。"}
+            />
+            <Metric label="Memory Paths" value={`${resumeSession.memoryPaths.length} 条`} />
+          </div>
+          <p data-testid="run-detail-resume-summary" className="mt-4 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
+            {resumeSession.summary}
+          </p>
+          {resumeSession.controlNote ? (
+            <p
+              data-testid="run-detail-resume-control-note"
+              className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm leading-6"
+            >
+              {resumeSession.controlNote}
+            </p>
+          ) : null}
+          {resumeSession.memoryPaths.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {resumeSession.memoryPaths.map((path) => (
+                <span
+                  key={path}
+                  className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px]"
+                >
+                  {path}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </Panel>
+
+        <Panel tone="white">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-display text-2xl font-bold">Room Run History</h3>
+              <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
+                先回看同一条 room 的前序 run，再决定是否 reopen / resume 当前 continuity。
+              </p>
+            </div>
+            <span
+              data-testid="run-detail-history-count"
+              className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em]"
+            >
+              {history.length} entries
+            </span>
+          </div>
+          <div data-testid="run-detail-history" className="mt-4 space-y-3">
+            {history.length === 0 ? (
+              <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
+                当前还没有可回看的 room run history。
+              </p>
+            ) : (
+              history.map((entry) => (
+                <article
+                  key={entry.run.id}
+                  data-testid={`run-history-entry-${entry.run.id}`}
+                  className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-display text-lg font-semibold">{entry.run.id}</p>
+                      <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">{entry.run.summary}</p>
+                    </div>
+                    <span
+                      className={cn(
+                        "rounded-full border-2 border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em]",
+                        entry.isCurrent ? "bg-[var(--shock-yellow)] text-[var(--shock-ink)]" : statusTone(entry.run.status)
+                      )}
+                    >
+                      {entry.isCurrent ? "Current" : runStatusLabel(entry.run.status)}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <Metric label="Started" value={entry.run.startedAt} />
+                    <Metric label="Session" value={entry.session.id} />
+                    <Metric label="Worktree" value={entry.session.worktree} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link
+                      href={`/runs/${entry.run.id}`}
+                      data-testid={`run-history-reopen-${entry.run.id}`}
+                      className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em]"
+                    >
+                      Reopen Run
+                    </Link>
+                    <Link
+                      href={`/rooms/${entry.room.id}?tab=run`}
+                      data-testid={`run-history-room-tab-${entry.run.id}`}
+                      className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em]"
+                    >
+                      Room Run Tab
+                    </Link>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </Panel>
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel tone="white">
           <div className="flex items-center justify-between">
@@ -455,6 +652,29 @@ export function RunDetailView({
         </Panel>
       </div>
 
+      <Panel tone={runBudgetTone(run.usage?.budgetStatus)}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-display text-2xl font-bold">Token / Quota</h3>
+            <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
+              Run 详情不只显示 branch / worktree，也要把 prompt、completion、context headroom 和预算状态直接暴露给人类。
+            </p>
+          </div>
+          <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+            {runBudgetStatusLabel(run.usage?.budgetStatus)}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <Metric label="Prompt" value={formatCount(run.usage?.promptTokens)} />
+          <Metric label="Completion" value={formatCount(run.usage?.completionTokens)} />
+          <Metric label="Total" value={formatCount(run.usage?.totalTokens)} />
+          <Metric label="Context" value={formatCount(run.usage?.contextWindow)} />
+        </div>
+        <p className="mt-4 text-sm leading-6 opacity-85">
+          {run.usage?.warning ?? "当前还没有暴露 token / quota warning。"}
+        </p>
+      </Panel>
+
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel tone="lime">
           <h3 className="font-display text-2xl font-bold">时间线</h3>
@@ -484,7 +704,7 @@ export function RunDetailView({
         <Panel tone="white">
           <h3 className="font-display text-2xl font-bold">PR 收口</h3>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-            每个 Run 都必须落到一个可见的收口对象上。Phase 0 里 PR 还在 mock，但房间、Run 和收件箱已经指向同一个收口目标。
+            每个 Run 都必须落到一个可见的收口对象上。现在 PR、房间、Run 和收件箱都已经指向同一个收口目标。
           </p>
           <div className="mt-4 grid gap-3">
             <Metric label="Pull Request" value={run.pullRequest} />
@@ -499,7 +719,7 @@ export function RunDetailView({
               打开 Issue
             </Link>
             <Link
-              href={`/rooms/${run.roomId}`}
+              href={`/rooms/${run.roomId}?tab=run`}
               className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
             >
               回到讨论间
@@ -633,6 +853,13 @@ export function IssueDetailView({
   run?: Run;
   roomTitle?: string;
 }) {
+  const planningMirrorHref = buildPlanningMirrorHref({
+    roomId: issue.roomId,
+    issueKey: issue.key,
+    returnTo: `/issues/${issue.key}`,
+    returnLabel: issue.key,
+  });
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-4">
@@ -651,7 +878,7 @@ export function IssueDetailView({
           <p className="mt-4 text-base leading-7">{issue.summary}</p>
           <div className="mt-5 flex flex-wrap gap-3">
               <Link
-                href={`/rooms/${issue.roomId}`}
+                href={`/rooms/${issue.roomId}?tab=context`}
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
               打开讨论间
@@ -661,6 +888,13 @@ export function IssueDetailView({
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
               打开 Run 详情
+              </Link>
+              <Link
+                href={planningMirrorHref}
+                data-testid="issue-open-planning-mirror"
+                className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
+              >
+                Planning mirror
               </Link>
             </div>
         </Panel>
@@ -702,12 +936,12 @@ export function AgentsListView({ agentsList = agents }: { agentsList?: AgentStat
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {agentsList.map((agent) => (
-        <Link key={agent.id} href={`/agents/${agent.id}`} className="block">
+        <Link key={agent.id} href={buildProfileHref("agent", agent.id)} className="block" data-testid={`agents-card-${agent.id}`}>
           <Panel tone={agent.state === "blocked" ? "pink" : agent.state === "running" ? "yellow" : "white"}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
-                  {agent.provider}
+                  {agent.providerPreference} / {agent.modelPreference}
                 </p>
                 <h3 className="mt-2 font-display text-3xl font-bold">{agent.name}</h3>
               </div>
@@ -716,8 +950,9 @@ export function AgentsListView({ agentsList = agents }: { agentsList?: AgentStat
               </span>
             </div>
             <p className="mt-3 text-base leading-7">{agent.description}</p>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
               <Metric label="泳道" value={agent.lane} />
+              <Metric label="Provider / Model" value={`${agent.providerPreference} / ${agent.modelPreference}`} />
               <Metric label="Runtime" value={agent.runtimePreference} />
             </div>
           </Panel>
@@ -741,7 +976,7 @@ export function AgentDetailView({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
-                {agent.provider}
+                {agent.providerPreference} / {agent.modelPreference}
               </p>
               <h3 className="mt-2 font-display text-3xl font-bold">{agent.name}</h3>
             </div>
@@ -750,7 +985,9 @@ export function AgentDetailView({
               </span>
             </div>
             <p className="mt-3 text-base leading-7">{agent.description}</p>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <Metric label="Provider 偏好" value={agent.providerPreference} />
+            <Metric label="Model 偏好" value={agent.modelPreference} />
             <Metric label="Runtime 偏好" value={agent.runtimePreference} />
             <Metric label="当前泳道" value={agent.lane} />
           </div>

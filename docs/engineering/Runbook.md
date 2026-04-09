@@ -25,9 +25,11 @@
 - `pnpm dev` 只启动 web
 - server 和 daemon 需要分别启动
 - 根 `package.json` 里的 `dev:server` / `dev:daemon` 现在已经是 Bash 入口，并会转到 `scripts/go.sh`
+- 如果你要接管 actual live `127.0.0.1:8080`，不要再只靠“哪个终端还开着”；统一改走 `pnpm ops:live-server:*`
 - round-end release gate 现在统一走根脚本：
   - `pnpm verify:release`
   - `pnpm ops:smoke`
+  - `pnpm ops:experience-metrics`
   - `pnpm verify:release:full`
 - 跨平台最稳的方式是直接跑 Go 入口
 - server 默认状态文件是：
@@ -45,7 +47,9 @@ export OPENSHOCK_SERVER_ADDR=:8080
 export OPENSHOCK_DAEMON_ADDR=:8090
 export OPENSHOCK_DAEMON_URL=http://127.0.0.1:8090
 export OPENSHOCK_SERVER_URL=http://127.0.0.1:8080
+export OPENSHOCK_ACTUAL_LIVE_URL=http://127.0.0.1:8080
 export NEXT_PUBLIC_OPENSHOCK_API_BASE=http://127.0.0.1:8080
+export OPENSHOCK_LIVE_OWNER=@Max_开发
 ```
 
 ### PowerShell
@@ -56,7 +60,9 @@ $env:OPENSHOCK_SERVER_ADDR = ":8080"
 $env:OPENSHOCK_DAEMON_ADDR = ":8090"
 $env:OPENSHOCK_DAEMON_URL = "http://127.0.0.1:8090"
 $env:OPENSHOCK_SERVER_URL = "http://127.0.0.1:8080"
+$env:OPENSHOCK_ACTUAL_LIVE_URL = "http://127.0.0.1:8080"
 $env:NEXT_PUBLIC_OPENSHOCK_API_BASE = "http://127.0.0.1:8080"
+$env:OPENSHOCK_LIVE_OWNER = "@Max_开发"
 ```
 
 ### Deploy / GitHub App 相关变量
@@ -77,6 +83,8 @@ $env:NEXT_PUBLIC_OPENSHOCK_API_BASE = "http://127.0.0.1:8080"
   - `OPENSHOCK_DAEMON_HEARTBEAT_TIMEOUT`
 - Smoke / release gate:
   - `OPENSHOCK_SERVER_URL`
+  - `OPENSHOCK_ACTUAL_LIVE_URL`
+    - 如果你在隔离 dev server 上看 actual live parity，这格继续指向真正给客户试的 `:8080`
   - `OPENSHOCK_DAEMON_URL`
   - `OPENSHOCK_REQUIRE_GITHUB_READY=1` 会把 GitHub readiness 也收进 smoke gate
 
@@ -125,6 +133,33 @@ go run ./cmd/openshock-server
 
 - `http://127.0.0.1:8080/healthz`
 
+如果你不是只想临时前台起一个 server，而是要**接管 actual live `:8080`**，统一改用：
+
+```bash
+pnpm ops:live-server:start
+pnpm ops:live-server:status
+pnpm ops:live-server:reload
+```
+
+这条 managed path 会把 owner / pid / branch / head / reload command 写到：
+
+- `<OPENSHOCK_WORKSPACE_ROOT>/data/ops/live-server.json`
+- `<OPENSHOCK_WORKSPACE_ROOT>/data/logs/openshock-server.log`
+
+`pnpm ops:live-server:status` 的读法有一条精度：
+
+- 它会先读 actual live `GET /v1/runtime/live-service`
+- 只有 live service 还没吸到这条 contract、或者 route 不可用时，才退回当前 `OPENSHOCK_WORKSPACE_ROOT` 的本地 metadata
+- 所以你在另一份 checkout 里跑 `status`，也应该先看到 actual live owner / branch / head / metadataPath；不要再把“这个 checkout 本地没 metadata”误读成 live 一定是 unmanaged
+
+如果 current `:8080` 已经在跑，但 `pnpm ops:live-server:status` 返回 `unmanaged_live_service`，说明服务活着但**没有可见的 owner/reload metadata**；这时不要盲目重启，先让当前 owner 显式接管这条 managed path。
+
+如果 `status` 告诉你 actual live service 由**另一份 workspaceRoot** 控制：
+
+- 先按返回体里的 `workspaceRoot` / `metadataPath` / `reloadCommand` 读真相
+- 不要在当前 checkout 直接盲跑 `reload`
+- 直接使用返回体里记录的 exact command，或者至少把 `--workspace-root` / `--server-url` 指到那份 owner workspace 再执行
+
 ### Terminal 3: Daemon
 
 ```bash
@@ -165,6 +200,7 @@ go run ./cmd/openshock-daemon --workspace-root E:\00.Lark_Projects\00_OpenShock
 
 - `GET /healthz`
 - `GET /v1/state`
+- `GET /v1/experience-metrics`
 - `GET /v1/workspace`
 - `GET /v1/channels`
 - `GET/POST /v1/issues`
@@ -183,6 +219,9 @@ go run ./cmd/openshock-daemon --workspace-root E:\00.Lark_Projects\00_OpenShock
 - `GET/POST /v1/pull-requests/:id`
 - `GET/POST/DELETE /v1/runtime/pairing`
 - `GET /v1/runtime`
+- `GET /v1/runtime/live-service`
+- `GET /v1/workspace/branch-head-truth`
+- `GET /v1/workspace/live-rollout-parity`
 - `GET/POST /v1/repo/binding`
 - `GET /v1/github/connection`
 - `POST /v1/exec`
@@ -224,11 +263,27 @@ curl http://127.0.0.1:8080/v1/issues
 - 能读到 seed state
 - workspace 中带 repo、runtime pairing、memory mode 等字段
 
+### Step 2.5: 看当前产品 / 体验 / 设计指标快照
+
+```bash
+curl http://127.0.0.1:8080/v1/experience-metrics
+pnpm ops:experience-metrics
+```
+
+期望：
+
+- 能读到 `product / experience / design` 三个 section
+- 每个 metric 都有 `status / value / target / summary`
+- round-end / nightly 不必再只靠零散测试报告拼 customer evidence
+
 ### Step 3: 看 runtime 与 GitHub readiness
 
 ```bash
 curl http://127.0.0.1:8080/v1/runtime
 curl http://127.0.0.1:8080/v1/runtime/pairing
+curl http://127.0.0.1:8080/v1/runtime/live-service
+curl http://127.0.0.1:8080/v1/workspace/branch-head-truth
+curl http://127.0.0.1:8080/v1/workspace/live-rollout-parity
 curl http://127.0.0.1:8080/v1/repo/binding
 curl http://127.0.0.1:8080/v1/github/connection
 ```
@@ -238,6 +293,10 @@ curl http://127.0.0.1:8080/v1/github/connection
 - runtime 能返回本地 CLI 探测结果
 - repo binding 能反映当前 `origin`
 - GitHub probe 能告诉你 `gh` 是否安装、是否已认证
+- `live-service` 能告诉你 actual `:8080` 是不是 managed、owner 是谁、该用哪条 reload command
+- `branch-head-truth` 会把 `repo binding / GitHub probe / current checkout / live service / linked worktrees` 明确并排；如果 branch/head 不一致，先按它的 drift summary 收单值
+- `live-rollout-parity` 会直接告诉你 actual `:8080` 有没有吸到 `/v1/runtime/live-service`、`/v1/experience-metrics`，以及 first-screen / branch 是否还和 current workspace 打架
+- `pnpm ops:live-server:status` 应该和上面的 route truth 对齐；如果 route 已经有 truth，但 `status` 没对齐，先按 route 收单值
 
 ### Step 4: 重新配对 runtime
 
@@ -319,6 +378,7 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
   - 统一跑 `pnpm verify`
   - 再额外验证 daemon heartbeat snapshot 和 runbook 入口
 - `pnpm ops:smoke`
+  - `pnpm ops:experience-metrics`
   - 对已经启动的 server / daemon 打 live HTTP smoke
   - 默认检查：
     - `GET /healthz`
@@ -335,6 +395,10 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
     - server `GET /v1/runtime` 返回的 `daemonUrl`
     - daemon `GET /v1/runtime` 的 advertise URL
   - 任一 URL 不一致时，smoke 直接失败并指出 mismatch surface
+  - `pnpm ops:experience-metrics`
+    - 对已经启动的 server 拉一份 derived metrics snapshot
+    - 统一回答 onboarding completion、handoff ack、memory provenance、design visibility 是否前滚
+    - historical rate 还缺 durable event rollup 的项会显式标成 `partial`
 - `pnpm verify:release:full`
   - 先跑 repo gate，再跑 live stack smoke
 

@@ -30,12 +30,52 @@
   - `TKT-14` 的 multi-runtime scheduler / active lease / offline failover browser exact evidence
 - [Test Report 2026-04-08 Shell Thread Polish](./Test-Report-2026-04-08-shell-thread-polish.md)
   - `TKT-16` `TKT-17` `TKT-20` 当前这轮 shell / thread / board demotion 的 headed walkthrough evidence
+- [Test Report 2026-04-08 Quick Search](./Test-Report-2026-04-08-quick-search.md)
+  - `TKT-21` 的 real quick search / search result surface headed exact replay evidence
+- [Test Report 2026-04-09 Quick Search Message Surface Contract](./Test-Report-2026-04-09-quick-search-message-surface-contract.md)
+  - `TKT-27` 的 `dm / followed / saved` server-backed search result、reopen 与 jump-target evidence
 - [Test Report 2026-04-08 Work Shell Smoke](./Test-Report-2026-04-08-work-shell-smoke.md)
   - `chat / setup / issues / memory / inbox / board / room / run` 在统一 workspace shell 下的当前有头走查结果
+- [Test Report 2026-04-08 Frontend Interaction Polish](./Test-Report-2026-04-08-frontend-interaction-polish.md)
+  - `TKT-24` 的 sidebar / topbar hit area、channel / room scrollback、composer 常驻与窄屏抽查证据
 - [Test Report 2026-04-08 Memory Governance](./Test-Report-2026-04-08-memory-governance.md)
   - `TKT-12` 当天重跑后的有头记忆治理证据
 - [Test Report 2026-04-08 Stop Resume Follow-thread](./Test-Report-2026-04-08-stop-resume-follow-thread.md)
   - `TKT-13` 当天重跑后的有头 stop / resume / follow-thread 证据
+- [Test Report 2026-04-08 DM Followed Thread Saved Later](./Test-Report-2026-04-08-dm-followed-thread-saved-later.md)
+  - `TKT-22` 的 DM entry、followed thread revisit、saved-later revisit 有头证据
+- [Test Report 2026-04-08 Room Workbench Topic Context](./Test-Report-2026-04-08-room-workbench-topic-context.md)
+  - `TKT-23` 的 room-first `Chat / Topic / Run / PR / Context` workbench、reload persistence 与 inbox back-link evidence
+- [Test Report 2026-04-08 Profile Surface](./Test-Report-2026-04-08-profile-surface.md)
+  - `TKT-25` 的 `Agent / Machine / Human` unified profile surface、shell / room drill-in 与 live presence evidence
+- [Test Report 2026-04-08 Destructive Guard](./Test-Report-2026-04-08-destructive-guard.md)
+  - `TKT-30` 的 destructive approval、sandbox / secret boundary 与 room / inbox / run guard truth headed evidence
+- [Test Report 2026-04-08 GitHub Installation Callback](./Test-Report-2026-04-08-github-installation-callback.md)
+  - `TKT-28` 的 installation-complete callback、repo binding refresh、tracked PR backfill 与 Setup callback return evidence
+- [Test Report 2026-04-08 Device Auth / Email Recovery](./Test-Report-2026-04-08-device-auth-email-recovery.md)
+  - `TKT-29` 的 device authorization、email verification、password reset、session recovery 与 external identity binding headed evidence
+- [Test Report 2026-04-09 Config Persistence / Recovery](./Test-Report-2026-04-09-config-persistence-recovery.md)
+  - `TKT-37` 的 workspace/member durable config、reload/restart recovery 与 second-device replay evidence
+- [Test Report 2026-04-09 Onboarding Studio / Scenario Templates](./Test-Report-2026-04-09-onboarding-studio.md)
+  - `TKT-34` 的 template selection、resumable progress、bootstrap package materialization 与 reload/restart recovery evidence
+- [Test Report 2026-04-09 Agent Mailbox / Handoff Contract](./Test-Report-2026-04-09-agent-mailbox-handoff.md)
+  - `TKT-35` 的 mailbox create/blocked/acknowledged/completed lifecycle、room/inbox back-link 与 owner transfer headed evidence
+- [Test Report 2026-04-08 Agent Profile Editor](./Test-Report-2026-04-08-agent-profile-editor.md)
+  - `TKT-32` 的 Agent profile edit、memory binding / recall policy、next-run preview 与 profile audit headed evidence
+- [Test Report 2026-04-09 Machine Profile / Local CLI Model Capability Binding](./Test-Report-2026-04-09-machine-profile-capability-binding.md)
+  - `TKT-33` 的 machine shell / daemon / provider-model catalog 与 Agent provider+model+runtime affinity headed evidence
+- [Test Report 2026-04-09 Live Truth Hygiene](./Test-Report-2026-04-09-live-truth-hygiene.md)
+  - `TKT-38` 的 state / SSE visible truth negative scan、copy cleanup 与 release-gate hygiene evidence
+- [Test Report 2026-04-09 Board Planning Surface](./Test-Report-2026-04-09-board-planning-surface.md)
+  - `TKT-26` 的 room / issue -> board planning mirror -> room exact replay，与轻量 card 语言 evidence
+- [Test Report 2026-04-09 Runtime Lease Conflict / Scheduler Hardening](./Test-Report-2026-04-09-runtime-lease-conflict-scheduler-hardening.md)
+  - `TKT-31` 的 lease conflict recovery、scheduler failover continuity 与 `/setup` `/agents` live decision-reason evidence
+- [Test Report 2026-04-09 Memory Viewer / Correction / Forget Surface](./Test-Report-2026-04-09-memory-viewer-correction-forget.md)
+  - `TKT-42` 的 memory detail audit、human correction/forget 写回与 recall preview removal headed evidence
+- [Test Report 2026-04-09 Run History / Resume Context](./Test-Report-2026-04-09-run-history-resume-context.md)
+  - `TKT-40` 的 paginated `/runs` history、prior-run reopen、resume context 与 room-current continuity evidence
+- [Test Report 2026-04-09 Topic Route / Resume Lifecycle](./Test-Report-2026-04-09-topic-route-resume-lifecycle.md)
+  - `TKT-52` 的 standalone `/topics/:topicId`、guidance edit、reload persistence 与 resume deep-link evidence
 
 常用入口：
 
@@ -59,12 +99,44 @@
   - 验证 browser push / email policy、subscriber、receipt、retry
 - `pnpm test:headed-memory-governance`
   - 验证 memory center 的 injection preview、promotion queue、governed ledger
+- `pnpm test:headed-memory-viewer-correction-forget`
+  - 验证 memory detail 的 correction / forget mutation、version audit 与 recall preview removal
 - `pnpm test:headed-stop-resume-follow-thread`
   - 验证 stop / resume / follow-thread exact replay
+- `pnpm test:headed-run-history-resume-context`
+  - 验证 `/runs` paginated history、Load Older Runs、prior-run reopen 与 room-current resume context
+- `pnpm test:headed-dm-followed-thread-saved-later`
+  - 验证 DM entry、thread follow、saved-later、reopen thread 回访闭环
+- `pnpm test:headed-room-workbench-topic-context`
+  - 验证 room-first `Chat / Topic / Run / PR / Context` workbench、follow_thread、PR surface 与 inbox back-link
+- `pnpm test:headed-topic-route-resume-lifecycle`
+  - 验证 `/topics/:topicId` 的 guidance edit、reload persistence、resume control 与 room backlink
+- `pnpm test:headed-profile-surface`
+  - 验证 `Agent / Machine / Human` unified profile surface、shell / room drill-in、presence / capability / recent activity
+- `pnpm test:headed-destructive-guard`
+  - 验证 destructive git、越界写入、secret boundary 的 guard truth，以及 Inbox / Room / Run 三处同步
+- `pnpm test:headed-device-auth-email-recovery`
+  - 验证 device authorization、email verification、password reset、session recovery 与 external identity binding
+- `pnpm test:headed-config-persistence-recovery`
+  - 验证 workspace/member config 在 `/settings -> /access -> /setup` 的同源投影，以及 reload / server restart / second browser context recovery
+- `pnpm test:headed-onboarding-studio`
+  - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
+- `pnpm test:headed-agent-profile-editor`
+  - 验证 Agent profile edit、memory binding / recall policy、next-run preview 与 audit persistence
+- `pnpm test:headed-machine-profile-capability-binding`
+  - 验证 `/setup`、machine profile、`/agents` 与 Agent profile editor 是否共享同一份 machine capability / provider-model catalog truth，并允许写回 provider+model+runtime affinity
 - `pnpm test:headed-multi-runtime-scheduler-failover`
   - 验证 multi-runtime scheduler、active lease、offline failover
+- `pnpm test:headed-runtime-lease-conflict-recovery`
+  - 验证 runtime lease conflict 的 blocked/recovery truth，以及 `/setup` `/agents` 是否显示同一条恢复说明
+- `pnpm test:headed-quick-search`
+  - 验证 Quick Search 的 channel / room / issue / run / agent 命中、跳转、高亮和 empty state
+- `pnpm test:headed-frontend-interaction-polish`
+  - 验证 sidebar / topbar 命中区、channel / room scrollback、composer 常驻与窄屏无横向溢出
 - `pnpm test:headed-work-shell-smoke`
   - 验证统一 workspace shell 下的 `chat / setup / issues / memory / inbox / board / room / run` 页面走查
+- `pnpm test:headed-board-planning-surface`
+  - 验证 `room -> board -> issue -> board -> room` 的 planning mirror 回跳与轻量 card 语言
 
 说明：
 

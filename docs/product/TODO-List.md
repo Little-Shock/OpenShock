@@ -1,7 +1,7 @@
 # OpenShock To Do List
 
-**版本:** 0.6
-**更新日期:** 2026 年 4 月 8 日
+**版本:** 0.7
+**更新日期:** 2026 年 4 月 9 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -65,10 +65,11 @@
 
 - 现状:
   - room / run / PR truth 已有
-  - 但 `Chat / Topic / Run / PR / Context` 还没在一个 room workbench 内稳定切换
-  - `Agent / Machine / Human` 也还没有统一 profile surface
+  - `Chat / Topic / Run / PR / Context` 已能在同一 room workbench 内稳定切换
+  - `Agent / Machine / Human` 已可从 shell / room drill-in 到统一 profile surface
+  - 剩余的 editor / capability binding / durable config 继续留在后续 profile/config 票
 - 影响:
-  - 用户仍要在多个详情页之间跳转
+  - 前台主工作面已收平，后续主要是 profile 配置与持久化真相
 - 相关合同:
   - `CHK-02`
   - `CHK-06`
@@ -91,10 +92,11 @@
 ### GAP-11 Agent / Machine Profile / Local CLI Preferences
 
 - 现状:
-  - Agent / Machine 现在只有部分只读 surface 和 summary
-  - prompt / avatar / role / memory binding / provider-model 偏好还不能形成正式配置面
+  - Agent / Machine 现在已有统一 profile surface；`/setup`、machine profile、`/agents` 与 Agent profile editor 已共享 machine shell / daemon / provider-model catalog truth
+  - Agent 已能编辑并持久化 `prompt / avatar / role / operating instructions / memory binding / recall policy / provider / model / runtime affinity`
+  - 当前剩余尾项只剩把这组偏好继续下沉成 onboarding 默认值和更重的 durable config truth
 - 影响:
-  - Agent 还是“看得到但配不起来”的半成品对象
+  - surface 侧能力已经收平，但长期恢复和模板默认值仍依赖 `CHK-22 / TKT-37`
 - 相关合同:
   - `CHK-19`
 - 优先级: P1
@@ -120,10 +122,12 @@
 ### GAP-14 Config Persistence / Database Truth
 
 - 现状:
-  - 现在只有 file state、auth session persistence 和 memory governance 的局部持久化
-  - user / workspace / agent / machine 配置、onboarding progress、mailbox state 还没有统一 durable truth
+  - `TKT-37` 已把 workspace / member durable config、onboarding progress、repo-binding / GitHub installation snapshot 收成同一份 state/store truth，agent profile edit 也已回到同一条持久化链
+  - machine profile / local CLI inventory，以及 mailbox state / handoff ledger 还没有统一 durable truth
 - 相关合同:
   - `CHK-22`
+  - `TKT-33`
+  - `TKT-35`
 - 优先级: P1
 
 ### GAP-15 Board Light Planning Cleanup
@@ -149,16 +153,18 @@
 
 - 现状:
   - invite / role / status / authz matrix 已站住
-  - 设备授权、verify / reset 邮件链、完整外部身份绑定仍未产品化
+  - device authorization、verify / reset、external identity binding 已在 `/access` 产品化
+  - 但它还没和 onboarding template bootstrap 收成同一条首次启动旅程
 - 相关合同:
-  - `CHK-13`
+  - `CHK-13` `CHK-20`
 - 优先级: P1
 
 ### GAP-18 Destructive Guard / Secret Boundary
 
 - 现状:
-  - 权限矩阵与 run control 已站住
-  - destructive action approval、secret boundary、越界写保护仍未产品化
+  - 权限矩阵、run control 与 destructive guard truth 已站住
+  - destructive action approval、secret boundary、越界写保护现在都能在 room / inbox / run 被看见并被人工决策收口
+  - 剩余缺口主要是更严格的 runtime sandbox capability，而不是 guard truth 本身缺席
 - 相关合同:
   - `CHK-12`
 - 优先级: P1
@@ -172,6 +178,18 @@
   - `CHK-14`
   - `CHK-15`
 - 优先级: P1
+
+### GAP-20 Live Truth Hygiene / Placeholder Leak Guard
+
+- 现状:
+  - 当前 live state 已不再只漏一两条 copy，而是会把 placeholder、E2E residue、内部 worktree path 和 seed fallback 直接带进用户面
+  - 这不是单页 polish，而是 truth layer / release hygiene 问题
+- 影响:
+  - 在继续对外讲“产品真相可信”之前，这条必须收平
+- 相关合同:
+  - `CHK-03`
+  - `CHK-15`
+- 优先级: P0
 
 ---
 
