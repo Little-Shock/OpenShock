@@ -25,6 +25,48 @@ export type WorkspaceSnapshot = {
   lastPairedAt: string;
   browserPush: string;
   memoryMode: string;
+  repoBinding: WorkspaceRepoBindingSnapshot;
+  githubInstallation: WorkspaceGitHubInstallSnapshot;
+  onboarding: WorkspaceOnboardingSnapshot;
+};
+
+export type WorkspaceRepoBindingSnapshot = {
+  repo: string;
+  repoUrl: string;
+  branch: string;
+  provider: string;
+  bindingStatus: string;
+  authMode: string;
+  detectedAt?: string;
+  syncedAt?: string;
+};
+
+export type WorkspaceGitHubInstallSnapshot = {
+  provider: string;
+  preferredAuthMode?: string;
+  connectionReady: boolean;
+  appConfigured: boolean;
+  appInstalled: boolean;
+  installationId?: string;
+  installationUrl?: string;
+  missing?: string[];
+  connectionMessage?: string;
+  syncedAt?: string;
+};
+
+export type WorkspaceOnboardingSnapshot = {
+  status: string;
+  templateId?: string;
+  currentStep?: string;
+  completedSteps?: string[];
+  resumeUrl?: string;
+  updatedAt?: string;
+};
+
+export type WorkspaceMemberPreferences = {
+  preferredAgentId?: string;
+  startRoute?: string;
+  updatedAt?: string;
 };
 
 export type AuthSession = {
@@ -46,6 +88,8 @@ export type AuthSession = {
   passwordResetRequestedAt?: string;
   passwordResetCompletedAt?: string;
   recoveryStatus?: string;
+  githubIdentity?: AuthExternalIdentity;
+  preferences: WorkspaceMemberPreferences;
   linkedIdentities?: AuthExternalIdentity[];
   permissions: string[];
 };
@@ -73,6 +117,8 @@ export type WorkspaceMember = {
   passwordResetRequestedAt?: string;
   passwordResetCompletedAt?: string;
   recoveryStatus?: string;
+  githubIdentity?: AuthExternalIdentity;
+  preferences: WorkspaceMemberPreferences;
   linkedIdentities?: AuthExternalIdentity[];
   trustedDeviceIds?: string[];
   permissions: string[];
@@ -226,6 +272,7 @@ export type AgentStatus = {
   operatingInstructions: string;
   provider: string;
   providerPreference: string;
+  modelPreference: string;
   recallPolicy: string;
   runtimePreference: string;
   memorySpaces: string[];
@@ -248,6 +295,7 @@ export type MachineStatus = {
   name: string;
   state: MachineState;
   cli: string;
+  shell: string;
   os: string;
   lastHeartbeat: string;
 };
@@ -257,6 +305,7 @@ export type RuntimeProviderStatus = {
   label: string;
   mode: string;
   capabilities: string[];
+  models: string[];
   transport: string;
 };
 
@@ -266,6 +315,7 @@ export type RuntimeRegistryRecord = {
   daemonUrl: string;
   detectedCli: string[];
   providers: RuntimeProviderStatus[];
+  shell: string;
   state: string;
   pairingState: string;
   workspaceRoot: string;

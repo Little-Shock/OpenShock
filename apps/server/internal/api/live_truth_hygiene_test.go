@@ -61,6 +61,16 @@ func TestSanitizeLivePayloadRemovesPlaceholderLeakage(t *testing.T) {
 			ToolCalls:    []store.ToolCall{{ID: "tool-1", Summary: "?? call ??", Result: "test-only"}},
 			Timeline:     []store.RunEvent{{ID: "event-1", Label: "?? live detail ??", At: "23:00", Tone: "paper"}},
 		}},
+		Runtimes: []store.RuntimeRecord{{
+			ID:            "shock-main",
+			Machine:       "shock-main",
+			DaemonURL:     "http://127.0.0.1:8090",
+			Shell:         "bash",
+			State:         "online",
+			PairingState:  "paired",
+			WorkspaceRoot: "/home/lark/OpenShock",
+			ReportedAt:    "2026-04-09T00:00:00Z",
+		}},
 		Inbox: []store.InboxItem{{
 			ID:      "inbox-1",
 			Title:   "?? live detail ??",
@@ -135,6 +145,9 @@ func TestSanitizeLivePayloadRemovesPlaceholderLeakage(t *testing.T) {
 	if got := sanitized.Runs[0].WorktreePath; got != "当前 worktree 路径正在整理中。" {
 		t.Fatalf("run worktree path = %q, want sanitized fallback", got)
 	}
+	if got := sanitized.Runtimes[0].WorkspaceRoot; got != "当前 runtime 工作区路径已隐藏。" {
+		t.Fatalf("runtime workspace root = %q, want sanitized fallback", got)
+	}
 	if got := sanitized.Inbox[0].Title; got != "待整理信号" {
 		t.Fatalf("inbox title = %q, want sanitized fallback", got)
 	}
@@ -172,9 +185,19 @@ func TestBuildStateStreamEventSanitizesSnapshot(t *testing.T) {
 			Title:   "?? live detail ??",
 			Summary: "?? Issue ? Run ????????????",
 		}},
+		Runtimes: []store.RuntimeRecord{{
+			ID:            "shock-main",
+			Machine:       "shock-main",
+			State:         "online",
+			PairingState:  "paired",
+			WorkspaceRoot: "/home/lark/OpenShock",
+		}},
 	}, 1)
 
 	if got := event.State.Issues[0].Title; got != "待整理任务" {
 		t.Fatalf("stream issue title = %q, want sanitized fallback", got)
+	}
+	if got := event.State.Runtimes[0].WorkspaceRoot; got != "当前 runtime 工作区路径已隐藏。" {
+		t.Fatalf("stream runtime workspace root = %q, want sanitized fallback", got)
 	}
 }

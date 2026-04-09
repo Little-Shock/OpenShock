@@ -23,7 +23,6 @@ export type RuntimeRegistryRecord = {
   providers?: RuntimeProviderRecord[];
   state: string;
   pairingState: string;
-  workspaceRoot?: string;
 };
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -149,8 +148,7 @@ function resolveAgentRuntime(agent: AgentStatus, runtimes: RuntimeRegistryRecord
     runtimes.find(
       (runtime) =>
         runtime.machine === agent.runtimePreference ||
-        runtime.id.includes(agent.runtimePreference) ||
-        runtime.workspaceRoot?.includes(agent.runtimePreference)
+        runtime.id.includes(agent.runtimePreference)
     ) ?? null
   );
 }

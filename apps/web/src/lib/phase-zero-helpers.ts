@@ -4,7 +4,7 @@ const LIVE_TRUTH_QUESTION_BURST = /\?{2,}/;
 const LIVE_TRUTH_E2E_RESIDUE = /\bE2E\b.*\b20\d{6,}\b/i;
 const LIVE_TRUTH_PLACEHOLDER_RESIDUE = /\bplaceholder\b|\bfixture\b|\btest-only\b/i;
 const LIVE_TRUTH_MOCK_RESIDUE = /本地 mock|还在 mock|mock 频道|mock room|mock 卡片|mock issue|mock run|mock agent|mock workspace/;
-const LIVE_TRUTH_INTERNAL_PATH_RESIDUE = /[A-Za-z]:\\|\/tmp\/openshock|\.openshock-worktrees|\.slock\//;
+const LIVE_TRUTH_INTERNAL_PATH_RESIDUE = /[A-Za-z]:\\|\/tmp\/openshock|\/home\/lark\/OpenShock|\.openshock-worktrees|\.slock\//;
 
 type WorkspaceSnapshot = PhaseZeroState["workspace"];
 type Channel = PhaseZeroState["channels"][number];
@@ -16,6 +16,7 @@ type Run = PhaseZeroState["runs"][number];
 type ToolCall = Run["toolCalls"][number];
 type RunEvent = Run["timeline"][number];
 type Agent = PhaseZeroState["agents"][number];
+type RuntimeRecord = PhaseZeroState["runtimes"][number];
 type InboxItem = PhaseZeroState["inbox"][number];
 type PullRequest = PhaseZeroState["pullRequests"][number];
 type Session = PhaseZeroState["sessions"][number];
@@ -55,6 +56,7 @@ export function sanitizePhaseZeroState(state: PhaseZeroState): PhaseZeroState {
     roomMessages: mapRecord(state.roomMessages, sanitizeMessage),
     runs: state.runs.map(sanitizeRun),
     agents: state.agents.map(sanitizeAgent),
+    runtimes: state.runtimes.map(sanitizeRuntimeRecord),
     inbox: state.inbox.map(sanitizeInboxItem),
     pullRequests: state.pullRequests.map(sanitizePullRequest),
     sessions: state.sessions.map(sanitizeSession),
@@ -164,6 +166,13 @@ function sanitizeAgent(agent: Agent): Agent {
     ...agent,
     description: sanitizeDisplayText(agent.description, "当前 Agent 摘要正在整理中。"),
     lane: sanitizeDisplayText(agent.lane, "待整理泳道"),
+  };
+}
+
+function sanitizeRuntimeRecord(runtime: RuntimeRecord): RuntimeRecord {
+  return {
+    ...runtime,
+    workspaceRoot: sanitizeDisplayText(runtime.workspaceRoot, "当前 runtime 工作区路径已隐藏。"),
   };
 }
 

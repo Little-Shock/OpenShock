@@ -12,7 +12,7 @@ var (
 	liveTruthE2EResiduePattern    = regexp.MustCompile(`(?i)\be2e\b.*\b20\d{6,}\b`)
 	liveTruthPlaceholderPattern   = regexp.MustCompile(`(?i)\bplaceholder\b|\bfixture\b|\btest-only\b`)
 	liveTruthMockPattern          = regexp.MustCompile(`本地 mock|还在 mock|mock 频道|mock room|mock 卡片|mock issue|mock run|mock agent|mock workspace`)
-	liveTruthPathPattern          = regexp.MustCompile(`[A-Za-z]:\\|/tmp/openshock|\.openshock-worktrees|\.slock/`)
+	liveTruthPathPattern          = regexp.MustCompile(`[A-Za-z]:\\|/tmp/openshock|/home/lark/OpenShock|\.openshock-worktrees|\.slock/`)
 )
 
 func sanitizeLivePayload(payload any) any {
@@ -67,6 +67,14 @@ func sanitizeLivePayload(payload any) any {
 		items := make([]store.Agent, len(typed))
 		for index, item := range typed {
 			items[index] = sanitizeAgent(item)
+		}
+		return items
+	case store.RuntimeRecord:
+		return sanitizeRuntimeRecord(typed)
+	case []store.RuntimeRecord:
+		items := make([]store.RuntimeRecord, len(typed))
+		for index, item := range typed {
+			items[index] = sanitizeRuntimeRecord(item)
 		}
 		return items
 	case store.InboxItem:
@@ -155,6 +163,7 @@ func sanitizeLiveState(snapshot store.State) store.State {
 	snapshot.RoomMessages = sanitizeLivePayload(snapshot.RoomMessages).(map[string][]store.Message)
 	snapshot.Runs = sanitizeLivePayload(snapshot.Runs).([]store.Run)
 	snapshot.Agents = sanitizeLivePayload(snapshot.Agents).([]store.Agent)
+	snapshot.Runtimes = sanitizeLivePayload(snapshot.Runtimes).([]store.RuntimeRecord)
 	snapshot.Inbox = sanitizeLivePayload(snapshot.Inbox).([]store.InboxItem)
 	snapshot.PullRequests = sanitizeLivePayload(snapshot.PullRequests).([]store.PullRequest)
 	snapshot.Sessions = sanitizeLivePayload(snapshot.Sessions).([]store.Session)
@@ -242,6 +251,11 @@ func sanitizeAgent(agent store.Agent) store.Agent {
 	agent.Description = sanitizeDisplayText(agent.Description, "当前 Agent 摘要正在整理中。")
 	agent.Lane = sanitizeDisplayText(agent.Lane, "待整理泳道")
 	return agent
+}
+
+func sanitizeRuntimeRecord(record store.RuntimeRecord) store.RuntimeRecord {
+	record.WorkspaceRoot = sanitizeDisplayText(record.WorkspaceRoot, "当前 runtime 工作区路径已隐藏。")
+	return record
 }
 
 func sanitizeInboxItem(item store.InboxItem) store.InboxItem {
