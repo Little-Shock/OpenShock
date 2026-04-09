@@ -1,7 +1,7 @@
 # Test Report 2026-04-09 Restricted Sandbox Policy
 
 - Command: `pnpm test:headed-restricted-sandbox-policy -- --report docs/testing/Test-Report-2026-04-09-restricted-sandbox-policy.md`
-- Generated At: 2026-04-09T08:18:42.347Z
+- Generated At: 2026-04-09T08:27:34.548Z
 
 ## Result
 

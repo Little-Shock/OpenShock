@@ -1,7 +1,7 @@
 # Test Report 2026-04-09 Config Persistence / Recovery
 
 - Command: `pnpm test:headed-config-persistence-recovery -- --report docs/testing/Test-Report-2026-04-09-config-persistence-recovery-sandbox.md`
-- Generated At: 2026-04-09T08:12:36.300Z
+- Generated At: 2026-04-09T08:26:38.765Z
 
 ## Result
 
