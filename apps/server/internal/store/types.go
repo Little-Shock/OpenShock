@@ -20,9 +20,11 @@ type WorkspaceSnapshot struct {
 	LastPairedAt       string                         `json:"lastPairedAt"`
 	BrowserPush        string                         `json:"browserPush"`
 	MemoryMode         string                         `json:"memoryMode"`
+	Sandbox            SandboxPolicy                  `json:"sandbox"`
 	RepoBinding        WorkspaceRepoBindingSnapshot   `json:"repoBinding"`
 	GitHubInstallation WorkspaceGitHubInstallSnapshot `json:"githubInstallation"`
 	Onboarding         WorkspaceOnboardingSnapshot    `json:"onboarding"`
+	Governance         WorkspaceGovernanceSnapshot    `json:"governance"`
 }
 
 type WorkspaceQuotaSnapshot struct {
@@ -115,6 +117,85 @@ type CredentialProfileAuditEntry struct {
 	Summary   string `json:"summary"`
 	UpdatedAt string `json:"updatedAt"`
 	UpdatedBy string `json:"updatedBy"`
+}
+
+type WorkspaceGovernanceSnapshot struct {
+	TemplateID          string                           `json:"templateId,omitempty"`
+	Label               string                           `json:"label,omitempty"`
+	Summary             string                           `json:"summary,omitempty"`
+	TeamTopology        []WorkspaceGovernanceLane        `json:"teamTopology,omitempty"`
+	HandoffRules        []WorkspaceGovernanceRule        `json:"handoffRules,omitempty"`
+	ResponseAggregation WorkspaceResponseAggregation     `json:"responseAggregation"`
+	HumanOverride       WorkspaceHumanOverride           `json:"humanOverride"`
+	Walkthrough         []WorkspaceGovernanceWalkthrough `json:"walkthrough,omitempty"`
+	Stats               WorkspaceGovernanceStats         `json:"stats"`
+}
+
+type WorkspaceGovernanceLane struct {
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	Role         string `json:"role"`
+	DefaultAgent string `json:"defaultAgent,omitempty"`
+	Lane         string `json:"lane,omitempty"`
+	Status       string `json:"status"`
+	Summary      string `json:"summary"`
+}
+
+type WorkspaceGovernanceRule struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+	Href    string `json:"href,omitempty"`
+}
+
+type WorkspaceResponseAggregation struct {
+	Status        string   `json:"status"`
+	Summary       string   `json:"summary"`
+	Sources       []string `json:"sources,omitempty"`
+	FinalResponse string   `json:"finalResponse,omitempty"`
+}
+
+type WorkspaceHumanOverride struct {
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+	Href    string `json:"href,omitempty"`
+}
+
+type WorkspaceGovernanceWalkthrough struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+	Detail  string `json:"detail,omitempty"`
+	Href    string `json:"href,omitempty"`
+}
+
+type WorkspaceGovernanceStats struct {
+	OpenHandoffs       int `json:"openHandoffs"`
+	BlockedEscalations int `json:"blockedEscalations"`
+	ReviewGates        int `json:"reviewGates"`
+	HumanOverrideGates int `json:"humanOverrideGates"`
+}
+
+type SandboxPolicy struct {
+	Profile         string   `json:"profile"`
+	AllowedHosts    []string `json:"allowedHosts,omitempty"`
+	AllowedCommands []string `json:"allowedCommands,omitempty"`
+	AllowedTools    []string `json:"allowedTools,omitempty"`
+	UpdatedAt       string   `json:"updatedAt,omitempty"`
+	UpdatedBy       string   `json:"updatedBy,omitempty"`
+}
+
+type SandboxDecision struct {
+	Status      string `json:"status"`
+	Kind        string `json:"kind,omitempty"`
+	Target      string `json:"target,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	RequestedBy string `json:"requestedBy,omitempty"`
+	OverrideBy  string `json:"overrideBy,omitempty"`
+	CheckedAt   string `json:"checkedAt,omitempty"`
+	RetryHint   string `json:"retryHint,omitempty"`
 }
 
 type Channel struct {
@@ -265,6 +346,8 @@ type Run struct {
 	Duration             string           `json:"duration"`
 	Summary              string           `json:"summary"`
 	ApprovalRequired     bool             `json:"approvalRequired"`
+	Sandbox              SandboxPolicy    `json:"sandbox"`
+	SandboxDecision      SandboxDecision  `json:"sandboxDecision"`
 	Stdout               []string         `json:"stdout"`
 	Stderr               []string         `json:"stderr"`
 	ToolCalls            []ToolCall       `json:"toolCalls"`
@@ -304,6 +387,7 @@ type Agent struct {
 	RuntimePreference     string                   `json:"runtimePreference"`
 	MemorySpaces          []string                 `json:"memorySpaces"`
 	CredentialProfileIDs  []string                 `json:"credentialProfileIds,omitempty"`
+	Sandbox               SandboxPolicy            `json:"sandbox"`
 	RecentRunIDs          []string                 `json:"recentRunIds"`
 	ProfileAudit          []AgentProfileAuditEntry `json:"profileAudit"`
 }
@@ -445,23 +529,25 @@ type AgentHandoff struct {
 }
 
 type PullRequest struct {
-	ID             string                         `json:"id"`
-	Number         int                            `json:"number"`
-	Label          string                         `json:"label"`
-	Title          string                         `json:"title"`
-	Status         string                         `json:"status"`
-	IssueKey       string                         `json:"issueKey"`
-	RoomID         string                         `json:"roomId"`
-	RunID          string                         `json:"runId"`
-	Branch         string                         `json:"branch"`
-	BaseBranch     string                         `json:"baseBranch"`
-	Author         string                         `json:"author"`
-	Provider       string                         `json:"provider"`
-	URL            string                         `json:"url"`
-	ReviewDecision string                         `json:"reviewDecision"`
-	ReviewSummary  string                         `json:"reviewSummary"`
-	Conversation   []PullRequestConversationEntry `json:"conversation,omitempty"`
-	UpdatedAt      string                         `json:"updatedAt"`
+	ID               string                         `json:"id"`
+	Number           int                            `json:"number"`
+	Label            string                         `json:"label"`
+	Title            string                         `json:"title"`
+	Status           string                         `json:"status"`
+	IssueKey         string                         `json:"issueKey"`
+	RoomID           string                         `json:"roomId"`
+	RunID            string                         `json:"runId"`
+	Branch           string                         `json:"branch"`
+	BaseBranch       string                         `json:"baseBranch"`
+	Author           string                         `json:"author"`
+	Provider         string                         `json:"provider"`
+	URL              string                         `json:"url"`
+	Mergeable        string                         `json:"mergeable"`
+	MergeStateStatus string                         `json:"mergeStateStatus"`
+	ReviewDecision   string                         `json:"reviewDecision"`
+	ReviewSummary    string                         `json:"reviewSummary"`
+	Conversation     []PullRequestConversationEntry `json:"conversation,omitempty"`
+	UpdatedAt        string                         `json:"updatedAt"`
 }
 
 type PullRequestConversationEntry struct {
@@ -481,17 +567,19 @@ type PullRequestConversationEntry struct {
 }
 
 type PullRequestRemoteSnapshot struct {
-	Number         int
-	Title          string
-	Status         string
-	Branch         string
-	BaseBranch     string
-	Author         string
-	Provider       string
-	URL            string
-	ReviewDecision string
-	ReviewSummary  string
-	UpdatedAt      string
+	Number           int
+	Title            string
+	Status           string
+	Branch           string
+	BaseBranch       string
+	Author           string
+	Provider         string
+	URL              string
+	Mergeable        string
+	MergeStateStatus string
+	ReviewDecision   string
+	ReviewSummary    string
+	UpdatedAt        string
 }
 
 type Session struct {
@@ -731,14 +819,14 @@ type PullRequestDeliveryGate struct {
 }
 
 type PullRequestDeliveryTemplate struct {
-	TemplateID         string `json:"templateId,omitempty"`
-	Label              string `json:"label"`
-	Status             string `json:"status"`
-	ReadyDeliveries    int    `json:"readyDeliveries"`
-	BlockedDeliveries  int    `json:"blockedDeliveries"`
-	SentReceipts       int    `json:"sentReceipts"`
-	FailedReceipts     int    `json:"failedReceipts"`
-	Href               string `json:"href,omitempty"`
+	TemplateID        string `json:"templateId,omitempty"`
+	Label             string `json:"label"`
+	Status            string `json:"status"`
+	ReadyDeliveries   int    `json:"readyDeliveries"`
+	BlockedDeliveries int    `json:"blockedDeliveries"`
+	SentReceipts      int    `json:"sentReceipts"`
+	FailedReceipts    int    `json:"failedReceipts"`
+	Href              string `json:"href,omitempty"`
 }
 
 type PullRequestDeliveryHandoffNote struct {

@@ -32,7 +32,7 @@ func TestAgentProfileRouteSupportsEditAndPreviewWriteback(t *testing.T) {
 		http.DefaultClient,
 		http.MethodPatch,
 		server.URL+"/v1/agents/agent-codex-dockmaster",
-		`{"role":"Delivery Lead","avatar":"signal-radar","prompt":"Always start from live repo truth, then propose the shortest next action.","operatingInstructions":"Keep reviewer and owner windows separate.","providerPreference":"Claude Code CLI","modelPreference":"claude-sonnet-4","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"]}`,
+		`{"role":"Delivery Lead","avatar":"signal-radar","prompt":"Always start from live repo truth, then propose the shortest next action.","operatingInstructions":"Keep reviewer and owner windows separate.","providerPreference":"Claude Code CLI","modelPreference":"claude-sonnet-4","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"],"sandbox":{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}}`,
 	)
 	defer updateResp.Body.Close()
 	if updateResp.StatusCode != http.StatusOK {
@@ -46,6 +46,9 @@ func TestAgentProfileRouteSupportsEditAndPreviewWriteback(t *testing.T) {
 	decodeJSON(t, updateResp, &payload)
 	if payload.Agent.Role != "Delivery Lead" || payload.Agent.Avatar != "signal-radar" || payload.Agent.ProviderPreference != "Claude Code CLI" || payload.Agent.ModelPreference != "claude-sonnet-4" || payload.Agent.RuntimePreference != "shock-main" {
 		t.Fatalf("updated agent = %#v, want edited role/avatar/provider/model/runtime preference", payload.Agent)
+	}
+	if payload.Agent.Sandbox.Profile != "restricted" || len(payload.Agent.Sandbox.AllowedCommands) != 1 {
+		t.Fatalf("updated agent sandbox = %#v, want persisted sandbox policy", payload.Agent.Sandbox)
 	}
 	if len(payload.Agent.ProfileAudit) == 0 {
 		t.Fatalf("updated agent audit = %#v, want audit entry", payload.Agent.ProfileAudit)
@@ -77,6 +80,9 @@ func TestAgentProfileRouteSupportsEditAndPreviewWriteback(t *testing.T) {
 	if updated.Role != "Delivery Lead" || updated.RecallPolicy != "agent-first" || updated.ModelPreference != "claude-sonnet-4" || updated.RuntimePreference != "shock-main" || len(updated.ProfileAudit) == 0 {
 		t.Fatalf("updated detail = %#v, want persisted profile edits", updated)
 	}
+	if updated.Sandbox.Profile != "restricted" || len(updated.Sandbox.AllowedTools) != 1 {
+		t.Fatalf("updated sandbox detail = %#v, want persisted sandbox policy", updated.Sandbox)
+	}
 }
 
 func TestAgentProfileRouteAllowsCustomModelOutsideCatalog(t *testing.T) {
@@ -89,7 +95,7 @@ func TestAgentProfileRouteAllowsCustomModelOutsideCatalog(t *testing.T) {
 		http.DefaultClient,
 		http.MethodPatch,
 		server.URL+"/v1/agents/agent-codex-dockmaster",
-		`{"role":"Delivery Lead","avatar":"signal-radar","prompt":"Prefer live machine truth before catalog defaults.","operatingInstructions":"Treat provider catalogs as suggestions, not allowlists.","providerPreference":"Codex CLI","modelPreference":"gpt-5.4","recallPolicy":"agent-first","runtimePreference":"shock-sidecar","memorySpaces":["workspace","user"]}`,
+		`{"role":"Delivery Lead","avatar":"signal-radar","prompt":"Prefer live machine truth before catalog defaults.","operatingInstructions":"Treat provider catalogs as suggestions, not allowlists.","providerPreference":"Codex CLI","modelPreference":"gpt-5.4","recallPolicy":"agent-first","runtimePreference":"shock-sidecar","memorySpaces":["workspace","user"],"sandbox":{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}}`,
 	)
 	defer updateResp.Body.Close()
 	if updateResp.StatusCode != http.StatusOK {

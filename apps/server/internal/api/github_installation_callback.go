@@ -59,6 +59,7 @@ func (s *Server) handleGitHubInstallationCallback(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
+	connection = s.withGitHubPublicIngress(connection)
 
 	nextState := s.store.Snapshot()
 	if detected, detectErr := detectLocalRepoBinding(s.workspaceRoot); detectErr == nil {

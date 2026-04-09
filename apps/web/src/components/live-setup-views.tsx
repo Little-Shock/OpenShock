@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { DetailRail, Panel } from "@/components/phase-zero-views";
+import { buildFirstStartJourney, type FirstStartJourneyStepStatus } from "@/lib/first-start-journey";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { useLiveRuntimeTruth } from "@/lib/live-runtime";
 
@@ -25,6 +27,17 @@ function formatHeartbeatCadence(interval?: number, timeout?: number) {
 
 function statusTone(active: boolean) {
   return active ? "lime" : "paper";
+}
+
+function journeyTone(status: FirstStartJourneyStepStatus) {
+  switch (status) {
+    case "ready":
+      return "lime";
+    case "active":
+      return "yellow";
+    default:
+      return "paper";
+  }
 }
 
 function runtimeStatusLabel(state: string) {
@@ -254,12 +267,12 @@ const ONBOARDING_TEMPLATE_DEFINITIONS: OnboardingTemplateDefinition[] = [
     defaultBrowserPush: "blocked / review / release gate",
     defaultMemoryMode: "governed-first / delivery notes",
     channels: ["#shiproom", "#review-lane", "#ops-watch"],
-    roles: ["PM / Architect / Developer / Reviewer / QA"],
-    agents: ["Spec Captain", "Build Pilot", "Review Runner"],
+    roles: ["PM", "Architect", "Developer", "Reviewer", "QA"],
+    agents: ["Spec Captain", "Build Pilot", "Review Runner", "QA Relay"],
     notificationPolicy: "blocked / review / release gate 优先推送",
     notes: [
       "默认先围 shiproom 收主线，再把 review / release 风险抬到 review-lane 与 ops-watch。",
-      "Agent bootstrap 只先给 spec -> build -> review skeleton，不在这张票里提前混入完整 mailbox / governance。",
+      "模板现在会直接给出 PM / Architect / Developer / Reviewer / QA 的治理拓扑，并把 reviewer-tester loop 锚到同一份 workspace truth。",
     ],
   },
   {
@@ -271,11 +284,12 @@ const ONBOARDING_TEMPLATE_DEFINITIONS: OnboardingTemplateDefinition[] = [
     defaultBrowserPush: "evidence ready / synthesis blocked / reviewer feedback",
     defaultMemoryMode: "evidence-first / synthesis ledger",
     channels: ["#intake", "#evidence", "#synthesis"],
-    roles: ["Research Lead / Collector / Synthesizer / Reviewer"],
-    agents: ["Collector", "Synthesizer", "Reviewer"],
+    roles: ["Research Lead", "Collector", "Synthesizer", "Reviewer"],
+    agents: ["Collector", "Synthesizer", "Review Runner"],
     notificationPolicy: "evidence ready / synthesis blocked / reviewer feedback 优先推送",
     notes: [
       "默认先把 intake -> evidence -> synthesis 三条线组织清楚，不让 board 抢回主导航。",
+      "模板会把 evidence -> synthesis -> reviewer 的治理链直接铺成可见 topology，blocked escalation 不再只藏在 prompt 里。",
       "模板会保留 resumable progress，reload / restart 后继续回到 setup truth。",
     ],
   },
@@ -293,6 +307,7 @@ const ONBOARDING_TEMPLATE_DEFINITIONS: OnboardingTemplateDefinition[] = [
     notificationPolicy: "只推高优先级与显式 review 事件",
     notes: [
       "这版只固化最小骨架，不静默替你生成更重的治理拓扑。",
+      "即使是空白模板，也会保留最小 handoff / review / human-override 骨架，避免协作链完全失语。",
       "适合先验证 setup 主链，再逐步补齐团队自己的默认对象。",
     ],
   },
@@ -368,6 +383,75 @@ function stepTone(completed: boolean, active: boolean) {
   return "paper";
 }
 
+export function SetupFirstStartJourneyPanel() {
+  const { state } = usePhaseZeroState();
+  const journey = buildFirstStartJourney(state.workspace, state.auth.session);
+  const onboardingLabel = valueOrPlaceholder(state.workspace.onboarding.status, "not_started");
+
+  return (
+    <Panel tone={journey.onboardingDone ? "lime" : journey.accessReady ? "yellow" : "paper"}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">first-start bridge</p>
+          <h2 className="mt-2 font-display text-3xl font-bold">Setup 现在直接镜像同一条首次启动路径，不再默认你已经收平了 `/access`</h2>
+        </div>
+        <span
+          data-testid="setup-first-start-next-route"
+          className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+        >
+          {journey.nextHref}
+        </span>
+      </div>
+      <p
+        data-testid="setup-first-start-summary"
+        className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.78)]"
+      >
+        {journey.nextSummary}
+      </p>
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <WorkspaceMetric label="next action" value={journey.nextLabel} testID="setup-first-start-next-label" />
+        <WorkspaceMetric label="launch route" value={journey.launchHref} testID="setup-first-start-launch-route" />
+        <WorkspaceMetric label="onboarding" value={onboardingLabel} testID="setup-first-start-onboarding-status" />
+      </div>
+      <div className="mt-5 grid gap-3 xl:grid-cols-3">
+        {journey.steps.map((step) => (
+          <Panel key={step.id} tone={journeyTone(step.status)} className="!p-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-display text-2xl font-bold">{step.label}</p>
+                <p
+                  data-testid={`setup-first-start-step-${step.id}-summary`}
+                  className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]"
+                >
+                  {step.summary}
+                </p>
+              </div>
+              <span
+                data-testid={`setup-first-start-step-${step.id}-status`}
+                className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]"
+              >
+                {step.status}
+              </span>
+            </div>
+          </Panel>
+        ))}
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <Link
+          data-testid="setup-first-start-next-link"
+          href={journey.nextHref}
+          className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] shadow-[4px_4px_0_0_var(--shock-ink)] transition-transform hover:-translate-y-0.5"
+        >
+          {journey.nextLabel}
+        </Link>
+        <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+          access recovery 和 onboarding progress 现在读的是同一份 next-step truth；如果身份链没接通，这里会直接把你送回 `/access`，而不是让 setup 自己假装已经 ready。
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
 export function OnboardingStudioPanel() {
   const { state, updateWorkspaceConfig, updateWorkspaceMemberPreferences } = usePhaseZeroState();
   const workspace = state.workspace;
@@ -393,6 +477,7 @@ export function OnboardingStudioPanel() {
         plan: syncTemplateDefaults ? definition.defaultPlan : workspace.plan,
         browserPush: syncTemplateDefaults ? definition.defaultBrowserPush : workspace.browserPush,
         memoryMode: syncTemplateDefaults ? definition.defaultMemoryMode : workspace.memoryMode,
+        sandbox: workspace.sandbox,
         onboarding: {
           status: nextProgress.status,
           templateId: definition.id,
@@ -437,7 +522,7 @@ export function OnboardingStudioPanel() {
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
         `#127` 这层不再让 onboarding 只是 setup 页上的静态提示。模板选择、当前 step、恢复入口，以及 bootstrap package
-        都要跟 workspace durable truth 同源；更重的 mailbox / governance loop 继续留给后续票。
+        都要跟 workspace durable truth 同源；团队拓扑、reviewer-tester loop 和 human override 也会在这里直接预览出来。
       </p>
 
       <div className="mt-5 grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
@@ -513,6 +598,43 @@ export function OnboardingStudioPanel() {
                   {note}
                 </p>
               ))}
+            </div>
+            <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]">governance preview</p>
+                  <p
+                    data-testid="setup-governance-summary"
+                    className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]"
+                  >
+                    {state.workspace.governance.summary}
+                  </p>
+                </div>
+                <span
+                  data-testid="setup-governance-template"
+                  className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+                >
+                  {state.workspace.governance.label}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-2">
+                {state.workspace.governance.teamTopology.map((lane) => (
+                  <div
+                    key={lane.id}
+                    data-testid={`setup-governance-lane-${lane.id}`}
+                    className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-display text-lg font-semibold">{lane.label}</p>
+                        <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{lane.role}</p>
+                      </div>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{lane.status}</span>
+                    </div>
+                    <p className="mt-2 text-sm leading-6">{lane.summary}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </Panel>
 

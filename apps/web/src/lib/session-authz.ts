@@ -15,6 +15,7 @@ const permissionLabels: Record<string, string> = {
   "repo.admin": "同步 Repo Binding",
   "runtime.manage": "配对或切换 Runtime",
   "members.manage": "管理工作区成员",
+  "workspace.manage": "修改工作区治理配置",
 };
 
 export function sessionIsActive(session: AuthSession | null | undefined) {

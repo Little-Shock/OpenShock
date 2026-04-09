@@ -17,6 +17,12 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 	nextState, workspace, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
 		BrowserPush: "全部 live 事件",
 		MemoryMode:  "governed-first / durable truth",
+		Sandbox: &SandboxPolicy{
+			Profile:         sandboxProfileRestricted,
+			AllowedHosts:    []string{"github.com", "api.github.com"},
+			AllowedCommands: []string{"git status"},
+			AllowedTools:    []string{"read_file", "search"},
+		},
 		Onboarding: &WorkspaceOnboardingSnapshot{
 			Status:         workspaceOnboardingReady,
 			TemplateID:     "research-team",
@@ -30,6 +36,9 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 	}
 	if workspace.Onboarding.TemplateID != "research-team" || workspace.MemoryMode != "governed-first / durable truth" {
 		t.Fatalf("workspace update = %#v, want persisted onboarding + memory mode", workspace)
+	}
+	if workspace.Sandbox.Profile != sandboxProfileRestricted || len(workspace.Sandbox.AllowedHosts) != 2 {
+		t.Fatalf("workspace sandbox = %#v, want restricted sandbox policy", workspace.Sandbox)
 	}
 	if workspace.Onboarding.Materialization.Label != "研究团队" || len(workspace.Onboarding.Materialization.Channels) != 3 {
 		t.Fatalf("workspace onboarding materialization = %#v, want persisted research-team package", workspace.Onboarding.Materialization)
@@ -62,11 +71,20 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 	if snapshot.Workspace.BrowserPush != "全部 live 事件" || snapshot.Workspace.MemoryMode != "governed-first / durable truth" {
 		t.Fatalf("reloaded workspace = %#v, want persisted browser/memory mode", snapshot.Workspace)
 	}
+	if snapshot.Workspace.Sandbox.Profile != sandboxProfileRestricted || len(snapshot.Workspace.Sandbox.AllowedTools) != 2 {
+		t.Fatalf("reloaded workspace sandbox = %#v, want persisted sandbox policy", snapshot.Workspace.Sandbox)
+	}
 	if snapshot.Workspace.Onboarding.TemplateID != "research-team" || snapshot.Workspace.Onboarding.Status != workspaceOnboardingReady {
 		t.Fatalf("reloaded onboarding = %#v, want research-team ready", snapshot.Workspace.Onboarding)
 	}
 	if snapshot.Workspace.Onboarding.Materialization.NotificationPolicy == "" || len(snapshot.Workspace.Onboarding.Materialization.Notes) == 0 {
 		t.Fatalf("reloaded onboarding materialization = %#v, want durable template package", snapshot.Workspace.Onboarding.Materialization)
+	}
+	if snapshot.Workspace.Governance.TemplateID != "research-team" || len(snapshot.Workspace.Governance.TeamTopology) != 4 {
+		t.Fatalf("reloaded governance = %#v, want research-team governance snapshot", snapshot.Workspace.Governance)
+	}
+	if snapshot.Workspace.Governance.Label == "" || snapshot.Workspace.Governance.Summary == "" {
+		t.Fatalf("reloaded governance = %#v, want populated governance label + summary", snapshot.Workspace.Governance)
 	}
 
 	reloadedMember := findWorkspaceMemberByEmail(snapshot.Auth.Members, "larkspur@openshock.dev")

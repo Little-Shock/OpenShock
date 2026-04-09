@@ -17,6 +17,7 @@ import (
 
 type Config struct {
 	DaemonURL           string
+	ControlURL          string
 	WorkspaceRoot       string
 	GitHub              githubsvc.Client
 	GitHubWebhookSecret string
@@ -27,6 +28,7 @@ type Server struct {
 	httpClient          *http.Client
 	defaultDaemonURL    string
 	daemonURL           string
+	controlURL          string
 	daemonMu            sync.RWMutex
 	workspaceRoot       string
 	github              githubsvc.Client
@@ -83,6 +85,19 @@ type RunControlRequest struct {
 	Note   string `json:"note,omitempty"`
 }
 
+type SandboxPolicyRequest struct {
+	Profile         string   `json:"profile"`
+	AllowedHosts    []string `json:"allowedHosts"`
+	AllowedCommands []string `json:"allowedCommands"`
+	AllowedTools    []string `json:"allowedTools"`
+}
+
+type RunSandboxCheckRequest struct {
+	Kind     string `json:"kind"`
+	Target   string `json:"target"`
+	Override bool   `json:"override,omitempty"`
+}
+
 type RuntimeSnapshotResponse struct {
 	RuntimeID          string                  `json:"runtimeId,omitempty"`
 	DaemonURL          string                  `json:"daemonUrl,omitempty"`
@@ -126,6 +141,7 @@ type WorkspaceUpdateRequest struct {
 	Plan        string                      `json:"plan"`
 	BrowserPush string                      `json:"browserPush"`
 	MemoryMode  string                      `json:"memoryMode"`
+	Sandbox     *SandboxPolicyRequest       `json:"sandbox,omitempty"`
 	Onboarding  *WorkspaceOnboardingRequest `json:"onboarding,omitempty"`
 }
 
@@ -152,6 +168,7 @@ func New(s *store.Store, httpClient *http.Client, cfg Config) *Server {
 		httpClient:          httpClient,
 		defaultDaemonURL:    strings.TrimRight(cfg.DaemonURL, "/"),
 		daemonURL:           daemonURL,
+		controlURL:          strings.TrimRight(strings.TrimSpace(cfg.ControlURL), "/"),
 		workspaceRoot:       cfg.WorkspaceRoot,
 		github:              githubService,
 		githubWebhookSecret: strings.TrimSpace(cfg.GitHubWebhookSecret),
@@ -227,11 +244,22 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 				ResumeURL:      req.Onboarding.ResumeURL,
 			}
 		}
+		var sandbox *store.SandboxPolicy
+		if req.Sandbox != nil {
+			sandbox = &store.SandboxPolicy{
+				Profile:         req.Sandbox.Profile,
+				AllowedHosts:    req.Sandbox.AllowedHosts,
+				AllowedCommands: req.Sandbox.AllowedCommands,
+				AllowedTools:    req.Sandbox.AllowedTools,
+			}
+		}
 		nextState, workspace, err := s.store.UpdateWorkspaceConfig(store.WorkspaceConfigUpdateInput{
 			Plan:        req.Plan,
 			BrowserPush: req.BrowserPush,
 			MemoryMode:  req.MemoryMode,
+			Sandbox:     sandbox,
 			Onboarding:  onboarding,
+			UpdatedBy:   currentAuthActor(s.store.Snapshot().Auth.Session),
 		})
 		if err != nil {
 			writeWorkspaceConfigError(w, err)
@@ -691,6 +719,89 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleRunCredentialRoutes(w, r, strings.TrimSuffix(path, "/credentials"))
 		return
 	}
+	if strings.HasSuffix(path, "/sandbox") {
+		runID := strings.TrimSuffix(path, "/sandbox")
+		switch r.Method {
+		case http.MethodPatch:
+			if !runExecuteGuard(s, w) {
+				return
+			}
+			var req SandboxPolicyRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+				return
+			}
+			nextState, run, err := s.store.UpdateRunSandbox(runID, store.SandboxPolicy{
+				Profile:         req.Profile,
+				AllowedHosts:    req.AllowedHosts,
+				AllowedCommands: req.AllowedCommands,
+				AllowedTools:    req.AllowedTools,
+			}, currentAuthActor(s.store.Snapshot().Auth.Session))
+			if err != nil {
+				switch {
+				case errors.Is(err, store.ErrSandboxRunNotFound):
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				case errors.Is(err, store.ErrSandboxProfileInvalid):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				default:
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				}
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"state": nextState, "run": run, "sandbox": run.Sandbox})
+			return
+		case http.MethodPost:
+			if !runExecuteGuard(s, w) {
+				return
+			}
+			var req RunSandboxCheckRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+				return
+			}
+			session := s.store.Snapshot().Auth.Session
+			if req.Override && !authSessionHasPermission(session, "workspace.manage") {
+				writeJSON(w, http.StatusForbidden, map[string]any{
+					"error":      "permission \"workspace.manage\" required for sandbox override",
+					"permission": "workspace.manage",
+					"session":    session,
+					"state":      s.store.Snapshot(),
+				})
+				return
+			}
+			nextState, run, decision, err := s.store.EvaluateRunSandbox(runID, store.RunSandboxCheckInput{
+				Kind:        req.Kind,
+				Target:      req.Target,
+				RequestedBy: currentAuthActor(session),
+				Override:    req.Override,
+			})
+			if err != nil {
+				switch {
+				case errors.Is(err, store.ErrSandboxRunNotFound):
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				case errors.Is(err, store.ErrSandboxActionKindInvalid),
+					errors.Is(err, store.ErrSandboxActionTargetRequired),
+					errors.Is(err, store.ErrSandboxOverrideRequiresReview):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				default:
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				}
+				return
+			}
+			status := http.StatusOK
+			switch decision.Status {
+			case "approval_required":
+				status = http.StatusAccepted
+			case "denied":
+				status = http.StatusConflict
+			}
+			writeJSON(w, status, map[string]any{"state": nextState, "run": run, "decision": decision})
+			return
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+	}
 	if strings.HasSuffix(path, "/detail") {
 		s.handleRunDetail(w, r, strings.TrimSuffix(path, "/detail"))
 		return
@@ -1004,16 +1115,61 @@ func mapGitHubPullRequest(pullRequest githubsvc.PullRequest) store.PullRequestRe
 	}
 
 	return store.PullRequestRemoteSnapshot{
-		Number:         pullRequest.Number,
-		Title:          pullRequest.Title,
-		Status:         status,
-		Branch:         pullRequest.HeadRefName,
-		BaseBranch:     pullRequest.BaseRefName,
-		Author:         pullRequest.Author,
-		Provider:       "github",
-		URL:            pullRequest.URL,
-		ReviewDecision: pullRequest.ReviewDecision,
-		UpdatedAt:      pullRequest.UpdatedAt,
+		Number:           pullRequest.Number,
+		Title:            pullRequest.Title,
+		Status:           status,
+		Branch:           pullRequest.HeadRefName,
+		BaseBranch:       pullRequest.BaseRefName,
+		Author:           pullRequest.Author,
+		Provider:         "github",
+		URL:              pullRequest.URL,
+		Mergeable:        pullRequest.Mergeable,
+		MergeStateStatus: pullRequest.MergeStateStatus,
+		ReviewDecision:   pullRequest.ReviewDecision,
+		ReviewSummary:    summarizeMappedGitHubPullRequest(status, pullRequest.ReviewDecision, pullRequest.Mergeable, pullRequest.MergeStateStatus),
+		UpdatedAt:        pullRequest.UpdatedAt,
+	}
+}
+
+func summarizeMappedGitHubPullRequest(status, reviewDecision, mergeable, mergeStateStatus string) string {
+	switch strings.TrimSpace(status) {
+	case "merged":
+		return "PR 已在 GitHub 合并，Issue 与讨论间进入完成状态。"
+	case "changes_requested":
+		return "GitHub Review 要求补充修改，等待 follow-up run。"
+	case "draft":
+		return "远端草稿 PR 已创建，等待进入正式评审。"
+	default:
+		mergeable = strings.ToUpper(strings.TrimSpace(mergeable))
+		mergeStateStatus = strings.ToUpper(strings.TrimSpace(mergeStateStatus))
+		reviewDecision = strings.TrimSpace(reviewDecision)
+
+		switch {
+		case mergeStateStatus == "DIRTY" || mergeable == "CONFLICTING":
+			return "当前 PR 与 base 存在冲突，需 refresh current base 后再继续 review / merge。"
+		case mergeStateStatus == "BEHIND":
+			return "当前 PR 已落后 base，需先 refresh 到 current base 后再继续合并。"
+		case mergeStateStatus == "BLOCKED":
+			if strings.EqualFold(reviewDecision, "APPROVED") {
+				return "GitHub Review 已批准，但 branch protections / required checks 仍阻塞 merge。"
+			}
+			return "当前 merge 仍被 branch protections / required checks 阻塞。"
+		case mergeStateStatus == "HAS_HOOKS":
+			return "GitHub 当前仍在等待 required hooks / protections 收敛，merge 还不能放行。"
+		case mergeStateStatus == "UNSTABLE":
+			return "GitHub 当前 merge safety 仍不稳定，需等待 checks 收敛后再继续合并。"
+		case mergeStateStatus == "UNKNOWN" || mergeable == "UNKNOWN":
+			return "GitHub 正在计算 merge safety，暂不允许贸然合并。"
+		}
+
+		switch reviewDecision {
+		case "APPROVED":
+			return "GitHub Review 已批准，等待最终合并。"
+		case "CHANGES_REQUESTED":
+			return "GitHub Review 要求补充修改，等待 follow-up run。"
+		default:
+			return "远端 PR 已创建，等待 GitHub Review 或合并。"
+		}
 	}
 }
 

@@ -229,6 +229,13 @@ func (s *Store) hydrateMissingDefaults() {
 	if s.state.RoomMessages == nil {
 		s.state.RoomMessages = defaults.RoomMessages
 	}
+	for index := range s.state.Agents {
+		syncSandboxPolicyDefaults(&s.state.Agents[index].Sandbox)
+	}
+	for index := range s.state.Runs {
+		syncSandboxPolicyDefaults(&s.state.Runs[index].Sandbox)
+		syncSandboxDecisionDefaults(&s.state.Runs[index].SandboxDecision)
+	}
 	s.ensureRuntimeRegistryState()
 	s.ensureSessionConsistency()
 	s.ensureAuthConsistency()
@@ -492,7 +499,38 @@ func (s *Store) persistLocked() error {
 	return nil
 }
 
-func cloneState(state State) State {
+func (s *Store) RewriteState(rewrite func(State) State) (bool, error) {
+	if rewrite == nil {
+		return false, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	before, err := json.Marshal(s.state)
+	if err != nil {
+		return false, err
+	}
+
+	next := rewrite(cloneStoredState(s.state))
+	s.state = cloneStoredState(next)
+	s.hydrateMissingDefaults()
+
+	after, err := json.Marshal(s.state)
+	if err != nil {
+		return false, err
+	}
+	if bytes.Equal(before, after) {
+		return false, nil
+	}
+
+	if err := s.persistLocked(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func cloneStoredState(state State) State {
 	body, err := json.Marshal(state)
 	if err != nil {
 		return state
@@ -501,10 +539,16 @@ func cloneState(state State) State {
 	if err := json.Unmarshal(body, &clone); err != nil {
 		return state
 	}
+	return clone
+}
+
+func cloneState(state State) State {
+	clone := cloneStoredState(state)
 	applyRuntimeDerivedTruth(&clone, time.Now())
 	clone.RuntimeLeases = buildRuntimeLeases(clone)
 	clone.RuntimeScheduler = buildRuntimeScheduler(clone, "").Scheduler
 	clone.QuickSearchEntries = buildMessageSurfaceQuickSearchEntries(clone)
+	hydrateWorkspaceGovernance(&clone.Workspace, &clone)
 	return clone
 }
 

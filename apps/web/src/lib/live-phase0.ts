@@ -7,6 +7,8 @@ import type {
   AuthSession,
   InboxDecision,
   PhaseZeroState,
+  SandboxDecision,
+  SandboxPolicy,
 } from "@/lib/phase-zero-types";
 import { sanitizePhaseZeroState } from "@/lib/phase-zero-helpers";
 
@@ -74,6 +76,7 @@ type AgentProfileUpdateInput = {
   runtimePreference: string;
   memorySpaces: string[];
   credentialProfileIds: string[];
+  sandbox: SandboxPolicy;
 };
 
 type CredentialProfileCreateInput = {
@@ -94,6 +97,7 @@ type WorkspaceConfigUpdateInput = {
   plan: string;
   browserPush: string;
   memoryMode: string;
+  sandbox: SandboxPolicy;
   onboarding: {
     status: string;
     templateId: string;
@@ -107,6 +111,18 @@ type WorkspaceMemberPreferencesInput = {
   preferredAgentId: string;
   startRoute: string;
   githubHandle: string;
+};
+
+type UpdateTopicGuidanceInput = {
+  summary: string;
+};
+
+type RunSandboxUpdateInput = SandboxPolicy;
+
+type RunSandboxCheckInput = {
+  kind: "command" | "network" | "tool";
+  target: string;
+  override?: boolean;
 };
 
 type CreateHandoffInput = {
@@ -132,12 +148,22 @@ type PhaseZeroStreamPresence = {
   unread: number;
 };
 
-type PhaseZeroStreamEvent = {
+type PhaseZeroSnapshotStreamEvent = {
   type: "snapshot";
   sequence: number;
   sentAt: string;
   presence: PhaseZeroStreamPresence;
   state: PhaseZeroState;
+};
+
+type PhaseZeroDeltaStreamEvent = {
+  type: "delta";
+  sequence: number;
+  sentAt: string;
+  presence: PhaseZeroStreamPresence;
+  kinds: string[];
+  events: string[];
+  delta: Partial<PhaseZeroState>;
 };
 
 type PhaseZeroContextValue = {
@@ -164,6 +190,8 @@ type PhaseZeroContextValue = {
   createCredentialProfile: (input: CredentialProfileCreateInput) => Promise<StateMutationResponse>;
   updateCredentialProfile: (credentialId: string, input: CredentialProfileUpdateInput) => Promise<StateMutationResponse>;
   updateRunCredentialBindings: (runId: string, input: RunCredentialBindingInput) => Promise<StateMutationResponse>;
+  updateRunSandbox: (runId: string, input: RunSandboxUpdateInput) => Promise<StateMutationResponse>;
+  checkRunSandbox: (runId: string, input: RunSandboxCheckInput) => Promise<StateMutationResponse & { decision?: SandboxDecision }>;
   createIssue: (input: CreateIssueInput) => Promise<StateMutationResponse>;
   postChannelMessage: (channelId: string, prompt: string) => Promise<StateMutationResponse>;
   postDirectMessage: (directMessageId: string, prompt: string) => Promise<StateMutationResponse>;
@@ -173,6 +201,7 @@ type PhaseZeroContextValue = {
     messageId: string;
     enabled: boolean;
   }) => Promise<StateMutationResponse>;
+  updateTopicGuidance: (topicId: string, input: UpdateTopicGuidanceInput) => Promise<StateMutationResponse>;
   postRoomMessage: (roomId: string, prompt: string, provider?: string) => Promise<StateMutationResponse>;
   streamRoomMessage: (
     roomId: string,
@@ -228,6 +257,12 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
     lastPairedAt: "",
     browserPush: "",
     memoryMode: "",
+    sandbox: {
+      profile: "trusted",
+      allowedHosts: [],
+      allowedCommands: [],
+      allowedTools: [],
+    },
     repoBinding: {
       repo: "",
       repoUrl: "",
@@ -246,6 +281,27 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
       status: "",
       completedSteps: [],
       materialization: {},
+    },
+    governance: {
+      teamTopology: [],
+      handoffRules: [],
+      responseAggregation: {
+        status: "",
+        summary: "",
+        sources: [],
+        finalResponse: "",
+      },
+      humanOverride: {
+        status: "",
+        summary: "",
+      },
+      walkthrough: [],
+      stats: {
+        openHandoffs: 0,
+        blockedEscalations: 0,
+        reviewGates: 0,
+        humanOverrideGates: 0,
+      },
     },
   },
   auth: {
@@ -322,6 +378,13 @@ async function readJSON<T>(path: string, init?: RequestInit) {
   return payload;
 }
 
+function mergePhaseZeroState(current: PhaseZeroState, delta: Partial<PhaseZeroState>): PhaseZeroState {
+  return sanitizePhaseZeroState({
+    ...current,
+    ...delta,
+  } as PhaseZeroState);
+}
+
 function useProvidePhaseZeroState(): PhaseZeroContextValue {
   const [state, setState] = useState<PhaseZeroState>(EMPTY_PHASE_ZERO_STATE);
   const [approvalCenter, setApprovalCenter] = useState<ApprovalCenterState>(EMPTY_APPROVAL_CENTER_STATE);
@@ -355,6 +418,14 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   const commitApprovalCenterError = useCallback((nextError: unknown) => {
     setApprovalCenterError(nextError instanceof Error ? nextError.message : "approval center fetch failed");
     setApprovalCenterLoading(false);
+  }, []);
+
+  const commitStateDelta = useCallback((delta: Partial<PhaseZeroState>) => {
+    startTransition(() => {
+      setState((current) => mergePhaseZeroState(current, delta));
+      setError(null);
+      setLoading(false);
+    });
   }, []);
 
   const refresh = useCallback(async () => {
@@ -392,6 +463,11 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     commitState(next);
     void refreshApprovalCenter().catch(() => {});
   }, [commitState, refreshApprovalCenter]);
+
+  const commitStateDeltaAndRefreshApprovalCenter = useCallback((delta: Partial<PhaseZeroState>) => {
+    commitStateDelta(delta);
+    void refreshApprovalCenter().catch(() => {});
+  }, [commitStateDelta, refreshApprovalCenter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -432,8 +508,19 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
         return;
       }
       try {
-        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroStreamEvent;
+        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroSnapshotStreamEvent;
         commitStateAndRefreshApprovalCenter(payload.state);
+      } catch {
+        // Ignore malformed stream payloads and wait for the next reconnect/update.
+      }
+    });
+    source.addEventListener("delta", (event) => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroDeltaStreamEvent;
+        commitStateDeltaAndRefreshApprovalCenter(payload.delta);
       } catch {
         // Ignore malformed stream payloads and wait for the next reconnect/update.
       }
@@ -453,7 +540,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
       }
       source?.close();
     };
-  }, [commitStateAndRefreshApprovalCenter, refresh]);
+  }, [commitStateAndRefreshApprovalCenter, commitStateDeltaAndRefreshApprovalCenter, refresh]);
 
   useEffect(() => {
     const poll = window.setInterval(() => {
@@ -641,6 +728,40 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     return payload;
   }
 
+  async function updateRunSandbox(runId: string, input: RunSandboxUpdateInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/runs/${runId}/sandbox`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function checkRunSandbox(runId: string, input: RunSandboxCheckInput) {
+    try {
+      const payload = await readJSON<StateMutationResponse & { decision?: SandboxDecision }>(`/v1/runs/${runId}/sandbox`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+
+      if (payload.state) {
+        commitStateAndRefreshApprovalCenter(payload.state);
+      }
+      return payload;
+    } catch (mutationError) {
+      if (mutationError instanceof StateMutationError && mutationError.payload.state) {
+        commitStateAndRefreshApprovalCenter(mutationError.payload.state);
+      }
+      if (mutationError instanceof StateMutationError && "decision" in mutationError.payload) {
+        return mutationError.payload as StateMutationResponse & { decision?: SandboxDecision };
+      }
+      throw mutationError;
+    }
+  }
+
   async function createIssue(input: CreateIssueInput) {
     const payload = await readJSON<StateMutationResponse>("/v1/issues", {
       method: "POST",
@@ -692,6 +813,18 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   }) {
     const payload = await readJSON<StateMutationResponse>("/v1/message-surface/collections", {
       method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function updateTopicGuidance(topicId: string, input: UpdateTopicGuidanceInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/topics/${topicId}`, {
+      method: "PATCH",
       body: JSON.stringify(input),
     });
 
@@ -920,10 +1053,13 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     createCredentialProfile,
     updateCredentialProfile,
     updateRunCredentialBindings,
+    updateRunSandbox,
+    checkRunSandbox,
     createIssue,
     postChannelMessage,
     postDirectMessage,
     updateMessageSurfaceCollection,
+    updateTopicGuidance,
     postRoomMessage,
     streamRoomMessage,
     createPullRequest,

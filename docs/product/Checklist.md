@@ -1,6 +1,6 @@
 # OpenShock Product Checklist
 
-**版本:** 1.5
+**版本:** 1.6
 **更新日期:** 2026 年 4 月 9 日
 **关联文档:** [PRD](./PRD.md) · [Phase 0 MVP](./Phase0-MVP.md) · [Execution Tickets](./Execution-Tickets.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -128,9 +128,9 @@
   - [x] daemon 会尝试为 lane 创建 worktree
   - [x] room 和 run 页面可承接后续协作
   - [x] headed Setup harness 已可从 `/board` 创建 issue 并进入 room，PR entry 保持可继续推进状态
+  - [x] `/agents` orchestration board 已直连 `/v1/planner/queue` 与 `workspace.governance`，创建 issue 后可同页看到 assignment、blocked escalation、human override 与 final response replay
 - 当前 GAP:
-  - [ ] 多 Agent 自动派发仍未建立
-  - [ ] “进入讨论间并发送第一条指令” 之后的 agent 协作回放仍未进入 headed 自动化
+  - [x] 当前工作流 B 主链无新增 blocker；`pnpm test:headed-planner-dispatch-replay` 已覆盖 create issue -> planner dispatch -> blocked escalation -> final response 的 exact replay
 - 对应 Test Cases: `TC-005` `TC-006` `TC-026`
 
 ### CHK-06 工作流 C: Topic 执行与 Run 真相
@@ -147,9 +147,9 @@
   - [x] `pnpm test:headed-room-workbench-topic-context` 已完成 exact replay，验证切 tab、follow_thread、PR surface、reload persistence 与 inbox back-link
   - [x] `/runs` 已切成 paginated run history surface；run detail 与 room run tab 会共享 session-backed resume context，并保留同 room prior-run reopen/history
 - 当前 GAP:
-  - [ ] Topic 目前仍主要挂在 room workbench 内，还没有独立 topic route / edit lifecycle
+  - [x] Topic 已补齐独立 `/topics/:topicId` route、guidance edit surface 与 resume deep link，不再只困在 room workbench tab 内
   - [ ] token-quota 与更细粒度执行可观测性尚未完成
-- 对应 Test Cases: `TC-006` `TC-007` `TC-018` `TC-031` `TC-043`
+- 对应 Test Cases: `TC-006` `TC-007` `TC-018` `TC-031` `TC-043` `TC-045`
 
 ### CHK-07 工作流 D: PR 与 Review 闭环
 
@@ -166,9 +166,11 @@
   - [x] signed webhook replay harness 已可通过真实 HTTP 请求回放 review / comment / check / merge，并验证 failure-path observability
   - [x] headed browser harness 已在安全 sandbox base branch 上完成真实远端 PR create / sync / merge 闭环，并验证 no-auth failure path 的 UI / inbox / room blocked 可见性
   - [x] installation-complete callback 现已把 GitHub App 回跳直接写回 OpenShock，并前滚 repo binding / tracked PR sync / Setup callback UI
+  - [x] Setup / `/v1/github/connection` 现已显式暴露 public callback URL 与 webhook URL
+  - [x] production-style public ingress harness 已复核 `/setup/github/callback` 回流与 signed webhook / bad-signature delivery 都走同一 public root
 - 当前 GAP:
-  - [ ] GitHub-hosted callback URL 与真实公网 webhook delivery 还没有在公共 ingress 上做当天复核；当前先以 installation callback contract + signed webhook replay 近实机证据收口
-- 对应 Test Cases: `TC-010` `TC-015` `TC-016` `TC-022` `TC-025` `TC-026`
+  - [ ] 真正 Internet / DNS / TLS / GitHub SaaS 外网演练仍属于环境级 runbook 范畴，但这不再是产品 contract 缺口
+- 对应 Test Cases: `TC-010` `TC-015` `TC-016` `TC-022` `TC-025` `TC-026` `TC-045`
 
 ### CHK-08 工作流 E: Blocked 与人工纠偏
 
@@ -223,10 +225,11 @@
   - [x] notifications 基础对象和接口已经出现
   - [x] `/settings` 现在直接消费 `/v1/notifications`，可写 workspace browser/email policy、current browser subscriber、email subscriber，并展示 latest worker receipts
   - [x] browser push / email fanout 已能把 blocked / review / approval 信号主动推出去，失败 / retry 也有 explicit `lastError` / receipt truth
+  - [x] `/inbox` 在 mobile web 下现在收成轻量通知处理面：首屏只保留 open / unread / blocked / recent 摘要、直接 decision 与可折叠 backlinks / guard，重策略继续回 `/settings`
 - 当前 GAP:
   - [ ] 邀请、邮箱验证、密码重置仍未接到同一 notification template / delivery chain
   - [ ] @提及、mailbox 新消息、跨设备恢复触达等更细粒度通知策略仍未补齐
-- 对应 Test Cases: `TC-017`
+- 对应 Test Cases: `TC-017` `TC-044`
 
 ### CHK-12 工作流 I: 执行隔离与权限控制
 
@@ -284,13 +287,14 @@
 - 当前状态: 部分完成
 - 已落地:
   - [x] `pnpm verify:release` 与 `pnpm ops:smoke` 提供基础回归门
+  - [x] `GET /v1/experience-metrics` + `pnpm ops:experience-metrics` 已把 `product / experience / design` 收成一份可复用的持续快照
   - [x] 浏览器走查、API 检查、SSE 验证已经有一轮实际结果
   - [x] 2026 年 4 月 7 日针对 GitHub App effective auth path 和 memory contract 的 go tests / release verify 已通过
   - [x] `ops:smoke` 已会比对 pairing URL、runtime registry、server runtime bridge 与 daemon runtime 的 URL 真值
   - [x] `pnpm test:headed-setup` 已能输出 headed Chromium 截图、trace、日志和 markdown 报告
   - [x] `pnpm check:live-truth-hygiene` 已进入 `verify:web`，会拦 direct mock-data import、placeholder 文案和 tracked live-truth residue
 - 当前 GAP:
-  - [ ] 产品指标、体验指标、设计指标尚未形成持续观测
+  - [ ] 历史型 rate 指标仍有一部分只到 `partial`，后续还要补 durable event rollup / time-series truth
 - 对应 Test Cases: `TC-011` `TC-021` `TC-026` `TC-042`
 
 ### CHK-16 app.slock.ai 壳层对齐与导航秩序
@@ -426,7 +430,7 @@
 - `CHK-04` `CHK-14` `CHK-15` -> `TKT-01` `TKT-02` `TKT-03`
 - `CHK-07` -> `TKT-04` `TKT-05` `TKT-06`
 - `CHK-13` `CHK-12` -> `TKT-07` `TKT-08` `TKT-09`
-- `CHK-08` `CHK-11` -> `TKT-10` `TKT-11`
+- `CHK-08` `CHK-11` -> `TKT-10` `TKT-11` `TKT-47`
 - `CHK-10` -> `TKT-12`
 - `CHK-09` -> `TKT-13`
 - `CHK-14` -> `TKT-14`

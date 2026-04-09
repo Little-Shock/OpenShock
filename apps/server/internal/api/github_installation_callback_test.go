@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	githubsvc "github.com/Larkspur-Wang/OpenShock/apps/server/internal/github"
 	"github.com/Larkspur-Wang/OpenShock/apps/server/internal/store"
 )
+
+var errProbeFailed = errors.New("probe failed")
 
 type recordingGitHubCallbackClient struct {
 	status     githubsvc.Status
@@ -90,6 +93,7 @@ func TestGitHubInstallationCallbackPersistsInstallTruthAndRefreshesRepoBinding(t
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
+		ControlURL:    "https://public.openshock.dev/",
 		WorkspaceRoot: root,
 		GitHub:        client,
 	}).Handler())
@@ -133,6 +137,12 @@ func TestGitHubInstallationCallbackPersistsInstallTruthAndRefreshesRepoBinding(t
 	if client.syncInputs[0].Repo != "example/phase-zero" {
 		t.Fatalf("sync repo = %q, want example/phase-zero", client.syncInputs[0].Repo)
 	}
+	if payload.Connection.CallbackURL != "https://public.openshock.dev/setup/github/callback" {
+		t.Fatalf("connection callback URL = %q, want public callback URL", payload.Connection.CallbackURL)
+	}
+	if payload.Connection.WebhookURL != "https://public.openshock.dev/v1/github/webhook" {
+		t.Fatalf("connection webhook URL = %q, want public webhook URL", payload.Connection.WebhookURL)
+	}
 
 	installationState, err := githubsvc.LoadInstallationState(root)
 	if err != nil {
@@ -164,6 +174,7 @@ func TestGitHubInstallationCallbackRejectsMissingInstallationID(t *testing.T) {
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
+		ControlURL:    "https://public.openshock.dev/",
 		WorkspaceRoot: root,
 		GitHub:        client,
 	}).Handler())

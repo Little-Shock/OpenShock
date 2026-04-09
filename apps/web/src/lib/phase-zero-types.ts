@@ -8,6 +8,29 @@ export type InboxKind = "blocked" | "approval" | "review" | "status";
 export type PullRequestStatus = "draft" | "open" | "in_review" | "changes_requested" | "merged";
 export type DestructiveGuardStatus = "approval_required" | "blocked" | "ready";
 export type DestructiveGuardRisk = "destructive_git" | "filesystem_write" | "secret_scope";
+export type SandboxProfile = "trusted" | "restricted";
+export type SandboxDecisionStatus = "idle" | "allowed" | "denied" | "approval_required" | "overridden";
+export type SandboxActionKind = "command" | "network" | "tool";
+
+export type SandboxPolicy = {
+  profile: SandboxProfile;
+  allowedHosts?: string[];
+  allowedCommands?: string[];
+  allowedTools?: string[];
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+export type SandboxDecision = {
+  status: SandboxDecisionStatus;
+  kind?: SandboxActionKind;
+  target?: string;
+  reason?: string;
+  requestedBy?: string;
+  overrideBy?: string;
+  checkedAt?: string;
+  retryHint?: string;
+};
 
 export type WorkspaceSnapshot = {
   name: string;
@@ -27,9 +50,11 @@ export type WorkspaceSnapshot = {
   lastPairedAt: string;
   browserPush: string;
   memoryMode: string;
+  sandbox: SandboxPolicy;
   repoBinding: WorkspaceRepoBindingSnapshot;
   githubInstallation: WorkspaceGitHubInstallSnapshot;
   onboarding: WorkspaceOnboardingSnapshot;
+  governance: WorkspaceGovernanceSnapshot;
 };
 
 export type WorkspaceQuotaSnapshot = {
@@ -98,6 +123,65 @@ export type WorkspaceOnboardingMaterialization = {
   agents?: string[];
   notificationPolicy?: string;
   notes?: string[];
+};
+
+export type WorkspaceGovernanceSnapshot = {
+  templateId?: string;
+  label?: string;
+  summary?: string;
+  teamTopology: WorkspaceGovernanceLane[];
+  handoffRules: WorkspaceGovernanceRule[];
+  responseAggregation: WorkspaceResponseAggregation;
+  humanOverride: WorkspaceHumanOverride;
+  walkthrough: WorkspaceGovernanceWalkthrough[];
+  stats: WorkspaceGovernanceStats;
+};
+
+export type WorkspaceGovernanceLane = {
+  id: string;
+  label: string;
+  role: string;
+  defaultAgent?: string;
+  lane?: string;
+  status: string;
+  summary: string;
+};
+
+export type WorkspaceGovernanceRule = {
+  id: string;
+  label: string;
+  status: string;
+  summary: string;
+  href?: string;
+};
+
+export type WorkspaceResponseAggregation = {
+  status: string;
+  summary: string;
+  sources?: string[];
+  finalResponse?: string;
+};
+
+export type WorkspaceHumanOverride = {
+  status: string;
+  summary: string;
+  href?: string;
+};
+
+export type WorkspaceGovernanceWalkthrough = {
+  id: string;
+  label: string;
+  status: string;
+  summary: string;
+  detail?: string;
+  href?: string;
+};
+
+export type WorkspaceGovernanceStats = {
+  openHandoffs: number;
+  blockedEscalations: number;
+  reviewGates: number;
+  humanOverrideGates: number;
 };
 
 export type WorkspaceMemberPreferences = {
@@ -225,7 +309,7 @@ export type MessageSurfaceEntry = {
   unread: number;
 };
 
-export type SearchResultKind = "channel" | "dm" | "room" | "issue" | "run" | "agent" | "followed" | "saved";
+export type SearchResultKind = "channel" | "dm" | "room" | "topic" | "issue" | "run" | "agent" | "followed" | "saved";
 
 export type SearchResult = {
   id: string;
@@ -335,6 +419,8 @@ export type Run = {
   duration: string;
   summary: string;
   approvalRequired: boolean;
+  sandbox: SandboxPolicy;
+  sandboxDecision: SandboxDecision;
   stdout: string[];
   stderr: string[];
   toolCalls: ToolCall[];
@@ -388,6 +474,7 @@ export type AgentStatus = {
   runtimePreference: string;
   memorySpaces: string[];
   credentialProfileIds?: string[];
+  sandbox: SandboxPolicy;
   recentRunIds: string[];
   profileAudit: Array<{
     id: string;
@@ -476,6 +563,48 @@ export type RuntimeScheduler = {
   failoverFrom?: string;
   summary: string;
   candidates: RuntimeSchedulerCandidate[];
+};
+
+export type PlannerQueueGate = {
+  kind: InboxKind;
+  title: string;
+  summary: string;
+  href: string;
+};
+
+export type PlannerAutoMergeGuard = {
+  status: string;
+  reason: string;
+  canRequest: boolean;
+  canApply: boolean;
+  requiresPermission?: string;
+  reviewDecision?: string;
+  pullRequestId?: string;
+  roomId?: string;
+  runId?: string;
+};
+
+export type PlannerQueueItem = {
+  sessionId: string;
+  issueKey: string;
+  roomId: string;
+  runId: string;
+  status: RunStatus | string;
+  summary: string;
+  owner: string;
+  agentId?: string;
+  agentName?: string;
+  provider: string;
+  runtime: string;
+  machine: string;
+  worktreePath?: string;
+  pullRequestId?: string;
+  pullRequestLabel?: string;
+  pullRequestStatus?: PullRequestStatus | string;
+  reviewDecision?: string;
+  approvalRequired: boolean;
+  gates: PlannerQueueGate[];
+  autoMerge: PlannerAutoMergeGuard;
 };
 
 export type InboxItem = {
@@ -601,6 +730,8 @@ export type PullRequest = {
   author: string;
   provider?: string;
   url?: string;
+  mergeable?: string;
+  mergeStateStatus?: string;
   reviewDecision?: string;
   reviewSummary: string;
   conversation?: PullRequestConversationEntry[];

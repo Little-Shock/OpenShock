@@ -1,7 +1,7 @@
 # OpenShock Test Cases
 
-**版本:** 1.3
-**更新日期:** 2026 年 4 月 8 日
+**版本:** 1.4
+**更新日期:** 2026 年 4 月 9 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
 ---
@@ -78,9 +78,10 @@
 - 测试步骤:
   1. 创建一条新 issue。
   2. 检查是否自动生成 room、run、session。
-  3. 检查 daemon 是否尝试创建对应 worktree lane。
-- 预期结果: issue 创建后进入完整执行主链，不停留在纯数据记录。
-- 业务结论: Phase 0 主链已站住。
+  3. 打开 `/agents`，检查 planner queue / governance replay 是否围同一条 issue 前滚。
+  4. 检查 daemon 是否尝试创建对应 worktree lane。
+- 预期结果: issue 创建后进入完整执行主链；人类能在 orchestration page 看到 planner dispatch、blocked escalation 与 closeout replay，而不是只剩隐式状态。
+- 业务结论: 2026 年 4 月 9 日 `TKT-53` 新增 `pnpm test:headed-planner-dispatch-replay -- --report docs/testing/Test-Report-2026-04-09-planner-dispatch-replay.md`。当前 exact replay 已记录 `/board` 创建 issue、`/v1/planner/queue` visible item、`/agents` 上的 assignment / auto-merge guard / governed walkthrough，以及 `blocked` without note 的 `400` fail-closed probe 与 final response aggregation，因此这条工作流 B 主链现在不再只停在 Phase 0 的 room/run/session 基线，而是已经有 planner dispatch / first-instruction replay 证据。
 
 ## TC-006 Room / Run 详情可见性
 
@@ -206,7 +207,20 @@
   2. 触发 webhook 事件。
   3. 检查 state / inbox / room / PR 是否同步更新。
 - 预期结果: GitHub 事件可以持续同步回 OpenShock。
-- 业务结论: 2026 年 4 月 8 日 `TKT-28` 新增 `/v1/github/installation-callback` 与 `/setup/github/callback`，把 installation-complete 回跳直接写回 installation truth，并在同一次 callback 内前滚 repo binding 与 tracked PR backfill；同日 exact-head 还新增了 fail-closed 的空 `installationId` 探测与 `repo.admin` 权限 guard。结合 2026 年 4 月 7 日 `TKT-05` 已通过的 signed webhook replay harness，当前 `installation-complete callback -> repo sync -> UI update -> webhook replay` 已具备近实机闭环证据，因此这条用例现在可按 Pass 收口；剩余未覆盖的是 GitHub-hosted 公网 callback / webhook delivery 的生产态复核，而不是产品 contract 缺失。
+- 业务结论: 2026 年 4 月 8 日 `TKT-28` 新增 `/v1/github/installation-callback` 与 `/setup/github/callback`，把 installation-complete 回跳直接写回 installation truth，并在同一次 callback 内前滚 repo binding 与 tracked PR backfill；同日 exact-head 还新增了 fail-closed 的空 `installationId` 探测与 `repo.admin` 权限 guard。2026 年 4 月 9 日 `TKT-57` 又补了 production-style public ingress harness：Setup 直接暴露 public callback / webhook URL，`/setup/github/callback` 与 signed webhook delivery 都能通过同一 public root exact replay，bad-signature 继续 401 fail-closed。因此这条用例现在不只停在近实机 contract，而是已经有 public ingress 级证据。
+
+## TC-045 GitHub Public Ingress Callback / Webhook Delivery
+
+- 业务目标: 确认 GitHub callback / webhook 不只在内网 server contract 可用，而是能在 public ingress 根路径下被同一套产品 surface 复核。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-07`
+- 前置条件: server 已配置 `OPENSHOCK_CONTROL_URL`、GitHub App install surface、webhook secret 与本地 public ingress proxy。
+- 测试步骤:
+  1. 在 Setup 检查 surfaced public callback URL / webhook URL。
+  2. 通过 public ingress 打开 `/setup/github/callback?installation_id=...`，确认 installation truth 写回并回跳 Setup。
+  3. 通过 public ingress POST signed webhook，并再做一次 bad-signature adversarial probe。
+- 预期结果: callback / webhook 都能走同一 public ingress 根路径；错误签名继续 fail-closed。
+- 业务结论: 2026 年 4 月 9 日 `TKT-57` 新增 `pnpm test:headed-github-public-ingress`，用 local ingress proxy 同时代理 web + API，验证 public callback / webhook URL surface、callback return page 回流，以及 signed webhook / bad-signature 都走 ingress `/v1/github/webhook`。这条 public ingress exact evidence 现已可独立复核并通过；若后续还要做真正 Internet / DNS / TLS 演练，那属于环境级演练，不再是产品 contract GAP。
 
 ## TC-016 真实远端 PR 创建、同步与合并
 
@@ -532,7 +546,7 @@
 ## TC-041 Multi-Agent Role Topology / Reviewer-Tester Loop
 
 - 业务目标: 确认 `开发团队 / 研究团队` 这类模板不只是静态角色表，而能形成受治理的多 Agent 响应链。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-20` `CHK-21`
 - 前置条件: 存在 team topology、Agent Mailbox、handoff policy 和 response aggregation。
 - 测试步骤:
@@ -540,7 +554,7 @@
   2. 观察 PM / Architect / Developer / Reviewer / QA 或研究团队变体的 handoff 流。
   3. 检查 review / test / blocked escalation 与 human override 是否可见。
 - 预期结果: 多 Agent 分工和最终响应被治理，而不是只有一串不可解释的自动消息。
-- 业务结论: 当前 repo 还没有多 Agent team topology、mailbox 和 reviewer-tester loop，所以这条用例保持 `Blocked`，留给 `TKT-36`。
+- 业务结论: 2026 年 4 月 9 日 `TKT-36` 已新增 `workspace.governance` 派生快照、`/setup` governance preview、`/mailbox` 上的 topology / review-test-blocked-human-override surface，以及 headed `pnpm test:headed-multi-agent-governance -- --report docs/testing/Test-Report-2026-04-09-multi-agent-governance.md`。当前 exact replay 已记录模板起链、formal handoff、blocked escalation、final response aggregation 与显式 human override gate 的同源证据，因此这条用例当前转为 `Pass`。
 
 ## TC-042 Live Truth Hygiene / Placeholder Leak Guard
 
@@ -567,3 +581,31 @@
   3. 从 room history 里 reopen 一条 prior run，再跳回 room run tab，确认 room 重新锚定当前 active continuity，而不是停在旧 session。
 - 预期结果: `/runs` 是 paginated history surface；run detail / room run tab 能稳定暴露 resume context；prior-run reopen 不会把 room continuity 锚错到 stale session。
 - 业务结论: 2026 年 4 月 9 日 `TKT-40` 新增 `/v1/runs/history`、`/v1/runs/:id/detail`、`pnpm test:headed-run-history-resume-context` 与对应 `docs/testing/Test-Report-2026-04-09-run-history-resume-context.md`。当前浏览器 exact replay 已验证 `/runs` 首屏只展示最新 history page，`Load Older Runs` 才会展开 `run_runtime_00`，run detail 会显示 `session-runtime` 的 resume context 与 same-room history，reopen prior run 后 room run tab 也会重新锚定当前 `session-runtime` 而不是旧 continuity，因此这条用例当前转为 `Pass`。
+
+## TC-044 Mobile Web Notification Triage
+
+- 业务目标: 确认 mobile web 不需要独立工作台，也能在 `/inbox` 上完成轻量通知查看与处理，而不会被桌面密度直接压垮。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-11`
+- 前置条件: web、server 可启动，`/inbox` 已直接消费 `/v1/approval-center`。
+- 测试步骤:
+  1. 以 390px mobile viewport 打开 `/inbox`。
+  2. 检查 mobile triage 卡片是否直接给出 `open / unread / blocked / recent` 摘要，并保留回跳 `/settings` 的入口。
+  3. 抽查首张 signal card 的 `Open Context`、decision 与 details disclosure，确认 guard / backlinks 展开后仍无横向溢出。
+  4. 展开 mobile recent ledger，确认 recent resolution/status 回写仍可被查看。
+- 预期结果: `/inbox` 在手机上可以被打开、查看并完成轻量 triage；更重的策略编辑继续回 `/settings`，而不是把桌面工作台整块复制到 mobile。
+- 业务结论: 2026 年 4 月 9 日 `TKT-47` 新增 `pnpm test:headed-mobile-notification-triage` 与对应 `docs/testing/Test-Report-2026-04-09-mobile-notification-triage.md`。当前 headed Chromium mobile replay 已验证 `/inbox` 在 390px 视口下无横向溢出、mobile triage 摘要初始值为 `3 / 3 / 1 / 1`，首张 signal card 高度压到 640px 以下，并把 guard / backlinks / recent ledger 收成按需展开，因此这条 mobile light-notification 路径当前可按 `Pass` 收口。
+
+## TC-045 Topic Route / Edit Lifecycle / Resume Deep Link
+
+- 业务目标: 确认 Topic 不再只作为 room workbench 的子 tab 存在，而是可独立直达、可写回 guidance、可直接恢复 continuity 的一等 route。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-06`
+- 前置条件: 存在 `/topics/:topicId`、topic guidance edit surface、room/run backlink 与 same-topic run control。
+- 测试步骤:
+  1. 从 run detail 或 Quick Search 打开某条 Topic。
+  2. 在 Topic route 提交一条 guidance，并确认最近 guidance ledger 直接回写到同一条 room truth。
+  3. 在 Topic route 上暂停当前 run，刷新页面，再从同一路由恢复执行。
+  4. 从 Topic route 回跳到 room topic workbench，确认 route drill-in 与 room-first collaboration 没有断链。
+- 预期结果: Topic 成为可独立直达的一等对象；人类可在同一路由完成 guidance edit、reload persistence 与 resume，不需要再绕回 room tab 才能继续。
+- 业务结论: 2026 年 4 月 9 日 `TKT-52` 新增 `pnpm test:headed-topic-route-resume-lifecycle` 与对应 `docs/testing/Test-Report-2026-04-09-topic-route-resume-lifecycle.md`。当前 headed Chromium exact replay 已验证 `run detail -> /topics/topic-runtime` deep link、topic guidance 写回、topic route 上的 stop/reload/resume continuity，以及回跳 `/rooms/room-runtime?tab=topic` 的 backlink，因此这条 Topic route / edit lifecycle / resume deep-link 路径当前可按 `Pass` 收口。

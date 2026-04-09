@@ -22,6 +22,8 @@ type Status struct {
 	AppInstalled      bool     `json:"appInstalled"`
 	InstallationID    string   `json:"installationId"`
 	InstallationURL   string   `json:"installationUrl"`
+	CallbackURL       string   `json:"callbackUrl,omitempty"`
+	WebhookURL        string   `json:"webhookUrl,omitempty"`
 	Missing           []string `json:"missing,omitempty"`
 	Ready             bool     `json:"ready"`
 	AuthMode          string   `json:"authMode"`
@@ -65,17 +67,19 @@ type MergePullRequestInput struct {
 }
 
 type PullRequest struct {
-	Number         int    `json:"number"`
-	URL            string `json:"url"`
-	Title          string `json:"title"`
-	State          string `json:"state"`
-	IsDraft        bool   `json:"isDraft"`
-	ReviewDecision string `json:"reviewDecision"`
-	HeadRefName    string `json:"headRefName"`
-	BaseRefName    string `json:"baseRefName"`
-	Author         string `json:"author"`
-	UpdatedAt      string `json:"updatedAt"`
-	Merged         bool   `json:"merged"`
+	Number           int    `json:"number"`
+	URL              string `json:"url"`
+	Title            string `json:"title"`
+	State            string `json:"state"`
+	IsDraft          bool   `json:"isDraft"`
+	Mergeable        string `json:"mergeable"`
+	MergeStateStatus string `json:"mergeStateStatus"`
+	ReviewDecision   string `json:"reviewDecision"`
+	HeadRefName      string `json:"headRefName"`
+	BaseRefName      string `json:"baseRefName"`
+	Author           string `json:"author"`
+	UpdatedAt        string `json:"updatedAt"`
+	Merged           bool   `json:"merged"`
 }
 
 type Service struct {
@@ -305,24 +309,26 @@ func (s *Service) viewPullRequest(repo, identifier string) (PullRequest, error) 
 		"pr", "view",
 		identifier,
 		"--repo", repo,
-		"--json", "number,title,url,state,isDraft,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt",
+		"--json", "number,title,url,state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefName,baseRefName,author,updatedAt,mergedAt",
 	)
 	if err != nil {
 		return PullRequest{}, fmt.Errorf("%s", strings.TrimSpace(string(output)))
 	}
 
 	var payload struct {
-		Number         int    `json:"number"`
-		Title          string `json:"title"`
-		URL            string `json:"url"`
-		State          string `json:"state"`
-		IsDraft        bool   `json:"isDraft"`
-		ReviewDecision string `json:"reviewDecision"`
-		HeadRefName    string `json:"headRefName"`
-		BaseRefName    string `json:"baseRefName"`
-		UpdatedAt      string `json:"updatedAt"`
-		MergedAt       string `json:"mergedAt"`
-		Author         struct {
+		Number           int    `json:"number"`
+		Title            string `json:"title"`
+		URL              string `json:"url"`
+		State            string `json:"state"`
+		IsDraft          bool   `json:"isDraft"`
+		Mergeable        string `json:"mergeable"`
+		MergeStateStatus string `json:"mergeStateStatus"`
+		ReviewDecision   string `json:"reviewDecision"`
+		HeadRefName      string `json:"headRefName"`
+		BaseRefName      string `json:"baseRefName"`
+		UpdatedAt        string `json:"updatedAt"`
+		MergedAt         string `json:"mergedAt"`
+		Author           struct {
 			Login string `json:"login"`
 		} `json:"author"`
 	}
@@ -331,17 +337,19 @@ func (s *Service) viewPullRequest(repo, identifier string) (PullRequest, error) 
 	}
 
 	return PullRequest{
-		Number:         payload.Number,
-		URL:            payload.URL,
-		Title:          payload.Title,
-		State:          payload.State,
-		IsDraft:        payload.IsDraft,
-		ReviewDecision: payload.ReviewDecision,
-		HeadRefName:    payload.HeadRefName,
-		BaseRefName:    payload.BaseRefName,
-		Author:         payload.Author.Login,
-		UpdatedAt:      payload.UpdatedAt,
-		Merged:         strings.TrimSpace(payload.MergedAt) != "",
+		Number:           payload.Number,
+		URL:              payload.URL,
+		Title:            payload.Title,
+		State:            payload.State,
+		IsDraft:          payload.IsDraft,
+		Mergeable:        strings.TrimSpace(payload.Mergeable),
+		MergeStateStatus: strings.TrimSpace(payload.MergeStateStatus),
+		ReviewDecision:   payload.ReviewDecision,
+		HeadRefName:      payload.HeadRefName,
+		BaseRefName:      payload.BaseRefName,
+		Author:           payload.Author.Login,
+		UpdatedAt:        payload.UpdatedAt,
+		Merged:           strings.TrimSpace(payload.MergedAt) != "",
 	}, nil
 }
 
