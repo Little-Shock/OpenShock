@@ -31,6 +31,9 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 	if workspace.Onboarding.TemplateID != "research-team" || workspace.MemoryMode != "governed-first / durable truth" {
 		t.Fatalf("workspace update = %#v, want persisted onboarding + memory mode", workspace)
 	}
+	if workspace.Onboarding.Materialization.Label != "研究团队" || len(workspace.Onboarding.Materialization.Channels) != 3 {
+		t.Fatalf("workspace onboarding materialization = %#v, want persisted research-team package", workspace.Onboarding.Materialization)
+	}
 	if nextState.Workspace.Onboarding.ResumeURL != "/setup?resume=tkt-37" {
 		t.Fatalf("state workspace onboarding = %#v, want resume url", nextState.Workspace.Onboarding)
 	}
@@ -61,6 +64,9 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 	}
 	if snapshot.Workspace.Onboarding.TemplateID != "research-team" || snapshot.Workspace.Onboarding.Status != workspaceOnboardingReady {
 		t.Fatalf("reloaded onboarding = %#v, want research-team ready", snapshot.Workspace.Onboarding)
+	}
+	if snapshot.Workspace.Onboarding.Materialization.NotificationPolicy == "" || len(snapshot.Workspace.Onboarding.Materialization.Notes) == 0 {
+		t.Fatalf("reloaded onboarding materialization = %#v, want durable template package", snapshot.Workspace.Onboarding.Materialization)
 	}
 
 	reloadedMember := findWorkspaceMemberByEmail(snapshot.Auth.Members, "larkspur@openshock.dev")

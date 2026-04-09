@@ -30,6 +30,7 @@
     "test:headed-dm-followed-thread-saved-later": "node ./scripts/headed-dm-followed-thread-saved-later.mjs",
     "test:headed-device-auth-email-recovery": "node ./scripts/headed-device-auth-email-recovery.mjs",
     "test:headed-config-persistence-recovery": "node ./scripts/headed-config-persistence-recovery.mjs",
+    "test:headed-onboarding-studio": "node ./scripts/headed-onboarding-studio.mjs",
     "test:headed-stop-resume-follow-thread": "node ./scripts/headed-stop-resume-follow-thread.mjs",
     "test:headed-multi-runtime-scheduler-failover": "node ./scripts/headed-multi-runtime-scheduler-failover.mjs",
     "test:headed-quick-search": "node ./scripts/headed-quick-search.mjs",

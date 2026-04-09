@@ -370,11 +370,12 @@
   - [x] `/setup` 已集中 repo binding、GitHub readiness、runtime pairing、bridge
   - [x] `/access` 已有 invite / member / role lifecycle 基线
   - [x] Setup / Access 已为 onboarding 提供最基础的数据真相
+  - [x] `/setup` 现在提供 `开发团队 / 研究团队 / 空白自定义` 模板选择，并把 channels / roles / agents / notification policy / onboarding notes 收成同一份 workspace onboarding truth
+  - [x] onboarding progress、current step、resume route 会跟随 repo binding / GitHub readiness / runtime pairing 的 live truth 前滚，而不是只停在本地步骤卡
+  - [x] 完成首次启动后，reload、server restart 与 second browser context 继续从同一份 durable workspace snapshot 读回 template bootstrap 与 onboarding status
 - 当前 GAP:
-  - [ ] 还没有真正的 onboarding wizard / resumable progress
-  - [ ] 还没有 `开发团队 / 研究团队 / 空白自定义` 场景模板
-  - [ ] 默认 channels / rooms / agent roles / notification policy / onboarding docs 还不能一键 materialize
   - [ ] device auth / verify 已进入 `/access` 的 live identity chain，但还没和 template bootstrap 收成同一条首次启动旅程
+  - [ ] `开发团队 / 研究团队` 当前先收成 bootstrap package，不包含正式多 Agent role topology / mailbox / reviewer-tester loop；这部分继续留给 `TC-041` / `TKT-36`
 - 对应 Test Cases: `TC-035` `TC-038` `TC-041`
 
 ### CHK-21 Agent Mailbox、多 Agent 协作与治理

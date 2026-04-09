@@ -493,7 +493,7 @@
 ## TC-038 Onboarding Wizard / Scenario Template Bootstrap
 
 - 业务目标: 确认新团队可以通过模板完成首次启动，而不是手工拼页面。
-- 当前执行状态: Blocked
+- 当前执行状态: Pass
 - 对应 Checklist: `CHK-20`
 - 前置条件: 存在 onboarding wizard、template selection 与 resumable progress。
 - 测试步骤:
@@ -501,7 +501,7 @@
   2. 选择 `开发团队`、`研究团队` 或 `空白自定义` 模板。
   3. 完成 repo / GitHub / runtime pairing，并检查默认 channels、roles、agents、policy 是否被物化。
 - 预期结果: 用户可以在一个连续 flow 内完成团队启动，并在中断后继续。
-- 业务结论: 当前 repo 只有 Setup / Access 的基础启动骨架，没有真正模板化 onboarding，所以这条用例保持 `Blocked`，留给 `TKT-34`。
+- 业务结论: 2026 年 4 月 9 日 `TKT-34` 已新增 `pnpm test:headed-onboarding-studio`，把 `/setup` 上的模板选择、onboarding progress refresh、finish flow 与 durable recovery 串成 exact replay。当前 `docs/testing/Test-Report-2026-04-09-onboarding-studio.md` 已记录 `研究团队` 模板的 bootstrap package、finish 后 `/rooms` resume route，以及 browser reload、server restart、second browser context 继续读取同一份 onboarding truth 的证据，因此这条用例当前转为 `Pass`；更重的多 Agent team topology / reviewer-tester loop 继续留给 `TC-041 / TKT-36`。
 
 ## TC-039 Agent Mailbox / Handoff Governance Ledger
 
