@@ -20,6 +20,7 @@ type WorkspaceSnapshot struct {
 	LastPairedAt       string                         `json:"lastPairedAt"`
 	BrowserPush        string                         `json:"browserPush"`
 	MemoryMode         string                         `json:"memoryMode"`
+	Sandbox            SandboxPolicy                  `json:"sandbox"`
 	RepoBinding        WorkspaceRepoBindingSnapshot   `json:"repoBinding"`
 	GitHubInstallation WorkspaceGitHubInstallSnapshot `json:"githubInstallation"`
 	Onboarding         WorkspaceOnboardingSnapshot    `json:"onboarding"`
@@ -151,6 +152,26 @@ type WorkspaceGovernanceStats struct {
 	BlockedEscalations int `json:"blockedEscalations"`
 	ReviewGates        int `json:"reviewGates"`
 	HumanOverrideGates int `json:"humanOverrideGates"`
+}
+
+type SandboxPolicy struct {
+	Profile         string   `json:"profile"`
+	AllowedHosts    []string `json:"allowedHosts,omitempty"`
+	AllowedCommands []string `json:"allowedCommands,omitempty"`
+	AllowedTools    []string `json:"allowedTools,omitempty"`
+	UpdatedAt       string   `json:"updatedAt,omitempty"`
+	UpdatedBy       string   `json:"updatedBy,omitempty"`
+}
+
+type SandboxDecision struct {
+	Status      string `json:"status"`
+	Kind        string `json:"kind,omitempty"`
+	Target      string `json:"target,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	RequestedBy string `json:"requestedBy,omitempty"`
+	OverrideBy  string `json:"overrideBy,omitempty"`
+	CheckedAt   string `json:"checkedAt,omitempty"`
+	RetryHint   string `json:"retryHint,omitempty"`
 }
 
 type Channel struct {
@@ -301,6 +322,8 @@ type Run struct {
 	Duration         string           `json:"duration"`
 	Summary          string           `json:"summary"`
 	ApprovalRequired bool             `json:"approvalRequired"`
+	Sandbox          SandboxPolicy    `json:"sandbox"`
+	SandboxDecision  SandboxDecision  `json:"sandboxDecision"`
 	Stdout           []string         `json:"stdout"`
 	Stderr           []string         `json:"stderr"`
 	ToolCalls        []ToolCall       `json:"toolCalls"`
@@ -338,6 +361,7 @@ type Agent struct {
 	RecallPolicy          string                   `json:"recallPolicy"`
 	RuntimePreference     string                   `json:"runtimePreference"`
 	MemorySpaces          []string                 `json:"memorySpaces"`
+	Sandbox               SandboxPolicy            `json:"sandbox"`
 	RecentRunIDs          []string                 `json:"recentRunIds"`
 	ProfileAudit          []AgentProfileAuditEntry `json:"profileAudit"`
 }

@@ -40,6 +40,7 @@ type AgentProfileUpdateInput struct {
 	RecallPolicy          string
 	RuntimePreference     string
 	MemorySpaces          []string
+	Sandbox               *SandboxPolicy
 	UpdatedBy             string
 }
 
@@ -115,6 +116,14 @@ func (s *Store) UpdateAgentProfile(agentID string, input AgentProfileUpdateInput
 	changes = appendAgentProfileChange(changes, "runtimePreference", agent.RuntimePreference, runtimePreference)
 	changes = appendAgentProfileChange(changes, "recallPolicy", agent.RecallPolicy, recallPolicy)
 	changes = appendAgentProfileChange(changes, "memoryBinding", strings.Join(agent.MemorySpaces, ", "), strings.Join(memorySpaces, ", "))
+	if input.Sandbox != nil {
+		policy, err := normalizeSandboxPolicyInput(*input.Sandbox, agent.Sandbox, input.UpdatedBy)
+		if err != nil {
+			return State{}, Agent{}, err
+		}
+		changes = appendAgentProfileChange(changes, "sandbox", sandboxPolicySummary(agent.Sandbox), sandboxPolicySummary(policy))
+		agent.Sandbox = policy
+	}
 
 	agent.Role = role
 	agent.Avatar = avatar

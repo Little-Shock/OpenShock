@@ -8,6 +8,29 @@ export type InboxKind = "blocked" | "approval" | "review" | "status";
 export type PullRequestStatus = "draft" | "open" | "in_review" | "changes_requested" | "merged";
 export type DestructiveGuardStatus = "approval_required" | "blocked" | "ready";
 export type DestructiveGuardRisk = "destructive_git" | "filesystem_write" | "secret_scope";
+export type SandboxProfile = "trusted" | "restricted";
+export type SandboxDecisionStatus = "idle" | "allowed" | "denied" | "approval_required" | "overridden";
+export type SandboxActionKind = "command" | "network" | "tool";
+
+export type SandboxPolicy = {
+  profile: SandboxProfile;
+  allowedHosts?: string[];
+  allowedCommands?: string[];
+  allowedTools?: string[];
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+export type SandboxDecision = {
+  status: SandboxDecisionStatus;
+  kind?: SandboxActionKind;
+  target?: string;
+  reason?: string;
+  requestedBy?: string;
+  overrideBy?: string;
+  checkedAt?: string;
+  retryHint?: string;
+};
 
 export type WorkspaceSnapshot = {
   name: string;
@@ -27,6 +50,7 @@ export type WorkspaceSnapshot = {
   lastPairedAt: string;
   browserPush: string;
   memoryMode: string;
+  sandbox: SandboxPolicy;
   repoBinding: WorkspaceRepoBindingSnapshot;
   githubInstallation: WorkspaceGitHubInstallSnapshot;
   onboarding: WorkspaceOnboardingSnapshot;
@@ -395,6 +419,8 @@ export type Run = {
   duration: string;
   summary: string;
   approvalRequired: boolean;
+  sandbox: SandboxPolicy;
+  sandboxDecision: SandboxDecision;
   stdout: string[];
   stderr: string[];
   toolCalls: ToolCall[];
@@ -446,6 +472,7 @@ export type AgentStatus = {
   recallPolicy: string;
   runtimePreference: string;
   memorySpaces: string[];
+  sandbox: SandboxPolicy;
   recentRunIds: string[];
   profileAudit: Array<{
     id: string;

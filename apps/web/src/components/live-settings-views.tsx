@@ -17,7 +17,8 @@ import {
   useLiveNotifications,
 } from "@/lib/live-notifications";
 import { usePhaseZeroState } from "@/lib/live-phase0";
-import type { AgentStatus, ApprovalCenterItem, WorkspaceMember } from "@/lib/phase-zero-types";
+import { formatSandboxList, sandboxPolicyDraft, sandboxPolicySummary, sandboxProfileLabel } from "@/lib/sandbox-policy";
+import type { AgentStatus, ApprovalCenterItem, SandboxProfile, WorkspaceMember } from "@/lib/phase-zero-types";
 
 type LiveNotificationsModel = ReturnType<typeof useLiveNotifications>;
 
@@ -667,6 +668,10 @@ function WorkspaceDurableConfigPanel() {
   const [resumeUrl, setResumeUrl] = useState("");
   const [browserPush, setBrowserPush] = useState("");
   const [memoryMode, setMemoryMode] = useState("");
+  const [sandboxProfile, setSandboxProfile] = useState<SandboxProfile>("trusted");
+  const [allowedHosts, setAllowedHosts] = useState("");
+  const [allowedCommands, setAllowedCommands] = useState("");
+  const [allowedTools, setAllowedTools] = useState("");
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -683,6 +688,10 @@ function WorkspaceDurableConfigPanel() {
     setResumeUrl(workspace.onboarding.resumeUrl ?? "");
     setBrowserPush(workspace.browserPush ?? "");
     setMemoryMode(workspace.memoryMode ?? "");
+    setSandboxProfile((workspace.sandbox.profile || "trusted") as SandboxProfile);
+    setAllowedHosts(formatSandboxList(workspace.sandbox.allowedHosts));
+    setAllowedCommands(formatSandboxList(workspace.sandbox.allowedCommands));
+    setAllowedTools(formatSandboxList(workspace.sandbox.allowedTools));
   }, [dirty, workspace]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -695,6 +704,11 @@ function WorkspaceDurableConfigPanel() {
         plan: workspace.plan,
         browserPush,
         memoryMode,
+        sandbox: sandboxPolicyDraft(sandboxProfile, {
+          allowedHosts,
+          allowedCommands,
+          allowedTools,
+        }),
         onboarding: {
           status,
           templateId,
@@ -720,14 +734,14 @@ function WorkspaceDurableConfigPanel() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">workspace durable truth</p>
-          <h2 className="mt-2 font-display text-3xl font-bold">把 onboarding / repo / install / memory 配置收成同一份工作区真值</h2>
+          <h2 className="mt-2 font-display text-3xl font-bold">把 onboarding / repo / install / memory / sandbox 配置收成同一份工作区真值</h2>
         </div>
         <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
           {onboardingStatusLabel(workspace.onboarding.status)}
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-        `#126` 这层不再把 onboarding progress、template selection、repo binding、GitHub installation 和 workspace preference 分散在多页临时状态里；
+        `#126` 这层不再把 onboarding progress、template selection、repo binding、GitHub installation、workspace preference 和 sandbox baseline 分散在多页临时状态里；
         settings 写回后，setup / access 会读取同一份 durable snapshot。
       </p>
 
@@ -737,6 +751,8 @@ function WorkspaceDurableConfigPanel() {
         <FactTile label="Resume" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "未声明")} />
         <FactTile label="Repo Sync" value={valueOrPlaceholder(workspace.repoBinding.syncedAt, "未回写")} />
         <FactTile label="Install" value={workspace.githubInstallation.connectionReady ? "ready" : "pending"} />
+        <FactTile label="Sandbox" value={sandboxProfileLabel(workspace.sandbox.profile)} testID="settings-workspace-sandbox-profile-value" />
+        <FactTile label="Policy" value={sandboxPolicySummary(workspace.sandbox)} testID="settings-workspace-sandbox-summary" />
       </div>
 
       <form onSubmit={handleSubmit} className="mt-5 grid gap-3 rounded-[24px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
@@ -829,6 +845,60 @@ function WorkspaceDurableConfigPanel() {
                 setDirty(true);
               }}
               className="rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3"
+            />
+          </label>
+          <label className="grid gap-2 text-sm">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em]">sandbox profile</span>
+            <select
+              data-testid="settings-workspace-sandbox-profile"
+              value={sandboxProfile}
+              onChange={(event) => {
+                setSandboxProfile(event.target.value as SandboxProfile);
+                setDirty(true);
+              }}
+              className="rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3"
+            >
+              <option value="trusted">trusted</option>
+              <option value="restricted">restricted</option>
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em]">allowed hosts</span>
+            <input
+              data-testid="settings-workspace-sandbox-allowed-hosts"
+              value={allowedHosts}
+              onChange={(event) => {
+                setAllowedHosts(event.target.value);
+                setDirty(true);
+              }}
+              className="rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3"
+              placeholder="github.com, api.openai.com"
+            />
+          </label>
+          <label className="grid gap-2 text-sm md:col-span-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em]">allowed commands</span>
+            <input
+              data-testid="settings-workspace-sandbox-allowed-commands"
+              value={allowedCommands}
+              onChange={(event) => {
+                setAllowedCommands(event.target.value);
+                setDirty(true);
+              }}
+              className="rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3"
+              placeholder="git status, pnpm test"
+            />
+          </label>
+          <label className="grid gap-2 text-sm md:col-span-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em]">allowed tools</span>
+            <input
+              data-testid="settings-workspace-sandbox-allowed-tools"
+              value={allowedTools}
+              onChange={(event) => {
+                setAllowedTools(event.target.value);
+                setDirty(true);
+              }}
+              className="rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3"
+              placeholder="read_file, rg"
             />
           </label>
         </div>

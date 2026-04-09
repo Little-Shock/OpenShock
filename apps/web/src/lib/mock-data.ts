@@ -8,6 +8,29 @@ export type InboxKind = "blocked" | "approval" | "review" | "status";
 export type PullRequestStatus = "draft" | "open" | "in_review" | "changes_requested" | "merged";
 export type DestructiveGuardStatus = "approval_required" | "blocked" | "ready";
 export type DestructiveGuardRisk = "destructive_git" | "filesystem_write" | "secret_scope";
+export type SandboxProfile = "trusted" | "restricted";
+export type SandboxDecisionStatus = "idle" | "allowed" | "denied" | "approval_required" | "overridden";
+export type SandboxActionKind = "command" | "network" | "tool";
+
+export type SandboxPolicy = {
+  profile: SandboxProfile;
+  allowedHosts?: string[];
+  allowedCommands?: string[];
+  allowedTools?: string[];
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+export type SandboxDecision = {
+  status: SandboxDecisionStatus;
+  kind?: SandboxActionKind;
+  target?: string;
+  reason?: string;
+  requestedBy?: string;
+  overrideBy?: string;
+  checkedAt?: string;
+  retryHint?: string;
+};
 
 export type WorkspaceSnapshot = {
   name: string;
@@ -27,6 +50,7 @@ export type WorkspaceSnapshot = {
   lastPairedAt: string;
   browserPush: string;
   memoryMode: string;
+  sandbox: SandboxPolicy;
   repoBinding: WorkspaceRepoBindingSnapshot;
   githubInstallation: WorkspaceGitHubInstallSnapshot;
   onboarding: WorkspaceOnboardingSnapshot;
@@ -335,6 +359,8 @@ export type Run = {
   duration: string;
   summary: string;
   approvalRequired: boolean;
+  sandbox: SandboxPolicy;
+  sandboxDecision: SandboxDecision;
   stdout: string[];
   stderr: string[];
   toolCalls: ToolCall[];
@@ -372,6 +398,7 @@ export type AgentStatus = {
   recallPolicy: string;
   runtimePreference: string;
   memorySpaces: string[];
+  sandbox: SandboxPolicy;
   recentRunIds: string[];
   profileAudit: Array<{
     id: string;
@@ -662,6 +689,14 @@ export const workspace: WorkspaceSnapshot = {
   lastPairedAt: "刚刚",
   browserPush: "只推高优先级",
   memoryMode: "MEMORY.md + notes/ + decisions/",
+  sandbox: {
+    profile: "restricted",
+    allowedHosts: ["github.com", "api.openai.com"],
+    allowedCommands: ["git status", "pnpm test"],
+    allowedTools: ["read_file", "rg"],
+    updatedAt: "2026-04-08T11:02:00Z",
+    updatedBy: "Larkspur",
+  },
   repoBinding: {
     repo: "Larkspur-Wang/OpenShock",
     repoUrl: "https://github.com/Larkspur-Wang/OpenShock",
@@ -1163,6 +1198,23 @@ export const runs: Run[] = [
     duration: "24m",
     summary: "把 runtime 心跳、讨论间上下文和分支元信息同步进主壳层。",
     approvalRequired: false,
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com", "api.openai.com"],
+      allowedCommands: ["git status", "pnpm test"],
+      allowedTools: ["read_file", "rg"],
+      updatedAt: "2026-04-08T09:26:00Z",
+      updatedBy: "Codex Dockmaster",
+    },
+    sandboxDecision: {
+      status: "approval_required",
+      kind: "command",
+      target: "git push --force",
+      reason: "restricted sandbox 没有放行这个 action；需要 owner 显式批准后再 retry。",
+      requestedBy: "Codex Dockmaster",
+      checkedAt: "2026-04-08T09:45:00Z",
+      retryHint: "保持 target 不变，由具备 workspace.manage 的人批准 override 后重试。",
+    },
     stdout: [
       "[09:26:11] 正在克隆 worktree wt-runtime-shell",
       "[09:27:08] 已在 shock-main 上发现 codex 与 claude code",
@@ -1210,6 +1262,17 @@ export const runs: Run[] = [
     duration: "18m",
     summary: "把批准、阻塞和评审卡片收成一个人类决策收件箱。",
     approvalRequired: false,
+    sandbox: {
+      profile: "trusted",
+      allowedHosts: [],
+      allowedCommands: [],
+      allowedTools: [],
+      updatedAt: "2026-04-08T09:58:00Z",
+      updatedBy: "Claude Review Runner",
+    },
+    sandboxDecision: {
+      status: "idle",
+    },
     stdout: [
       "[09:58:03] 已打开讨论间上下文",
       "[10:01:14] 已重写批准卡片语气",
@@ -1254,6 +1317,23 @@ export const runs: Run[] = [
     duration: "11m",
     summary: "把 Run 摘要写回 MEMORY.md，同时保留可检查的房间上下文。",
     approvalRequired: true,
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com"],
+      allowedCommands: ["git status"],
+      allowedTools: ["read_file"],
+      updatedAt: "2026-04-08T10:27:00Z",
+      updatedBy: "Memory Clerk",
+    },
+    sandboxDecision: {
+      status: "denied",
+      kind: "network",
+      target: "mem0.dev",
+      reason: "restricted sandbox 未允许这个 network target；先补 host allowlist，再 retry。",
+      requestedBy: "Memory Clerk",
+      checkedAt: "2026-04-08T10:31:00Z",
+      retryHint: "更新 run / agent / workspace 的 allowed hosts 后重试。",
+    },
     stdout: [
       "[10:27:02] 已打开 MEMORY.md",
       "[10:30:44] 已收集房间笔记和用户记忆范围",
@@ -1301,6 +1381,14 @@ export const agents: AgentStatus[] = [
     recallPolicy: "governed-first",
     runtimePreference: "shock-main",
     memorySpaces: ["workspace", "issue-room", "topic"],
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com", "api.openai.com"],
+      allowedCommands: ["git status", "pnpm test"],
+      allowedTools: ["read_file", "rg"],
+      updatedAt: "2026-04-08T09:20:00Z",
+      updatedBy: "Larkspur",
+    },
     recentRunIds: ["run_runtime_01"],
     profileAudit: [],
   },
@@ -1321,6 +1409,14 @@ export const agents: AgentStatus[] = [
     recallPolicy: "balanced",
     runtimePreference: "shock-sidecar",
     memorySpaces: ["workspace", "issue-room"],
+    sandbox: {
+      profile: "trusted",
+      allowedHosts: [],
+      allowedCommands: [],
+      allowedTools: [],
+      updatedAt: "2026-04-08T09:48:00Z",
+      updatedBy: "Larkspur",
+    },
     recentRunIds: ["run_inbox_01"],
     profileAudit: [],
   },
@@ -1341,6 +1437,14 @@ export const agents: AgentStatus[] = [
     recallPolicy: "agent-first",
     runtimePreference: "shock-main",
     memorySpaces: ["workspace", "user", "room-notes", "topic"],
+    sandbox: {
+      profile: "restricted",
+      allowedHosts: ["github.com"],
+      allowedCommands: ["git status"],
+      allowedTools: ["read_file"],
+      updatedAt: "2026-04-08T10:20:00Z",
+      updatedBy: "Larkspur",
+    },
     recentRunIds: ["run_memory_01"],
     profileAudit: [],
   },

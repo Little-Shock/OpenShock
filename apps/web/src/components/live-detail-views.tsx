@@ -9,6 +9,7 @@ import {
   LiveOrchestrationBoard,
   type RuntimeRegistryRecord,
 } from "@/components/live-orchestration-views";
+import { RunSandboxSurface } from "@/components/run-sandbox-surface";
 import {
   AgentDetailView,
   AgentsListView,
@@ -1291,6 +1292,7 @@ export function LiveRunPageContent({
           controlBoundary={runControlBoundary}
           onControl={handleRunControl}
         />
+        <RunSandboxSurface run={currentRun} />
         <RunDetailView
           run={currentRun}
           statusTestId="run-detail-status"

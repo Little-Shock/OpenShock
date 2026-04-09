@@ -41,6 +41,7 @@
     "test:headed-config-persistence-recovery": "node ./scripts/headed-config-persistence-recovery.mjs",
     "test:headed-onboarding-studio": "node ./scripts/headed-onboarding-studio.mjs",
     "test:headed-first-start-journey": "node ./scripts/headed-onboarding-studio.mjs",
+    "test:headed-restricted-sandbox-policy": "node ./scripts/headed-restricted-sandbox-policy.mjs",
     "test:headed-stop-resume-follow-thread": "node ./scripts/headed-stop-resume-follow-thread.mjs",
     "test:headed-run-history-resume-context": "node ./scripts/headed-run-history-resume-context.mjs",
     "test:headed-multi-runtime-scheduler-failover": "node ./scripts/headed-multi-runtime-scheduler-failover.mjs",

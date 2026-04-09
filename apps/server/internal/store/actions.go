@@ -77,25 +77,31 @@ func (s *Store) CreateIssue(req CreateIssueInput) (IssueCreationResult, error) {
 	if strings.TrimSpace(scheduledMachine.Name) == "" && strings.TrimSpace(scheduledMachine.ID) != "" {
 		machineName = strings.TrimSpace(scheduledMachine.ID)
 	}
+	runSandbox := s.state.Workspace.Sandbox
+	if agent, ok := findAgentByOwner(s.state, owner); ok {
+		runSandbox = agent.Sandbox
+	}
 
 	newRun := Run{
-		ID:           runID,
-		IssueKey:     issueKey,
-		RoomID:       roomID,
-		TopicID:      topicID,
-		Status:       "queued",
-		Runtime:      runtimeName,
-		Machine:      machineName,
-		Provider:     provider,
-		Branch:       fmt.Sprintf("feat/%s", slug),
-		Worktree:     fmt.Sprintf("wt-%s", slug),
-		WorktreePath: "",
-		Owner:        owner,
-		StartedAt:    now,
-		Duration:     "0m",
-		Summary:      summary,
-		NextAction:   fmt.Sprintf("等待 worktree lane；%s", scheduler.Summary),
-		PullRequest:  "未创建",
+		ID:              runID,
+		IssueKey:        issueKey,
+		RoomID:          roomID,
+		TopicID:         topicID,
+		Status:          "queued",
+		Runtime:         runtimeName,
+		Machine:         machineName,
+		Provider:        provider,
+		Branch:          fmt.Sprintf("feat/%s", slug),
+		Worktree:        fmt.Sprintf("wt-%s", slug),
+		WorktreePath:    "",
+		Owner:           owner,
+		StartedAt:       now,
+		Duration:        "0m",
+		Summary:         summary,
+		Sandbox:         runSandbox,
+		SandboxDecision: defaultSandboxDecision(),
+		NextAction:      fmt.Sprintf("等待 worktree lane；%s", scheduler.Summary),
+		PullRequest:     "未创建",
 		Stdout: []string{
 			fmt.Sprintf("[%s] 已创建 Issue Room 与默认 Topic", now),
 			fmt.Sprintf("[%s] %s", now, scheduler.Summary),

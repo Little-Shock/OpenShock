@@ -25,7 +25,9 @@ type WorkspaceConfigUpdateInput struct {
 	Plan        string
 	BrowserPush string
 	MemoryMode  string
+	Sandbox     *SandboxPolicy
 	Onboarding  *WorkspaceOnboardingSnapshot
+	UpdatedBy   string
 }
 
 type WorkspaceMemberPreferencesInput struct {
@@ -226,6 +228,7 @@ func syncWorkspaceSnapshotDefaults(workspace *WorkspaceSnapshot) {
 	defaultBinding := defaultWorkspaceRepoBinding(*workspace, now)
 	defaultInstall := defaultWorkspaceGitHubInstallation(*workspace, now)
 	defaultOnboarding := defaultWorkspaceOnboarding(now)
+	defaultSandbox := defaultSandboxPolicy(now)
 
 	if strings.TrimSpace(workspace.Repo) == "" {
 		workspace.Repo = defaultBinding.Repo
@@ -318,6 +321,17 @@ func syncWorkspaceSnapshotDefaults(workspace *WorkspaceSnapshot) {
 	if strings.TrimSpace(workspace.Onboarding.UpdatedAt) == "" {
 		workspace.Onboarding.UpdatedAt = defaultOnboarding.UpdatedAt
 	}
+	if strings.TrimSpace(workspace.Sandbox.Profile) == "" {
+		workspace.Sandbox = defaultSandbox
+	} else {
+		syncSandboxPolicyDefaults(&workspace.Sandbox)
+		if strings.TrimSpace(workspace.Sandbox.UpdatedAt) == "" {
+			workspace.Sandbox.UpdatedAt = defaultSandbox.UpdatedAt
+		}
+		if strings.TrimSpace(workspace.Sandbox.UpdatedBy) == "" {
+			workspace.Sandbox.UpdatedBy = defaultSandbox.UpdatedBy
+		}
+	}
 }
 
 func syncWorkspaceMemberDefaults(member *WorkspaceMember) {
@@ -370,6 +384,13 @@ func (s *Store) UpdateWorkspaceConfig(input WorkspaceConfigUpdateInput) (State, 
 	}
 	if text := strings.TrimSpace(input.MemoryMode); text != "" {
 		workspace.MemoryMode = text
+	}
+	if input.Sandbox != nil {
+		policy, err := normalizeSandboxPolicyInput(*input.Sandbox, workspace.Sandbox, input.UpdatedBy)
+		if err != nil {
+			return State{}, WorkspaceSnapshot{}, err
+		}
+		workspace.Sandbox = policy
 	}
 	if input.Onboarding != nil {
 		status, err := normalizeWorkspaceOnboardingStatus(defaultString(input.Onboarding.Status, workspace.Onboarding.Status))

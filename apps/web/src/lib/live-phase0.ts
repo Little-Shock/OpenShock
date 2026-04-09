@@ -7,6 +7,8 @@ import type {
   AuthSession,
   InboxDecision,
   PhaseZeroState,
+  SandboxDecision,
+  SandboxPolicy,
 } from "@/lib/phase-zero-types";
 import { sanitizePhaseZeroState } from "@/lib/phase-zero-helpers";
 
@@ -73,12 +75,14 @@ type AgentProfileUpdateInput = {
   recallPolicy: string;
   runtimePreference: string;
   memorySpaces: string[];
+  sandbox: SandboxPolicy;
 };
 
 type WorkspaceConfigUpdateInput = {
   plan: string;
   browserPush: string;
   memoryMode: string;
+  sandbox: SandboxPolicy;
   onboarding: {
     status: string;
     templateId: string;
@@ -96,6 +100,14 @@ type WorkspaceMemberPreferencesInput = {
 
 type UpdateTopicGuidanceInput = {
   summary: string;
+};
+
+type RunSandboxUpdateInput = SandboxPolicy;
+
+type RunSandboxCheckInput = {
+  kind: "command" | "network" | "tool";
+  target: string;
+  override?: boolean;
 };
 
 type CreateHandoffInput = {
@@ -160,6 +172,8 @@ type PhaseZeroContextValue = {
   updateWorkspaceConfig: (input: WorkspaceConfigUpdateInput) => Promise<StateMutationResponse>;
   updateWorkspaceMemberPreferences: (memberId: string, input: WorkspaceMemberPreferencesInput) => Promise<StateMutationResponse>;
   updateAgentProfile: (agentId: string, input: AgentProfileUpdateInput) => Promise<StateMutationResponse>;
+  updateRunSandbox: (runId: string, input: RunSandboxUpdateInput) => Promise<StateMutationResponse>;
+  checkRunSandbox: (runId: string, input: RunSandboxCheckInput) => Promise<StateMutationResponse & { decision?: SandboxDecision }>;
   createIssue: (input: CreateIssueInput) => Promise<StateMutationResponse>;
   postChannelMessage: (channelId: string, prompt: string) => Promise<StateMutationResponse>;
   postDirectMessage: (directMessageId: string, prompt: string) => Promise<StateMutationResponse>;
@@ -225,6 +239,12 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
     lastPairedAt: "",
     browserPush: "",
     memoryMode: "",
+    sandbox: {
+      profile: "trusted",
+      allowedHosts: [],
+      allowedCommands: [],
+      allowedTools: [],
+    },
     repoBinding: {
       repo: "",
       repoUrl: "",
@@ -653,6 +673,40 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     return payload;
   }
 
+  async function updateRunSandbox(runId: string, input: RunSandboxUpdateInput) {
+    const payload = await readJSON<StateMutationResponse>(`/v1/runs/${runId}/sandbox`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+
+    if (payload.state) {
+      commitStateAndRefreshApprovalCenter(payload.state);
+    }
+    return payload;
+  }
+
+  async function checkRunSandbox(runId: string, input: RunSandboxCheckInput) {
+    try {
+      const payload = await readJSON<StateMutationResponse & { decision?: SandboxDecision }>(`/v1/runs/${runId}/sandbox`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+
+      if (payload.state) {
+        commitStateAndRefreshApprovalCenter(payload.state);
+      }
+      return payload;
+    } catch (mutationError) {
+      if (mutationError instanceof StateMutationError && mutationError.payload.state) {
+        commitStateAndRefreshApprovalCenter(mutationError.payload.state);
+      }
+      if (mutationError instanceof StateMutationError && "decision" in mutationError.payload) {
+        return mutationError.payload as StateMutationResponse & { decision?: SandboxDecision };
+      }
+      throw mutationError;
+    }
+  }
+
   async function createIssue(input: CreateIssueInput) {
     const payload = await readJSON<StateMutationResponse>("/v1/issues", {
       method: "POST",
@@ -941,6 +995,8 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     updateWorkspaceConfig,
     updateWorkspaceMemberPreferences,
     updateAgentProfile,
+    updateRunSandbox,
+    checkRunSandbox,
     createIssue,
     postChannelMessage,
     postDirectMessage,
