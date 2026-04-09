@@ -1,7 +1,7 @@
 # Test Report 2026-04-09 First-Start Journey / Access-Setup-Onboarding Unification
 
 - Command: `pnpm test:headed-first-start-journey -- --report docs/testing/Test-Report-2026-04-09-first-start-journey.md`
-- Generated At: 2026-04-09T06:42:59.934Z
+- Generated At: 2026-04-09T06:46:25.222Z
 
 ## Result
 
@@ -18,16 +18,16 @@
 
 ## Evidence
 
-- access-before-setup: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/01-access-before-setup.png`
-- setup-before-template: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/02-setup-before-template.png`
-- setup-after-template-select: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/03-setup-after-template-select.png`
-- setup-progress-ready: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/04-setup-progress-ready.png`
-- setup-finished: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/05-setup-finished.png`
-- setup-after-reload: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/06-setup-after-reload.png`
-- access-after-finish: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/07-access-after-finish.png`
-- rooms-after-finish: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/08-rooms-after-finish.png`
-- settings-after-server-restart: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/09-settings-after-server-restart.png`
-- setup-second-context: `../openshock-tkt51-first-start-artifacts-final/run/screenshots/10-setup-second-context.png`
+- access-before-setup: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/01-access-before-setup.png`
+- setup-before-template: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/02-setup-before-template.png`
+- setup-after-template-select: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/03-setup-after-template-select.png`
+- setup-progress-ready: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/04-setup-progress-ready.png`
+- setup-finished: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/05-setup-finished.png`
+- setup-after-reload: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/06-setup-after-reload.png`
+- access-after-finish: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/07-access-after-finish.png`
+- rooms-after-finish: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/08-rooms-after-finish.png`
+- settings-after-server-restart: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/09-settings-after-server-restart.png`
+- setup-second-context: `../openshock-tkt51-first-start-artifacts-rebased/run/screenshots/10-setup-second-context.png`
 
 ## Scope
 
