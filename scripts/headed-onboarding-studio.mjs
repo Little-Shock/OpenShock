@@ -208,6 +208,30 @@ async function readText(page, testID) {
   return (await page.getByTestId(testID).textContent())?.trim() ?? "";
 }
 
+async function readWorkspace(serverURL) {
+  const response = await fetch(`${serverURL}/v1/workspace`);
+  if (!response.ok) {
+    throw new Error(`GET /v1/workspace failed with ${response.status}`);
+  }
+  return response.json();
+}
+
+async function patchWorkspace(serverURL, payload) {
+  const response = await fetch(`${serverURL}/v1/workspace`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`PATCH /v1/workspace failed with ${response.status}`);
+  }
+
+  return response.json();
+}
+
 async function waitForText(page, testID, expected) {
   await waitFor(async () => (await readText(page, testID)) === expected, `${testID} did not become ${expected}`);
 }
@@ -241,15 +265,49 @@ try {
   await capture(page, "setup-after-template-select");
   results.push("- `/setup` 现在可以直接选择 `研究团队` 模板，并把 bootstrap package 写回 workspace onboarding truth。");
 
+  const customWorkspaceConfig = {
+    plan: "My Custom Plan",
+    browserPush: "only custom alerts",
+    memoryMode: "user-owned memory mode",
+  };
+  const workspaceBeforeRefresh = await readWorkspace(serverURL);
+  await patchWorkspace(serverURL, {
+    ...customWorkspaceConfig,
+    onboarding: {
+      status: workspaceBeforeRefresh.onboarding.status,
+      templateId: workspaceBeforeRefresh.onboarding.templateId,
+      currentStep: workspaceBeforeRefresh.onboarding.currentStep,
+      completedSteps: workspaceBeforeRefresh.onboarding.completedSteps,
+      resumeUrl: workspaceBeforeRefresh.onboarding.resumeUrl,
+    },
+  });
+
   await page.getByTestId("setup-onboarding-refresh-progress").click();
+  await waitForText(page, "setup-onboarding-success", "onboarding progress 已按当前 live truth 前滚；已有 workspace config 不会被模板默认值静默覆盖。");
   await waitForText(page, "setup-onboarding-current-step", "bootstrap-finished");
+  const workspaceAfterRefresh = await readWorkspace(serverURL);
+  if (
+    workspaceAfterRefresh.plan !== customWorkspaceConfig.plan ||
+    workspaceAfterRefresh.browserPush !== customWorkspaceConfig.browserPush ||
+    workspaceAfterRefresh.memoryMode !== customWorkspaceConfig.memoryMode
+  ) {
+    throw new Error("refresh progress clobbered durable workspace config");
+  }
   await capture(page, "setup-progress-ready");
-  results.push("- repo binding / runtime pairing 的 live truth 会把 onboarding progress 前滚到可 finish 状态，而不是停在本地步骤卡。");
+  results.push("- repo binding / runtime pairing 的 live truth 会把 onboarding progress 前滚到可 finish 状态，而不会把已有 `plan / browserPush / memoryMode` 静默覆盖回模板默认值。");
 
   await page.getByTestId("setup-onboarding-finish").click();
   await waitForText(page, "setup-onboarding-success", "onboarding studio 已收口为 done；workspace 会把 `/rooms` 当成下一跳，而不是继续停在 setup。");
   await waitForText(page, "setup-onboarding-status", "done");
   await waitForText(page, "setup-onboarding-resume-url", "/rooms");
+  const workspaceAfterFinish = await readWorkspace(serverURL);
+  if (
+    workspaceAfterFinish.plan !== customWorkspaceConfig.plan ||
+    workspaceAfterFinish.browserPush !== customWorkspaceConfig.browserPush ||
+    workspaceAfterFinish.memoryMode !== customWorkspaceConfig.memoryMode
+  ) {
+    throw new Error("finish onboarding clobbered durable workspace config");
+  }
   await capture(page, "setup-finished");
   results.push("- 完成首次启动后，`/setup` 会把 status、resume route 和 materialized package 一起收平到 durable workspace snapshot。");
 
@@ -298,7 +356,7 @@ try {
     "## Scope",
     "",
     "- 在 `/setup` 选择 `研究团队` 模板，并验证 materialized bootstrap package。",
-    "- 依据当前 repo binding / runtime pairing live truth 刷新 onboarding progress，再完成首次启动。",
+    "- 依据当前 repo binding / runtime pairing live truth 刷新 onboarding progress，再完成首次启动，同时验证自定义 `plan / browserPush / memoryMode` 不会被模板默认值静默覆盖。",
     "- 验证 reload、server restart 与 second browser context 之后仍能读回同一份 onboarding truth。",
   ];
 

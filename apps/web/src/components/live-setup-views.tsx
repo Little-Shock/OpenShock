@@ -333,7 +333,9 @@ export function OnboardingStudioPanel() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  async function persistTemplate(templateId: string, finished = false) {
+  async function persistTemplate(templateId: string, options?: { finished?: boolean; syncTemplateDefaults?: boolean }) {
+    const finished = options?.finished ?? false;
+    const syncTemplateDefaults = options?.syncTemplateDefaults ?? false;
     const definition = onboardingTemplateDefinition(templateId);
     const nextProgress = buildOnboardingStudioProgress(workspace, definition.id, finished);
     setPendingTemplateId(definition.id);
@@ -341,9 +343,9 @@ export function OnboardingStudioPanel() {
     setSuccess(null);
     try {
       await updateWorkspaceConfig({
-        plan: definition.defaultPlan,
-        browserPush: definition.defaultBrowserPush,
-        memoryMode: definition.defaultMemoryMode,
+        plan: syncTemplateDefaults ? definition.defaultPlan : workspace.plan,
+        browserPush: syncTemplateDefaults ? definition.defaultBrowserPush : workspace.browserPush,
+        memoryMode: syncTemplateDefaults ? definition.defaultMemoryMode : workspace.memoryMode,
         onboarding: {
           status: nextProgress.status,
           templateId: definition.id,
@@ -364,7 +366,9 @@ export function OnboardingStudioPanel() {
       setSuccess(
         finished
           ? "onboarding studio 已收口为 done；workspace 会把 `/rooms` 当成下一跳，而不是继续停在 setup。"
-          : `${definition.label} 模板已经写回 workspace truth；reload / restart 后会继续从当前 setup step 恢复。`
+          : syncTemplateDefaults
+            ? `${definition.label} 模板已经写回 workspace truth；reload / restart 后会继续从当前 setup step 恢复。`
+            : "onboarding progress 已按当前 live truth 前滚；已有 workspace config 不会被模板默认值静默覆盖。"
       );
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : "workspace onboarding update failed");
@@ -423,7 +427,7 @@ export function OnboardingStudioPanel() {
                     data-testid={`setup-template-select-${template.id}`}
                     type="button"
                     disabled={Boolean(pendingTemplateId)}
-                    onClick={() => void persistTemplate(template.id)}
+                    onClick={() => void persistTemplate(template.id, { syncTemplateDefaults: true })}
                     className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {busy ? "写回中..." : active ? "重新同步模板" : "选择模板"}
@@ -510,7 +514,7 @@ export function OnboardingStudioPanel() {
                 data-testid="setup-onboarding-finish"
                 type="button"
                 disabled={!progress.canFinish || Boolean(pendingTemplateId)}
-                onClick={() => void persistTemplate(currentTemplate.id, true)}
+                onClick={() => void persistTemplate(currentTemplate.id, { finished: true })}
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 完成首次启动
