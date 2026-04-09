@@ -45,6 +45,9 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 	if payload.Workspace.Onboarding.TemplateID != "research-team" || payload.Workspace.Onboarding.ResumeURL != "/setup?resume=tkt-37" {
 		t.Fatalf("workspace payload = %#v, want persisted onboarding snapshot", payload.Workspace)
 	}
+	if payload.Workspace.Onboarding.Materialization.Label != "研究团队" || payload.Workspace.Onboarding.Materialization.NotificationPolicy == "" {
+		t.Fatalf("workspace onboarding materialization = %#v, want derived research-team package", payload.Workspace.Onboarding.Materialization)
+	}
 	if payload.State.Workspace.MemoryMode != "governed-first / recovery ready" {
 		t.Fatalf("state workspace = %#v, want updated memory mode", payload.State.Workspace)
 	}
@@ -61,6 +64,9 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 	decodeJSON(t, getResp, &workspace)
 	if workspace.Onboarding.Status != "ready" || workspace.BrowserPush != "全部 live 事件" {
 		t.Fatalf("GET workspace = %#v, want persisted durable config", workspace)
+	}
+	if len(workspace.Onboarding.Materialization.Channels) != 3 || len(workspace.Onboarding.Materialization.Agents) == 0 {
+		t.Fatalf("GET workspace onboarding materialization = %#v, want persisted template package", workspace.Onboarding.Materialization)
 	}
 }
 

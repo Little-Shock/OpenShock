@@ -54,6 +54,8 @@
   - `TKT-29` 的 device authorization、email verification、password reset、session recovery 与 external identity binding headed evidence
 - [Test Report 2026-04-09 Config Persistence / Recovery](./Test-Report-2026-04-09-config-persistence-recovery.md)
   - `TKT-37` 的 workspace/member durable config、reload/restart recovery 与 second-device replay evidence
+- [Test Report 2026-04-09 Onboarding Studio / Scenario Templates](./Test-Report-2026-04-09-onboarding-studio.md)
+  - `TKT-34` 的 template selection、resumable progress、bootstrap package materialization 与 reload/restart recovery evidence
 - [Test Report 2026-04-08 Agent Profile Editor](./Test-Report-2026-04-08-agent-profile-editor.md)
   - `TKT-32` 的 Agent profile edit、memory binding / recall policy、next-run preview 与 profile audit headed evidence
 - [Test Report 2026-04-09 Machine Profile / Local CLI Model Capability Binding](./Test-Report-2026-04-09-machine-profile-capability-binding.md)
@@ -95,6 +97,8 @@
   - 验证 device authorization、email verification、password reset、session recovery 与 external identity binding
 - `pnpm test:headed-config-persistence-recovery`
   - 验证 workspace/member config 在 `/settings -> /access -> /setup` 的同源投影，以及 reload / server restart / second browser context recovery
+- `pnpm test:headed-onboarding-studio`
+  - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-agent-profile-editor`
   - 验证 Agent profile edit、memory binding / recall policy、next-run preview 与 audit persistence
 - `pnpm test:headed-machine-profile-capability-binding`

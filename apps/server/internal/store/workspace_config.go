@@ -34,14 +34,96 @@ type WorkspaceMemberPreferencesInput struct {
 	GitHubHandle     string
 }
 
+type onboardingTemplateDefinition struct {
+	ID                 string
+	Label              string
+	Channels           []string
+	Roles              []string
+	Agents             []string
+	NotificationPolicy string
+	Notes              []string
+}
+
 func defaultWorkspaceOnboarding(now string) WorkspaceOnboardingSnapshot {
 	return WorkspaceOnboardingSnapshot{
 		Status:         workspaceOnboardingInProgress,
-		TemplateID:     "delivery-ops",
+		TemplateID:     "dev-team",
 		CurrentStep:    "repo-binding",
-		CompletedSteps: []string{"workspace-created", "member-seeded"},
+		CompletedSteps: []string{"workspace-created", "template-selected"},
 		ResumeURL:      "/setup",
 		UpdatedAt:      now,
+	}
+}
+
+func canonicalWorkspaceOnboardingTemplateID(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "delivery-ops", "delivery_ops", "deliveryops", "dev-team", "developer-team":
+		return "dev-team"
+	case "research-team", "research_team", "research":
+		return "research-team"
+	case "blank-custom", "blank_custom", "blank", "custom":
+		return "blank-custom"
+	default:
+		return "blank-custom"
+	}
+}
+
+func workspaceOnboardingTemplateDefinition(templateID string) onboardingTemplateDefinition {
+	switch canonicalWorkspaceOnboardingTemplateID(templateID) {
+	case "dev-team":
+		return onboardingTemplateDefinition{
+			ID:                 "dev-team",
+			Label:              "开发团队",
+			Channels:           []string{"#shiproom", "#review-lane", "#ops-watch"},
+			Roles:              []string{"PM / Architect / Developer / Reviewer / QA"},
+			Agents:             []string{"Spec Captain", "Build Pilot", "Review Runner"},
+			NotificationPolicy: "blocked / review / release gate 优先推送",
+			Notes: []string{
+				"默认把首次启动收口到 shiproom，再把 review 和 release 风险单独抬到 review-lane / ops-watch。",
+				"Agent bootstrap 先围 spec -> build -> review 三段，不在这张票里提前扩成完整 mailbox / governance ledger。",
+				"memory 与 mailbox 规则继续只写成 onboarding notes，正式治理面留给后续票。",
+			},
+		}
+	case "research-team":
+		return onboardingTemplateDefinition{
+			ID:                 "research-team",
+			Label:              "研究团队",
+			Channels:           []string{"#intake", "#evidence", "#synthesis"},
+			Roles:              []string{"Research Lead / Collector / Synthesizer / Reviewer"},
+			Agents:             []string{"Collector", "Synthesizer", "Reviewer"},
+			NotificationPolicy: "evidence ready / synthesis blocked / reviewer feedback 优先推送",
+			Notes: []string{
+				"默认先围 intake -> evidence -> synthesis 三条线组织上下文，不把 board 抬成主导航。",
+				"启动期先强调证据收集与综述回写；更重的 reviewer-tester loop 继续留给治理票。",
+				"模板会保留 resumable progress，换设备或 reload 后继续回到 setup truth。",
+			},
+		}
+	default:
+		return onboardingTemplateDefinition{
+			ID:                 "blank-custom",
+			Label:              "空白自定义",
+			Channels:           []string{"#all", "#roadmap", "#announcements"},
+			Roles:              []string{"Owner / Member / Viewer"},
+			Agents:             []string{"Starter Agent", "Review Agent"},
+			NotificationPolicy: "只推高优先级与显式 review 事件",
+			Notes: []string{
+				"只给最小协作骨架，频道、角色和 agent skeleton 由团队后续自行补齐。",
+				"onboarding progress 继续可恢复，但不会静默替你生成更重的治理拓扑。",
+				"适合先验证 repo / install / runtime pairing，再逐步长出自己的工作流。",
+			},
+		}
+	}
+}
+
+func workspaceOnboardingMaterialization(templateID string) WorkspaceOnboardingMaterialization {
+	definition := workspaceOnboardingTemplateDefinition(templateID)
+	return WorkspaceOnboardingMaterialization{
+		Label:              definition.Label,
+		Channels:           append([]string{}, definition.Channels...),
+		Roles:              append([]string{}, definition.Roles...),
+		Agents:             append([]string{}, definition.Agents...),
+		NotificationPolicy: definition.NotificationPolicy,
+		Notes:              append([]string{}, definition.Notes...),
 	}
 }
 
@@ -218,6 +300,8 @@ func syncWorkspaceSnapshotDefaults(workspace *WorkspaceSnapshot) {
 	}
 	if strings.TrimSpace(workspace.Onboarding.TemplateID) == "" {
 		workspace.Onboarding.TemplateID = defaultOnboarding.TemplateID
+	} else {
+		workspace.Onboarding.TemplateID = canonicalWorkspaceOnboardingTemplateID(workspace.Onboarding.TemplateID)
 	}
 	if strings.TrimSpace(workspace.Onboarding.CurrentStep) == "" {
 		workspace.Onboarding.CurrentStep = defaultOnboarding.CurrentStep
@@ -230,6 +314,7 @@ func syncWorkspaceSnapshotDefaults(workspace *WorkspaceSnapshot) {
 	if strings.TrimSpace(workspace.Onboarding.ResumeURL) == "" {
 		workspace.Onboarding.ResumeURL = defaultOnboarding.ResumeURL
 	}
+	workspace.Onboarding.Materialization = workspaceOnboardingMaterialization(workspace.Onboarding.TemplateID)
 	if strings.TrimSpace(workspace.Onboarding.UpdatedAt) == "" {
 		workspace.Onboarding.UpdatedAt = defaultOnboarding.UpdatedAt
 	}
@@ -296,7 +381,7 @@ func (s *Store) UpdateWorkspaceConfig(input WorkspaceConfigUpdateInput) (State, 
 			return State{}, WorkspaceSnapshot{}, err
 		}
 		workspace.Onboarding.Status = status
-		workspace.Onboarding.TemplateID = defaultString(strings.TrimSpace(input.Onboarding.TemplateID), workspace.Onboarding.TemplateID)
+		workspace.Onboarding.TemplateID = canonicalWorkspaceOnboardingTemplateID(defaultString(strings.TrimSpace(input.Onboarding.TemplateID), workspace.Onboarding.TemplateID))
 		workspace.Onboarding.CurrentStep = defaultString(strings.TrimSpace(input.Onboarding.CurrentStep), workspace.Onboarding.CurrentStep)
 		workspace.Onboarding.ResumeURL = defaultString(resumeURL, workspace.Onboarding.ResumeURL)
 		workspace.Onboarding.CompletedSteps = normalizeCompletedSteps(input.Onboarding.CompletedSteps, workspace.Onboarding.CompletedSteps)

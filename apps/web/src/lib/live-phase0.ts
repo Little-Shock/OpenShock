@@ -180,6 +180,7 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
     onboarding: {
       status: "",
       completedSteps: [],
+      materialization: {},
     },
   },
   auth: {

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { DetailRail, Panel } from "@/components/phase-zero-views";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { useLiveRuntimeTruth } from "@/lib/live-runtime";
@@ -168,6 +170,366 @@ function SetupCheckpointCard({
         </span>
       </div>
       <p className="mt-2.5 text-sm leading-6">{summary}</p>
+    </Panel>
+  );
+}
+
+type OnboardingTemplateDefinition = {
+  id: string;
+  label: string;
+  eyebrow: string;
+  description: string;
+  defaultPlan: string;
+  defaultBrowserPush: string;
+  defaultMemoryMode: string;
+  channels: string[];
+  roles: string[];
+  agents: string[];
+  notificationPolicy: string;
+  notes: string[];
+};
+
+const ONBOARDING_STUDIO_STEPS = [
+  { id: "template-selected", label: "模板已选", description: "先把团队模板和 bootstrap package 收成 workspace truth。" },
+  { id: "repo-bound", label: "Repo 已绑定", description: "首次启动继续沿 current repo binding truth 推进。" },
+  { id: "github-ready", label: "GitHub 已接通", description: "GitHub install / connection truth 不再停在 setup 注释里。" },
+  { id: "runtime-paired", label: "Runtime 已配对", description: "pairing 与 selection 已经站住，首次启动不再卡在本地桥接。 " },
+  { id: "bootstrap-finished", label: "启动已完成", description: "workspace 可以从 `/setup` 正式切回主工作面。" },
+] as const;
+
+const ONBOARDING_TEMPLATE_DEFINITIONS: OnboardingTemplateDefinition[] = [
+  {
+    id: "dev-team",
+    label: "开发团队",
+    eyebrow: "Ship Fast",
+    description: "把 shiproom、review lane 和 release 观察面先立住，适合产品/架构/开发/评审一起推进。",
+    defaultPlan: "Dev Team Launch",
+    defaultBrowserPush: "blocked / review / release gate",
+    defaultMemoryMode: "governed-first / delivery notes",
+    channels: ["#shiproom", "#review-lane", "#ops-watch"],
+    roles: ["PM / Architect / Developer / Reviewer / QA"],
+    agents: ["Spec Captain", "Build Pilot", "Review Runner"],
+    notificationPolicy: "blocked / review / release gate 优先推送",
+    notes: [
+      "默认先围 shiproom 收主线，再把 review / release 风险抬到 review-lane 与 ops-watch。",
+      "Agent bootstrap 只先给 spec -> build -> review skeleton，不在这张票里提前混入完整 mailbox / governance。",
+    ],
+  },
+  {
+    id: "research-team",
+    label: "研究团队",
+    eyebrow: "Evidence First",
+    description: "把 intake、evidence、synthesis 三条线摆清，适合探索、归纳和 reviewer 收口。",
+    defaultPlan: "Research Team Launch",
+    defaultBrowserPush: "evidence ready / synthesis blocked / reviewer feedback",
+    defaultMemoryMode: "evidence-first / synthesis ledger",
+    channels: ["#intake", "#evidence", "#synthesis"],
+    roles: ["Research Lead / Collector / Synthesizer / Reviewer"],
+    agents: ["Collector", "Synthesizer", "Reviewer"],
+    notificationPolicy: "evidence ready / synthesis blocked / reviewer feedback 优先推送",
+    notes: [
+      "默认先把 intake -> evidence -> synthesis 三条线组织清楚，不让 board 抢回主导航。",
+      "模板会保留 resumable progress，reload / restart 后继续回到 setup truth。",
+    ],
+  },
+  {
+    id: "blank-custom",
+    label: "空白自定义",
+    eyebrow: "Lean Start",
+    description: "只给最小协作骨架，先把 repo / install / runtime 打通，再按团队自己的语言长出来。",
+    defaultPlan: "Custom Workspace Bootstrap",
+    defaultBrowserPush: "only high-priority + explicit review",
+    defaultMemoryMode: "notes-first / bootstrap minimal",
+    channels: ["#all", "#roadmap", "#announcements"],
+    roles: ["Owner / Member / Viewer"],
+    agents: ["Starter Agent", "Review Agent"],
+    notificationPolicy: "只推高优先级与显式 review 事件",
+    notes: [
+      "这版只固化最小骨架，不静默替你生成更重的治理拓扑。",
+      "适合先验证 setup 主链，再逐步补齐团队自己的默认对象。",
+    ],
+  },
+];
+
+function onboardingTemplateDefinition(templateId: string | undefined) {
+  const normalized = templateId?.trim().toLowerCase();
+  if (normalized === "delivery-ops") {
+    return ONBOARDING_TEMPLATE_DEFINITIONS[0];
+  }
+  return (
+    ONBOARDING_TEMPLATE_DEFINITIONS.find((item) => item.id === normalized) ??
+    ONBOARDING_TEMPLATE_DEFINITIONS[2]
+  );
+}
+
+function buildOnboardingStudioProgress(workspace: ReturnType<typeof usePhaseZeroState>["state"]["workspace"], templateId: string, finished = false) {
+  const githubReady =
+    workspace.repoBinding.authMode !== "github-app" ||
+    workspace.repoAuthMode !== "github-app" ||
+    workspace.githubInstallation.appInstalled ||
+    workspace.githubInstallation.connectionReady;
+  const completed = new Set<string>();
+  completed.add("workspace-created");
+  if (templateId.trim()) {
+    completed.add("template-selected");
+  }
+  if ((workspace.repoBinding.bindingStatus || workspace.repoBindingStatus) === "bound") {
+    completed.add("repo-bound");
+  }
+  if (githubReady) {
+    completed.add("github-ready");
+  }
+  if (workspace.pairingStatus === "paired") {
+    completed.add("runtime-paired");
+  }
+  if (finished) {
+    completed.add("bootstrap-finished");
+  }
+
+  const completedSteps = ONBOARDING_STUDIO_STEPS.filter((step) => completed.has(step.id)).map((step) => step.id);
+  const nextStep = ONBOARDING_STUDIO_STEPS.find((step) => !completed.has(step.id))?.id ?? "bootstrap-finished";
+
+  let status = "not_started";
+  if (completed.has("bootstrap-finished")) {
+    status = "done";
+  } else if (completed.has("template-selected") && completed.has("repo-bound") && completed.has("github-ready") && completed.has("runtime-paired")) {
+    status = "ready";
+  } else if (completed.size > 1) {
+    status = "in_progress";
+  }
+
+  return {
+    status,
+    currentStep: nextStep,
+    completedSteps,
+    resumeUrl: finished ? "/rooms" : `/setup?template=${templateId}`,
+    canFinish:
+      completed.has("template-selected") &&
+      completed.has("repo-bound") &&
+      completed.has("github-ready") &&
+      completed.has("runtime-paired"),
+  };
+}
+
+function stepTone(completed: boolean, active: boolean) {
+  if (completed) {
+    return "lime";
+  }
+  if (active) {
+    return "yellow";
+  }
+  return "paper";
+}
+
+export function OnboardingStudioPanel() {
+  const { state, updateWorkspaceConfig, updateWorkspaceMemberPreferences } = usePhaseZeroState();
+  const workspace = state.workspace;
+  const currentTemplate = onboardingTemplateDefinition(workspace.onboarding.templateId);
+  const materialization = workspace.onboarding.materialization;
+  const progress = buildOnboardingStudioProgress(workspace, currentTemplate.id, workspace.onboarding.status === "done");
+  const sessionMember = state.auth.members.find((member) => member.id === state.auth.session.memberId);
+
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  async function persistTemplate(templateId: string, finished = false) {
+    const definition = onboardingTemplateDefinition(templateId);
+    const nextProgress = buildOnboardingStudioProgress(workspace, definition.id, finished);
+    setPendingTemplateId(definition.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      await updateWorkspaceConfig({
+        plan: definition.defaultPlan,
+        browserPush: definition.defaultBrowserPush,
+        memoryMode: definition.defaultMemoryMode,
+        onboarding: {
+          status: nextProgress.status,
+          templateId: definition.id,
+          currentStep: nextProgress.currentStep,
+          completedSteps: nextProgress.completedSteps,
+          resumeUrl: nextProgress.resumeUrl,
+        },
+      });
+
+      if (finished && sessionMember) {
+        await updateWorkspaceMemberPreferences(sessionMember.id, {
+          preferredAgentId: sessionMember.preferences.preferredAgentId ?? "",
+          startRoute: "/rooms",
+          githubHandle: sessionMember.githubIdentity?.handle ?? "",
+        });
+      }
+
+      setSuccess(
+        finished
+          ? "onboarding studio 已收口为 done；workspace 会把 `/rooms` 当成下一跳，而不是继续停在 setup。"
+          : `${definition.label} 模板已经写回 workspace truth；reload / restart 后会继续从当前 setup step 恢复。`
+      );
+    } catch (mutationError) {
+      setError(mutationError instanceof Error ? mutationError.message : "workspace onboarding update failed");
+    } finally {
+      setPendingTemplateId(null);
+    }
+  }
+
+  return (
+    <Panel tone="lime">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">onboarding studio</p>
+          <h2 className="mt-2 font-display text-3xl font-bold">把模板选择、首次启动步骤和 bootstrap package 收成可恢复真值</h2>
+        </div>
+        <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+          {valueOrPlaceholder(workspace.onboarding.status, "未开始")}
+        </span>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
+        `#127` 这层不再让 onboarding 只是 setup 页上的静态提示。模板选择、当前 step、恢复入口，以及 bootstrap package
+        都要跟 workspace durable truth 同源；更重的 mailbox / governance loop 继续留给后续票。
+      </p>
+
+      <div className="mt-5 grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-3">
+          {ONBOARDING_TEMPLATE_DEFINITIONS.map((template) => {
+            const active = currentTemplate.id === template.id;
+            const busy = pendingTemplateId === template.id;
+            return (
+              <Panel key={template.id} tone={active ? "yellow" : "paper"} className="!p-3.5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">{template.eyebrow}</p>
+                    <h3 className="mt-1.5 font-display text-[24px] font-bold leading-7">{template.label}</h3>
+                  </div>
+                  <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]">
+                    {active ? "current" : "template"}
+                  </span>
+                </div>
+                <p className="mt-2.5 text-sm leading-6">{template.description}</p>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  <WorkspaceMetric label="channels" value={template.channels.join(" / ")} />
+                  <WorkspaceMetric label="notify" value={template.notificationPolicy} />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {template.roles.map((role) => (
+                    <span key={`${template.id}-${role}`} className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px]">
+                      {role}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{template.notes[0]}</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    data-testid={`setup-template-select-${template.id}`}
+                    type="button"
+                    disabled={Boolean(pendingTemplateId)}
+                    onClick={() => void persistTemplate(template.id)}
+                    className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {busy ? "写回中..." : active ? "重新同步模板" : "选择模板"}
+                  </button>
+                </div>
+              </Panel>
+            );
+          })}
+        </div>
+
+        <div className="space-y-3">
+          <Panel tone="white" className="!p-3.5">
+            <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前 bootstrap package</p>
+            <div className="mt-3 grid gap-2">
+              <WorkspaceMetric label="template" value={valueOrPlaceholder(materialization?.label || currentTemplate.label, currentTemplate.label)} testID="setup-onboarding-template-package" />
+              <WorkspaceMetric label="resume" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "/setup")} />
+              <WorkspaceMetric label="notify" value={valueOrPlaceholder(materialization?.notificationPolicy, currentTemplate.notificationPolicy)} />
+            </div>
+            <div className="mt-3 space-y-2">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">materialized channels</p>
+              <p data-testid="setup-onboarding-materialized-channels" className="text-sm leading-6">
+                {(materialization?.channels ?? currentTemplate.channels).join(" / ")}
+              </p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">materialized agent roles</p>
+              <p data-testid="setup-onboarding-materialized-roles" className="text-sm leading-6">
+                {(materialization?.roles ?? currentTemplate.roles).join(" · ")}
+              </p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">bootstrap agents</p>
+              <p data-testid="setup-onboarding-materialized-agents" className="text-sm leading-6">
+                {(materialization?.agents ?? currentTemplate.agents).join(" / ")}
+              </p>
+            </div>
+            <div className="mt-3 space-y-2">
+              {(materialization?.notes ?? currentTemplate.notes).map((note, index) => (
+                <p key={`${currentTemplate.id}-note-${index}`} className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 text-sm leading-6">
+                  {note}
+                </p>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel tone="paper" className="!p-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-[0.22em]">resumable steps</p>
+                <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+                  当前 step 由 live repo / GitHub / runtime truth 推导，不再靠浏览器局部状态猜。
+                </p>
+              </div>
+              <button
+                data-testid="setup-onboarding-refresh-progress"
+                type="button"
+                disabled={Boolean(pendingTemplateId)}
+                onClick={() => void persistTemplate(currentTemplate.id)}
+                className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pendingTemplateId === currentTemplate.id ? "同步中..." : "刷新进度"}
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {ONBOARDING_STUDIO_STEPS.map((step) => {
+                const completed = progress.completedSteps.includes(step.id);
+                const active = progress.currentStep === step.id;
+                return (
+                  <Panel key={step.id} tone={stepTone(completed, active)} className="!p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-display text-lg font-semibold">{step.label}</p>
+                        <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{step.description}</p>
+                      </div>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em]">
+                        {completed ? "done" : active ? "next" : "pending"}
+                      </span>
+                    </div>
+                  </Panel>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p data-testid="setup-onboarding-current-step" className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
+                {valueOrPlaceholder(workspace.onboarding.currentStep, progress.currentStep)}
+              </p>
+              <button
+                data-testid="setup-onboarding-finish"
+                type="button"
+                disabled={!progress.canFinish || Boolean(pendingTemplateId)}
+                onClick={() => void persistTemplate(currentTemplate.id, true)}
+                className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                完成首次启动
+              </button>
+            </div>
+          </Panel>
+
+          {error ? (
+            <p data-testid="setup-onboarding-error" className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
+              {error}
+            </p>
+          ) : null}
+          {success ? (
+            <p data-testid="setup-onboarding-success" className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm">
+              {success}
+            </p>
+          ) : null}
+        </div>
+      </div>
     </Panel>
   );
 }

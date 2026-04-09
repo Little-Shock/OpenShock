@@ -48,12 +48,22 @@ type WorkspaceGitHubInstallSnapshot struct {
 }
 
 type WorkspaceOnboardingSnapshot struct {
-	Status         string   `json:"status"`
-	TemplateID     string   `json:"templateId,omitempty"`
-	CurrentStep    string   `json:"currentStep,omitempty"`
-	CompletedSteps []string `json:"completedSteps,omitempty"`
-	ResumeURL      string   `json:"resumeUrl,omitempty"`
-	UpdatedAt      string   `json:"updatedAt,omitempty"`
+	Status          string                             `json:"status"`
+	TemplateID      string                             `json:"templateId,omitempty"`
+	CurrentStep     string                             `json:"currentStep,omitempty"`
+	CompletedSteps  []string                           `json:"completedSteps,omitempty"`
+	ResumeURL       string                             `json:"resumeUrl,omitempty"`
+	Materialization WorkspaceOnboardingMaterialization `json:"materialization"`
+	UpdatedAt       string                             `json:"updatedAt,omitempty"`
+}
+
+type WorkspaceOnboardingMaterialization struct {
+	Label              string   `json:"label,omitempty"`
+	Channels           []string `json:"channels,omitempty"`
+	Roles              []string `json:"roles,omitempty"`
+	Agents             []string `json:"agents,omitempty"`
+	NotificationPolicy string   `json:"notificationPolicy,omitempty"`
+	Notes              []string `json:"notes,omitempty"`
 }
 
 type Channel struct {
