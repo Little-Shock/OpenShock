@@ -92,11 +92,11 @@ function runtimeSchedulerStrategyLabel(strategy: string) {
 }
 
 function runtimeProviderInventoryLabel(
-  providers: Array<{ label: string; models: string[] }>
+  providers: Array<{ label: string; models?: string[] }>
 ) {
   return providers
     .map((provider) => {
-      const models = provider.models.length > 0 ? provider.models.join(" / ") : "no models";
+      const models = (provider.models ?? []).length > 0 ? (provider.models ?? []).join(" / ") : "no models";
       return `${provider.label}: ${models}`;
     })
     .join(" · ");
@@ -104,6 +104,11 @@ function runtimeProviderInventoryLabel(
 
 function runtimeLeaseIsActive(status?: string) {
   return Boolean(status && status.trim() && status !== "done");
+}
+
+function looksLikeRuntimeLeaseConflict(value?: string) {
+  const text = value?.trim().toLowerCase() ?? "";
+  return text.includes("runtime lease 冲突") || text.includes("runtime lease conflict");
 }
 
 function WorkspaceMetric({
@@ -636,6 +641,11 @@ export function LiveSetupOverview() {
   );
   const activeLeases = leases.filter((item) => runtimeLeaseIsActive(item.status));
   const assignedRuntimeLabel = valueOrPlaceholder(scheduler.assignedMachine || scheduler.assignedRuntime, "暂无");
+  const blockedLeaseSession =
+    state.sessions.find((item) => item.status === "blocked" && looksLikeRuntimeLeaseConflict(item.summary)) ?? null;
+  const blockedLeaseInbox =
+    state.inbox.find((item) => item.kind === "blocked" && looksLikeRuntimeLeaseConflict(item.summary)) ?? null;
+  const leaseRecoveryNote = blockedLeaseSession?.controlNote?.trim() || blockedLeaseInbox?.summary?.trim() || "";
 
   if (loading || runtimeLoading) {
     return (
@@ -734,6 +744,18 @@ export function LiveSetupOverview() {
             {scheduler.summary || "当前还没有 scheduler truth。"}
           </p>
         </Panel>
+        {blockedLeaseSession ? (
+          <Panel tone="pink" className="!p-3.5">
+            <div data-testid="setup-runtime-lease-recovery">
+              <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Runtime Lease Recovery</p>
+              <p className="mt-3 font-display text-2xl font-bold">当前有 lane 被 lease conflict 挡住</p>
+              <p className="mt-3 text-sm leading-6">{blockedLeaseSession.summary}</p>
+              {leaseRecoveryNote ? (
+                <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">{leaseRecoveryNote}</p>
+              ) : null}
+            </div>
+          </Panel>
+        ) : null}
         <Panel tone="paper" className="!p-3.5">
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">多 Runtime 真值</p>
           <div className="mt-3 space-y-2">

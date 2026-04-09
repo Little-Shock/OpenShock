@@ -394,9 +394,24 @@ func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
 			var daemonErr *daemonHTTPError
 			if errors.As(ensureErr, &daemonErr) && daemonErr.Status == http.StatusConflict {
 				status = http.StatusConflict
-				message = buildConflictRoomMessage("runtime lease 冲突", ensureErr)
+				message = runtimeLeaseConflictMessage(daemonErr.Conflict)
 			}
-			nextState, appendErr := s.store.AppendSystemRoomMessage(result.RoomID, "System", message, "blocked")
+			var (
+				nextState store.State
+				appendErr error
+			)
+			if daemonErr != nil && daemonErr.Conflict != nil {
+				nextState, appendErr = s.store.AppendRuntimeLeaseConflict(
+					result.RoomID,
+					"System",
+					message,
+					runtimeLeaseConflictInboxTitle(daemonErr.Conflict),
+					runtimeLeaseConflictNextAction(daemonErr.Conflict),
+					runtimeLeaseConflictControlNote(daemonErr.Conflict),
+				)
+			} else {
+				nextState, appendErr = s.store.AppendSystemRoomMessage(result.RoomID, "System", message, "blocked")
+			}
 			if appendErr != nil {
 				writeJSON(w, status, map[string]string{"error": ensureErr.Error()})
 				return
@@ -496,9 +511,24 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			var daemonErr *daemonHTTPError
 			if errors.As(err, &daemonErr) && daemonErr.Status == http.StatusConflict {
 				status = http.StatusConflict
-				message = buildConflictRoomMessage("runtime lease 冲突", err)
+				message = runtimeLeaseConflictMessage(daemonErr.Conflict)
 			}
-			nextState, appendErr := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+			var (
+				nextState store.State
+				appendErr error
+			)
+			if daemonErr != nil && daemonErr.Conflict != nil {
+				nextState, appendErr = s.store.AppendRuntimeLeaseConflict(
+					roomID,
+					"System",
+					message,
+					runtimeLeaseConflictInboxTitle(daemonErr.Conflict),
+					runtimeLeaseConflictNextAction(daemonErr.Conflict),
+					runtimeLeaseConflictControlNote(daemonErr.Conflict),
+				)
+			} else {
+				nextState, appendErr = s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+			}
 			if appendErr != nil {
 				writeJSON(w, status, map[string]string{"error": err.Error()})
 				return
@@ -1208,9 +1238,24 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 		message := fmt.Sprintf("CLI 连接失败：%s", err.Error())
 		var daemonErr *daemonHTTPError
 		if errors.As(err, &daemonErr) && daemonErr.Status == http.StatusConflict {
-			message = buildConflictRoomMessage("runtime lease 冲突", err)
+			message = runtimeLeaseConflictMessage(daemonErr.Conflict)
 		}
-		nextState, appendErr := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+		var (
+			nextState store.State
+			appendErr error
+		)
+		if daemonErr != nil && daemonErr.Conflict != nil {
+			nextState, appendErr = s.store.AppendRuntimeLeaseConflict(
+				roomID,
+				"System",
+				message,
+				runtimeLeaseConflictInboxTitle(daemonErr.Conflict),
+				runtimeLeaseConflictNextAction(daemonErr.Conflict),
+				runtimeLeaseConflictControlNote(daemonErr.Conflict),
+			)
+		} else {
+			nextState, appendErr = s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
+		}
 		if appendErr != nil {
 			_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "error", Error: err.Error()})
 			return

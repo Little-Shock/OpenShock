@@ -975,6 +975,72 @@ func (s *Store) AppendSystemRoomMessage(roomID, speaker, text, tone string) (Sta
 	return cloneState(s.state), nil
 }
 
+func (s *Store) AppendRuntimeLeaseConflict(roomID, speaker, text, inboxTitle, nextAction, controlNote string) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
+	if !ok {
+		return State{}, fmt.Errorf("room not found")
+	}
+
+	now := shortClock()
+	title := defaultString(strings.TrimSpace(inboxTitle), "Runtime lease 冲突，等待当前 lane 释放")
+	action := defaultString(strings.TrimSpace(nextAction), "等待当前 lease 释放后重试。")
+	note := defaultString(strings.TrimSpace(controlNote), action)
+	msg := Message{ID: fmt.Sprintf("%s-system-%d", roomID, time.Now().UnixNano()), Speaker: speaker, Role: "system", Tone: "blocked", Message: text, Time: now}
+	s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], msg)
+	s.state.Rooms[roomIndex].MessageIDs = append(s.state.Rooms[roomIndex].MessageIDs, msg.ID)
+	s.state.Rooms[roomIndex].Unread++
+	s.state.Rooms[roomIndex].Topic.Status = "blocked"
+	s.state.Rooms[roomIndex].Topic.Summary = text
+	s.state.Issues[issueIndex].State = "blocked"
+	s.state.Runs[runIndex].Status = "blocked"
+	s.state.Runs[runIndex].Summary = text
+	s.state.Runs[runIndex].NextAction = action
+	s.state.Runs[runIndex].ControlNote = note
+	s.state.Runs[runIndex].Stderr = append(s.state.Runs[runIndex].Stderr, fmt.Sprintf("[%s] %s", now, text))
+	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{
+		ID:    fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1),
+		Label: title,
+		At:    now,
+		Tone:  "pink",
+	})
+	s.state.Inbox = append([]InboxItem{{
+		ID:      fmt.Sprintf("inbox-runtime-lease-%d", time.Now().UnixNano()),
+		Title:   title,
+		Kind:    "blocked",
+		Room:    s.state.Rooms[roomIndex].Title,
+		Time:    "刚刚",
+		Summary: text,
+		Action:  "查看冲突",
+		Href:    fmt.Sprintf("/rooms/%s/runs/%s", roomID, s.state.Runs[runIndex].ID),
+	}}, s.state.Inbox...)
+	s.updateAgentStateLocked(s.state.Runs[runIndex].Owner, "blocked", title)
+	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
+		item.Status = "blocked"
+		item.Summary = text
+		item.ControlNote = note
+		item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		if len(item.MemoryPaths) == 0 {
+			item.MemoryPaths = defaultSessionMemoryPaths(item.RoomID, item.IssueKey)
+		}
+	})
+
+	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, s.state.Issues[issueIndex].Owner, "System Escalation", fmt.Sprintf("- tone: blocked\n- message: %s\n- next_action: %s\n- control_note: %s", text, action, note)); err != nil {
+		return State{}, err
+	}
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "System Escalation", "runtime-lease-conflict", speaker)
+	if err := updateDecisionRecord(s.workspaceRoot, s.state.Issues[issueIndex].Key, "blocked", text); err != nil {
+		return State{}, err
+	}
+	s.recordMemoryArtifactWriteLocked(decisionArtifactPath(s.state.Issues[issueIndex].Key), "Decision status blocked", "runtime-lease-conflict", speaker)
+	if err := s.persistLocked(); err != nil {
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
 func (s *Store) AppendGitHubPullRequestFailure(roomID, operation, pullRequestLabel, detail string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
