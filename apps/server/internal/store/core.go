@@ -485,7 +485,9 @@ func (s *Store) markMemoryArtifactWritesLocked(paths []string, latest string) {
 
 func (s *Store) persistLocked() error {
 	s.refreshUsageObservabilityLocked()
-	body, err := json.MarshalIndent(s.state, "", "  ")
+	// Persist the same derived runtime/message/governance truth exposed by Snapshot()
+	// so restart artifacts and offline inspection do not drift from live surfaces.
+	body, err := json.MarshalIndent(cloneState(s.state), "", "  ")
 	if err != nil {
 		return err
 	}
