@@ -66,6 +66,7 @@
   - [x] 主要页面可在浏览器走查中打开
   - [x] room / run 现在已有真实的 `stop / resume / follow-thread` 控制面，不再只停在协作文案
   - [x] Board 已退到左下角次级入口，不再和频道 / room 同层抢主导航
+  - [x] 2026-04-08 `TKT-24` 已用 headed Chromium 复核 `channel / room` scrollback、composer 常驻、主要命中区与 1180px 窄屏抽查
 - 当前 GAP:
   - [ ] `app.slock.ai` 式 workspace shell、quick search、threads/saved 还未完全成型
   - [ ] `DM / Machine / Topic / Thread` 仍未形成完整的一等入口
@@ -435,7 +436,7 @@
 - `CHK-09` -> `TKT-13`
 - `CHK-14` -> `TKT-14`
 - `CHK-12` -> `TKT-15` `TKT-30`
-- `CHK-01` `CHK-16` -> `TKT-16` `TKT-21` `TKT-24`
+- `CHK-01` `CHK-16` -> `TKT-16` `TKT-21` `TKT-24` `TKT-38`
 - `CHK-02` `CHK-06` `CHK-17` -> `TKT-22` `TKT-23` `TKT-25` `TKT-27`
 - `CHK-05` `CHK-18` -> `TKT-20` `TKT-26`
 - `CHK-07` -> `TKT-28`

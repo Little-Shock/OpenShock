@@ -203,10 +203,40 @@
 6. 然后做 `TKT-35` `TKT-36`，把 Agent Mailbox、多 Agent 治理和角色拓扑跑通。
 7. 最后做 `TKT-26`，把 Board 的 planning 语言和回跳关系再收轻。
 8. `TKT-28/29/30/31` 作为并行后端 backlog 推进，但不抢当前前端主线优先级。
+9. 当前批次后立刻补起 `TKT-27`，把 DM / thread / search backend contract 补成后续 mailbox / governance 的底座。
+10. 然后开 `TKT-39` `TKT-40` `TKT-41`，把 PR review conversation、run history 与 usage/quota 可观测性补齐。
+11. 再开 `TKT-42` `TKT-43` `TKT-44`，把 memory viewer / cleanup 与 invite-verify-reset 恢复链补成正式产品面。
+12. 最后开 `TKT-45` `TKT-46` `TKT-47` `TKT-48` `TKT-49`，把 secret/sandbox、mobile 轻观察、workspace plan 和 delivery contract 收到交付闭环。
 
 ---
 
-## 五、每张执行票最少要写清什么
+## 五、交付前预备票
+
+- 这组票不是要越过当前 active wave 抢跑，而是为了避免 `#125/#126/#144` 一收口就重新出现 board 空窗。
+- 当前推荐一次性落板、按依赖排队的后续票：
+  - `TKT-27` DM / Thread / Search Backend Contracts
+  - `TKT-34` Onboarding Studio / Dev Team + Research Team Templates
+  - `TKT-35` Agent Mailbox / Handoff Contract
+  - `TKT-36` Multi-Agent Governance / Role Topology / Reviewer-Tester Loop
+  - `TKT-26` Board Light Planning Cleanup
+  - `TKT-31` Runtime Lease Conflict / Scheduler Hardening
+  - `TKT-39` Review Comment Sync / PR Conversation Backfill
+  - `TKT-40` Run History / Incremental Fetch / Resume Context
+  - `TKT-41` Usage / Token / Quota Observability
+  - `TKT-42` Memory Viewer / Correction / Forget Surface
+  - `TKT-43` Memory Cleanup / TTL / Promotion Worker
+  - `TKT-44` Invite / Verify / Reset Notification Template Delivery
+  - `TKT-45` Credential Profile / Encrypted Secret Scope
+  - `TKT-46` Restricted Local Sandbox / Network / Tool Policy
+  - `TKT-47` Mobile Web Light Observation / Notification Triage
+  - `TKT-48` Workspace Plan / Usage Limit / Retention Surface
+  - `TKT-49` Delivery Entry / Release Gate / Handoff Note Contract
+
+这组票的目的不是把 scope 散掉，而是把“做到可交付还剩什么”显式落成 queue。
+
+---
+
+## 六、每张执行票最少要写清什么
 
 - `Goal`
 - `Scope`
@@ -221,7 +251,7 @@
 
 ---
 
-## 六、每一轮固定 Loop
+## 七、每一轮固定 Loop
 
 每一轮开发固定按这个顺序：
 
@@ -244,7 +274,7 @@
 
 ---
 
-## 七、维护规则
+## 八、维护规则
 
 - 每一轮收口后，先更新这份文档，再开下一轮 planning 票
 - 如果 live board 已经收掉某条 face，对应条目要同步从“下一步”挪到“已完成”

@@ -434,7 +434,198 @@
 
 ---
 
-## 四、已完成批次归档
+## 四、交付后续预备票
+
+## TKT-39 Review Comment Sync / PR Conversation Backfill
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把 PR review comment / thread resolution 从“只靠 webhook 粗同步”补成可回看、可回链的产品真相。
+- 范围:
+  - review comment / thread normalized state
+  - PR detail、Room、Inbox 的 conversation back-link
+  - reopen / re-sync / backfill consistency
+- 依赖: `TKT-05` `TKT-28`
+- Done When:
+  - review comment、thread resolution、change request 能稳定回写到 PR / Room / Inbox
+  - reload 或 webhook replay 后不会丢失 review conversation truth
+  - 至少有一组 API + browser evidence 覆盖 `comment -> sync -> room/inbox back-link`
+- Checklist: `CHK-07` `CHK-08`
+- Test Cases: `TC-025` `TC-026`
+
+## TKT-40 Run History / Incremental Fetch / Resume Context
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把 run timeline 从“当前页可见”补成可持续回看的历史与恢复上下文。
+- 范围:
+  - run history / incremental fetch contract
+  - prior internal session / work_dir resume context
+  - room / run history browse surface
+- 依赖: `TKT-13`
+- Done When:
+  - 用户能稳定回看历史 run，而不是只看到当前窗口
+  - resume 会继续读取 prior internal session / prior work_dir truth
+  - 至少有一条 walkthrough 覆盖 `browse history -> reopen -> resume`
+- Checklist: `CHK-06` `CHK-09`
+- Test Cases: `TC-018` `TC-031`
+
+## TKT-41 Usage / Token / Quota Observability
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把上下文窗口、token、quota 与执行成本补成正式可观察真相。
+- 范围:
+  - run / room / workspace usage summary
+  - token / quota / context visibility
+  - release / ops verify 的 usage regression hooks
+- 依赖: `TKT-14`
+- Done When:
+  - 用户能看到 run / workspace 级 usage、quota 与 context cost
+  - 关键 usage 指标不再只藏在日志或 CLI 输出里
+  - verify / report 至少有一条证据覆盖 usage observability
+- Checklist: `CHK-06` `CHK-15`
+- Test Cases: `TC-021` `TC-026`
+
+## TKT-42 Memory Viewer / Correction / Forget Surface
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把记忆中心从“可浏览”补成“可纠正、可撤销、可追溯”的产品面。
+- 范围:
+  - memory detail audit trail
+  - correction / feedback / forget actions
+  - viewer-side provenance visibility
+- 依赖: `TKT-12` `TKT-32`
+- Done When:
+  - 人类能查看 memory 来源、版本和作用域，并执行 correction / forget
+  - correction / forget 会回写到同一份 governed truth
+  - 至少有一条 walkthrough 覆盖 `open memory -> correct/forget -> verify audit`
+- Checklist: `CHK-10` `CHK-22`
+- Test Cases: `TC-023` `TC-036`
+
+## TKT-43 Memory Cleanup / TTL / Promotion Worker
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 给 memory 增加去重、TTL、批量整理与 promote 队列，不让治理只停在单条人工操作。
+- 范围:
+  - dedupe / TTL / cleanup job
+  - promote-to-skill / policy queue hardening
+  - cleanup observability / recovery
+- 依赖: `TKT-12`
+- Done When:
+  - memory cleanup 不再只能靠手工回收
+  - TTL / dedupe / promote 结果有可见 ledger 与回归测试
+  - 至少有一条验证覆盖 `cleanup -> promote -> verify next-run truth`
+- Checklist: `CHK-10`
+- Test Cases: `TC-019` `TC-023`
+
+## TKT-44 Invite / Verify / Reset Notification Template Delivery
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把 invite / verify / reset / blocked escalation 收成同一条恢复与通知模板链。
+- 范围:
+  - notification template catalog
+  - invite / verify / reset / escalation email delivery
+  - cross-device recovery touchpoint
+- 依赖: `TKT-11` `TKT-29`
+- Done When:
+  - invite、verify、reset、高优先级 blocked escalation 都走同一份 delivery truth
+  - 用户能在通知面看到模板与最近投递结果
+  - 至少有一条验证覆盖 `invite/verify/reset -> delivery -> recovery`
+- Checklist: `CHK-11` `CHK-13` `CHK-20`
+- Test Cases: `TC-017` `TC-035` `TC-038`
+
+## TKT-45 Credential Profile / Encrypted Secret Scope
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 把凭证从隐性环境依赖补成有边界、可审计的 Credential Profile。
+- 范围:
+  - encrypted secret storage / scope
+  - workspace / agent / run credential binding
+  - secret visibility / approval boundary
+- 依赖: `TKT-30`
+- Done When:
+  - secret / credential 不再只能靠外部手配环境变量
+  - workspace / agent / run 对 secret scope 的读取边界清晰
+  - 至少有一条验证覆盖 `bind secret -> execute -> guard/audit`
+- Checklist: `CHK-12` `CHK-13`
+- Test Cases: `TC-024` `TC-027`
+
+## TKT-46 Restricted Local Sandbox / Network / Tool Policy
+
+- 状态: `todo`
+- 优先级: `P1`
+- 目标: 在 trusted sandbox 之上继续补 network / tool / command 白名单和 profile 化策略。
+- 范围:
+  - sandbox profile / policy surface
+  - network / command / tool allowlist
+  - denial / approval-required recovery flow
+- 依赖: `TKT-30` `TKT-45`
+- Done When:
+  - workspace / agent / run 能声明 restricted sandbox profile
+  - 越权网络、命令或工具调用会显式进入 denied / approval required
+  - 至少有一条验证覆盖 `restricted profile -> denied action -> override/retry`
+- Checklist: `CHK-12` `CHK-15`
+- Test Cases: `TC-021` `TC-027`
+
+## TKT-47 Mobile Web Light Observation / Notification Triage
+
+- 状态: `todo`
+- 优先级: `P2`
+- 目标: 给 mobile web 补最小可观察与通知分诊能力，而不是只保证“能打开”。
+- 范围:
+  - mobile layout / safe actions
+  - inbox / notification triage
+  - room / run / PR lightweight read path
+- 依赖: `TKT-24` `TKT-11`
+- Done When:
+  - 手机窄屏下可查看 room / run / inbox / PR 关键真相
+  - 用户能完成轻量 triage，而不会因为布局或命中区失真被卡住
+  - 至少有一条 walkthrough 覆盖 `mobile open -> triage -> ack`
+- Checklist: `CHK-01` `CHK-11` `CHK-16`
+- Test Cases: `TC-017` `TC-028` `TC-034`
+
+## TKT-48 Workspace Plan / Usage Limit / Retention Surface
+
+- 状态: `todo`
+- 优先级: `P2`
+- 目标: 把 workspace 计划、上限、usage 与 retention policy 做成用户可见的产品面。
+- 范围:
+  - workspace plan / limits summary
+  - max machines / agents / channels / history retention visibility
+  - usage / limit warning surface
+- 依赖: `TKT-41`
+- Done When:
+  - 用户能看到当前 workspace plan、usage、limits 与 retention truth
+  - 关键 limit 不再只存在文档或 server 默认值里
+  - 至少有一条验证覆盖 `view plan -> hit warning -> inspect usage`
+- Checklist: `CHK-15` `CHK-22`
+- Test Cases: `TC-021` `TC-026`
+
+## TKT-49 Delivery Entry / Release Gate / Handoff Note Contract
+
+- 状态: `todo`
+- 优先级: `P2`
+- 目标: 把交付入口、release-ready 标准与 handoff note 收成单一可执行契约。
+- 范围:
+  - delivery entry / operator handoff note
+  - release gate checklist / acceptance contract
+  - closeout / customer-facing evidence bundle
+- 依赖: `TKT-39` `TKT-41` `TKT-44`
+- Done When:
+  - 团队能用一份 contract 判断“是否 release-ready”
+  - handoff note、release gate、customer evidence 不再散落在多份临时说明里
+  - 至少有一条验证覆盖 `prepare release -> verify gate -> publish handoff note`
+- Checklist: `CHK-15` `CHK-21`
+- Test Cases: `TC-026` `TC-041`
+
+---
+
+## 五、已完成批次归档
 
 - `TKT-01` `done`
   - Runtime pairing 冷启动一致性已收平，Setup 首跳不再因旧 daemon URL 漂移而 502。
