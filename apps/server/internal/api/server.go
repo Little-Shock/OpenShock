@@ -85,6 +85,19 @@ type RunControlRequest struct {
 	Note   string `json:"note,omitempty"`
 }
 
+type SandboxPolicyRequest struct {
+	Profile         string   `json:"profile"`
+	AllowedHosts    []string `json:"allowedHosts"`
+	AllowedCommands []string `json:"allowedCommands"`
+	AllowedTools    []string `json:"allowedTools"`
+}
+
+type RunSandboxCheckRequest struct {
+	Kind     string `json:"kind"`
+	Target   string `json:"target"`
+	Override bool   `json:"override,omitempty"`
+}
+
 type RuntimeSnapshotResponse struct {
 	RuntimeID          string                  `json:"runtimeId,omitempty"`
 	DaemonURL          string                  `json:"daemonUrl,omitempty"`
@@ -128,6 +141,7 @@ type WorkspaceUpdateRequest struct {
 	Plan        string                      `json:"plan"`
 	BrowserPush string                      `json:"browserPush"`
 	MemoryMode  string                      `json:"memoryMode"`
+	Sandbox     *SandboxPolicyRequest       `json:"sandbox,omitempty"`
 	Onboarding  *WorkspaceOnboardingRequest `json:"onboarding,omitempty"`
 }
 
@@ -230,11 +244,22 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 				ResumeURL:      req.Onboarding.ResumeURL,
 			}
 		}
+		var sandbox *store.SandboxPolicy
+		if req.Sandbox != nil {
+			sandbox = &store.SandboxPolicy{
+				Profile:         req.Sandbox.Profile,
+				AllowedHosts:    req.Sandbox.AllowedHosts,
+				AllowedCommands: req.Sandbox.AllowedCommands,
+				AllowedTools:    req.Sandbox.AllowedTools,
+			}
+		}
 		nextState, workspace, err := s.store.UpdateWorkspaceConfig(store.WorkspaceConfigUpdateInput{
 			Plan:        req.Plan,
 			BrowserPush: req.BrowserPush,
 			MemoryMode:  req.MemoryMode,
+			Sandbox:     sandbox,
 			Onboarding:  onboarding,
+			UpdatedBy:   currentAuthActor(s.store.Snapshot().Auth.Session),
 		})
 		if err != nil {
 			writeWorkspaceConfigError(w, err)
@@ -689,6 +714,89 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 			"session": updatedSession,
 		})
 		return
+	}
+	if strings.HasSuffix(path, "/sandbox") {
+		runID := strings.TrimSuffix(path, "/sandbox")
+		switch r.Method {
+		case http.MethodPatch:
+			if !runExecuteGuard(s, w) {
+				return
+			}
+			var req SandboxPolicyRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+				return
+			}
+			nextState, run, err := s.store.UpdateRunSandbox(runID, store.SandboxPolicy{
+				Profile:         req.Profile,
+				AllowedHosts:    req.AllowedHosts,
+				AllowedCommands: req.AllowedCommands,
+				AllowedTools:    req.AllowedTools,
+			}, currentAuthActor(s.store.Snapshot().Auth.Session))
+			if err != nil {
+				switch {
+				case errors.Is(err, store.ErrSandboxRunNotFound):
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				case errors.Is(err, store.ErrSandboxProfileInvalid):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				default:
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				}
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"state": nextState, "run": run, "sandbox": run.Sandbox})
+			return
+		case http.MethodPost:
+			if !runExecuteGuard(s, w) {
+				return
+			}
+			var req RunSandboxCheckRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+				return
+			}
+			session := s.store.Snapshot().Auth.Session
+			if req.Override && !authSessionHasPermission(session, "workspace.manage") {
+				writeJSON(w, http.StatusForbidden, map[string]any{
+					"error":      "permission \"workspace.manage\" required for sandbox override",
+					"permission": "workspace.manage",
+					"session":    session,
+					"state":      s.store.Snapshot(),
+				})
+				return
+			}
+			nextState, run, decision, err := s.store.EvaluateRunSandbox(runID, store.RunSandboxCheckInput{
+				Kind:        req.Kind,
+				Target:      req.Target,
+				RequestedBy: currentAuthActor(session),
+				Override:    req.Override,
+			})
+			if err != nil {
+				switch {
+				case errors.Is(err, store.ErrSandboxRunNotFound):
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				case errors.Is(err, store.ErrSandboxActionKindInvalid),
+					errors.Is(err, store.ErrSandboxActionTargetRequired),
+					errors.Is(err, store.ErrSandboxOverrideRequiresReview):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				default:
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				}
+				return
+			}
+			status := http.StatusOK
+			switch decision.Status {
+			case "approval_required":
+				status = http.StatusAccepted
+			case "denied":
+				status = http.StatusConflict
+			}
+			writeJSON(w, status, map[string]any{"state": nextState, "run": run, "decision": decision})
+			return
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
 	}
 	if strings.HasSuffix(path, "/detail") {
 		s.handleRunDetail(w, r, strings.TrimSuffix(path, "/detail"))

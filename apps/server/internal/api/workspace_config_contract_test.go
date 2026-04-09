@@ -16,6 +16,12 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPatch, server.URL+"/v1/workspace", bytes.NewReader([]byte(`{
 		"browserPush":"全部 live 事件",
 		"memoryMode":"governed-first / recovery ready",
+		"sandbox":{
+			"profile":"restricted",
+			"allowedHosts":["github.com","api.github.com"],
+			"allowedCommands":["git status"],
+			"allowedTools":["read_file","search"]
+		},
 		"onboarding":{
 			"status":"ready",
 			"templateId":"research-team",
@@ -51,6 +57,9 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 	if payload.State.Workspace.MemoryMode != "governed-first / recovery ready" {
 		t.Fatalf("state workspace = %#v, want updated memory mode", payload.State.Workspace)
 	}
+	if payload.Workspace.Sandbox.Profile != "restricted" || len(payload.Workspace.Sandbox.AllowedTools) != 2 {
+		t.Fatalf("workspace sandbox payload = %#v, want restricted sandbox policy", payload.Workspace.Sandbox)
+	}
 
 	getResp, err := http.Get(server.URL + "/v1/workspace")
 	if err != nil {
@@ -67,6 +76,9 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 	}
 	if workspace.Plan == "" {
 		t.Fatalf("GET workspace plan missing: %#v", workspace)
+	}
+	if workspace.Sandbox.Profile != "restricted" || len(workspace.Sandbox.AllowedHosts) != 2 {
+		t.Fatalf("GET workspace sandbox = %#v, want persisted sandbox policy", workspace.Sandbox)
 	}
 	if workspace.Quota.Status == "" || workspace.Quota.Warning == "" {
 		t.Fatalf("GET workspace quota truth = %#v, want status + warning", workspace.Quota)

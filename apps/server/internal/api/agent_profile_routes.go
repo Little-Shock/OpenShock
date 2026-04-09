@@ -18,15 +18,16 @@ func registerAgentProfileRoutes(s *Server, mux *http.ServeMux) {
 }
 
 type AgentProfileUpdateRequest struct {
-	Role                  string   `json:"role"`
-	Avatar                string   `json:"avatar"`
-	Prompt                string   `json:"prompt"`
-	OperatingInstructions string   `json:"operatingInstructions"`
-	ProviderPreference    string   `json:"providerPreference"`
-	ModelPreference       string   `json:"modelPreference"`
-	RecallPolicy          string   `json:"recallPolicy"`
-	RuntimePreference     string   `json:"runtimePreference"`
-	MemorySpaces          []string `json:"memorySpaces"`
+	Role                  string                `json:"role"`
+	Avatar                string                `json:"avatar"`
+	Prompt                string                `json:"prompt"`
+	OperatingInstructions string                `json:"operatingInstructions"`
+	ProviderPreference    string                `json:"providerPreference"`
+	ModelPreference       string                `json:"modelPreference"`
+	RecallPolicy          string                `json:"recallPolicy"`
+	RuntimePreference     string                `json:"runtimePreference"`
+	MemorySpaces          []string              `json:"memorySpaces"`
+	Sandbox               *SandboxPolicyRequest `json:"sandbox,omitempty"`
 }
 
 func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +57,15 @@ func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 
 		snapshot := s.store.Snapshot()
+		var sandbox *store.SandboxPolicy
+		if req.Sandbox != nil {
+			sandbox = &store.SandboxPolicy{
+				Profile:         req.Sandbox.Profile,
+				AllowedHosts:    req.Sandbox.AllowedHosts,
+				AllowedCommands: req.Sandbox.AllowedCommands,
+				AllowedTools:    req.Sandbox.AllowedTools,
+			}
+		}
 		nextState, agent, err := s.store.UpdateAgentProfile(agentID, store.AgentProfileUpdateInput{
 			Role:                  req.Role,
 			Avatar:                req.Avatar,
@@ -66,6 +76,7 @@ func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
 			RecallPolicy:          req.RecallPolicy,
 			RuntimePreference:     req.RuntimePreference,
 			MemorySpaces:          req.MemorySpaces,
+			Sandbox:               sandbox,
 			UpdatedBy:             currentAuthActor(snapshot.Auth.Session),
 		})
 		if err != nil {

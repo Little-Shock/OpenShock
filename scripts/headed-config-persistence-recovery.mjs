@@ -238,6 +238,10 @@ try {
   const resumeUrl = "/access?resume=research-team";
   const browserPush = "全部 live 事件";
   const memoryMode = "governed-first / recovery ready";
+  const sandboxProfile = "restricted";
+  const allowedHosts = "github.com, api.openai.com";
+  const allowedCommands = "git status, pnpm test";
+  const allowedTools = "read_file, rg";
   const preferredAgentId = "agent-claude-review-runner";
   const preferredAgentLabel = "Claude Review Runner";
   const startRoute = "/rooms";
@@ -256,6 +260,10 @@ try {
   await page.getByTestId("settings-workspace-resume-url").fill(resumeUrl);
   await page.getByTestId("settings-workspace-browser-push").fill(browserPush);
   await page.getByTestId("settings-workspace-memory-mode").fill(memoryMode);
+  await page.getByTestId("settings-workspace-sandbox-profile").selectOption(sandboxProfile);
+  await page.getByTestId("settings-workspace-sandbox-allowed-hosts").fill(allowedHosts);
+  await page.getByTestId("settings-workspace-sandbox-allowed-commands").fill(allowedCommands);
+  await page.getByTestId("settings-workspace-sandbox-allowed-tools").fill(allowedTools);
   await page.getByTestId("settings-workspace-save").click();
   await waitForText(page, "settings-workspace-success", "workspace durable truth 已写回 server，并会跨 refresh / restart 继续保留。");
 
@@ -272,11 +280,15 @@ try {
   await waitForInputValue(page, "settings-workspace-resume-url", resumeUrl);
   await waitForInputValue(page, "settings-workspace-browser-push", browserPush);
   await waitForInputValue(page, "settings-workspace-memory-mode", memoryMode);
+  await waitFor(async () => (await page.getByTestId("settings-workspace-sandbox-profile").inputValue()) === sandboxProfile, "sandbox profile did not persist");
+  await waitForInputValue(page, "settings-workspace-sandbox-allowed-hosts", allowedHosts);
+  await waitForInputValue(page, "settings-workspace-sandbox-allowed-commands", allowedCommands);
+  await waitForInputValue(page, "settings-workspace-sandbox-allowed-tools", allowedTools);
   await waitForText(page, "settings-workspace-template-text", templateId);
   await waitFor(async () => (await page.getByTestId("settings-member-preferred-agent").inputValue()) === preferredAgentId, "preferred agent select did not persist");
   await waitFor(async () => (await page.getByTestId("settings-member-start-route").inputValue()) === startRoute, "start route select did not persist");
   await waitForInputValue(page, "settings-member-github-handle", githubHandle);
-  results.push("- Settings writes survive immediate browser reload without falling back to client-only draft state.");
+  results.push("- Settings writes now carry onboarding plus workspace sandbox baseline, and survive immediate browser reload without falling back to client-only draft state.");
 
   await page.goto(`${webURL}/access`, { waitUntil: "domcontentloaded" });
   await waitForText(page, "access-durable-preferred-agent", preferredAgentLabel);
@@ -332,7 +344,7 @@ try {
     "",
     "## Scope",
     "",
-    "- Edited workspace onboarding/template/browser-push/memory-mode from `/settings`.",
+    "- Edited workspace onboarding/template/browser-push/memory-mode/sandbox baseline from `/settings`.",
     "- Edited member preferred-agent/start-route/github-identity from `/settings`.",
     "- Verified same truth from `/access` and `/setup` after reload, server restart, and second browser context replay.",
   ];

@@ -225,6 +225,10 @@ try {
 
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
   const results = [];
+  const sandboxProfile = "restricted";
+  const allowedHosts = "github.com, api.openai.com";
+  const allowedCommands = "git status, pnpm test";
+  const allowedTools = "read_file, rg";
 
   await page.goto(`${webURL}/profiles/agent/agent-codex-dockmaster`, { waitUntil: "domcontentloaded" });
   await waitForVisible(page.locator('[data-testid="profile-surface-title"]'), "agent profile title did not render");
@@ -241,6 +245,10 @@ try {
     .fill("Keep reviewer and owner windows separate.");
   await page.locator('[data-testid="profile-editor-provider-preference"]').selectOption("Claude Code CLI");
   await page.locator('[data-testid="profile-editor-recall-policy"]').selectOption("agent-first");
+  await page.locator('[data-testid="profile-editor-sandbox-profile"]').selectOption(sandboxProfile);
+  await page.locator('[data-testid="profile-editor-sandbox-allowed-hosts"]').fill(allowedHosts);
+  await page.locator('[data-testid="profile-editor-sandbox-allowed-commands"]').fill(allowedCommands);
+  await page.locator('[data-testid="profile-editor-sandbox-allowed-tools"]').fill(allowedTools);
 
   const issueRoomToggle = page.locator('[data-testid="profile-editor-memory-space-issue-room"]');
   if (await issueRoomToggle.isChecked()) {
@@ -263,7 +271,7 @@ try {
   }, "next-run preview did not reflect updated profile");
   await waitForVisible(page.locator('[data-testid="profile-audit-entry"]'), "profile audit entry did not render");
   await capture(page, "agent-profile-after-save");
-  results.push("- 在 Agent profile 中编辑 `role / avatar / prompt / provider preference / memory binding / recall policy` 后，保存会直接写回后端 truth，并立刻刷新同页状态。");
+  results.push("- 在 Agent profile 中编辑 `role / avatar / prompt / provider preference / memory binding / recall policy / sandbox policy` 后，保存会直接写回后端 truth，并立刻刷新同页状态。");
 
   await waitForVisible(
     page.locator('[data-testid="profile-next-run-preview-file-openshock-agents-codex-dockmaster-memory-md"]'),
@@ -278,15 +286,19 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForVisible(page.locator('[data-testid="profile-editor-role"]'), "profile editor did not survive reload");
   await waitFor(async () => (await page.locator('[data-testid="profile-editor-role"]').inputValue()) === "Delivery Lead", "role did not persist after reload");
+  await waitFor(async () => (await page.locator('[data-testid="profile-editor-sandbox-profile"]').inputValue()) === sandboxProfile, "sandbox profile did not persist after reload");
+  await waitFor(async () => (await page.locator('[data-testid="profile-editor-sandbox-allowed-hosts"]').inputValue()) === allowedHosts, "sandbox hosts did not persist after reload");
+  await waitFor(async () => (await page.locator('[data-testid="profile-editor-sandbox-allowed-commands"]').inputValue()) === allowedCommands, "sandbox commands did not persist after reload");
+  await waitFor(async () => (await page.locator('[data-testid="profile-editor-sandbox-allowed-tools"]').inputValue()) === allowedTools, "sandbox tools did not persist after reload");
   await waitFor(async () => {
     const text = await page.locator('[data-testid="profile-next-run-preview-summary"]').innerText();
     return text.includes("Delivery Lead") && text.includes("agent-first");
   }, "next-run preview did not persist after reload");
   await capture(page, "agent-profile-after-reload");
-  results.push("- 刷新页面后，profile editor、profile audit 和 next-run preview 都会继续读回同一份持久化 truth，不会退回默认值。");
+  results.push("- 刷新页面后，profile editor、profile audit 和 next-run preview 都会继续读回同一份持久化 truth；sandbox allowlist 也不会退回默认值。");
 
   const report = [
-    "# 2026-04-08 Agent Profile Editor Report",
+    "# 2026-04-09 Agent Profile Editor Report",
     "",
     `- Command: \`pnpm test:headed-agent-profile-editor -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
@@ -298,7 +310,7 @@ try {
     ...screenshots.map((shot) => `- ${shot.name}: ${shot.path}`),
     "",
     "## Single Value",
-    "- Agent profile 现在已经不只是只读 surface：`role / avatar / prompt / provider preference / memory binding / recall policy` 可编辑、可持久化，并能直接改写同页 next-run preview 与 profile audit truth。",
+    "- Agent profile 现在已经不只是只读 surface：`role / avatar / prompt / provider preference / memory binding / recall policy / sandbox policy` 可编辑、可持久化，并能直接改写同页 next-run preview 与 profile audit truth。",
   ].join("\n");
 
   await writeFile(reportPath, `${report}\n`, "utf8");

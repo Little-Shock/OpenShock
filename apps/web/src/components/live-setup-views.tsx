@@ -477,6 +477,7 @@ export function OnboardingStudioPanel() {
         plan: syncTemplateDefaults ? definition.defaultPlan : workspace.plan,
         browserPush: syncTemplateDefaults ? definition.defaultBrowserPush : workspace.browserPush,
         memoryMode: syncTemplateDefaults ? definition.defaultMemoryMode : workspace.memoryMode,
+        sandbox: workspace.sandbox,
         onboarding: {
           status: nextProgress.status,
           templateId: definition.id,

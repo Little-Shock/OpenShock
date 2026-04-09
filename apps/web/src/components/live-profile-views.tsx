@@ -7,6 +7,7 @@ import { OpenShockShell } from "@/components/open-shock-shell";
 import { DetailRail, Panel } from "@/components/phase-zero-views";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { useLiveMemoryCenter } from "@/lib/live-memory";
+import { formatSandboxList, sandboxPolicyDraft, sandboxPolicySummary, sandboxProfileLabel } from "@/lib/sandbox-policy";
 import type {
   AgentStatus,
   AuthSession,
@@ -15,6 +16,7 @@ import type {
   Room,
   Run,
   RuntimeRegistryRecord,
+  SandboxProfile,
   WorkspaceMember,
 } from "@/lib/phase-zero-types";
 import { buildProfileHref, isProfileKind, type ProfileKind } from "@/lib/profile-surface";
@@ -423,6 +425,10 @@ function AgentProfileSurface({
   const [recallPolicyDraft, setRecallPolicyDraft] = useState(agent.recallPolicy);
   const [runtimePreferenceDraft, setRuntimePreferenceDraft] = useState(agent.runtimePreference);
   const [memorySpacesDraft, setMemorySpacesDraft] = useState<string[]>(agent.memorySpaces);
+  const [sandboxProfileDraft, setSandboxProfileDraft] = useState<SandboxProfile>((agent.sandbox.profile || "trusted") as SandboxProfile);
+  const [allowedHostsDraft, setAllowedHostsDraft] = useState(formatSandboxList(agent.sandbox.allowedHosts));
+  const [allowedCommandsDraft, setAllowedCommandsDraft] = useState(formatSandboxList(agent.sandbox.allowedCommands));
+  const [allowedToolsDraft, setAllowedToolsDraft] = useState(formatSandboxList(agent.sandbox.allowedTools));
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -463,9 +469,17 @@ function AgentProfileSurface({
     setRecallPolicyDraft(agent.recallPolicy);
     setRuntimePreferenceDraft(agent.runtimePreference);
     setMemorySpacesDraft(agent.memorySpaces);
+    setSandboxProfileDraft((agent.sandbox.profile || "trusted") as SandboxProfile);
+    setAllowedHostsDraft(formatSandboxList(agent.sandbox.allowedHosts));
+    setAllowedCommandsDraft(formatSandboxList(agent.sandbox.allowedCommands));
+    setAllowedToolsDraft(formatSandboxList(agent.sandbox.allowedTools));
   }, [
     agent.avatar,
     agent.id,
+    agent.sandbox.allowedCommands,
+    agent.sandbox.allowedHosts,
+    agent.sandbox.allowedTools,
+    agent.sandbox.profile,
     agent.memorySpaces,
     agent.modelPreference,
     agent.operatingInstructions,
@@ -532,6 +546,11 @@ function AgentProfileSurface({
         recallPolicy: recallPolicyDraft,
         runtimePreference: runtimePreferenceDraft,
         memorySpaces: memorySpacesDraft,
+        sandbox: sandboxPolicyDraft(sandboxProfileDraft, {
+          allowedHosts: allowedHostsDraft,
+          allowedCommands: allowedCommandsDraft,
+          allowedTools: allowedToolsDraft,
+        }),
       });
       await refreshMemoryCenter();
       setSaveStatus("Agent profile 已写回后端 truth，next-run preview 已同步刷新。");
@@ -636,6 +655,26 @@ function AgentProfileSurface({
             <CapabilityChips items={agent.memorySpaces} />
           </Panel>
 
+          <Panel tone="paper">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Local Sandbox Policy</p>
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.58)]">
+                {sandboxProfileLabel(agent.sandbox.profile)}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+              这层把 agent 默认 runtime sandbox profile 和 allowlist 写成可审核真值；新 run 会先继承 owner policy，再由 run 自己按 exact target 继续收口。
+            </p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <CapabilityChips items={[sandboxPolicySummary(agent.sandbox)]} />
+              <div className="space-y-2 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm leading-6">
+                <p><span className="font-semibold">Hosts:</span> {valueOrPlaceholder(formatSandboxList(agent.sandbox.allowedHosts), "未声明")}</p>
+                <p><span className="font-semibold">Commands:</span> {valueOrPlaceholder(formatSandboxList(agent.sandbox.allowedCommands), "未声明")}</p>
+                <p><span className="font-semibold">Tools:</span> {valueOrPlaceholder(formatSandboxList(agent.sandbox.allowedTools), "未声明")}</p>
+              </div>
+            </div>
+          </Panel>
+
           <Panel tone="white">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Agent Profile Editor</p>
@@ -644,7 +683,7 @@ function AgentProfileSurface({
               </span>
             </div>
             <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这层把 `role / avatar / prompt / provider / model / runtime affinity / memory binding / recall policy` 直接写回 live server truth；保存后同页会回读 next-run preview。
+              这层把 `role / avatar / prompt / provider / model / runtime affinity / memory binding / recall policy / sandbox policy` 直接写回 live server truth；保存后同页会回读 next-run preview。
             </p>
             {!canEdit ? (
               <p className="mt-3 rounded-[16px] border-2 border-dashed border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3 text-sm leading-6">
@@ -768,6 +807,55 @@ function AgentProfileSurface({
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="block">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.58)]">Sandbox Profile</span>
+                  <select
+                    data-testid="profile-editor-sandbox-profile"
+                    className="mt-1.5 w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 text-sm"
+                    value={sandboxProfileDraft}
+                    onChange={(event) => setSandboxProfileDraft(event.target.value as SandboxProfile)}
+                    disabled={!canEdit || saving}
+                  >
+                    <option value="trusted">trusted</option>
+                    <option value="restricted">restricted</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.58)]">Allowed Hosts</span>
+                  <input
+                    data-testid="profile-editor-sandbox-allowed-hosts"
+                    className="mt-1.5 w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 text-sm"
+                    value={allowedHostsDraft}
+                    onChange={(event) => setAllowedHostsDraft(event.target.value)}
+                    disabled={!canEdit || saving}
+                    placeholder="github.com, api.openai.com"
+                  />
+                </label>
+                <label className="block">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.58)]">Allowed Tools</span>
+                  <input
+                    data-testid="profile-editor-sandbox-allowed-tools"
+                    className="mt-1.5 w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 text-sm"
+                    value={allowedToolsDraft}
+                    onChange={(event) => setAllowedToolsDraft(event.target.value)}
+                    disabled={!canEdit || saving}
+                    placeholder="read_file, rg"
+                  />
+                </label>
+                <label className="block md:col-span-2">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.58)]">Allowed Commands</span>
+                  <input
+                    data-testid="profile-editor-sandbox-allowed-commands"
+                    className="mt-1.5 w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 text-sm"
+                    value={allowedCommandsDraft}
+                    onChange={(event) => setAllowedCommandsDraft(event.target.value)}
+                    disabled={!canEdit || saving}
+                    placeholder="git status, pnpm test"
+                  />
                 </label>
               </div>
 

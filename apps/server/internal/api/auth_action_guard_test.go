@@ -37,6 +37,8 @@ func TestMutationRoutesRequireActiveAuthSession(t *testing.T) {
 		{name: "room reply stream", method: http.MethodPost, path: "/v1/rooms/room-runtime/messages/stream", body: `{"prompt":"继续推进"}`, permission: "room.reply"},
 		{name: "run exec", method: http.MethodPost, path: "/v1/exec", body: `{"prompt":"继续推进"}`, permission: "run.execute"},
 		{name: "run control", method: http.MethodPost, path: "/v1/runs/run_runtime_01/control", body: `{"action":"stop","note":"先暂停"}`, permission: "run.execute"},
+		{name: "run sandbox patch", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/sandbox", body: `{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}`, permission: "run.execute"},
+		{name: "run sandbox check", method: http.MethodPost, path: "/v1/runs/run_runtime_01/sandbox", body: `{"kind":"command","target":"git push --force"}`, permission: "run.execute"},
 		{name: "room pull request", method: http.MethodPost, path: "/v1/rooms/room-runtime/pull-request", body: `{}`, permission: "pull_request.review"},
 		{name: "pull request merge", method: http.MethodPost, path: "/v1/pull-requests/pr-runtime-18", body: `{"status":"merged"}`, permission: "pull_request.merge"},
 		{name: "inbox review", method: http.MethodPost, path: "/v1/inbox/inbox-review-copy", body: `{"decision":"changes_requested"}`, permission: "inbox.review"},
@@ -204,6 +206,44 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 			},
 		},
 		{
+			name:   "run sandbox patch",
+			method: http.MethodPatch,
+			path:   "/v1/runs/run_runtime_01/sandbox",
+			body:   `{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("PATCH /v1/runs/run_runtime_01/sandbox status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					Run     store.Run           `json:"run"`
+					Sandbox store.SandboxPolicy `json:"sandbox"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Run.Sandbox.Profile != "restricted" || len(payload.Sandbox.AllowedCommands) != 1 {
+					t.Fatalf("sandbox patch payload = %#v, want restricted policy", payload)
+				}
+			},
+		},
+		{
+			name:   "run sandbox check",
+			method: http.MethodPost,
+			path:   "/v1/runs/run_runtime_01/sandbox",
+			body:   `{"kind":"tool","target":"read_file"}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("POST /v1/runs/run_runtime_01/sandbox status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					Run      store.Run             `json:"run"`
+					Decision store.SandboxDecision `json:"decision"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Decision.Status != "allowed" || payload.Run.SandboxDecision.Status != "allowed" {
+					t.Fatalf("sandbox check payload = %#v, want allowed decision", payload)
+				}
+			},
+		},
+		{
 			name:   "pull request review",
 			method: http.MethodPost,
 			path:   "/v1/rooms/room-runtime/pull-request",
@@ -330,6 +370,37 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 			}
 		})
 	}
+
+	t.Run("member cannot sandbox override without workspace manage", func(t *testing.T) {
+		baseline := s.Snapshot()
+		resp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/runs/run_runtime_01/sandbox", `{"kind":"command","target":"git push --force","override":true}`)
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("POST sandbox override status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+		}
+
+		var payload struct {
+			Error      string            `json:"error"`
+			Permission string            `json:"permission"`
+			Session    store.AuthSession `json:"session"`
+			State      store.State       `json:"state"`
+		}
+		decodeJSON(t, resp, &payload)
+
+		if payload.Error != `permission "workspace.manage" required for sandbox override` {
+			t.Fatalf("error = %q, want sandbox override workspace.manage denial", payload.Error)
+		}
+		if payload.Permission != "workspace.manage" {
+			t.Fatalf("permission = %q, want workspace.manage", payload.Permission)
+		}
+		if payload.Session.Role != "member" || payload.Session.Email != "mina@openshock.dev" {
+			t.Fatalf("session = %#v, want member session", payload.Session)
+		}
+		if !reflect.DeepEqual(normalizeAuthGuardState(payload.State), normalizeAuthGuardState(baseline)) {
+			t.Fatalf("state mutated on forbidden sandbox override")
+		}
+	})
 }
 
 func TestMemberRoleCanAdvanceMailboxLifecycle(t *testing.T) {
@@ -398,6 +469,8 @@ func TestViewerRoleCannotMutateProtectedSurfaces(t *testing.T) {
 		{name: "topic guidance", method: http.MethodPatch, path: "/v1/topics/topic-runtime", body: `{"summary":"viewer should not guide topic"}`, permission: "room.reply"},
 		{name: "run execute", method: http.MethodPost, path: "/v1/exec", body: `{"prompt":"viewer should not exec"}`, permission: "run.execute"},
 		{name: "run control", method: http.MethodPost, path: "/v1/runs/run_runtime_01/control", body: `{"action":"stop","note":"viewer should not stop"}`, permission: "run.execute"},
+		{name: "run sandbox patch", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/sandbox", body: `{"profile":"restricted","allowedHosts":["github.com"],"allowedCommands":["git status"],"allowedTools":["read_file"]}`, permission: "run.execute"},
+		{name: "run sandbox check", method: http.MethodPost, path: "/v1/runs/run_runtime_01/sandbox", body: `{"kind":"command","target":"git push --force"}`, permission: "run.execute"},
 		{name: "pull request review", method: http.MethodPost, path: "/v1/rooms/room-runtime/pull-request", body: `{}`, permission: "pull_request.review"},
 		{name: "pull request merge", method: http.MethodPost, path: "/v1/pull-requests/pr-runtime-18", body: `{"status":"merged"}`, permission: "pull_request.merge"},
 		{name: "inbox review", method: http.MethodPost, path: "/v1/inbox/inbox-review-copy", body: `{"decision":"changes_requested"}`, permission: "inbox.review"},

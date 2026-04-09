@@ -218,6 +218,13 @@ func (s *Store) hydrateMissingDefaults() {
 	if s.state.RoomMessages == nil {
 		s.state.RoomMessages = defaults.RoomMessages
 	}
+	for index := range s.state.Agents {
+		syncSandboxPolicyDefaults(&s.state.Agents[index].Sandbox)
+	}
+	for index := range s.state.Runs {
+		syncSandboxPolicyDefaults(&s.state.Runs[index].Sandbox)
+		syncSandboxDecisionDefaults(&s.state.Runs[index].SandboxDecision)
+	}
 	s.ensureRuntimeRegistryState()
 	s.ensureSessionConsistency()
 	s.ensureAuthConsistency()

@@ -25,7 +25,13 @@ func TestUpdateAgentProfilePersistsAuditAndPreview(t *testing.T) {
 		RecallPolicy:          "agent-first",
 		RuntimePreference:     "shock-main",
 		MemorySpaces:          []string{"workspace", "user"},
-		UpdatedBy:             "Larkspur",
+		Sandbox: &SandboxPolicy{
+			Profile:         sandboxProfileRestricted,
+			AllowedHosts:    []string{"github.com"},
+			AllowedCommands: []string{"git status"},
+			AllowedTools:    []string{"read_file"},
+		},
+		UpdatedBy: "Larkspur",
 	})
 	if err != nil {
 		t.Fatalf("UpdateAgentProfile() error = %v", err)
@@ -33,6 +39,9 @@ func TestUpdateAgentProfilePersistsAuditAndPreview(t *testing.T) {
 
 	if agent.Role != "Delivery Lead" || agent.Avatar != "signal-radar" || agent.ProviderPreference != "Claude Code CLI" || agent.ModelPreference != "claude-sonnet-4" || agent.RuntimePreference != "shock-main" {
 		t.Fatalf("updated agent = %#v, want edited role/avatar/provider/model/runtime preference", agent)
+	}
+	if agent.Sandbox.Profile != sandboxProfileRestricted || len(agent.Sandbox.AllowedCommands) != 1 {
+		t.Fatalf("updated agent sandbox = %#v, want restricted sandbox policy", agent.Sandbox)
 	}
 	if len(agent.ProfileAudit) == 0 || !strings.Contains(agent.ProfileAudit[0].Summary, "role") {
 		t.Fatalf("profile audit = %#v, want latest audit entry", agent.ProfileAudit)
@@ -88,7 +97,13 @@ func TestUpdateAgentProfileAllowsModelOutsideProviderCatalog(t *testing.T) {
 		RecallPolicy:          "agent-first",
 		RuntimePreference:     "shock-sidecar",
 		MemorySpaces:          []string{"workspace", "user"},
-		UpdatedBy:             "Larkspur",
+		Sandbox: &SandboxPolicy{
+			Profile:         sandboxProfileRestricted,
+			AllowedHosts:    []string{"github.com"},
+			AllowedCommands: []string{"git status"},
+			AllowedTools:    []string{"read_file"},
+		},
+		UpdatedBy: "Larkspur",
 	})
 	if err != nil {
 		t.Fatalf("UpdateAgentProfile() error = %v", err)
