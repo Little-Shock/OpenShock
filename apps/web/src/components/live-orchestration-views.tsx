@@ -477,6 +477,11 @@ export function LiveOrchestrationBoard({
                       </span>
                     </div>
                     <p className="mt-3 text-sm leading-6">{session.summary}</p>
+                    {session.controlNote ? (
+                      <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+                        recovery: {session.controlNote}
+                      </p>
+                    ) : null}
                     <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
                       runtime: {session.runtime} · branch: {session.branch} · memory paths: {session.memoryPaths.length}
                     </p>

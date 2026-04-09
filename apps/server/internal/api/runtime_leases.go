@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/Larkspur-Wang/OpenShock/apps/server/internal/store"
@@ -92,4 +93,83 @@ func buildConflictRoomMessage(prefix string, err error) string {
 		return prefix
 	}
 	return fmt.Sprintf("%s：%s", prefix, err.Error())
+}
+
+func runtimeLeaseConflictTargetName(conflict *daemonLeaseConflict) string {
+	if conflict == nil {
+		return "current-lane"
+	}
+	if worktreeName := strings.TrimSpace(conflict.WorktreeName); worktreeName != "" {
+		return worktreeName
+	}
+	if cwd := strings.TrimSpace(conflict.Cwd); cwd != "" {
+		return filepath.Base(filepath.Clean(cwd))
+	}
+	key := strings.TrimSpace(conflict.Key)
+	if strings.Contains(key, "::") {
+		parts := strings.Split(key, "::")
+		key = parts[len(parts)-1]
+	}
+	if key != "" {
+		return filepath.Base(filepath.Clean(key))
+	}
+	return "current-lane"
+}
+
+func runtimeLeaseConflictTarget(conflict *daemonLeaseConflict) string {
+	name := runtimeLeaseConflictTargetName(conflict)
+	if conflict != nil && strings.TrimSpace(conflict.Operation) == "worktree" {
+		return fmt.Sprintf("worktree lane `%s`", name)
+	}
+	return fmt.Sprintf("执行 lane `%s`", name)
+}
+
+func runtimeLeaseConflictHolder(conflict *daemonLeaseConflict) string {
+	if conflict == nil {
+		return "另一条 active runtime lease"
+	}
+	return defaultString(
+		strings.TrimSpace(conflict.SessionID),
+		defaultString(
+			strings.TrimSpace(conflict.RunID),
+			defaultString(strings.TrimSpace(conflict.RoomID), defaultString(strings.TrimSpace(conflict.LeaseID), "另一条 active runtime lease")),
+		),
+	)
+}
+
+func runtimeLeaseConflictInboxTitle(conflict *daemonLeaseConflict) string {
+	if conflict != nil && strings.TrimSpace(conflict.Operation) == "worktree" {
+		return "Runtime lease 冲突，等待 worktree lane 释放"
+	}
+	return "Runtime lease 冲突，等待当前 lane 释放"
+}
+
+func runtimeLeaseConflictMessage(conflict *daemonLeaseConflict) string {
+	return fmt.Sprintf("runtime lease 冲突：当前 %s 正被 `%s` 占用。", runtimeLeaseConflictTarget(conflict), runtimeLeaseConflictHolder(conflict))
+}
+
+func runtimeLeaseConflictNextAction(conflict *daemonLeaseConflict) string {
+	targetName := runtimeLeaseConflictTargetName(conflict)
+	holder := runtimeLeaseConflictHolder(conflict)
+	if conflict != nil && strings.TrimSpace(conflict.Operation) == "worktree" {
+		return fmt.Sprintf("等待 `%s` 释放 worktree lane `%s`，或改用新的 branch/worktree lane 后重试。", holder, targetName)
+	}
+	return fmt.Sprintf("等待 `%s` 释放执行 lane `%s`，或切到新的 room lane / runtime 后重试。", holder, targetName)
+}
+
+func runtimeLeaseConflictControlNote(conflict *daemonLeaseConflict) string {
+	targetName := runtimeLeaseConflictTargetName(conflict)
+	holder := runtimeLeaseConflictHolder(conflict)
+	targetKind := "执行 lane"
+	if conflict != nil && strings.TrimSpace(conflict.Operation) == "worktree" {
+		targetKind = "worktree lane"
+	}
+	note := fmt.Sprintf("当前 %s `%s` 正被 `%s` 占用。", targetKind, targetName, holder)
+	if conflict != nil && strings.TrimSpace(conflict.AcquiredAt) != "" {
+		note += fmt.Sprintf(" lease 创建于 %s。", strings.TrimSpace(conflict.AcquiredAt))
+	}
+	if conflict != nil && strings.TrimSpace(conflict.Operation) == "worktree" {
+		return fmt.Sprintf("%s 先释放旧 worktree lane，再重试当前 branch。", note)
+	}
+	return fmt.Sprintf("%s 先等待当前执行目录释放，或切到新的 lane 再继续。", note)
 }

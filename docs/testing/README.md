@@ -66,6 +66,8 @@
   - `TKT-38` 的 state / SSE visible truth negative scan、copy cleanup 与 release-gate hygiene evidence
 - [Test Report 2026-04-09 Board Planning Surface](./Test-Report-2026-04-09-board-planning-surface.md)
   - `TKT-26` 的 room / issue -> board planning mirror -> room exact replay，与轻量 card 语言 evidence
+- [Test Report 2026-04-09 Runtime Lease Conflict / Scheduler Hardening](./Test-Report-2026-04-09-runtime-lease-conflict-scheduler-hardening.md)
+  - `TKT-31` 的 lease conflict recovery、scheduler failover continuity 与 `/setup` `/agents` live decision-reason evidence
 
 常用入口：
 
@@ -111,6 +113,8 @@
   - 验证 `/setup`、machine profile、`/agents` 与 Agent profile editor 是否共享同一份 machine capability / provider-model catalog truth，并允许写回 provider+model+runtime affinity
 - `pnpm test:headed-multi-runtime-scheduler-failover`
   - 验证 multi-runtime scheduler、active lease、offline failover
+- `pnpm test:headed-runtime-lease-conflict-recovery`
+  - 验证 runtime lease conflict 的 blocked/recovery truth，以及 `/setup` `/agents` 是否显示同一条恢复说明
 - `pnpm test:headed-quick-search`
   - 验证 Quick Search 的 channel / room / issue / run / agent 命中、跳转、高亮和 empty state
 - `pnpm test:headed-frontend-interaction-polish`
