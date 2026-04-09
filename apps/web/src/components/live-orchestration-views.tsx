@@ -174,6 +174,42 @@ function runtimeLeaseIsActive(status?: string) {
   return Boolean(status && status.trim() && status !== "done");
 }
 
+function runtimeMatchesLease(runtime: RuntimeRegistryRecord, lease: RuntimeLeaseRecord) {
+  return lease.runtime === runtime.id || lease.machine === runtime.machine;
+}
+
+function runtimeConflictRecovery(
+  runtime: RuntimeRegistryRecord,
+  leases: RuntimeLeaseRecord[],
+  sessions: Session[]
+) {
+  const conflictLease =
+    leases.find(
+      (lease) =>
+        runtimeMatchesLease(runtime, lease) &&
+        lease.status === "blocked" &&
+        (lease.summary?.includes("runtime lease 冲突") ?? false)
+    ) ?? null;
+  if (!conflictLease) {
+    return null;
+  }
+
+  const conflictSession =
+    sessions.find(
+      (session) =>
+        session.id === conflictLease.sessionId ||
+        session.activeRunId === conflictLease.runId ||
+        (session.status === "blocked" &&
+          (session.runtime === conflictLease.runtime || session.machine === conflictLease.machine) &&
+          session.summary === conflictLease.summary)
+    ) ?? null;
+
+  return {
+    summary: conflictLease.summary?.trim() || "",
+    note: conflictSession?.controlNote?.trim() || "",
+  };
+}
+
 function agentTone(state: AgentStatus["state"]) {
   if (state === "running") return "bg-[var(--shock-yellow)]";
   if (state === "blocked") return "bg-[var(--shock-pink)] text-white";
@@ -894,6 +930,7 @@ export function LiveOrchestrationBoard({
                   const runtimeLeaseCount = activeLeases.filter(
                     (lease) => lease.runtime === runtime.id || lease.machine === runtime.machine
                   ).length;
+                  const recovery = runtimeConflictRecovery(runtime, activeLeases, sessions);
                   const assigned = runtime.machine === scheduler.assignedMachine || runtime.id === scheduler.assignedRuntime;
                   return (
                     <article
@@ -921,6 +958,12 @@ export function LiveOrchestrationBoard({
                         active lease: {runtimeLeaseCount} · schedulable: {candidate?.schedulable ? "yes" : "no"} · strategy:{" "}
                         {runtimeSchedulerStrategyLabel(scheduler.strategy)}
                       </p>
+                      {recovery?.summary ? (
+                        <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">{recovery.summary}</p>
+                      ) : null}
+                      {recovery?.note ? (
+                        <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">recovery: {recovery.note}</p>
+                      ) : null}
                       {candidate?.reason ? (
                         <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{candidate.reason}</p>
                       ) : null}

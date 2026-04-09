@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,6 +111,63 @@ func TestCreateIssueSchedulesOwnerPreferredRuntime(t *testing.T) {
 	}
 	if session.Runtime != "shock-sidecar" || session.Machine != "shock-sidecar" || session.Provider != "Claude Code CLI" {
 		t.Fatalf("session scheduling = %#v, want shock-sidecar / Claude Code CLI", session)
+	}
+}
+
+func TestPersistedStateIncludesDerivedRuntimeTruth(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := s.UpdateRuntimePairing(RuntimePairingInput{
+		RuntimeID:  "shock-main",
+		DaemonURL:  "http://127.0.0.1:8090",
+		Machine:    "shock-main",
+		State:      "online",
+		ReportedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	created, err := s.CreateIssue(CreateIssueInput{
+		Title:    "Persisted Runtime Truth",
+		Summary:  "verify persisted state keeps derived lease and scheduler truth",
+		Owner:    "Codex Dockmaster",
+		Priority: "high",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssue() error = %v", err)
+	}
+
+	body, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(statePath) error = %v", err)
+	}
+
+	var persisted State
+	if err := json.Unmarshal(body, &persisted); err != nil {
+		t.Fatalf("json.Unmarshal(persisted state) error = %v", err)
+	}
+
+	if persisted.RuntimeScheduler.AssignedRuntime != "shock-main" {
+		t.Fatalf("persisted runtime scheduler = %#v, want assigned runtime shock-main", persisted.RuntimeScheduler)
+	}
+
+	var lease *RuntimeLease
+	for index := range persisted.RuntimeLeases {
+		if persisted.RuntimeLeases[index].SessionID == created.SessionID {
+			lease = &persisted.RuntimeLeases[index]
+			break
+		}
+	}
+	if lease == nil {
+		t.Fatalf("persisted runtime leases missing session %q: %#v", created.SessionID, persisted.RuntimeLeases)
+	}
+	if lease.Runtime != "shock-main" || lease.Machine != "shock-main" {
+		t.Fatalf("persisted runtime lease = %#v, want shock-main runtime/machine", lease)
 	}
 }
 
