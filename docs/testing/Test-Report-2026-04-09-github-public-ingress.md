@@ -4,7 +4,7 @@
 - Scope: `TKT-57 / CHK-07 / TC-015 / TC-045`
 - Evidence mode: production-style local ingress proxy + public-root callback/webhook replay
 - Chromium: `/snap/bin/chromium`
-- Artifacts dir: `/tmp/openshock-tkt57-github-public-ingress-ohx71Q`
+- Artifacts dir: `/tmp/openshock-tkt57-github-public-ingress-mKjc4A`
 
 ## Scope
 
@@ -19,33 +19,33 @@
 ## Checks
 
 ### Public callback surface and callback return page
-- Public ingress root: `http://127.0.0.1:45234`
+- Public ingress root: `http://127.0.0.1:43978`
 - Setup readiness before callback: `仅本地闭环`
 - Setup message before callback: GitHub App 已配置，但 installation 还未完成；当前仍退回 gh CLI。
-- Surfaced callback URL: `http://127.0.0.1:45234/setup/github/callback`
-- Surfaced webhook URL: `http://127.0.0.1:45234/v1/github/webhook`
+- Surfaced callback URL: `http://127.0.0.1:43978/setup/github/callback`
+- Surfaced webhook URL: `http://127.0.0.1:43978/v1/github/webhook`
 - GitHub installation callback page result: `GitHub 安装回跳已接住`
 - Setup readiness after callback: `可进远端 PR`
 - Workspace repo auth mode after callback: `github-app`
 
 ### Public webhook delivery and fail-closed probe
-- Public ingress root: `http://127.0.0.1:44186`
+- Public ingress root: `http://127.0.0.1:43936`
 - Signed webhook replay status: `200`
 - Signed webhook pullRequestId: `pr-runtime-18`
 - Bad-signature replay status: `401`
 
 ## Evidence
 
-- callback-setup-before: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/screenshots/01-callback-setup-before.png
-- callback-success: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/screenshots/02-callback-success.png
-- callback-setup-after: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/screenshots/03-callback-setup-after.png
-- callback-daemon log: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/logs/callback-daemon.log
-- callback-server log: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/logs/callback-server.log
-- callback-web log: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/logs/callback-web.log
-- webhook-server log: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/logs/webhook-server.log
-- ingress log: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/logs/callback-ingress.log
-- ingress log: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/logs/webhook-ingress.log
-- callback web build log: /tmp/openshock-tkt57-github-public-ingress-ohx71Q/logs/callback-web-build.log
+- callback-setup-before: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/screenshots/01-callback-setup-before.png
+- callback-success: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/screenshots/02-callback-success.png
+- callback-setup-after: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/screenshots/03-callback-setup-after.png
+- callback-daemon log: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/logs/callback-daemon.log
+- callback-server log: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/logs/callback-server.log
+- callback-web log: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/logs/callback-web.log
+- webhook-server log: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/logs/webhook-server.log
+- ingress log: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/logs/callback-ingress.log
+- ingress log: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/logs/webhook-ingress.log
+- callback web build log: /tmp/openshock-tkt57-github-public-ingress-mKjc4A/logs/callback-web-build.log
 
 ## TC-015 GitHub App 安装与 Webhook
 
