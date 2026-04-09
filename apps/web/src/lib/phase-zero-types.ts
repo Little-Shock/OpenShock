@@ -342,6 +342,7 @@ export type Run = {
   usage?: RunUsageSnapshot;
   nextAction: string;
   pullRequest: string;
+  credentialProfileIds?: string[];
 };
 
 export type RunUsageSnapshot = {
@@ -386,6 +387,7 @@ export type AgentStatus = {
   recallPolicy: string;
   runtimePreference: string;
   memorySpaces: string[];
+  credentialProfileIds?: string[];
   recentRunIds: string[];
   profileAudit: Array<{
     id: string;
@@ -716,6 +718,30 @@ export type MemoryArtifact = {
   governance?: MemoryGovernance;
 };
 
+export type CredentialProfileAuditEntry = {
+  id: string;
+  action: string;
+  summary: string;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+export type CredentialProfile = {
+  id: string;
+  label: string;
+  summary: string;
+  secretKind: string;
+  secretStatus: string;
+  workspaceDefault: boolean;
+  updatedAt: string;
+  updatedBy: string;
+  lastRotatedAt?: string;
+  lastUsedAt?: string;
+  lastUsedBy?: string;
+  lastUsedRunId?: string;
+  audit?: CredentialProfileAuditEntry[];
+};
+
 export type SetupStep = {
   id: string;
   title: string;
@@ -757,4 +783,5 @@ export type PhaseZeroState = {
   runtimeScheduler: RuntimeScheduler;
   guards: DestructiveGuard[];
   memory: MemoryArtifact[];
+  credentials: CredentialProfile[];
 };

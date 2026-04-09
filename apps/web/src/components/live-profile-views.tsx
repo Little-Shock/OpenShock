@@ -10,6 +10,7 @@ import { useLiveMemoryCenter } from "@/lib/live-memory";
 import type {
   AgentStatus,
   AuthSession,
+  CredentialProfile,
   MachineStatus,
   PhaseZeroState,
   Room,
@@ -35,6 +36,10 @@ const AGENT_RECALL_POLICY_OPTIONS = [
 
 function valueOrPlaceholder(value: string | undefined | null, fallback: string) {
   return value && value.trim() ? value : fallback;
+}
+
+function credentialLabel(profileID: string, profiles: CredentialProfile[]) {
+  return profiles.find((profile) => profile.id === profileID)?.label ?? profileID;
 }
 
 function uniqueStrings(values: string[]) {
@@ -423,6 +428,7 @@ function AgentProfileSurface({
   const [recallPolicyDraft, setRecallPolicyDraft] = useState(agent.recallPolicy);
   const [runtimePreferenceDraft, setRuntimePreferenceDraft] = useState(agent.runtimePreference);
   const [memorySpacesDraft, setMemorySpacesDraft] = useState<string[]>(agent.memorySpaces);
+  const [credentialProfileIDsDraft, setCredentialProfileIDsDraft] = useState<string[]>(agent.credentialProfileIds ?? []);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -463,8 +469,10 @@ function AgentProfileSurface({
     setRecallPolicyDraft(agent.recallPolicy);
     setRuntimePreferenceDraft(agent.runtimePreference);
     setMemorySpacesDraft(agent.memorySpaces);
+    setCredentialProfileIDsDraft(agent.credentialProfileIds ?? []);
   }, [
     agent.avatar,
+    agent.credentialProfileIds,
     agent.id,
     agent.memorySpaces,
     agent.modelPreference,
@@ -515,6 +523,12 @@ function AgentProfileSurface({
     );
   }
 
+  function toggleCredentialProfile(value: string) {
+    setCredentialProfileIDsDraft((current) =>
+      current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
+    );
+  }
+
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -532,6 +546,7 @@ function AgentProfileSurface({
         recallPolicy: recallPolicyDraft,
         runtimePreference: runtimePreferenceDraft,
         memorySpaces: memorySpacesDraft,
+        credentialProfileIds: credentialProfileIDsDraft,
       });
       await refreshMemoryCenter();
       setSaveStatus("Agent profile 已写回后端 truth，next-run preview 已同步刷新。");
@@ -634,6 +649,35 @@ function AgentProfileSurface({
           <Panel tone="paper">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Memory Spaces</p>
             <CapabilityChips items={agent.memorySpaces} />
+          </Panel>
+
+          <Panel tone="paper">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Credential Scope</p>
+            <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+              Agent 侧只绑定 metadata truth；实际 secret payload 仍停在 encrypted vault。当前 agent 直绑的 profile 会在 run detail 上与 workspace default / run override 一起结算。
+            </p>
+            <div className="mt-3 grid gap-2 md:grid-cols-4">
+              <ProfileMetric label="bound" value={String(agent.credentialProfileIds?.length ?? 0)} testId="profile-credential-bound-count" />
+              <ProfileMetric
+                label="recent runs"
+                value={String(recentRuns.filter((run) => (run.credentialProfileIds ?? []).length > 0).length)}
+                testId="profile-credential-run-count"
+              />
+              <ProfileMetric
+                label="workspace defaults"
+                value={String(state.credentials.filter((profile) => profile.workspaceDefault).length)}
+              />
+              <ProfileMetric
+                label="last used"
+                value={valueOrPlaceholder(
+                  state.credentials.find((profile) => (agent.credentialProfileIds ?? []).includes(profile.id) && profile.lastUsedAt)?.lastUsedAt,
+                  "尚未消费"
+                )}
+              />
+            </div>
+            <div className="mt-3">
+              <CapabilityChips items={(agent.credentialProfileIds ?? []).map((id) => credentialLabel(id, state.credentials))} />
+            </div>
           </Panel>
 
           <Panel tone="white">
@@ -792,6 +836,38 @@ function AgentProfileSurface({
                       </span>
                     </label>
                   ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.58)]">Credential Binding</p>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {state.credentials.length === 0 ? (
+                    <p className="rounded-[16px] border-2 border-dashed border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3 text-sm leading-6">
+                      先去 settings 创建 credential profile，这里只消费那份 metadata truth。
+                    </p>
+                  ) : (
+                    state.credentials.map((profile) => (
+                      <label
+                        key={profile.id}
+                        className="flex items-start gap-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3"
+                      >
+                        <input
+                          data-testid={`profile-editor-credential-${profile.id}`}
+                          type="checkbox"
+                          checked={credentialProfileIDsDraft.includes(profile.id)}
+                          onChange={() => toggleCredentialProfile(profile.id)}
+                          disabled={!canEdit || saving}
+                        />
+                        <span>
+                          <span className="block font-semibold">{profile.label}</span>
+                          <span className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">
+                            {profile.secretKind} · {profile.workspaceDefault ? "workspace default" : "agent scoped"}
+                          </span>
+                        </span>
+                      </label>
+                    ))
+                  )}
                 </div>
               </div>
 

@@ -27,6 +27,7 @@ type AgentProfileUpdateRequest struct {
 	RecallPolicy          string   `json:"recallPolicy"`
 	RuntimePreference     string   `json:"runtimePreference"`
 	MemorySpaces          []string `json:"memorySpaces"`
+	CredentialProfileIDs  []string `json:"credentialProfileIds"`
 }
 
 func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +67,7 @@ func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
 			RecallPolicy:          req.RecallPolicy,
 			RuntimePreference:     req.RuntimePreference,
 			MemorySpaces:          req.MemorySpaces,
+			CredentialProfileIDs:  req.CredentialProfileIDs,
 			UpdatedBy:             currentAuthActor(snapshot.Auth.Session),
 		})
 		if err != nil {
@@ -98,7 +100,8 @@ func writeAgentProfileError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrAgentMemorySpaceInvalid),
 		errors.Is(err, store.ErrAgentRuntimePreferenceInvalid),
 		errors.Is(err, store.ErrAgentProviderPreferenceInvalid),
-		errors.Is(err, store.ErrAgentModelPreferenceInvalid):
+		errors.Is(err, store.ErrAgentModelPreferenceInvalid),
+		errors.Is(err, store.ErrAgentCredentialBindingInvalid):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
