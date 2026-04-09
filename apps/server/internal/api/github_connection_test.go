@@ -83,6 +83,104 @@ func TestGitHubConnectionEndpointReturnsProbeStatus(t *testing.T) {
 	}
 }
 
+func TestGitHubConnectionEndpointSurfacesPublicIngressURLsWhenControlURLConfigured(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		ControlURL:    "https://public.openshock.dev/",
+		WorkspaceRoot: root,
+		GitHub: fakeGitHubProber{
+			status: githubsvc.Status{
+				Repo:              "Larkspur-Wang/OpenShock",
+				RepoURL:           "https://github.com/Larkspur-Wang/OpenShock.git",
+				Branch:            "main",
+				Provider:          "github",
+				RemoteConfigured:  true,
+				AppConfigured:     true,
+				AppInstalled:      false,
+				PreferredAuthMode: "github-app",
+				Message:           "GitHub App 已配置，但 installation 还未完成。",
+			},
+		},
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/github/connection")
+	if err != nil {
+		t.Fatalf("GET github connection error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	var payload githubsvc.Status
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.CallbackURL != "https://public.openshock.dev/setup/github/callback" {
+		t.Fatalf("payload.CallbackURL = %q, want public callback URL", payload.CallbackURL)
+	}
+	if payload.WebhookURL != "https://public.openshock.dev/v1/github/webhook" {
+		t.Fatalf("payload.WebhookURL = %q, want public webhook URL", payload.WebhookURL)
+	}
+}
+
+func TestGitHubConnectionEndpointBuildsPublicIngressURLsWhenProbeFallsBackToWorkspace(t *testing.T) {
+	root := initGitBindingRepo(t, "https://github.com/example/phase-zero.git")
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, err := s.UpdateRepoBinding(store.RepoBindingInput{
+		Repo:       "example/phase-zero",
+		RepoURL:    "https://github.com/example/phase-zero.git",
+		Branch:     "main",
+		Provider:   "github",
+		AuthMode:   "github-app",
+		DetectedAt: "2026-04-09T00:00:00Z",
+		SyncedAt:   "2026-04-09T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("UpdateRepoBinding() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		ControlURL:    "https://public.openshock.dev/",
+		WorkspaceRoot: root,
+		GitHub: fakeGitHubProber{
+			err: errProbeFailed,
+		},
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/github/connection")
+	if err != nil {
+		t.Fatalf("GET github connection error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	var payload githubsvc.Status
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.Repo != "example/phase-zero" {
+		t.Fatalf("payload.Repo = %q, want example/phase-zero", payload.Repo)
+	}
+	if payload.CallbackURL != "https://public.openshock.dev/setup/github/callback" {
+		t.Fatalf("payload.CallbackURL = %q, want public callback URL", payload.CallbackURL)
+	}
+	if payload.WebhookURL != "https://public.openshock.dev/v1/github/webhook" {
+		t.Fatalf("payload.WebhookURL = %q, want public webhook URL", payload.WebhookURL)
+	}
+}
+
 func TestGitHubConnectionEndpointReturnsGitHubAppContract(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")

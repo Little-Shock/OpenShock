@@ -61,6 +61,7 @@ func (s *Server) handleRepoBinding(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		connection, probeErr := s.github.Probe(s.workspaceRoot)
+		connection = s.withGitHubPublicIngress(connection)
 		binding := mergeRepoBindingInput(detected, req)
 		binding = alignRepoBindingWithConnection(binding, req, probeErr, connection)
 		if failure := validateRepoBindingConnection(binding, probeErr, connection); failure != nil {
@@ -92,6 +93,7 @@ func (s *Server) currentRepoBinding() RepoBindingResponse {
 	if err != nil {
 		return bindingResponseFromWorkspace(workspace, "", nil)
 	}
+	connection = s.withGitHubPublicIngress(connection)
 	return bindingResponseFromWorkspace(workspace, "", &connection)
 }
 

@@ -22,6 +22,8 @@ type Status struct {
 	AppInstalled      bool     `json:"appInstalled"`
 	InstallationID    string   `json:"installationId"`
 	InstallationURL   string   `json:"installationUrl"`
+	CallbackURL       string   `json:"callbackUrl,omitempty"`
+	WebhookURL        string   `json:"webhookUrl,omitempty"`
 	Missing           []string `json:"missing,omitempty"`
 	Ready             bool     `json:"ready"`
 	AuthMode          string   `json:"authMode"`

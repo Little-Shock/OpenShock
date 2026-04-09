@@ -13,6 +13,7 @@ import (
 
 func main() {
 	addr := envOr("OPENSHOCK_SERVER_ADDR", ":8080")
+	controlURL := envOr("OPENSHOCK_CONTROL_URL", "")
 	daemonURL := envOr("OPENSHOCK_DAEMON_URL", "http://127.0.0.1:8090")
 	workspaceRoot := envOr("OPENSHOCK_WORKSPACE_ROOT", `E:\00.Lark_Projects\00_OpenShock`)
 	statePath := envOr("OPENSHOCK_STATE_FILE", filepath.Join(workspaceRoot, "data", "phase0", "state.json"))
@@ -25,6 +26,7 @@ func main() {
 	}
 
 	server := api.New(stateStore, httpClient, api.Config{
+		ControlURL:          controlURL,
 		DaemonURL:           daemonURL,
 		WorkspaceRoot:       workspaceRoot,
 		GitHubWebhookSecret: githubWebhookSecret,
