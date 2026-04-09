@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { PhaseZeroState, SearchResult as PhaseZeroSearchResult, SearchResultKind } from "@/lib/mock-data";
+import type { PhaseZeroState, SearchResult as PhaseZeroSearchResult, SearchResultKind } from "@/lib/phase-zero-types";
 
 export type QuickSearchEntryKind = SearchResultKind;
 

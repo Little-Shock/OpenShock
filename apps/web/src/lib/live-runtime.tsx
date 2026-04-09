@@ -8,7 +8,7 @@ import type {
   RuntimeProviderStatus,
   RuntimeRegistryRecord,
   RuntimeScheduler,
-} from "@/lib/mock-data";
+} from "@/lib/phase-zero-types";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 

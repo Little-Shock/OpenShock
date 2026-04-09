@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { Run, Session } from "@/lib/mock-data";
+import type { Run, Session } from "@/lib/phase-zero-types";
 
 export type RunControlAction = "stop" | "resume" | "follow_thread";
 

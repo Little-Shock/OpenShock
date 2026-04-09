@@ -1,7 +1,7 @@
 # OpenShock Product Checklist
 
-**版本:** 1.4
-**更新日期:** 2026 年 4 月 8 日
+**版本:** 1.5
+**更新日期:** 2026 年 4 月 9 日
 **关联文档:** [PRD](./PRD.md) · [Phase 0 MVP](./Phase0-MVP.md) · [Execution Tickets](./Execution-Tickets.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -96,10 +96,11 @@
   - [x] `Issue / Room / Run / Session / Inbox / Pull Request / Memory` 均已有对象或 API
   - [x] `Run` 作为执行真相在 detail 页面可见
   - [x] SSE 已能返回初始 `snapshot`
+  - [x] `/v1/state` 与 `/v1/state/stream` 现在会对 visible truth 做 fail-closed hygiene；placeholder / E2E residue / 内部路径不会再直接漏进 issue / room / run / inbox / memory surface
 - 当前 GAP:
   - [ ] Issue/Room/Run/PR/Inbox 的跨对象一致性仍需更多回归锁定
   - [ ] 实时事件目前只站住 Phase 0 基线，缺少更完整的事件 contract
-- 对应 Test Cases: `TC-009` `TC-011` `TC-012`
+- 对应 Test Cases: `TC-009` `TC-011` `TC-012` `TC-042`
 
 ### CHK-04 工作流 A: 工作区初始化
 
@@ -286,9 +287,10 @@
   - [x] 2026 年 4 月 7 日针对 GitHub App effective auth path 和 memory contract 的 go tests / release verify 已通过
   - [x] `ops:smoke` 已会比对 pairing URL、runtime registry、server runtime bridge 与 daemon runtime 的 URL 真值
   - [x] `pnpm test:headed-setup` 已能输出 headed Chromium 截图、trace、日志和 markdown 报告
+  - [x] `pnpm check:live-truth-hygiene` 已进入 `verify:web`，会拦 direct mock-data import、placeholder 文案和 tracked live-truth residue
 - 当前 GAP:
   - [ ] 产品指标、体验指标、设计指标尚未形成持续观测
-- 对应 Test Cases: `TC-011` `TC-021` `TC-026`
+- 对应 Test Cases: `TC-011` `TC-021` `TC-026` `TC-042`
 
 ### CHK-16 app.slock.ai 壳层对齐与导航秩序
 
@@ -439,3 +441,4 @@
 - `CHK-20` -> `TKT-29` `TKT-34`
 - `CHK-21` -> `TKT-35` `TKT-36`
 - `CHK-22` -> `TKT-37`
+- `CHK-03` `CHK-15` -> `TKT-38`

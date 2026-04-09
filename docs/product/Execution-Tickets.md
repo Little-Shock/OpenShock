@@ -1,7 +1,7 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.4
-**更新日期:** 2026 年 4 月 8 日
+**版本:** 1.5
+**更新日期:** 2026 年 4 月 9 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -342,6 +342,24 @@
   - 至少有一条测试覆盖 persistence + recovery
 - Checklist: `CHK-22`
 - Test Cases: `TC-040`
+
+## TKT-38 Live Truth Hygiene / Placeholder Leak Guard
+
+- 状态: `active`
+- 优先级: `P0`
+- 目标: 把 live truth 面里的 placeholder、乱码、fixture / test residue 和内部路径泄漏收成 fail-closed contract，不再把脏 seed/fallback 直接送到用户面前。
+- 范围:
+  - `/v1/state` 与 `/v1/state/stream` 的 visible truth sanitization
+  - mutation-returned state 的前台 state adapter guard
+  - live detail / room / setup / settings / orchestration / inbox 的 placeholder wording cleanup
+  - `check:live-truth-hygiene` release gate
+- 依赖: 无
+- Done When:
+  - `/chat/all`、`/issues`、`/rooms`、`/runs`、`/inbox` 用户可见文案不再出现 placeholder、乱码、fixture、test residue 或内部 worktree 路径
+  - 如果底层 state 含脏值，前台回退到产品级 fallback，而不是把 seed/fallback 真值直接吐给用户
+  - release gate 能稳定拦下 direct mock-data import、placeholder wording 和 tracked live-truth residue
+- Checklist: `CHK-03` `CHK-15`
+- Test Cases: `TC-042`
 
 ---
 

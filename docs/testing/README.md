@@ -60,6 +60,8 @@
   - `TKT-32` 的 Agent profile edit、memory binding / recall policy、next-run preview 与 profile audit headed evidence
 - [Test Report 2026-04-09 Machine Profile / Local CLI Model Capability Binding](./Test-Report-2026-04-09-machine-profile-capability-binding.md)
   - `TKT-33` 的 machine shell / daemon / provider-model catalog 与 Agent provider+model+runtime affinity headed evidence
+- [Test Report 2026-04-09 Live Truth Hygiene](./Test-Report-2026-04-09-live-truth-hygiene.md)
+  - `TKT-38` 的 state / SSE visible truth negative scan、copy cleanup 与 release-gate hygiene evidence
 
 常用入口：
 

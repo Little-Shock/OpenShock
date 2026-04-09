@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { AuthDevice, AuthSession, WorkspaceMember, WorkspaceRole } from "@/lib/mock-data";
+import type { AuthDevice, AuthSession, WorkspaceMember, WorkspaceRole } from "@/lib/phase-zero-types";
 import { DetailRail, Panel } from "@/components/phase-zero-views";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 

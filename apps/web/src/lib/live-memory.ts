@@ -2,7 +2,7 @@
 
 import { startTransition, useCallback, useEffect, useState } from "react";
 
-import type { MemoryGovernance } from "@/lib/mock-data";
+import type { MemoryGovernance } from "@/lib/phase-zero-types";
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 

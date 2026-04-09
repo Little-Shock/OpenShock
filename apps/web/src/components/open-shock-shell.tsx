@@ -3,13 +3,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import {
-  buildGlobalStats,
-  type AppTab,
-  type MachineState,
-  type PresenceState,
-} from "@/lib/mock-data";
+import { buildGlobalStats } from "@/lib/phase-zero-helpers";
 import { usePhaseZeroState } from "@/lib/live-phase0";
+import type { AppTab, MachineState, PresenceState } from "@/lib/phase-zero-types";
 import { buildProfileHref } from "@/lib/profile-surface";
 import { useQuickSearchController } from "@/lib/quick-search";
 import {
