@@ -961,3 +961,20 @@
   4. 让 parent delegated closeout 最终进入 `completed`，再次刷新 child card，确认它切到 `parent completed`。
 - 预期结果: child `delivery-reply` 不应只告诉用户“这是谁的 parent”。它还必须直接展示 parent 当前真实状态，让 source agent 能在 child ledger 内读懂整条跨 Agent closeout 尾链。
 - 业务结论: 2026 年 4 月 11 日 `TKT-81` 已把 child-ledger parent-status visibility 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-status.md` 已记录 `parent blocked -> parent acknowledged -> parent completed` 在同一张 child `delivery-reply` card 上的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web` 已锁住 live mailbox / inbox mailbox 两个 surface 上的 parent-status chip，因此这条 child-ledger parent progress visibility 用例当前转为 `Pass`。
+
+## TC-071 Delegated Parent Surface Context Preservation
+
+- 业务目标: 确认 child `delivery-reply` 带来的 unblock 历史不只留在 PR detail / related inbox，而是会继续保留在 parent delegated closeout 自己的 Mailbox card、handoff inbox signal 与 Run detail 上。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 delegated closeout formal handoff、blocked 后自动创建并完成的 `delivery-reply` response handoff，以及 parent resume / complete 后的 PR detail history preservation。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 delegated closeout handoff。
+  2. 由 target 将 delegated closeout 标记为 `blocked`，并完成 child `delivery-reply`。
+  3. 让 parent delegated closeout 重新进入 `acknowledged`。
+  4. 打开 parent handoff 的 Mailbox card，确认它仍显示 `第 1 轮` 与 `已重新 acknowledge final delivery closeout`，而不是退回通用 resume 文案。
+  5. 打开对应 Run detail，确认 `下一步` 与 resume context 仍保留这段 reply history。
+  6. 完成 parent delegated closeout。
+  7. 再次检查 parent Mailbox card 与 Run detail，确认它们继续显示 `第 1 轮` 与 `也已完成 final delivery closeout`。
+- 预期结果: child response history 不应只在统一 delivery contract 里可见。parent closeout 自己的执行面也必须带着这段上下文继续前滚和收口，否则 target 在 parent surface 会重新掉回“只看见一条抽象 done/resume 文案”的黑盒状态。
+- 业务结论: 2026 年 4 月 11 日 `TKT-82` 已把 parent delegated closeout 自己的 Mailbox / run context history preservation 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-context.md` 已记录 `parent resume mailbox -> run detail -> parent completed mailbox -> run detail` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web`、`go test ./internal/store ./internal/api -count=1` 与对抗性回归 `go test ./internal/store -run "TestAdvanceHandoffLifecycleUpdatesOwnerAndLedger|TestDeliveryDelegationResponseRetryAttemptsSyncBackToPullRequest" -count=1` 已锁住普通 handoff 不受污染、retry truth 不回退，以及 parent surface history preservation，因此这条 parent-surface context 用例当前转为 `Pass`。

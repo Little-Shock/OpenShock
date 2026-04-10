@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration，以及 retry attempt truth；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth，以及 parent surface context preservation；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -1102,6 +1102,28 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-parent-status -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-status.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-070`
+
+## TKT-82 Delegated Parent Surface Context Preservation
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 child `delivery-reply` 带来的 unblock 历史继续保留到 parent delegated closeout 自己的 Mailbox / handoff inbox / run-session context，不让 parent re-ack / complete 一下就退回抽象通用文案。
+- 范围:
+  - parent mailbox card response-history preservation
+  - parent handoff inbox summary preservation after resume/completion
+  - run next-action + session resume context preservation
+  - Windows Chrome walkthrough for parent surfaces
+- 依赖: `TKT-80` `TKT-81`
+- Done When:
+  - parent delegated closeout 被重新 `acknowledged` 后，parent Mailbox card 会继续显示 `第 N 轮 unblock response` 历史
+  - Run detail 的 `下一步` 与 session / resume context 仍会保留这段历史，而不是退回抽象 resume 文案
+  - parent delegated closeout 最终 `completed` 后，这些 parent surfaces 会带着 history 一起收口
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api -count=1'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-parent-context -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-context.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-071`
 
 ---
 

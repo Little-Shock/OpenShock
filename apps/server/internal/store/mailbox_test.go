@@ -1254,6 +1254,73 @@ func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T
 	if completedRun == nil || !strings.Contains(completedRun.NextAction, completeNote) {
 		t.Fatalf("completed run = %#v, want completion resume next action", completedRun)
 	}
+
+	reAckState, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(re-ack parent delegated closeout) error = %v", err)
+	}
+	parentAfterResume := findHandoffByID(reAckState.Mailbox, delegatedHandoffID)
+	if parentAfterResume == nil ||
+		parentAfterResume.Status != "acknowledged" ||
+		!strings.Contains(parentAfterResume.LastAction, "第 1 轮") ||
+		!strings.Contains(parentAfterResume.LastAction, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("parent handoff after resume = %#v, want reply-history-aware next action", parentAfterResume)
+	}
+	parentResumeInbox := findInboxItemByID(reAckState.Inbox, delegatedHandoff.InboxItemID)
+	if parentResumeInbox == nil ||
+		!strings.Contains(parentResumeInbox.Summary, "第 1 轮") ||
+		!strings.Contains(parentResumeInbox.Summary, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("parent inbox after resume = %#v, want preserved response history summary", parentResumeInbox)
+	}
+	resumedRun := findRunByID(reAckState, delegatedHandoff.RunID)
+	if resumedRun == nil ||
+		!strings.Contains(resumedRun.NextAction, "第 1 轮") ||
+		!strings.Contains(resumedRun.NextAction, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("resumed run = %#v, want preserved response history next action", resumedRun)
+	}
+	resumedSession := findSessionByID(reAckState, "session-runtime")
+	if resumedSession == nil ||
+		!strings.Contains(resumedSession.Summary, "第 1 轮") ||
+		!strings.Contains(resumedSession.ControlNote, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("resumed session = %#v, want preserved response history summary + control note", resumedSession)
+	}
+
+	parentCompleteState, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+		Note:          "最终 delivery closeout 已收口，等待 merge / release receipt。",
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed parent delegated closeout) error = %v", err)
+	}
+	parentAfterFinalCloseout := findHandoffByID(parentCompleteState.Mailbox, delegatedHandoffID)
+	if parentAfterFinalCloseout == nil ||
+		parentAfterFinalCloseout.Status != "completed" ||
+		!strings.Contains(parentAfterFinalCloseout.LastAction, "第 1 轮") ||
+		!strings.Contains(parentAfterFinalCloseout.LastAction, "也已完成 final delivery closeout") {
+		t.Fatalf("parent handoff after final closeout = %#v, want reply-history-aware completion action", parentAfterFinalCloseout)
+	}
+	parentCompletedInbox := findInboxItemByID(parentCompleteState.Inbox, delegatedHandoff.InboxItemID)
+	if parentCompletedInbox == nil ||
+		!strings.Contains(parentCompletedInbox.Summary, "第 1 轮") ||
+		!strings.Contains(parentCompletedInbox.Summary, "也已完成 final delivery closeout") {
+		t.Fatalf("parent inbox after final closeout = %#v, want preserved completion history summary", parentCompletedInbox)
+	}
+	parentCompletedRun := findRunByID(parentCompleteState, delegatedHandoff.RunID)
+	if parentCompletedRun == nil ||
+		!strings.Contains(parentCompletedRun.NextAction, "第 1 轮") ||
+		!strings.Contains(parentCompletedRun.NextAction, "也已完成 final delivery closeout") {
+		t.Fatalf("parent completed run = %#v, want preserved completion history next action", parentCompletedRun)
+	}
+	parentCompletedSession := findSessionByID(parentCompleteState, "session-runtime")
+	if parentCompletedSession == nil ||
+		!strings.Contains(parentCompletedSession.Summary, "第 1 轮") ||
+		!strings.Contains(parentCompletedSession.ControlNote, "也已完成 final delivery closeout") {
+		t.Fatalf("parent completed session = %#v, want preserved completion history summary + control note", parentCompletedSession)
+	}
 }
 
 func TestDeliveryDelegationSignalOnlyPolicySkipsAutoCreatedHandoff(t *testing.T) {

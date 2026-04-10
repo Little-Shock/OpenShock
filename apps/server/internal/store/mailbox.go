@@ -143,6 +143,7 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 	nowClock := shortClock()
 	updatedAt := now.UTC().Format(time.RFC3339)
 	presentation := handoffActionPresentation(*handoff, actingAgent, action, note)
+	presentation = s.decorateDeliveryDelegationParentPresentationLocked(*handoff, presentation)
 
 	handoff.Status = presentation.Status
 	handoff.UpdatedAt = updatedAt
@@ -688,6 +689,33 @@ func handoffActionPresentation(handoff AgentHandoff, actingAgent Agent, action, 
 			RoomMessage: fmt.Sprintf("%s 已在 Mailbox 中把 \"%s\" 标记为 complete，room / inbox / mailbox 都能回放这次交接。", handoff.ToAgent, handoff.Title),
 		}
 	}
+}
+
+func (s *Store) decorateDeliveryDelegationParentPresentationLocked(
+	handoff AgentHandoff,
+	presentation handoffActionPresentationResult,
+) handoffActionPresentationResult {
+	if handoff.Kind != handoffKindDeliveryCloseout {
+		return presentation
+	}
+	if presentation.Status != "acknowledged" && presentation.Status != "completed" {
+		return presentation
+	}
+
+	responseHandoff, attemptCount := findLatestDeliveryDelegationResponseHandoff(s.state.Mailbox, handoff.ID)
+	if responseHandoff == nil || attemptCount <= 0 {
+		return presentation
+	}
+
+	responseSummary := strings.TrimSpace(deliveryDelegationResponseSummary(presentation.Status, responseHandoff, attemptCount))
+	if responseSummary == "" {
+		return presentation
+	}
+
+	presentation.Summary = strings.TrimSpace(presentation.Summary + " " + responseSummary)
+	presentation.NextAction = strings.TrimSpace(presentation.NextAction + " " + responseSummary)
+	presentation.RoomMessage = strings.TrimSpace(presentation.RoomMessage + " " + responseSummary)
+	return presentation
 }
 
 func handoffCommentNextAction(handoff AgentHandoff, actorName string) string {

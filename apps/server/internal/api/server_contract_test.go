@@ -1673,6 +1673,57 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 	if !relatedResumed {
 		t.Fatalf("re-ack related inbox = %#v, want resumed delivery delegation signal", reAckDetail.RelatedInbox)
 	}
+
+	mailboxResumeResp, err := http.Get(server.URL + "/v1/mailbox")
+	if err != nil {
+		t.Fatalf("GET /v1/mailbox after parent resume error = %v", err)
+	}
+	defer mailboxResumeResp.Body.Close()
+	if mailboxResumeResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/mailbox after parent resume status = %d, want %d", mailboxResumeResp.StatusCode, http.StatusOK)
+	}
+	var mailboxAfterResume []store.AgentHandoff
+	decodeJSON(t, mailboxResumeResp, &mailboxAfterResume)
+	parentResume := findMailboxHandoffByID(mailboxAfterResume, delegatedHandoff.ID)
+	if parentResume == nil ||
+		!strings.Contains(parentResume.LastAction, "第 1 轮") ||
+		!strings.Contains(parentResume.LastAction, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("parent handoff after delegated resume = %#v, want preserved response history in mailbox", parentResume)
+	}
+
+	inboxResumeResp, err := http.Get(server.URL + "/v1/inbox")
+	if err != nil {
+		t.Fatalf("GET /v1/inbox after parent resume error = %v", err)
+	}
+	defer inboxResumeResp.Body.Close()
+	if inboxResumeResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/inbox after parent resume status = %d, want %d", inboxResumeResp.StatusCode, http.StatusOK)
+	}
+	var inboxAfterResume []store.InboxItem
+	decodeJSON(t, inboxResumeResp, &inboxAfterResume)
+	parentResumeInbox := findInboxItemByIDContract(inboxAfterResume, delegatedHandoff.InboxItemID)
+	if parentResumeInbox == nil ||
+		!strings.Contains(parentResumeInbox.Summary, "第 1 轮") ||
+		!strings.Contains(parentResumeInbox.Summary, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("parent inbox after delegated resume = %#v, want preserved response history summary", parentResumeInbox)
+	}
+
+	runResumeResp, err := http.Get(server.URL + "/v1/runs")
+	if err != nil {
+		t.Fatalf("GET /v1/runs after parent resume error = %v", err)
+	}
+	defer runResumeResp.Body.Close()
+	if runResumeResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/runs after parent resume status = %d, want %d", runResumeResp.StatusCode, http.StatusOK)
+	}
+	var runsAfterResume []store.Run
+	decodeJSON(t, runResumeResp, &runsAfterResume)
+	runAfterResume := findRunByIDContract(runsAfterResume, delegatedHandoff.RunID)
+	if runAfterResume == nil ||
+		!strings.Contains(runAfterResume.NextAction, "第 1 轮") ||
+		!strings.Contains(runAfterResume.NextAction, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("run after delegated resume = %#v, want preserved response history next action", runAfterResume)
+	}
 	completeDelegatedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+detail.Delivery.Delegation.HandoffID, map[string]string{
 		"action":        "completed",
 		"actingAgentId": delegatedHandoff.ToAgentID,
@@ -1711,6 +1762,57 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 	}
 	if !relatedDone {
 		t.Fatalf("completed related inbox = %#v, want delivery delegation signal", completedDetail.RelatedInbox)
+	}
+
+	mailboxCompletedResp, err := http.Get(server.URL + "/v1/mailbox")
+	if err != nil {
+		t.Fatalf("GET /v1/mailbox after parent completion error = %v", err)
+	}
+	defer mailboxCompletedResp.Body.Close()
+	if mailboxCompletedResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/mailbox after parent completion status = %d, want %d", mailboxCompletedResp.StatusCode, http.StatusOK)
+	}
+	var mailboxAfterParentComplete []store.AgentHandoff
+	decodeJSON(t, mailboxCompletedResp, &mailboxAfterParentComplete)
+	parentCompleted := findMailboxHandoffByID(mailboxAfterParentComplete, delegatedHandoff.ID)
+	if parentCompleted == nil ||
+		!strings.Contains(parentCompleted.LastAction, "第 1 轮") ||
+		!strings.Contains(parentCompleted.LastAction, "也已完成 final delivery closeout") {
+		t.Fatalf("parent handoff after delegated completion = %#v, want preserved completion history in mailbox", parentCompleted)
+	}
+
+	inboxCompletedResp, err := http.Get(server.URL + "/v1/inbox")
+	if err != nil {
+		t.Fatalf("GET /v1/inbox after parent completion error = %v", err)
+	}
+	defer inboxCompletedResp.Body.Close()
+	if inboxCompletedResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/inbox after parent completion status = %d, want %d", inboxCompletedResp.StatusCode, http.StatusOK)
+	}
+	var inboxAfterParentComplete []store.InboxItem
+	decodeJSON(t, inboxCompletedResp, &inboxAfterParentComplete)
+	parentCompletedInbox := findInboxItemByIDContract(inboxAfterParentComplete, delegatedHandoff.InboxItemID)
+	if parentCompletedInbox == nil ||
+		!strings.Contains(parentCompletedInbox.Summary, "第 1 轮") ||
+		!strings.Contains(parentCompletedInbox.Summary, "也已完成 final delivery closeout") {
+		t.Fatalf("parent inbox after delegated completion = %#v, want preserved completion history summary", parentCompletedInbox)
+	}
+
+	runCompletedResp, err := http.Get(server.URL + "/v1/runs")
+	if err != nil {
+		t.Fatalf("GET /v1/runs after parent completion error = %v", err)
+	}
+	defer runCompletedResp.Body.Close()
+	if runCompletedResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/runs after parent completion status = %d, want %d", runCompletedResp.StatusCode, http.StatusOK)
+	}
+	var runsAfterParentComplete []store.Run
+	decodeJSON(t, runCompletedResp, &runsAfterParentComplete)
+	runAfterParentComplete := findRunByIDContract(runsAfterParentComplete, delegatedHandoff.RunID)
+	if runAfterParentComplete == nil ||
+		!strings.Contains(runAfterParentComplete.NextAction, "第 1 轮") ||
+		!strings.Contains(runAfterParentComplete.NextAction, "也已完成 final delivery closeout") {
+		t.Fatalf("run after delegated completion = %#v, want preserved completion history next action", runAfterParentComplete)
 	}
 }
 

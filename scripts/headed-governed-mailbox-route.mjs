@@ -18,78 +18,52 @@ const parsedArgs = parseArgs(process.argv.slice(2));
 const requestedReportPath = parsedArgs.reportPath
   ? path.resolve(projectRoot, parsedArgs.reportPath)
   : "";
-const runMode =
-  parsedArgs.mode === "auto-advance"
-    ? "auto-advance"
-    : parsedArgs.mode === "closeout"
-      ? "closeout"
-      : parsedArgs.mode === "delegation"
-        ? "delegation"
-        : parsedArgs.mode === "delegate-handoff"
-          ? "delegate-handoff"
-          : parsedArgs.mode === "delegate-response"
-            ? "delegate-response"
-          : parsedArgs.mode === "delegate-retry"
-            ? "delegate-retry"
-          : parsedArgs.mode === "delegate-response-comment-sync"
-            ? "delegate-response-comment-sync"
-          : parsedArgs.mode === "delegate-resume"
-            ? "delegate-resume"
-          : parsedArgs.mode === "delegate-visibility"
-            ? "delegate-visibility"
-          : parsedArgs.mode === "delegate-resume-parent"
-            ? "delegate-resume-parent"
-          : parsedArgs.mode === "delegate-history-sync"
-            ? "delegate-history-sync"
-          : parsedArgs.mode === "delegate-parent-status"
-            ? "delegate-parent-status"
-          : parsedArgs.mode === "delegate-policy"
-            ? "delegate-policy"
-          : parsedArgs.mode === "delegate-auto-complete"
-            ? "delegate-auto-complete"
-          : parsedArgs.mode === "delegate-comment-sync"
-            ? "delegate-comment-sync"
-          : parsedArgs.mode === "delegate-lifecycle"
-            ? "delegate-lifecycle"
-    : requestedReportPath.includes("autocreate")
-      ? "auto-create"
-      : "route";
-const evidencePrefix =
-  runMode === "auto-advance"
-    ? "openshock-tkt66-governed-route-"
-    : runMode === "closeout"
-      ? "openshock-tkt67-governed-route-"
-      : runMode === "delegation"
-        ? "openshock-tkt68-governed-route-"
-        : runMode === "delegate-handoff"
-          ? "openshock-tkt69-governed-route-"
-          : runMode === "delegate-response"
-            ? "openshock-tkt74-governed-route-"
-          : runMode === "delegate-retry"
-            ? "openshock-tkt75-governed-route-"
-          : runMode === "delegate-response-comment-sync"
-            ? "openshock-tkt76-governed-route-"
-          : runMode === "delegate-resume"
-            ? "openshock-tkt77-governed-route-"
-          : runMode === "delegate-visibility"
-            ? "openshock-tkt78-governed-route-"
-          : runMode === "delegate-resume-parent"
-            ? "openshock-tkt79-governed-route-"
-          : runMode === "delegate-history-sync"
-            ? "openshock-tkt80-governed-route-"
-          : runMode === "delegate-parent-status"
-            ? "openshock-tkt81-governed-route-"
-          : runMode === "delegate-policy"
-            ? "openshock-tkt71-governed-route-"
-          : runMode === "delegate-auto-complete"
-            ? "openshock-tkt72-governed-route-"
-          : runMode === "delegate-comment-sync"
-            ? "openshock-tkt73-governed-route-"
-          : runMode === "delegate-lifecycle"
-            ? "openshock-tkt70-governed-route-"
-    : runMode === "auto-create"
-      ? "openshock-tkt65-governed-route-"
-      : "openshock-tkt64-governed-route-";
+const supportedModes = new Set([
+  "auto-advance",
+  "closeout",
+  "delegation",
+  "delegate-handoff",
+  "delegate-response",
+  "delegate-retry",
+  "delegate-response-comment-sync",
+  "delegate-resume",
+  "delegate-visibility",
+  "delegate-resume-parent",
+  "delegate-history-sync",
+  "delegate-parent-status",
+  "delegate-parent-context",
+  "delegate-policy",
+  "delegate-auto-complete",
+  "delegate-comment-sync",
+  "delegate-lifecycle",
+]);
+const runMode = supportedModes.has(parsedArgs.mode)
+  ? parsedArgs.mode
+  : requestedReportPath.includes("autocreate")
+    ? "auto-create"
+    : "route";
+const evidencePrefixByMode = {
+  route: "openshock-tkt64-governed-route-",
+  "auto-create": "openshock-tkt65-governed-route-",
+  "auto-advance": "openshock-tkt66-governed-route-",
+  closeout: "openshock-tkt67-governed-route-",
+  delegation: "openshock-tkt68-governed-route-",
+  "delegate-handoff": "openshock-tkt69-governed-route-",
+  "delegate-lifecycle": "openshock-tkt70-governed-route-",
+  "delegate-policy": "openshock-tkt71-governed-route-",
+  "delegate-auto-complete": "openshock-tkt72-governed-route-",
+  "delegate-comment-sync": "openshock-tkt73-governed-route-",
+  "delegate-response": "openshock-tkt74-governed-route-",
+  "delegate-retry": "openshock-tkt75-governed-route-",
+  "delegate-response-comment-sync": "openshock-tkt76-governed-route-",
+  "delegate-resume": "openshock-tkt77-governed-route-",
+  "delegate-visibility": "openshock-tkt78-governed-route-",
+  "delegate-resume-parent": "openshock-tkt79-governed-route-",
+  "delegate-history-sync": "openshock-tkt80-governed-route-",
+  "delegate-parent-status": "openshock-tkt81-governed-route-",
+  "delegate-parent-context": "openshock-tkt82-governed-route-",
+};
+const evidencePrefix = evidencePrefixByMode[runMode] ?? evidencePrefixByMode.route;
 const evidenceRoot =
   process.env.OPENSHOCK_E2E_ARTIFACTS_DIR?.trim() ||
   (await mkdtemp(path.join(os.tmpdir(), evidencePrefix)));
@@ -409,6 +383,7 @@ try {
     runMode === "delegate-resume-parent" ||
     runMode === "delegate-history-sync" ||
     runMode === "delegate-parent-status" ||
+    runMode === "delegate-parent-context" ||
     runMode === "delegate-policy" ||
     runMode === "delegate-auto-complete" ||
     runMode === "delegate-comment-sync" ||
@@ -514,6 +489,7 @@ try {
     runMode === "delegate-resume-parent" ||
     runMode === "delegate-history-sync" ||
     runMode === "delegate-parent-status" ||
+    runMode === "delegate-parent-context" ||
     runMode === "delegate-policy" ||
     runMode === "delegate-auto-complete" ||
     runMode === "delegate-comment-sync" ||
@@ -563,10 +539,11 @@ try {
       runMode === "delegate-response-comment-sync" ||
       runMode === "delegate-resume" ||
       runMode === "delegate-visibility" ||
-      runMode === "delegate-resume-parent" ||
-      runMode === "delegate-history-sync" ||
-      runMode === "delegate-parent-status" ||
-      runMode === "delegate-policy" ||
+	      runMode === "delegate-resume-parent" ||
+	      runMode === "delegate-history-sync" ||
+	      runMode === "delegate-parent-status" ||
+	      runMode === "delegate-parent-context" ||
+	      runMode === "delegate-policy" ||
       runMode === "delegate-auto-complete" ||
       runMode === "delegate-comment-sync" ||
       runMode === "delegate-lifecycle"
@@ -641,6 +618,7 @@ try {
         runMode === "delegate-resume-parent" ||
         runMode === "delegate-history-sync" ||
         runMode === "delegate-parent-status" ||
+        runMode === "delegate-parent-context" ||
         runMode === "delegate-policy" ||
         runMode === "delegate-auto-complete" ||
         runMode === "delegate-comment-sync" ||
@@ -756,6 +734,7 @@ try {
           runMode === "delegate-resume-parent" ||
           runMode === "delegate-history-sync" ||
           runMode === "delegate-parent-status" ||
+          runMode === "delegate-parent-context" ||
           runMode === "delegate-lifecycle"
         ) {
           assert(
@@ -1669,6 +1648,143 @@ try {
               "- parent closeout 重新被接住后，child card 会即时切到 `parent acknowledged`，response 不再像黑盒一样停在“reply completed” -> PASS",
               "- parent closeout 最终收口后，child card 还会继续显示 `parent completed`，跨 Agent closeout 尾链现在能在 child ledger 里直接回放 -> PASS",
             ];
+          } else if (runMode === "delegate-parent-context") {
+            const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
+            await page.getByTestId(`mailbox-note-${delegatedHandoffID}`).fill(blockNote);
+            await page.getByTestId(`mailbox-action-blocked-${delegatedHandoffID}`).click();
+            await page.waitForFunction(
+              (handoffId) =>
+                document.querySelector(`[data-testid="mailbox-status-${handoffId}"]`)?.textContent?.trim() === "blocked",
+              delegatedHandoffID
+            );
+
+            const responseHandoffHref = await page.getByTestId(`mailbox-response-link-${delegatedHandoffID}`).getAttribute("href");
+            assert(responseHandoffHref, "parent delegated closeout should expose response handoff link");
+            const responseURL = new URL(responseHandoffHref, webURL);
+            const responseHandoffID = responseURL.searchParams.get("handoffId");
+            assert(responseHandoffID, "response link should include handoffId");
+            const responseHandoff = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === responseHandoffID,
+              "response handoff missing during parent-context run"
+            );
+
+            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "acknowledged",
+                actingAgentId: responseHandoff.toAgentId,
+              }),
+            });
+            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "completed",
+                actingAgentId: responseHandoff.toAgentId,
+                note: "release receipt checklist 已补齐，请重新接住 delivery closeout。",
+              }),
+            });
+
+            const delegatedParent = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === delegatedHandoffID,
+              "delegated closeout missing during parent-context resume"
+            );
+            const delegatedRunID = delegatedParent.runId;
+            await fetchJSON(`${serverURL}/v1/mailbox/${delegatedHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "acknowledged",
+                actingAgentId: delegatedParent.toAgentId,
+              }),
+            });
+
+            await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${delegatedHandoffID}`, { waitUntil: "load" });
+            await page.getByTestId(`mailbox-card-${delegatedHandoffID}`).waitFor({ state: "visible" });
+            await page.waitForFunction(
+              ({ handoffId, marker }) => {
+                const card = document.querySelector(`[data-testid="mailbox-card-${handoffId}"]`);
+                return card?.textContent?.includes(marker) ?? false;
+              },
+              { handoffId: delegatedHandoffID, marker: "已重新 acknowledge final delivery closeout" }
+            );
+            const resumedParentCardText = (await page.getByTestId(`mailbox-card-${delegatedHandoffID}`).textContent())?.trim() ?? "";
+            assert(
+              resumedParentCardText.includes("第 1 轮") && resumedParentCardText.includes("已重新 acknowledge final delivery closeout"),
+              "parent mailbox card should preserve reply history after resume"
+            );
+            await capture(page, "delivery-parent-context-resumed-mailbox");
+
+            await page.goto(`${webURL}/runs/${delegatedRunID}`, { waitUntil: "load" });
+            await page.waitForFunction(
+              ({ runId, marker }) => {
+                const bodyText = document.body?.textContent ?? "";
+                return bodyText.includes(runId) && bodyText.includes(marker);
+              },
+              { runId: delegatedRunID, marker: "已重新 acknowledge final delivery closeout" }
+            );
+            const resumedRunText = (await page.locator("body").textContent())?.trim() ?? "";
+            assert(
+              resumedRunText.includes("第 1 轮") && resumedRunText.includes("已重新 acknowledge final delivery closeout"),
+              "run detail should preserve reply history after parent resume"
+            );
+            await capture(page, "delivery-parent-context-resumed-run");
+
+            const resumedParent = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === delegatedHandoffID,
+              "delegated closeout missing during parent-context completion"
+            );
+            await fetchJSON(`${serverURL}/v1/mailbox/${delegatedHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "completed",
+                actingAgentId: resumedParent.toAgentId,
+                note: "最终 delivery closeout 已收口，等待 merge / release receipt。",
+              }),
+            });
+
+            await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${delegatedHandoffID}`, { waitUntil: "load" });
+            await page.getByTestId(`mailbox-card-${delegatedHandoffID}`).waitFor({ state: "visible" });
+            await page.waitForFunction(
+              ({ handoffId, marker }) => {
+                const card = document.querySelector(`[data-testid="mailbox-card-${handoffId}"]`);
+                return card?.textContent?.includes(marker) ?? false;
+              },
+              { handoffId: delegatedHandoffID, marker: "也已完成 final delivery closeout" }
+            );
+            const completedParentCardText = (await page.getByTestId(`mailbox-card-${delegatedHandoffID}`).textContent())?.trim() ?? "";
+            assert(
+              completedParentCardText.includes("第 1 轮") && completedParentCardText.includes("也已完成 final delivery closeout"),
+              "parent mailbox card should preserve reply history after completion"
+            );
+            await capture(page, "delivery-parent-context-completed-mailbox");
+
+            await page.goto(`${webURL}/runs/${delegatedRunID}`, { waitUntil: "load" });
+            await page.waitForFunction(
+              ({ runId, marker }) => {
+                const bodyText = document.body?.textContent ?? "";
+                return bodyText.includes(runId) && bodyText.includes(marker);
+              },
+              { runId: delegatedRunID, marker: "也已完成 final delivery closeout" }
+            );
+            const completedRunText = (await page.locator("body").textContent())?.trim() ?? "";
+            assert(
+              completedRunText.includes("第 1 轮") && completedRunText.includes("也已完成 final delivery closeout"),
+              "run detail should preserve reply history after parent completion"
+            );
+            await capture(page, "delivery-parent-context-completed-run");
+
+            reportTitle = "# 2026-04-11 Governed Mailbox Delegate Parent Context Report";
+            reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-parent-context -- --report ${path.relative(projectRoot, reportPath)}`;
+            reportTicket = "TKT-82";
+            reportTestCase = "TC-071";
+            reportScope = "parent delegated closeout mailbox/run context preservation after reply-driven resume/completion";
+            resultLines = [
+              "- parent delegated closeout 重新 `acknowledged` 后，parent mailbox card 会继续保留 `第 N 轮 unblock response` 历史，而不是退回成抽象 resume 文案 -> PASS",
+              "- 同一次 resume 后，Run detail 的下一步与 resume context 也会继续带着这段 reply 历史，target 不必回到 PR detail 才知道这次 closeout 为什么重开 -> PASS",
+              "- parent delegated closeout 最终 `completed` 后，Mailbox 与 Run 仍会带着这段 response history 一起收口，parent surface 不再吞掉 child `delivery-reply` 上下文 -> PASS",
+            ];
           } else if (runMode === "delegate-lifecycle") {
             const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
             await page.getByTestId(`mailbox-note-${delegatedHandoffID}`).fill(blockNote);
@@ -1768,6 +1884,8 @@ try {
           // report metadata already set inside the delegate-history-sync branch above
         } else if (runMode === "delegate-parent-status") {
           // report metadata already set inside the delegate-parent-status branch above
+        } else if (runMode === "delegate-parent-context") {
+          // report metadata already set inside the delegate-parent-context branch above
         } else if (runMode === "delegate-lifecycle") {
           reportTitle = "# 2026-04-11 Governed Mailbox Delegate Lifecycle Sync Report";
           reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-lifecycle -- --report ${path.relative(projectRoot, reportPath)}`;
