@@ -197,6 +197,9 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 	if action == "completed" || handoff.Kind == handoffKindDeliveryCloseout || handoff.Kind == handoffKindDeliveryReply {
 		s.syncDeliveryDelegationInboxLocked(handoff.RoomID)
 	}
+	if handoff.Kind == handoffKindDeliveryReply {
+		s.syncDeliveryDelegationResponseParentLocked(*handoff, action, note, actingAgent.Name)
+	}
 
 	if err := s.persistLocked(); err != nil {
 		return State{}, AgentHandoff{}, err
@@ -697,5 +700,123 @@ func handoffCommentNextAction(handoff AgentHandoff, actorName string) string {
 		return fmt.Sprintf("%s 刚补充了正式评论；当前 blocker 仍需解除后再由 %s 重新 acknowledge。", actorName, handoff.ToAgent)
 	default:
 		return fmt.Sprintf("%s 刚补充了正式评论；这次 handoff 已完成，后续可以回放完整上下文。", actorName)
+	}
+}
+
+func (s *Store) syncDeliveryDelegationResponseParentLocked(
+	response AgentHandoff,
+	action string,
+	note string,
+	actorName string,
+) {
+	if response.Kind != handoffKindDeliveryReply || strings.TrimSpace(response.ParentHandoffID) == "" {
+		return
+	}
+
+	parentIndex := -1
+	for index := range s.state.Mailbox {
+		if s.state.Mailbox[index].ID == response.ParentHandoffID {
+			parentIndex = index
+			break
+		}
+	}
+	if parentIndex == -1 {
+		return
+	}
+
+	parent := &s.state.Mailbox[parentIndex]
+	if parent.Kind != handoffKindDeliveryCloseout {
+		return
+	}
+
+	_, attemptCount := findLatestDeliveryDelegationResponseHandoff(s.state.Mailbox, parent.ID)
+	progressAction := deliveryDelegationResponseParentAction(*parent, response, action, note, actorName, attemptCount)
+	if progressAction == "" {
+		return
+	}
+
+	parent.LastAction = progressAction
+	parent.UpdatedAt = response.UpdatedAt
+
+	if runIndex := s.findRunByIDLocked(parent.RunID); runIndex != -1 {
+		s.state.Runs[runIndex].NextAction = progressAction
+	}
+	s.updateSessionLocked(parent.RunID, func(item *Session) {
+		item.Summary = progressAction
+		item.ControlNote = progressAction
+		item.UpdatedAt = response.UpdatedAt
+	})
+	s.updateDeliveryDelegationParentInboxProgressLocked(*parent, progressAction)
+}
+
+func deliveryDelegationResponseParentAction(
+	parent AgentHandoff,
+	response AgentHandoff,
+	action string,
+	note string,
+	actorName string,
+	attemptCount int,
+) string {
+	attemptLabel := fmt.Sprintf("第 %d 轮", max(1, attemptCount))
+	switch action {
+	case "acknowledged":
+		return fmt.Sprintf(
+			"%s 已接住%s unblock response；补完后由 %s 重新 acknowledge 主 closeout。",
+			response.ToAgent,
+			attemptLabel,
+			parent.ToAgent,
+		)
+	case "blocked":
+		return fmt.Sprintf(
+			"%s 的%s unblock response 当前也 blocked：%s。主 closeout 继续保持 blocked。",
+			response.ToAgent,
+			attemptLabel,
+			defaultString(strings.TrimSpace(note), defaultString(strings.TrimSpace(response.LastNote), "仍有额外 blocker 需要处理")),
+		)
+	case "comment":
+		return fmt.Sprintf(
+			"%s 刚在%s unblock response 上补充正式评论：%s。后续仍由 %s 处理 response，再由 %s 重新 acknowledge 主 closeout。",
+			actorName,
+			attemptLabel,
+			defaultString(strings.TrimSpace(note), "补充了最新 unblock context"),
+			response.ToAgent,
+			parent.ToAgent,
+		)
+	case "completed":
+		return fmt.Sprintf(
+			"%s 已完成%s unblock response：%s。等待 %s 重新 acknowledge 主 closeout。",
+			response.ToAgent,
+			attemptLabel,
+			defaultString(strings.TrimSpace(note), "closeout response 已补齐"),
+			parent.ToAgent,
+		)
+	default:
+		return ""
+	}
+}
+
+func (s *Store) updateDeliveryDelegationParentInboxProgressLocked(parent AgentHandoff, progressAction string) {
+	for index := range s.state.Inbox {
+		if s.state.Inbox[index].ID != parent.InboxItemID {
+			continue
+		}
+
+		s.state.Inbox[index].Time = "刚刚"
+		s.state.Inbox[index].Action = "打开 Mailbox"
+		s.state.Inbox[index].Href = mailboxInboxHref(parent.ID, parent.RoomID)
+		s.state.Inbox[index].HandoffID = parent.ID
+		if parent.Status == "blocked" {
+			s.state.Inbox[index].Kind = "blocked"
+		} else {
+			s.state.Inbox[index].Kind = "status"
+		}
+
+		blocker := strings.TrimSpace(parent.LastNote)
+		if blocker != "" {
+			s.state.Inbox[index].Summary = fmt.Sprintf("当前 blocker：%s 最新 unblock response：%s", blocker, progressAction)
+		} else {
+			s.state.Inbox[index].Summary = fmt.Sprintf("最新 unblock response：%s", progressAction)
+		}
+		return
 	}
 }

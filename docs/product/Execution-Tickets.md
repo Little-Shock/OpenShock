@@ -994,6 +994,28 @@
 - Checklist: `CHK-21`
 - Test Cases: `TC-065`
 
+## TKT-77 Delegated Response Resume Signal
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 `delivery-reply` 的 response progress 继续回推到父级 delegated closeout handoff 本身，让 target 不必只盯 PR detail，也能在 Mailbox / Inbox / run next action 里看到“source 已回复，轮到你 re-ack”的明确恢复信号。
+- 范围:
+  - response progress -> parent delegated handoff last-action sync
+  - parent handoff inbox latest-response summary
+  - run/session next-action resume guidance
+  - parent blocked lifecycle preservation during response sync
+- 依赖: `TKT-74` `TKT-75` `TKT-76`
+- Done When:
+  - `delivery-reply` response comment / completion 会直接回推父级 delegated closeout handoff 的 latest action，而不是只写在 child ledger 或 PR detail
+  - 父级 handoff 自己的 inbox signal 会明确写回 blocker + latest unblock response，target 打开 Inbox 就能知道何时重新 acknowledge 主 closeout
+  - run/session next action 也会切到同一条 resume guidance，同时父级 delegated closeout 继续保持 `blocked`，直到 target 显式 re-ack
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-resume -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-066`
+
 ---
 
 ## 五、已完成批次归档

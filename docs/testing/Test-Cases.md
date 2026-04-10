@@ -883,3 +883,19 @@
   6. 再次打开 `/pull-requests/pr-runtime-18`，确认 `Delivery Delegation` summary 与 related inbox signal 已更新为最新 target response comment，且 response lifecycle 仍保持 `reply requested`。
 - 预期结果: response handoff 上的 formal comment 必须进入同一份 delivery contract；PR detail 与 related inbox 都应显示最新 response comment，同时 comment sync 不能偷偷篡改 response lifecycle。
 - 业务结论: 2026 年 4 月 11 日 `TKT-76` 已把 `delivery-reply` response handoff latest formal comment 接回 PR detail `Delivery Delegation` summary 与 related inbox signal。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-response-comment-sync.md` 已记录 `blocked -> source response comment sync -> target response comment supersede -> reply requested preserved` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 与 `pnpm verify:web` 已锁住 latest response-comment contract 与 lifecycle preservation，因此这条跨 Agent response comment sync 用例当前转为 `Pass`。
+
+## TC-066 Delegated Response Resume Signal
+
+- 业务目标: 确认 `delivery-reply` 的 response progress 不只回写到 PR detail，而是会进一步回推父级 delegated closeout handoff、它自己的 inbox signal 与 run next action，让 target 在 Mailbox / Inbox 里就能知道 source 已回复、现在该重新 acknowledge 主 closeout。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 delegated closeout formal handoff、blocked 后自动创建的 `delivery-reply` response handoff，以及 PR detail / related inbox 对 response lifecycle 的正式 contract。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 delegated closeout handoff。
+  2. 由 target 将 delegated closeout 标记为 `blocked`，确认系统自动生成 `delivery-reply` response handoff。
+  3. 以 source agent 身份在 response handoff 上补一条 formal comment。
+  4. 打开父级 delegated closeout handoff 所在的 `/inbox` / Mailbox 视图，确认父级 handoff card 与它自己的 inbox signal 都已同步出现这条 latest response comment，同时仍保留原 blocker。
+  5. 由 source acknowledge 并完成 response handoff，写入 unblock note。
+  6. 再次查看父级 delegated closeout handoff、其 inbox signal 与 run next action，确认都已切到“response 已完成，等待 target 重新 acknowledge 主 closeout”的同一条 resume guidance，且父级 handoff lifecycle 仍保持 `blocked`。
+- 预期结果: response orchestration 不能只停在 child ledger 或 PR detail；父级 delegated closeout 必须直接收到最新 unblock progress，Mailbox / Inbox / run 也要一起告诉 target 什么时候重新接回主 closeout，同时不能偷改父级 blocked lifecycle。
+- 业务结论: 2026 年 4 月 11 日 `TKT-77` 已把 `delivery-reply` response progress 接回父级 delegated closeout handoff、其 inbox signal 与 run/session next action。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume.md` 已记录 `response comment -> parent handoff sync -> response completed -> re-ack guidance visible` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 与 `pnpm verify:web` 已锁住 parent handoff latest-action sync、parent inbox resume signal 与 next-action guidance，因此这条跨 Agent resume signal 用例当前转为 `Pass`。

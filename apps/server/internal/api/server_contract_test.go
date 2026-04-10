@@ -2050,6 +2050,249 @@ func TestDelegatedResponseCommentsReflectInPullRequestDetail(t *testing.T) {
 	}
 }
 
+func TestDelegatedResponseProgressReflectsInParentMailboxAndRun(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	topologyResp := doJSONRequest(t, http.DefaultClient, http.MethodPatch, server.URL+"/v1/workspace", `{
+		"governance": {
+			"teamTopology": [
+				{"id":"pm","label":"PM","role":"目标与验收","defaultAgent":"Spec Captain","lane":"scope / final response"},
+				{"id":"architect","label":"Architect","role":"拆解与边界","defaultAgent":"Spec Captain","lane":"shape / split"},
+				{"id":"developer","label":"Developer","role":"实现与分支推进","defaultAgent":"Build Pilot","lane":"issue -> branch"},
+				{"id":"reviewer","label":"Reviewer","role":"exact-head verdict","defaultAgent":"Review Runner","lane":"review / blocker"},
+				{"id":"qa","label":"QA","role":"verify / release evidence","defaultAgent":"Memory Clerk","lane":"test / release gate"}
+			]
+		}
+	}`)
+	defer topologyResp.Body.Close()
+	if topologyResp.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH /v1/workspace status = %d, want %d", topologyResp.StatusCode, http.StatusOK)
+	}
+
+	createResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox", map[string]string{
+		"roomId":      "room-runtime",
+		"fromAgentId": "agent-codex-dockmaster",
+		"toAgentId":   "agent-claude-review-runner",
+		"title":       "把 developer lane 正式交给 reviewer",
+		"summary":     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /v1/mailbox status = %d, want %d", createResp.StatusCode, http.StatusCreated)
+	}
+
+	var createPayload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+	}
+	decodeJSON(t, createResp, &createPayload)
+
+	ackReviewerResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+createPayload.Handoff.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": "agent-claude-review-runner",
+	})
+	defer ackReviewerResp.Body.Close()
+	if ackReviewerResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST reviewer acknowledged status = %d, want %d", ackReviewerResp.StatusCode, http.StatusOK)
+	}
+	completeReviewerResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+createPayload.Handoff.ID, map[string]any{
+		"action":                "completed",
+		"actingAgentId":         "agent-claude-review-runner",
+		"note":                  "review 完成后直接续到 QA。",
+		"continueGovernedRoute": true,
+	})
+	defer completeReviewerResp.Body.Close()
+	if completeReviewerResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST reviewer completed continue status = %d, want %d", completeReviewerResp.StatusCode, http.StatusOK)
+	}
+	var reviewerCompletePayload struct {
+		State store.State `json:"state"`
+	}
+	decodeJSON(t, completeReviewerResp, &reviewerCompletePayload)
+	qaHandoff := reviewerCompletePayload.State.Mailbox[0]
+
+	ackQAResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+qaHandoff.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": "agent-memory-clerk",
+	})
+	defer ackQAResp.Body.Close()
+	if ackQAResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST QA acknowledged status = %d, want %d", ackQAResp.StatusCode, http.StatusOK)
+	}
+	completeQAResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+qaHandoff.ID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": "agent-memory-clerk",
+		"note":          "QA 验证完成，可以进入 PR delivery closeout。",
+	})
+	defer completeQAResp.Body.Close()
+	if completeQAResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST QA completed status = %d, want %d", completeQAResp.StatusCode, http.StatusOK)
+	}
+	var qaCompletePayload struct {
+		State store.State `json:"state"`
+	}
+	decodeJSON(t, completeQAResp, &qaCompletePayload)
+	delegatedHandoff := qaCompletePayload.State.Mailbox[0]
+
+	blockNote := "需要先确认最终 release 文案，再继续 closeout。"
+	blockedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+delegatedHandoff.ID, map[string]string{
+		"action":        "blocked",
+		"actingAgentId": delegatedHandoff.ToAgentID,
+		"note":          blockNote,
+	})
+	defer blockedResp.Body.Close()
+	if blockedResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST delegated blocked status = %d, want %d", blockedResp.StatusCode, http.StatusOK)
+	}
+
+	blockedDetailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET blocked detail error = %v", err)
+	}
+	defer blockedDetailResp.Body.Close()
+	if blockedDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET blocked detail status = %d, want %d", blockedDetailResp.StatusCode, http.StatusOK)
+	}
+	var blockedDetail store.PullRequestDetail
+	decodeJSON(t, blockedDetailResp, &blockedDetail)
+	responseHandoffID := blockedDetail.Delivery.Delegation.ResponseHandoffID
+	if responseHandoffID == "" {
+		t.Fatalf("blocked delegation = %#v, want response handoff", blockedDetail.Delivery.Delegation)
+	}
+
+	sourceComment := "source 说明：release receipt checklist 正在补。"
+	sourceCommentResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+responseHandoffID, map[string]string{
+		"action":        "comment",
+		"actingAgentId": delegatedHandoff.FromAgentID,
+		"note":          sourceComment,
+	})
+	defer sourceCommentResp.Body.Close()
+	if sourceCommentResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST source comment response handoff status = %d, want %d", sourceCommentResp.StatusCode, http.StatusOK)
+	}
+
+	mailboxResp, err := http.Get(server.URL + "/v1/mailbox")
+	if err != nil {
+		t.Fatalf("GET /v1/mailbox after response comment error = %v", err)
+	}
+	defer mailboxResp.Body.Close()
+	if mailboxResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/mailbox after response comment status = %d, want %d", mailboxResp.StatusCode, http.StatusOK)
+	}
+	var mailboxAfterComment []store.AgentHandoff
+	decodeJSON(t, mailboxResp, &mailboxAfterComment)
+	parentComment := findMailboxHandoffByID(mailboxAfterComment, delegatedHandoff.ID)
+	if parentComment == nil ||
+		parentComment.LastNote != blockNote ||
+		!strings.Contains(parentComment.LastAction, sourceComment) ||
+		!strings.Contains(parentComment.LastAction, "重新 acknowledge 主 closeout") {
+		t.Fatalf("parent handoff after response comment = %#v, want mirrored resume guidance", parentComment)
+	}
+
+	inboxCommentResp, err := http.Get(server.URL + "/v1/inbox")
+	if err != nil {
+		t.Fatalf("GET /v1/inbox after response comment error = %v", err)
+	}
+	defer inboxCommentResp.Body.Close()
+	if inboxCommentResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/inbox after response comment status = %d, want %d", inboxCommentResp.StatusCode, http.StatusOK)
+	}
+	var inboxAfterComment []store.InboxItem
+	decodeJSON(t, inboxCommentResp, &inboxAfterComment)
+	parentCommentInbox := findInboxItemByIDContract(inboxAfterComment, delegatedHandoff.InboxItemID)
+	if parentCommentInbox == nil ||
+		!strings.Contains(parentCommentInbox.Summary, blockNote) ||
+		!strings.Contains(parentCommentInbox.Summary, sourceComment) {
+		t.Fatalf("parent inbox after response comment = %#v, want blocker + response progress summary", parentCommentInbox)
+	}
+
+	runCommentResp, err := http.Get(server.URL + "/v1/runs")
+	if err != nil {
+		t.Fatalf("GET /v1/runs after response comment error = %v", err)
+	}
+	defer runCommentResp.Body.Close()
+	if runCommentResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/runs after response comment status = %d, want %d", runCommentResp.StatusCode, http.StatusOK)
+	}
+	var runsAfterComment []store.Run
+	decodeJSON(t, runCommentResp, &runsAfterComment)
+	runAfterComment := findRunByIDContract(runsAfterComment, delegatedHandoff.RunID)
+	if runAfterComment == nil || !strings.Contains(runAfterComment.NextAction, sourceComment) {
+		t.Fatalf("run after response comment = %#v, want response progress next action", runAfterComment)
+	}
+
+	responseAckResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+responseHandoffID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": delegatedHandoff.FromAgentID,
+	})
+	defer responseAckResp.Body.Close()
+	if responseAckResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST response acknowledged status = %d, want %d", responseAckResp.StatusCode, http.StatusOK)
+	}
+
+	completeNote := "release receipt checklist 已补齐，请重新接住 delivery closeout。"
+	responseCompleteResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+responseHandoffID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": delegatedHandoff.FromAgentID,
+		"note":          completeNote,
+	})
+	defer responseCompleteResp.Body.Close()
+	if responseCompleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST response completed status = %d, want %d", responseCompleteResp.StatusCode, http.StatusOK)
+	}
+
+	mailboxCompleteResp, err := http.Get(server.URL + "/v1/mailbox")
+	if err != nil {
+		t.Fatalf("GET /v1/mailbox after response completion error = %v", err)
+	}
+	defer mailboxCompleteResp.Body.Close()
+	if mailboxCompleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/mailbox after response completion status = %d, want %d", mailboxCompleteResp.StatusCode, http.StatusOK)
+	}
+	var mailboxAfterComplete []store.AgentHandoff
+	decodeJSON(t, mailboxCompleteResp, &mailboxAfterComplete)
+	parentComplete := findMailboxHandoffByID(mailboxAfterComplete, delegatedHandoff.ID)
+	if parentComplete == nil ||
+		parentComplete.LastNote != blockNote ||
+		!strings.Contains(parentComplete.LastAction, completeNote) ||
+		!strings.Contains(parentComplete.LastAction, "重新 acknowledge 主 closeout") {
+		t.Fatalf("parent handoff after response completion = %#v, want resume-after-response signal", parentComplete)
+	}
+
+	inboxCompleteResp, err := http.Get(server.URL + "/v1/inbox")
+	if err != nil {
+		t.Fatalf("GET /v1/inbox after response completion error = %v", err)
+	}
+	defer inboxCompleteResp.Body.Close()
+	if inboxCompleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/inbox after response completion status = %d, want %d", inboxCompleteResp.StatusCode, http.StatusOK)
+	}
+	var inboxAfterComplete []store.InboxItem
+	decodeJSON(t, inboxCompleteResp, &inboxAfterComplete)
+	parentCompleteInbox := findInboxItemByIDContract(inboxAfterComplete, delegatedHandoff.InboxItemID)
+	if parentCompleteInbox == nil ||
+		!strings.Contains(parentCompleteInbox.Summary, blockNote) ||
+		!strings.Contains(parentCompleteInbox.Summary, completeNote) {
+		t.Fatalf("parent inbox after response completion = %#v, want completion progress summary", parentCompleteInbox)
+	}
+
+	runCompleteResp, err := http.Get(server.URL + "/v1/runs")
+	if err != nil {
+		t.Fatalf("GET /v1/runs after response completion error = %v", err)
+	}
+	defer runCompleteResp.Body.Close()
+	if runCompleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/runs after response completion status = %d, want %d", runCompleteResp.StatusCode, http.StatusOK)
+	}
+	var runsAfterComplete []store.Run
+	decodeJSON(t, runCompleteResp, &runsAfterComplete)
+	runAfterComplete := findRunByIDContract(runsAfterComplete, delegatedHandoff.RunID)
+	if runAfterComplete == nil || !strings.Contains(runAfterComplete.NextAction, completeNote) {
+		t.Fatalf("run after response completion = %#v, want completion resume next action", runAfterComplete)
+	}
+}
+
 func TestSignalOnlyDeliveryDelegationPolicySkipsDelegatedCloseoutHandoff(t *testing.T) {
 	root := t.TempDir()
 	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
@@ -3100,6 +3343,33 @@ func findRunByID(state store.State, runID string) *store.Run {
 	for index := range state.Runs {
 		if state.Runs[index].ID == runID {
 			return &state.Runs[index]
+		}
+	}
+	return nil
+}
+
+func findRunByIDContract(runs []store.Run, runID string) *store.Run {
+	for index := range runs {
+		if runs[index].ID == runID {
+			return &runs[index]
+		}
+	}
+	return nil
+}
+
+func findMailboxHandoffByID(mailbox []store.AgentHandoff, handoffID string) *store.AgentHandoff {
+	for index := range mailbox {
+		if mailbox[index].ID == handoffID {
+			return &mailbox[index]
+		}
+	}
+	return nil
+}
+
+func findInboxItemByIDContract(inbox []store.InboxItem, inboxID string) *store.InboxItem {
+	for index := range inbox {
+		if inbox[index].ID == inboxID {
+			return &inbox[index]
 		}
 	}
 	return nil
