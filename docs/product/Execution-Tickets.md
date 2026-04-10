@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作接下来重点从已落地的 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create 与 governed auto-advance，继续前滚到 auto-closeout、delivery delegation 与更深自动协作策略。
+4. 多 Agent 协作接下来重点从已落地的 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance 与 delivery closeout backlink，继续前滚到更重的 auto-closeout、delivery delegation 与更深自动协作策略。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -774,6 +774,28 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-auto-advance -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-auto-advance.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-055`
+
+## TKT-67 Governed Closeout / Delivery Entry Bridge
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 让 final lane 的 governed closeout 不再只停在 mailbox 文案，而是显式回链到 PR delivery entry，并把 closeout note 带进 operator handoff note / evidence。
+- 范围:
+  - `workspace.governance.routingPolicy.suggestedHandoff` final-lane done href
+  - `/mailbox` / Inbox compose closeout backlink
+  - PR delivery handoff note governed closeout sync
+  - PR delivery evidence governed closeout item
+- 依赖: `TKT-66` `TKT-49`
+- Done When:
+  - final lane handoff 完成后，governed suggestion 会切到 `done` 并给出 delivery entry closeout 回链
+  - `/mailbox` 与 Inbox compose 都能直接从 governed surface 打开同一条 PR delivery entry
+  - PR detail 的 operator handoff note 与 evidence 会显式包含最新 governed closeout note，而不是继续只读 review / quota / notification
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-closeout -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-closeout.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-056`
 
 ---
 

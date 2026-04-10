@@ -514,6 +514,100 @@ func TestAdvanceHandoffCanAutoAdvanceGovernedRoute(t *testing.T) {
 	}
 }
 
+func TestGovernedFinalLaneCompletionBridgesDeliveryCloseout(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	topology := defaultWorkspaceGovernanceTopology("dev-team")
+	topology[len(topology)-1].DefaultAgent = "Memory Clerk"
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Governance: &WorkspaceGovernanceConfigInput{
+			TeamTopology: topology,
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "把 developer lane 正式交给 reviewer",
+		Summary:     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-claude-review-runner",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged reviewer) error = %v", err)
+	}
+
+	reviewerClosedState, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:                "completed",
+		ActingAgentID:         "agent-claude-review-runner",
+		Note:                  "review 已完成，直接把 QA 接力拉起来。",
+		ContinueGovernedRoute: true,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed reviewer continue) error = %v", err)
+	}
+	followup := reviewerClosedState.Mailbox[0]
+
+	if _, _, err := s.AdvanceHandoff(followup.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-memory-clerk",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged qa) error = %v", err)
+	}
+
+	closeoutNote := "QA 验证完成，可以进入 PR delivery closeout。"
+	finalState, completedFollowup, err := s.AdvanceHandoff(followup.ID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: "agent-memory-clerk",
+		Note:          closeoutNote,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed qa) error = %v", err)
+	}
+	if completedFollowup.Status != "completed" {
+		t.Fatalf("completed followup = %#v, want completed", completedFollowup)
+	}
+
+	suggested := finalState.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	if suggested.Status != "done" || suggested.Href != "/pull-requests/pr-runtime-18" {
+		t.Fatalf("suggested closeout = %#v, want done status with PR delivery link", suggested)
+	}
+	if !strings.Contains(suggested.Reason, closeoutNote) {
+		t.Fatalf("suggested reason = %q, want closeout note reflected", suggested.Reason)
+	}
+
+	detail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok {
+		t.Fatalf("PullRequestDetail() missing runtime PR detail")
+	}
+	if !strings.Contains(detail.Delivery.HandoffNote.Summary, "governed closeout") {
+		t.Fatalf("handoff note summary = %q, want governed closeout wording", detail.Delivery.HandoffNote.Summary)
+	}
+	joinedLines := strings.Join(detail.Delivery.HandoffNote.Lines, "\n")
+	if !strings.Contains(joinedLines, closeoutNote) || !strings.Contains(joinedLines, "governed route 已到 done") {
+		t.Fatalf("handoff note lines = %#v, want closeout note + governed done guidance", detail.Delivery.HandoffNote.Lines)
+	}
+
+	evidence := findDeliveryEvidence(detail.Delivery.Evidence, "governed-closeout")
+	if evidence == nil || evidence.Href != "/pull-requests/pr-runtime-18" || !strings.Contains(evidence.Summary, closeoutNote) {
+		t.Fatalf("delivery evidence = %#v, want governed closeout evidence", detail.Delivery.Evidence)
+	}
+}
+
 func findInboxItemByHandoffID(items []InboxItem, handoffID string) *InboxItem {
 	for index := range items {
 		if items[index].HandoffID == handoffID {
@@ -544,6 +638,15 @@ func findGovernanceLane(items []WorkspaceGovernanceLane, laneID string) *Workspa
 func findGovernanceStep(items []WorkspaceGovernanceWalkthrough, stepID string) *WorkspaceGovernanceWalkthrough {
 	for index := range items {
 		if items[index].ID == stepID {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func findDeliveryEvidence(items []PullRequestDeliveryEvidence, evidenceID string) *PullRequestDeliveryEvidence {
+	for index := range items {
+		if items[index].ID == evidenceID {
 			return &items[index]
 		}
 	}

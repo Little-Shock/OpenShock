@@ -1328,6 +1328,91 @@ func TestPullRequestDetailRouteReturnsConversationAndBacklinks(t *testing.T) {
 	}
 }
 
+func TestPullRequestDetailRouteReflectsGovernedCloseout(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	mustPatchGovernedQATopology(t, server.URL)
+
+	createResp, handoff := mustCreateMailboxHandoff(t, server.URL)
+	defer createResp.Body.Close()
+
+	ackReviewerResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": "agent-claude-review-runner",
+	})
+	defer ackReviewerResp.Body.Close()
+	if ackReviewerResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST reviewer acknowledged status = %d, want %d", ackReviewerResp.StatusCode, http.StatusOK)
+	}
+
+	completeReviewerResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]any{
+		"action":                "completed",
+		"actingAgentId":         "agent-claude-review-runner",
+		"note":                  "review 完成后直接续到 QA。",
+		"continueGovernedRoute": true,
+	})
+	defer completeReviewerResp.Body.Close()
+	if completeReviewerResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST reviewer completed continue status = %d, want %d", completeReviewerResp.StatusCode, http.StatusOK)
+	}
+
+	var reviewerCompletePayload struct {
+		State store.State `json:"state"`
+	}
+	decodeJSON(t, completeReviewerResp, &reviewerCompletePayload)
+	followup := reviewerCompletePayload.State.Mailbox[0]
+
+	ackQAResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+followup.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": "agent-memory-clerk",
+	})
+	defer ackQAResp.Body.Close()
+	if ackQAResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST QA acknowledged status = %d, want %d", ackQAResp.StatusCode, http.StatusOK)
+	}
+
+	closeoutNote := "QA 验证完成，可以进入 PR delivery closeout。"
+	completeQAResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+followup.ID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": "agent-memory-clerk",
+		"note":          closeoutNote,
+	})
+	defer completeQAResp.Body.Close()
+	if completeQAResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST QA completed status = %d, want %d", completeQAResp.StatusCode, http.StatusOK)
+	}
+
+	resp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET governed closeout detail error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET governed closeout detail status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var detail store.PullRequestDetail
+	decodeJSON(t, resp, &detail)
+	if !strings.Contains(detail.Delivery.HandoffNote.Summary, "governed closeout") {
+		t.Fatalf("detail handoff note summary = %q, want governed closeout summary", detail.Delivery.HandoffNote.Summary)
+	}
+	noteLines := strings.Join(detail.Delivery.HandoffNote.Lines, "\n")
+	if !strings.Contains(noteLines, closeoutNote) || !strings.Contains(noteLines, "governed route 已到 done") {
+		t.Fatalf("detail handoff note lines = %#v, want closeout note + done hint", detail.Delivery.HandoffNote.Lines)
+	}
+
+	evidenceByID := map[string]store.PullRequestDeliveryEvidence{}
+	for _, item := range detail.Delivery.Evidence {
+		evidenceByID[item.ID] = item
+	}
+	closeoutEvidence, ok := evidenceByID["governed-closeout"]
+	if !ok || closeoutEvidence.Href != "/pull-requests/pr-runtime-18" || !strings.Contains(closeoutEvidence.Summary, closeoutNote) {
+		t.Fatalf("detail delivery evidence = %#v, want governed closeout evidence", detail.Delivery.Evidence)
+	}
+}
+
 func TestRunHistoryRouteSupportsIncrementalFetchAndRoomFilter(t *testing.T) {
 	root := t.TempDir()
 	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")

@@ -106,6 +106,10 @@ function governanceTone(status: string): "lime" | "yellow" | "pink" | "paper" | 
   }
 }
 
+function governedCloseoutLabel(href: string) {
+  return href.startsWith("/pull-requests/") ? "Open Delivery Entry" : "Review Closeout";
+}
+
 function GovernanceMetric({
   label,
   value,
@@ -662,6 +666,15 @@ export function LiveMailboxPageContent() {
                             className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                           >
                             Focus Active Handoff
+                          </Link>
+                        ) : null}
+                        {governedSuggestion.status === "done" && governedSuggestion.href ? (
+                          <Link
+                            href={governedSuggestion.href}
+                            data-testid="mailbox-governed-route-closeout"
+                            className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                          >
+                            {governedCloseoutLabel(governedSuggestion.href)}
                           </Link>
                         ) : null}
                       </div>

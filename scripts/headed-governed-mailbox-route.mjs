@@ -21,12 +21,16 @@ const requestedReportPath = parsedArgs.reportPath
 const runMode =
   parsedArgs.mode === "auto-advance"
     ? "auto-advance"
+    : parsedArgs.mode === "closeout"
+      ? "closeout"
     : requestedReportPath.includes("autocreate")
       ? "auto-create"
       : "route";
 const evidencePrefix =
   runMode === "auto-advance"
     ? "openshock-tkt66-governed-route-"
+    : runMode === "closeout"
+      ? "openshock-tkt67-governed-route-"
     : runMode === "auto-create"
       ? "openshock-tkt65-governed-route-"
       : "openshock-tkt64-governed-route-";
@@ -325,7 +329,7 @@ let page = null;
 try {
   const { webURL, serverURL } = await startServices();
   resolveChromiumExecutable();
-  if (runMode === "auto-advance") {
+  if (runMode === "auto-advance" || runMode === "closeout") {
     await patchGovernedQATopology(serverURL);
   }
   const initialState = await readState(serverURL);
@@ -400,7 +404,7 @@ try {
   await page.getByTestId(`mailbox-action-acknowledged-${handoff.id}`).click();
   await page.getByTestId(`mailbox-note-${handoff.id}`).fill("review 已完成，继续看下一条治理建议。");
 
-  if (runMode === "auto-advance") {
+  if (runMode === "auto-advance" || runMode === "closeout") {
     await page.getByTestId(`mailbox-action-completed-continue-${handoff.id}`).click();
     const followup = await waitForMailboxWhere(
       serverURL,
@@ -436,16 +440,64 @@ try {
     await page.getByTestId(`mailbox-card-${followup.id}`).waitFor({ state: "visible" });
     await capture(page, "governed-compose-auto-advanced");
 
-    reportTitle = "# 2026-04-11 Governed Mailbox Auto-Advance Report";
-    reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-auto-advance -- --report ${path.relative(projectRoot, reportPath)}`;
-    reportTicket = "TKT-66";
-    reportTestCase = "TC-055";
-    reportScope = "governed complete + auto-advance、QA followup auto-create、dual-surface active replay";
-    resultLines = [
-      "- `/mailbox` 上的 `Complete + Auto-Advance` 现在会把当前 governed handoff 正式收口，并继续围当前 topology 自动创建下一棒 formal handoff，而不是要求人类重新手工起单 -> PASS",
-      "- 当 QA lane 已映射到 `Memory Clerk` 时，reviewer closeout 会自动前滚出 `Claude Review Runner -> Memory Clerk` 的下一条 handoff，同时 `workspace.governance.routingPolicy.suggestedHandoff` 会切到同一条 `active` 指针 -> PASS",
-      "- Inbox compose 与 `/mailbox` 在 auto-advance 后都会继续显示同一条 active followup，focus 回链直接跳到新 handoff，不会停在旧 reviewer ledger 或回退成 `ready`/`blocked` 假状态 -> PASS",
-    ];
+    if (runMode === "closeout") {
+      const qaCloseoutNote = "QA 验证完成，可以进入 PR delivery closeout。";
+
+      await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${followup.id}`, { waitUntil: "load" });
+      await page.getByTestId(`mailbox-action-acknowledged-${followup.id}`).click();
+      await page.getByTestId(`mailbox-note-${followup.id}`).fill(qaCloseoutNote);
+      await page.getByTestId(`mailbox-action-completed-${followup.id}`).click();
+      await page.waitForFunction(() => {
+        return document.querySelector('[data-testid="mailbox-governed-route-status"]')?.textContent?.trim() === "done";
+      });
+      await page.getByTestId("mailbox-governed-route-closeout").waitFor({ state: "visible" });
+      await capture(page, "governed-route-closeout-ready");
+
+      const stateAfterCloseout = await readState(serverURL);
+      const doneSuggestion = stateAfterCloseout.workspace.governance.routingPolicy.suggestedHandoff;
+      assert(doneSuggestion.status === "done", "governed route should become done after final QA closeout");
+      assert(
+        doneSuggestion.href === "/pull-requests/pr-runtime-18",
+        "done governed route should point to the runtime PR delivery entry"
+      );
+
+      await page.getByTestId("mailbox-governed-route-closeout").click();
+      await page.getByTestId("pull-request-delivery-status").waitFor({ state: "visible" });
+      await page.waitForFunction(
+        (note) => document.querySelector('[data-testid="delivery-handoff-note"]')?.textContent?.includes(note),
+        qaCloseoutNote
+      );
+      await capture(page, "pull-request-delivery-closeout");
+
+      await page.goto(`${webURL}/inbox?roomId=room-runtime`, { waitUntil: "load" });
+      await page.waitForFunction(() => {
+        return document.querySelector('[data-testid="mailbox-compose-governed-route-status"]')?.textContent?.trim() === "done";
+      });
+      await page.getByTestId("mailbox-compose-governed-route-closeout").waitFor({ state: "visible" });
+      await capture(page, "governed-compose-closeout-ready");
+
+      reportTitle = "# 2026-04-11 Governed Mailbox Closeout Delivery Report";
+      reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-closeout -- --report ${path.relative(projectRoot, reportPath)}`;
+      reportTicket = "TKT-67";
+      reportTestCase = "TC-056";
+      reportScope = "governed final-lane done state、delivery entry closeout backlink、PR handoff note sync";
+      resultLines = [
+        "- QA followup handoff 完成后，`/mailbox` 上的 governed surface 不再停在纯 `done` 文案，而是直接给出 `Open Delivery Entry` closeout 回链 -> PASS",
+        "- 最终 lane 收口后，`workspace.governance.routingPolicy.suggestedHandoff` 会切到 `done` 并指向 `/pull-requests/pr-runtime-18`，说明治理链和交付面已经接上同一条 closeout truth -> PASS",
+        "- 打开 PR delivery entry 后，operator handoff note 与 evidence 会直接带上 QA closeout note；Inbox compose 也同步显示同一条 done-state closeout 回链 -> PASS",
+      ];
+    } else {
+      reportTitle = "# 2026-04-11 Governed Mailbox Auto-Advance Report";
+      reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-auto-advance -- --report ${path.relative(projectRoot, reportPath)}`;
+      reportTicket = "TKT-66";
+      reportTestCase = "TC-055";
+      reportScope = "governed complete + auto-advance、QA followup auto-create、dual-surface active replay";
+      resultLines = [
+        "- `/mailbox` 上的 `Complete + Auto-Advance` 现在会把当前 governed handoff 正式收口，并继续围当前 topology 自动创建下一棒 formal handoff，而不是要求人类重新手工起单 -> PASS",
+        "- 当 QA lane 已映射到 `Memory Clerk` 时，reviewer closeout 会自动前滚出 `Claude Review Runner -> Memory Clerk` 的下一条 handoff，同时 `workspace.governance.routingPolicy.suggestedHandoff` 会切到同一条 `active` 指针 -> PASS",
+        "- Inbox compose 与 `/mailbox` 在 auto-advance 后都会继续显示同一条 active followup，focus 回链直接跳到新 handoff，不会停在旧 reviewer ledger 或回退成 `ready`/`blocked` 假状态 -> PASS",
+      ];
+    }
   } else {
     await page.getByTestId(`mailbox-action-completed-${handoff.id}`).click();
     await page.getByTestId(`mailbox-status-${handoff.id}`).waitFor({ state: "visible" });

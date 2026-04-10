@@ -430,14 +430,28 @@ func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDef
 	}
 	if fromLaneIndex >= len(template.Topology)-1 {
 		fromLane := template.Topology[fromLaneIndex]
+		reason := fmt.Sprintf("%s 当前已经在最终 lane %s，不需要再发起新的 governed handoff。", currentOwner, fromLane.Label)
+		href := fmt.Sprintf("/mailbox?roomId=%s", focus.Room.ID)
+		if focus.PullRequest != nil {
+			href = fmt.Sprintf("/pull-requests/%s", focus.PullRequest.ID)
+			reason = fmt.Sprintf("%s 当前已经完成最终 lane %s；下一步直接围 PR delivery entry 做 closeout。", currentOwner, fromLane.Label)
+		}
+		if focus.LatestCompletion != nil && strings.TrimSpace(focus.LatestCompletion.LastNote) != "" {
+			if focus.PullRequest != nil {
+				reason = fmt.Sprintf("%s 当前已经完成最终 lane %s；当前 closeout note 已准备好并回链到 delivery entry：%s", currentOwner, fromLane.Label, focus.LatestCompletion.LastNote)
+			} else {
+				reason = fmt.Sprintf("%s 当前已经完成最终 lane %s；当前治理链已收口：%s", currentOwner, fromLane.Label, focus.LatestCompletion.LastNote)
+			}
+		}
 		return WorkspaceGovernanceSuggestedHandoff{
 			Status:        "done",
-			Reason:        fmt.Sprintf("%s 当前已经在最终 lane %s，不需要再发起新的 governed handoff。", currentOwner, fromLane.Label),
+			Reason:        reason,
 			RoomID:        focus.Room.ID,
 			IssueKey:      focus.Issue.Key,
 			FromLaneID:    fromLane.ID,
 			FromLaneLabel: fromLane.Label,
 			FromAgent:     currentOwner,
+			Href:          href,
 		}
 	}
 

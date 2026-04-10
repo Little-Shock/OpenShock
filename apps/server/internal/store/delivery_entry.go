@@ -35,8 +35,23 @@ func buildPullRequestDeliveryEntry(
 	}
 
 	status, releaseReady, summary := summarizePullRequestDeliveryGates(gates)
-	evidence := buildPullRequestDeliveryEvidence(snapshot, pr, room, run, issue, conversation, templates)
-	handoffNote := buildPullRequestDeliveryHandoffNote(pr, room, run, issue, reviewGate, usageGate, quotaGate, notificationGate, status, releaseReady)
+	governanceAggregation := snapshot.Workspace.Governance.ResponseAggregation
+	governedCloseout := snapshot.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	evidence := buildPullRequestDeliveryEvidence(snapshot, pr, room, run, issue, conversation, templates, governanceAggregation, governedCloseout)
+	handoffNote := buildPullRequestDeliveryHandoffNote(
+		pr,
+		room,
+		run,
+		issue,
+		reviewGate,
+		usageGate,
+		quotaGate,
+		notificationGate,
+		governanceAggregation,
+		governedCloseout,
+		status,
+		releaseReady,
+	)
 
 	return PullRequestDeliveryEntry{
 		Status:       status,
@@ -296,6 +311,8 @@ func buildPullRequestDeliveryHandoffNote(
 	usageGate PullRequestDeliveryGate,
 	quotaGate PullRequestDeliveryGate,
 	notificationGate PullRequestDeliveryGate,
+	governanceAggregation WorkspaceResponseAggregation,
+	governedCloseout WorkspaceGovernanceSuggestedHandoff,
 	status string,
 	releaseReady bool,
 ) PullRequestDeliveryHandoffNote {
@@ -308,6 +325,12 @@ func buildPullRequestDeliveryHandoffNote(
 		fmt.Sprintf("当前通知 / handoff：%s", notificationGate.Summary),
 		fmt.Sprintf("发布前命令：`pnpm verify:release` -> `pnpm ops:smoke`。Issue = %s。", defaultString(strings.TrimSpace(issue.Key), "待整理 issue")),
 	}
+	if governanceAggregation.Status == "ready" && strings.TrimSpace(governanceAggregation.FinalResponse) != "" {
+		lines = append(lines, fmt.Sprintf("当前治理收口：%s", governanceAggregation.FinalResponse))
+	}
+	if governedCloseout.Status == "done" {
+		lines = append(lines, "governed route 已到 done；当前不需要新的 formal handoff，直接围这份 delivery entry / release gate 做最后收口。")
+	}
 
 	summary := "当前 closeout 仍需围着 blocked gate 修复后再交付。"
 	switch status {
@@ -315,6 +338,9 @@ func buildPullRequestDeliveryHandoffNote(
 		summary = "这条 PR 的 handoff note 已把 review / usage / quota / notification 和发布前命令收成一页。"
 	case deliveryEntryStatusWarning:
 		summary = "这条 PR 没有 hard blocker，但 handoff 时仍要把 warning 写清。"
+	}
+	if governanceAggregation.Status == "ready" && governedCloseout.Status == "done" {
+		summary = "这条 PR 的 handoff note 已接住 governed closeout，可直接围 delivery entry / release gate 做最后交付收口。"
 	}
 	if releaseReady {
 		lines = append(lines, "当前 release-ready 已成立；operator 只需按上面的 release gate 命令补最终验收。")
@@ -337,6 +363,8 @@ func buildPullRequestDeliveryEvidence(
 	issue Issue,
 	conversation []PullRequestConversationEntry,
 	templates []PullRequestDeliveryTemplate,
+	governanceAggregation WorkspaceResponseAggregation,
+	governedCloseout WorkspaceGovernanceSuggestedHandoff,
 ) []PullRequestDeliveryEvidence {
 	items := []PullRequestDeliveryEvidence{
 		{
@@ -368,6 +396,15 @@ func buildPullRequestDeliveryEvidence(
 			Value:   pr.URL,
 			Summary: defaultString(strings.TrimSpace(pr.ReviewSummary), "远端 PR 当前 review / merge 真值。"),
 			Href:    pr.URL,
+		})
+	}
+	if governanceAggregation.Status == "ready" && strings.TrimSpace(governanceAggregation.FinalResponse) != "" {
+		items = append(items, PullRequestDeliveryEvidence{
+			ID:      "governed-closeout",
+			Label:   "Governed Closeout",
+			Value:   defaultString(strings.TrimSpace(governanceAggregation.Aggregator), "workspace governance"),
+			Summary: governanceAggregation.FinalResponse,
+			Href:    defaultString(strings.TrimSpace(governedCloseout.Href), "/mailbox"),
 		})
 	}
 

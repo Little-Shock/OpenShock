@@ -16,6 +16,8 @@
   - `TKT-65` 的 Windows Chrome 有头报告，覆盖 `/mailbox` 与 Inbox compose 上的 governed 一键起单、双面 active 同步与 blocked replay
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Auto-Advance](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-auto-advance.md)
   - `TKT-66` 的 Windows Chrome 有头报告，覆盖 reviewer closeout 后的 `Complete + Auto-Advance`、QA followup 自动起单与双面 active 同步
+- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Closeout](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-closeout.md)
+  - `TKT-67` 的 Windows Chrome 有头报告，覆盖 final lane closeout 后的 PR delivery entry 回链、operator handoff note governed closeout sync 与双面 done-state backlink
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)
@@ -161,6 +163,8 @@
   - 验证 governed route 在 `/mailbox` 与 Inbox compose 的一键起单、双面 active 同步，以及 handoff 完成后的 blocked replay
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-auto-advance -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-auto-advance.md`
   - 验证 acknowledged handoff 的 `Complete + Auto-Advance`、QA followup 自动创建，以及 `/mailbox` / Inbox compose 双面 active 前滚
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-closeout -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-closeout.md`
+  - 验证 final lane closeout 后的 done-state delivery backlink，以及 PR detail handoff note / evidence 是否接住最新 governed closeout note
 - `pnpm test:headed-onboarding-studio`
   - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-agent-profile-editor`

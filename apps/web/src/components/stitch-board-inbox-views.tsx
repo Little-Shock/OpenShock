@@ -145,6 +145,10 @@ function decisionTone(decision: InboxDecision) {
   }
 }
 
+function governedCloseoutLabel(href: string) {
+  return href.startsWith("/pull-requests/") ? "Open Delivery Entry" : "Review Closeout";
+}
+
 function signalIcon(kind: InboxItem["kind"]) {
   switch (kind) {
     case "approval":
@@ -1278,6 +1282,15 @@ export function StitchInboxView() {
                                   className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px]"
                                 >
                                   Focus Handoff
+                                </Link>
+                              ) : null}
+                              {governedSuggestion.status === "done" && governedSuggestion.href ? (
+                                <Link
+                                  href={governedSuggestion.href}
+                                  data-testid="mailbox-compose-governed-route-closeout"
+                                  className="border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[10px]"
+                                >
+                                  {governedCloseoutLabel(governedSuggestion.href)}
                                 </Link>
                               ) : null}
                             </div>
