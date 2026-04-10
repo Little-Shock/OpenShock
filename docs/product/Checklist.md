@@ -1,6 +1,6 @@
 # OpenShock Product Checklist
 
-**版本:** 1.10
+**版本:** 1.11
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Phase 0 MVP](./Phase0-MVP.md) · [Execution Tickets](./Execution-Tickets.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -44,7 +44,7 @@
   - `app.slock.ai` 式 profile-grade 入口、壳层密度和主视觉细节仍可继续收平
   - token / quota / usage / retention 的正式产品面已站住，但更细的时间维度 rollup 仍待补齐
   - onboarding 的首次启动主链已站住，但更细的模板运营与团队默认治理仍可继续增强
-  - 默认角色治理、自动协作策略与更深的 delivery delegation 仍待继续前滚
+  - 更深的自动协作策略与跨 Agent delivery delegation 仍待继续前滚
   - 更重的长期记忆整理与外部 provider 编排仍未完成
 
 ---
@@ -397,11 +397,12 @@
   - [x] Agent Mailbox 已补成正式通信面，handoff request / ack / blocked / complete lifecycle 可在 Room / Inbox / Mailbox 同步追踪
   - [x] Mailbox 现在支持 source / target 双边 formal comment；comment 会写入同一条 handoff ledger、room trace 与 inbox 摘要，但不会偷偷改 lifecycle status 或冲掉 blocked / complete note
   - [x] workspace governance 现已显式暴露 routing policy、escalation SLA、notification policy、response aggregation audit 与 human override trace，并已有 Windows Chrome 有头证据
+  - [x] `workspace.governance.routingPolicy.suggestedHandoff` 现在会围当前 room/run truth 和 team topology 派生默认下一棒 governed route；`/mailbox` 与 Inbox compose 都会读取同一条建议，并在 active / blocked 时显式提示而不是静默随机回退
   - [x] PR detail 现在也已升级成 single delivery contract：release gate、operator handoff note、delivery template 与 evidence bundle 可在同页复核
   - [x] `/settings` 现在可直接编辑 team topology，并把 lane / role / default agent / handoff path 写回 durable workspace truth；`/setup` `/mailbox` `/agents` 会继续读取同一份配置，且已补 Windows Chrome 有头证据
 - 当前 GAP:
-  - [ ] 默认角色治理、自动协作策略与更重的跨 Agent delivery delegation 仍留后续
-- 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052`
+  - [ ] 更深的 agent-to-agent communication、自动协作策略与更重的跨 Agent delivery delegation 仍留后续
+- 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052` `TC-053`
 
 ### CHK-22 配置持久化、数据库与恢复真相
 
@@ -423,7 +424,7 @@
 ## 四、近期收口顺序
 
 1. 继续收 `CHK-16` 的 shell density、视觉细节和 `app.slock.ai` 式高频交互抛光。
-2. 继续推进 `CHK-21` 的更深 agent-to-agent communication、角色默认治理与自动协作策略。
+2. 继续推进 `CHK-21` 的更深 agent-to-agent communication、自动协作策略与 delivery delegation。
 3. 继续补 `CHK-10` `CHK-22` 的长期记忆整理、外部 provider 编排与 durable governance。
 
 ---
@@ -447,7 +448,7 @@
 - `CHK-14` `CHK-15` -> `TKT-31`
 - `CHK-19` -> `TKT-25` `TKT-32` `TKT-33`
 - `CHK-20` -> `TKT-29` `TKT-34`
-- `CHK-21` -> `TKT-35` `TKT-36` `TKT-61` `TKT-62` `TKT-63`
+- `CHK-21` -> `TKT-35` `TKT-36` `TKT-61` `TKT-62` `TKT-63` `TKT-64`
 - `CHK-22` -> `TKT-37`
 - `CHK-07` `CHK-08` -> `TKT-39`
 - `CHK-06` -> `TKT-40` `TKT-52`

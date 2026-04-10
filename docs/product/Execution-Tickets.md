@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.9
+**版本:** 1.10
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作接下来重点从基础 SLA / routing / aggregation 与 formal comment，前滚到默认角色治理、delivery handoff 和自动协作策略。
+4. 多 Agent 协作接下来重点从已落地的 SLA / routing / aggregation、formal comment 与 governed next-route default，继续前滚到 delivery delegation、自动创建/自动推进与更深自动协作策略。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -709,6 +709,28 @@
   - `docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-052`
+
+## TKT-64 Governed Mailbox Route / Default Role Handoff
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 team topology 从只读治理预览推进到当前 room truth 驱动的默认下一棒 handoff 建议，避免 mailbox compose 静默随机挑人。
+- 范围:
+  - `workspace.governance.routingPolicy.suggestedHandoff` contract
+  - current room / run owner lane resolution
+  - `/mailbox` 与 Inbox compose governed-route surface
+  - active handoff focus / missing target blocked fallback
+- 依赖: `TKT-61` `TKT-62` `TKT-63`
+- Done When:
+  - governance snapshot 能围当前 room / run truth 给出下一棒 governed handoff suggestion
+  - 当前 room 已有未完成 handoff 时，surface 会切成 `active` 并回链当前 ledger，防止重复创建
+  - 下一条 lane 缺少可映射 agent 时，surface 会显式 `blocked`，不再静默回退到随机接收方
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-route -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-route.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-053`
 
 ---
 

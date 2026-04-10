@@ -146,6 +146,7 @@ export function LiveMailboxPageContent() {
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [commentActors, setCommentActors] = useState<Record<string, string>>({});
+  const [lastAppliedGovernedRouteKey, setLastAppliedGovernedRouteKey] = useState("");
   const highlightedHandoffId = searchParams.get("handoffId");
   const requestedRoomId = searchParams.get("roomId");
   const authSession = state.auth.session;
@@ -156,6 +157,15 @@ export function LiveMailboxPageContent() {
   const blockedCount = loading || error ? 0 : state.mailbox.filter((item) => item.status === "blocked").length;
   const completedCount = loading || error ? 0 : state.mailbox.filter((item) => item.status === "completed").length;
   const governance = state.workspace.governance;
+  const governedSuggestion = governance.routingPolicy.suggestedHandoff;
+  const governedRouteKey = [
+    governedSuggestion.status,
+    governedSuggestion.roomId,
+    governedSuggestion.fromAgentId,
+    governedSuggestion.toAgentId,
+    governedSuggestion.handoffId,
+    governedSuggestion.draftTitle,
+  ].join(":");
 
   useEffect(() => {
     if (loading || error || state.rooms.length === 0) {
@@ -192,6 +202,58 @@ export function LiveMailboxPageContent() {
       setToAgentId(fallbackTarget.id);
     }
   }, [loading, error, roomId, fromAgentId, toAgentId, state.rooms, state.agents]);
+
+  function applyGovernedRouteSuggestion() {
+    if (governedSuggestion.roomId !== roomId || governedSuggestion.status !== "ready") {
+      return;
+    }
+    if (governedSuggestion.fromAgentId) {
+      setFromAgentId(governedSuggestion.fromAgentId);
+    }
+    if (governedSuggestion.toAgentId) {
+      setToAgentId(governedSuggestion.toAgentId);
+    }
+    if (governedSuggestion.draftTitle) {
+      setTitle(governedSuggestion.draftTitle);
+    }
+    if (governedSuggestion.draftSummary) {
+      setSummary(governedSuggestion.draftSummary);
+    }
+    setLastAppliedGovernedRouteKey(governedRouteKey);
+  }
+
+  useEffect(() => {
+    if (loading || error || governedSuggestion.status !== "ready" || governedSuggestion.roomId !== roomId) {
+      return;
+    }
+    if (!governedSuggestion.fromAgentId || !governedSuggestion.toAgentId) {
+      return;
+    }
+    if (lastAppliedGovernedRouteKey === governedRouteKey) {
+      return;
+    }
+    setFromAgentId(governedSuggestion.fromAgentId);
+    setToAgentId(governedSuggestion.toAgentId);
+    if (governedSuggestion.draftTitle) {
+      setTitle(governedSuggestion.draftTitle);
+    }
+    if (governedSuggestion.draftSummary) {
+      setSummary(governedSuggestion.draftSummary);
+    }
+    setLastAppliedGovernedRouteKey(governedRouteKey);
+  }, [
+    error,
+    governedRouteKey,
+    governedSuggestion.draftSummary,
+    governedSuggestion.draftTitle,
+    governedSuggestion.fromAgentId,
+    governedSuggestion.roomId,
+    governedSuggestion.status,
+    governedSuggestion.toAgentId,
+    lastAppliedGovernedRouteKey,
+    loading,
+    roomId,
+  ]);
 
   async function handleCreate() {
     if (busyKey || !canMutate) {
@@ -501,6 +563,65 @@ export function LiveMailboxPageContent() {
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
                   这一步会同时写入 mailbox ledger、room system note 和 inbox back-link。收到方之后只在同一条对象上 ack / block / comment / complete。
                 </p>
+                {governedSuggestion.roomId === roomId ? (
+                  <div
+                    data-testid="mailbox-governed-route"
+                    className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                          governed handoff
+                        </p>
+                        <p
+                          data-testid="mailbox-governed-route-status"
+                          className="mt-2 font-display text-2xl font-bold"
+                        >
+                          {governanceStatusLabel(governedSuggestion.status)}
+                        </p>
+                        <p
+                          data-testid="mailbox-governed-route-reason"
+                          className="mt-2 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.74)]"
+                        >
+                          {governedSuggestion.reason}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {governedSuggestion.status === "ready" ? (
+                          <button
+                            type="button"
+                            data-testid="mailbox-governed-route-apply"
+                            onClick={applyGovernedRouteSuggestion}
+                            className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                          >
+                            Apply Governed Route
+                          </button>
+                        ) : null}
+                        {governedSuggestion.status === "active" && governedSuggestion.href ? (
+                          <Link
+                            href={governedSuggestion.href}
+                            data-testid="mailbox-governed-route-focus"
+                            className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                          >
+                            Focus Active Handoff
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {governedSuggestion.fromLaneLabel ? (
+                        <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                          {governedSuggestion.fromLaneLabel} · {governedSuggestion.fromAgent || "manual"}
+                        </span>
+                      ) : null}
+                      {governedSuggestion.toLaneLabel ? (
+                        <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                          {governedSuggestion.toLaneLabel} · {governedSuggestion.toAgent || "manual"}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
                   <label className="space-y-2">
                     <span className="font-mono text-[10px] uppercase tracking-[0.16em]">Room</span>

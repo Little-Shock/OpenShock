@@ -414,6 +414,7 @@ func sanitizeWorkspaceGovernanceRule(item store.WorkspaceGovernanceRule) store.W
 func sanitizeWorkspaceRoutingPolicy(item store.WorkspaceGovernanceRoutingPolicy) store.WorkspaceGovernanceRoutingPolicy {
 	item.Summary = sanitizeDisplayText(item.Summary, "当前 routing policy 正在整理中。")
 	item.DefaultRoute = sanitizeDisplayText(item.DefaultRoute, "")
+	item.SuggestedHandoff = sanitizeWorkspaceSuggestedHandoff(item.SuggestedHandoff)
 	for index := range item.Rules {
 		item.Rules[index].Trigger = sanitizeDisplayText(item.Rules[index].Trigger, "trigger")
 		item.Rules[index].FromLane = sanitizeDisplayText(item.Rules[index].FromLane, "未命名来源")
@@ -421,6 +422,25 @@ func sanitizeWorkspaceRoutingPolicy(item store.WorkspaceGovernanceRoutingPolicy)
 		item.Rules[index].Policy = sanitizeDisplayText(item.Rules[index].Policy, "当前路由策略正在整理中。")
 		item.Rules[index].Summary = sanitizeDisplayText(item.Rules[index].Summary, "当前 routing rule 正在整理中。")
 	}
+	return item
+}
+
+func sanitizeWorkspaceSuggestedHandoff(item store.WorkspaceGovernanceSuggestedHandoff) store.WorkspaceGovernanceSuggestedHandoff {
+	item.Reason = sanitizeDisplayText(item.Reason, "当前 governed handoff 建议正在整理中。")
+	item.RoomID = sanitizeDisplayText(item.RoomID, "")
+	item.IssueKey = sanitizeDisplayText(item.IssueKey, "")
+	item.FromLaneID = sanitizeDisplayText(item.FromLaneID, "")
+	item.FromLaneLabel = sanitizeDisplayText(item.FromLaneLabel, "")
+	item.FromAgentID = sanitizeDisplayText(item.FromAgentID, "")
+	item.FromAgent = sanitizeDisplayText(item.FromAgent, "")
+	item.ToLaneID = sanitizeDisplayText(item.ToLaneID, "")
+	item.ToLaneLabel = sanitizeDisplayText(item.ToLaneLabel, "")
+	item.ToAgentID = sanitizeDisplayText(item.ToAgentID, "")
+	item.ToAgent = sanitizeDisplayText(item.ToAgent, "")
+	item.DraftTitle = sanitizeDisplayText(item.DraftTitle, "")
+	item.DraftSummary = sanitizeDisplayText(item.DraftSummary, "")
+	item.HandoffID = sanitizeDisplayText(item.HandoffID, "")
+	item.Href = sanitizeDisplayText(item.Href, "")
 	return item
 }
 

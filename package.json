@@ -31,6 +31,7 @@
     "test:headed-action-authz-matrix": "node ./scripts/headed-action-authz-matrix.mjs",
     "test:headed-approval-center-lifecycle": "node ./scripts/headed-approval-center-lifecycle.mjs",
     "test:headed-agent-mailbox-handoff": "node ./scripts/headed-agent-mailbox-handoff.mjs",
+    "test:headed-governed-mailbox-route": "node ./scripts/headed-governed-mailbox-route.mjs",
     "test:headed-multi-agent-governance": "node ./scripts/headed-multi-agent-governance.mjs",
     "test:headed-control-plane-runtime-governance": "node ./scripts/headed-control-plane-runtime-governance.mjs",
     "test:headed-planner-dispatch-replay": "node ./scripts/headed-planner-dispatch-replay.mjs",

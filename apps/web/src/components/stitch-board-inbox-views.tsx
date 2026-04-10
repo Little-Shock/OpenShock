@@ -97,6 +97,27 @@ function deliveryStatusTone(status: ApprovalCenterItem["deliveryStatus"]) {
   }
 }
 
+function governanceStatusLabel(status: string) {
+  switch (status) {
+    case "active":
+      return "active";
+    case "ready":
+      return "ready";
+    case "required":
+      return "required";
+    case "blocked":
+      return "blocked";
+    case "done":
+      return "done";
+    case "draft":
+      return "draft";
+    case "watch":
+      return "watch";
+    default:
+      return "pending";
+  }
+}
+
 function decisionLabel(decision: InboxDecision) {
   switch (decision) {
     case "approved":
@@ -548,16 +569,30 @@ export function StitchInboxView() {
   const disconnected = loading || Boolean(error) || sidebarMachines.every((machine) => machine.state === "offline");
   const canManageMailbox = hasSessionPermission(session, "run.execute");
   const mailboxSurfaceActive = pathname === "/mailbox";
+  const governedSuggestion = state.workspace.governance.routingPolicy.suggestedHandoff;
 
   const recommendedMailboxAgents = useCallback((roomId: string) => {
+    if (governedSuggestion.roomId === roomId && governedSuggestion.status === "ready") {
+      return {
+        fromAgentId: governedSuggestion.fromAgentId ?? "",
+        toAgentId: governedSuggestion.toAgentId ?? "",
+        title: governedSuggestion.draftTitle ?? "把 governed lane 交给下一位 Agent",
+        summary: governedSuggestion.draftSummary ?? "按当前治理链继续推进下一棒。",
+      };
+    }
     const room = state.rooms.find((candidate) => candidate.id === roomId);
     const ownerAgent = state.agents.find((agent) => agent.name === room?.topic.owner);
     const fromAgentId = ownerAgent?.id ?? state.agents[0]?.id ?? "";
     const toAgentId =
       state.agents.find((agent) => agent.id !== fromAgentId)?.id ??
       fromAgentId;
-    return { fromAgentId, toAgentId };
-  }, [state.agents, state.rooms]);
+    return {
+      fromAgentId,
+      toAgentId,
+      title: "把 fresh head reviewer lane 交给下一位 Agent",
+      summary: "请你接住 current exact-head reviewer lane，并在 mailbox 里显式回写 blocked / complete。",
+    };
+  }, [governedSuggestion.draftSummary, governedSuggestion.draftTitle, governedSuggestion.fromAgentId, governedSuggestion.roomId, governedSuggestion.status, governedSuggestion.toAgentId, state.agents, state.rooms]);
 
   function applyRoomDefaults(roomId: string) {
     if (!roomId) {
@@ -567,6 +602,18 @@ export function StitchInboxView() {
     setComposeRoomId(roomId);
     setComposeFromAgentId(defaults.fromAgentId);
     setComposeToAgentId(defaults.toAgentId);
+    setComposeTitle(defaults.title);
+    setComposeSummary(defaults.summary);
+  }
+
+  function applyGovernedComposeRoute() {
+    if (governedSuggestion.roomId !== composeRoomId || governedSuggestion.status !== "ready") {
+      return;
+    }
+    setComposeFromAgentId(governedSuggestion.fromAgentId ?? "");
+    setComposeToAgentId(governedSuggestion.toAgentId ?? "");
+    setComposeTitle(governedSuggestion.draftTitle ?? "把 governed lane 交给下一位 Agent");
+    setComposeSummary(governedSuggestion.draftSummary ?? "按当前治理链继续推进下一棒。");
   }
 
   useEffect(() => {
@@ -585,6 +632,8 @@ export function StitchInboxView() {
       setComposeRoomId(preferredRoomId);
       setComposeFromAgentId(defaults.fromAgentId);
       setComposeToAgentId(defaults.toAgentId);
+      setComposeTitle(defaults.title);
+      setComposeSummary(defaults.summary);
     }
   }, [composeRoomId, contextRoomId, error, loading, recommendedMailboxAgents, state.agents, state.rooms]);
 
@@ -1141,6 +1190,62 @@ export function StitchInboxView() {
                       </span>
                     </div>
                     <div className="mt-4 space-y-3">
+                      {governedSuggestion.roomId === composeRoomId ? (
+                        <div
+                          data-testid="mailbox-compose-governed-route"
+                          className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                                governed route
+                              </p>
+                              <p
+                                data-testid="mailbox-compose-governed-route-status"
+                                className="mt-2 font-display text-[18px] font-bold"
+                              >
+                                {governanceStatusLabel(governedSuggestion.status)}
+                              </p>
+                              <p className="mt-2 text-[12px] leading-6 text-[color:rgba(24,20,14,0.68)]">
+                                {governedSuggestion.reason}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {governedSuggestion.status === "ready" ? (
+                                <button
+                                  type="button"
+                                  data-testid="mailbox-compose-governed-route-apply"
+                                  onClick={applyGovernedComposeRoute}
+                                  className="border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[10px]"
+                                >
+                                  Apply Route
+                                </button>
+                              ) : null}
+                              {governedSuggestion.status === "active" && governedSuggestion.href ? (
+                                <Link
+                                  href={governedSuggestion.href}
+                                  data-testid="mailbox-compose-governed-route-focus"
+                                  className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px]"
+                                >
+                                  Focus Handoff
+                                </Link>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {governedSuggestion.fromLaneLabel ? (
+                              <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]">
+                                {governedSuggestion.fromLaneLabel} · {governedSuggestion.fromAgent || "manual"}
+                              </span>
+                            ) : null}
+                            {governedSuggestion.toLaneLabel ? (
+                              <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]">
+                                {governedSuggestion.toLaneLabel} · {governedSuggestion.toAgent || "manual"}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                       <label className="block">
                         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Room</span>
                         <select

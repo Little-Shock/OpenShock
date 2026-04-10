@@ -34,6 +34,10 @@ func TestStateRouteExposesGovernanceSnapshot(t *testing.T) {
 	if state.Workspace.Governance.RoutingPolicy.DefaultRoute == "" || len(state.Workspace.Governance.RoutingPolicy.Rules) == 0 {
 		t.Fatalf("routing policy = %#v, want routing matrix in governance snapshot", state.Workspace.Governance.RoutingPolicy)
 	}
+	if state.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "ready" ||
+		state.Workspace.Governance.RoutingPolicy.SuggestedHandoff.ToAgent != "Claude Review Runner" {
+		t.Fatalf("suggested handoff = %#v, want ready Codex -> Claude governance suggestion", state.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
+	}
 	if state.Workspace.Governance.EscalationSLA.TimeoutMinutes == 0 || state.Workspace.Governance.NotificationPolicy.BrowserPush == "" {
 		t.Fatalf("sla/notification = %#v / %#v, want governance SLA + notification truth", state.Workspace.Governance.EscalationSLA, state.Workspace.Governance.NotificationPolicy)
 	}
@@ -56,6 +60,10 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	afterCreate := readStateSnapshot(t, server.URL)
 	if afterCreate.Workspace.Governance.Stats.OpenHandoffs != 1 {
 		t.Fatalf("governance stats after create = %#v, want 1 open handoff", afterCreate.Workspace.Governance.Stats)
+	}
+	if afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "active" ||
+		afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff.HandoffID != handoff.ID {
+		t.Fatalf("governed handoff after create = %#v, want active suggestion focused on current handoff", afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
 	}
 	handoffStep := findGovernanceWalkthroughStep(afterCreate.Workspace.Governance.Walkthrough, "handoff")
 	if handoffStep == nil || handoffStep.Status != "active" {
@@ -94,6 +102,10 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	if afterComplete.Workspace.Governance.ResponseAggregation.Status != "ready" ||
 		!strings.Contains(afterComplete.Workspace.Governance.ResponseAggregation.FinalResponse, "最终响应") {
 		t.Fatalf("response aggregation after complete = %#v, want ready closeout note", afterComplete.Workspace.Governance.ResponseAggregation)
+	}
+	if afterComplete.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "blocked" ||
+		afterComplete.Workspace.Governance.RoutingPolicy.SuggestedHandoff.ToLaneLabel != "QA" {
+		t.Fatalf("governed handoff after complete = %#v, want blocked reviewer -> QA next-route suggestion", afterComplete.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
 	}
 	if afterComplete.Workspace.Governance.ResponseAggregation.Aggregator == "" ||
 		len(afterComplete.Workspace.Governance.ResponseAggregation.AuditTrail) == 0 {

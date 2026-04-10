@@ -162,10 +162,11 @@ type WorkspaceGovernanceRule struct {
 }
 
 type WorkspaceGovernanceRoutingPolicy struct {
-	Status       string                         `json:"status"`
-	Summary      string                         `json:"summary"`
-	DefaultRoute string                         `json:"defaultRoute,omitempty"`
-	Rules        []WorkspaceGovernanceRouteRule `json:"rules,omitempty"`
+	Status           string                              `json:"status"`
+	Summary          string                              `json:"summary"`
+	DefaultRoute     string                              `json:"defaultRoute,omitempty"`
+	Rules            []WorkspaceGovernanceRouteRule      `json:"rules,omitempty"`
+	SuggestedHandoff WorkspaceGovernanceSuggestedHandoff `json:"suggestedHandoff"`
 }
 
 type WorkspaceGovernanceRouteRule struct {
@@ -176,6 +177,25 @@ type WorkspaceGovernanceRouteRule struct {
 	Policy   string `json:"policy"`
 	Summary  string `json:"summary"`
 	Status   string `json:"status"`
+}
+
+type WorkspaceGovernanceSuggestedHandoff struct {
+	Status        string `json:"status"`
+	Reason        string `json:"reason"`
+	RoomID        string `json:"roomId,omitempty"`
+	IssueKey      string `json:"issueKey,omitempty"`
+	FromLaneID    string `json:"fromLaneId,omitempty"`
+	FromLaneLabel string `json:"fromLaneLabel,omitempty"`
+	FromAgentID   string `json:"fromAgentId,omitempty"`
+	FromAgent     string `json:"fromAgent,omitempty"`
+	ToLaneID      string `json:"toLaneId,omitempty"`
+	ToLaneLabel   string `json:"toLaneLabel,omitempty"`
+	ToAgentID     string `json:"toAgentId,omitempty"`
+	ToAgent       string `json:"toAgent,omitempty"`
+	DraftTitle    string `json:"draftTitle,omitempty"`
+	DraftSummary  string `json:"draftSummary,omitempty"`
+	HandoffID     string `json:"handoffId,omitempty"`
+	Href          string `json:"href,omitempty"`
 }
 
 type WorkspaceGovernanceEscalationSLA struct {

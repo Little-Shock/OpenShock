@@ -172,6 +172,7 @@ export type WorkspaceGovernanceRoutingPolicy = {
   summary: string;
   defaultRoute?: string;
   rules?: WorkspaceGovernanceRouteRule[];
+  suggestedHandoff: WorkspaceGovernanceSuggestedHandoff;
 };
 
 export type WorkspaceGovernanceRouteRule = {
@@ -182,6 +183,25 @@ export type WorkspaceGovernanceRouteRule = {
   policy: string;
   summary: string;
   status: string;
+};
+
+export type WorkspaceGovernanceSuggestedHandoff = {
+  status: string;
+  reason: string;
+  roomId?: string;
+  issueKey?: string;
+  fromLaneId?: string;
+  fromLaneLabel?: string;
+  fromAgentId?: string;
+  fromAgent?: string;
+  toLaneId?: string;
+  toLaneLabel?: string;
+  toAgentId?: string;
+  toAgent?: string;
+  draftTitle?: string;
+  draftSummary?: string;
+  handoffId?: string;
+  href?: string;
 };
 
 export type WorkspaceGovernanceEscalationSLA = {

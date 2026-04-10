@@ -381,6 +381,66 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	}
 }
 
+func TestGovernanceSuggestedHandoffTracksDefaultRoleRoute(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	baseline := s.Snapshot()
+	suggested := baseline.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	if suggested.Status != "ready" ||
+		suggested.RoomID != "room-runtime" ||
+		suggested.FromAgent != "Codex Dockmaster" ||
+		suggested.ToAgent != "Claude Review Runner" ||
+		suggested.ToLaneLabel != "Reviewer" {
+		t.Fatalf("baseline governed handoff = %#v, want ready Codex -> Claude reviewer route", suggested)
+	}
+
+	afterCreate, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "把 developer lane 正式交给 reviewer",
+		Summary:     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+
+	activeSuggestion := afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	if activeSuggestion.Status != "active" || activeSuggestion.HandoffID != handoff.ID || !strings.Contains(activeSuggestion.Reason, "不要重复创建") {
+		t.Fatalf("active governed handoff = %#v, want active suggestion pointing at the open handoff", activeSuggestion)
+	}
+
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-claude-review-runner",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged) error = %v", err)
+	}
+
+	completedState, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: "agent-claude-review-runner",
+		Note:          "review 已完成，继续看下一条治理建议。",
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed) error = %v", err)
+	}
+
+	blockedNextSuggestion := completedState.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	if blockedNextSuggestion.Status != "blocked" ||
+		blockedNextSuggestion.FromLaneLabel != "Reviewer" ||
+		blockedNextSuggestion.ToLaneLabel != "QA" ||
+		!strings.Contains(blockedNextSuggestion.Reason, "缺少可映射") {
+		t.Fatalf("post-complete governed handoff = %#v, want blocked reviewer -> QA route due to missing target agent", blockedNextSuggestion)
+	}
+}
+
 func findInboxItemByHandoffID(items []InboxItem, handoffID string) *InboxItem {
 	for index := range items {
 		if items[index].HandoffID == handoffID {

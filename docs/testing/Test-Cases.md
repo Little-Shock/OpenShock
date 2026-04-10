@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.7
+**版本:** 1.8
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -688,3 +688,17 @@
   4. 最后执行 `acknowledged -> completed`，检查 Room / Inbox / Mailbox 是否还能回放完整链路。
 - 预期结果: source / target 都能在同一条 handoff 上补 formal comment；comment 只追加 ledger / room trace / inbox summary，不会偷偷改 lifecycle status，也不会冲掉 blocked tone 或 closeout note。
 - 业务结论: 2026 年 4 月 11 日 `TKT-63` 已把 `comment` action 补进 `/v1/mailbox/:id`，并更新 `/mailbox`、`/inbox` 上的 mailbox surface。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md` 已记录 `create -> source comment -> blocked(note required probe) -> target comment -> acknowledged -> completed` 的 Windows Chrome 有头 exact replay，并验证 comment 会同步写入 handoff ledger、room agent trace 与 inbox summary，同时保留 blocked / complete 的 lifecycle 语义，因此这条双边正式通信用例当前转为 `Pass`。
+
+## TC-053 Governed Mailbox Route / Default Role Handoff
+
+- 业务目标: 确认 mailbox 不再围空白默认值或随机 Agent 起单，而是按当前 room / run truth 与 team topology 给出下一棒 governed handoff suggestion，并在缺少合法接收方时显式 fail-closed。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 `workspace.governance` 派生快照、team topology、Mailbox lifecycle，以及至少一条可映射到 reviewer -> QA 的治理链。
+- 测试步骤:
+  1. 打开 `/mailbox?roomId=room-runtime`，检查 compose form 是否自动读取当前 governed suggestion，并默认填入 `Developer -> Reviewer` 的 source / target。
+  2. 应用 governed route 并创建 handoff，确认 surface 切成 `active`，且可回链聚焦当前正在进行的 handoff。
+  3. 在同一条 handoff 上执行 `acknowledged -> completed`，让当前 reviewer lane 正式收口。
+  4. 检查下一条 governed suggestion 是否前滚到 `Reviewer -> QA`；若当前 topology 缺少合法 QA target，状态必须显式为 `blocked`，而不是随机挑现有 Agent。
+- 预期结果: governed route 会围当前 room truth 稳定建议下一棒 handoff；已存在 handoff 时不会重复创建；缺目标 Agent 时显式 `blocked` 并要求人工选择或补 topology truth。
+- 业务结论: 2026 年 4 月 11 日 `TKT-64` 已新增 `workspace.governance.routingPolicy.suggestedHandoff`，并把 `/mailbox` 与 Inbox compose 接到同一条 governed suggestion truth。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-route.md` 已记录 `ready -> active -> blocked` 的 Windows Chrome 有头 exact replay，同时 `go test ./internal/store ./internal/api` 已锁住 current-room lane resolution、active handoff focus 与 missing QA target fail-closed，因此这条默认角色治理用例当前转为 `Pass`。

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type governanceTemplateDefinition struct {
@@ -148,7 +149,7 @@ func hydrateWorkspaceGovernance(workspace *WorkspaceSnapshot, state *State) {
 	focus := resolveGovernanceFocus(*state)
 	stats := buildGovernanceStats(*state)
 	humanOverride := buildHumanOverride(focus)
-	routingPolicy := buildGovernanceRoutingPolicy(effectiveTemplate, focus, humanOverride)
+	routingPolicy := buildGovernanceRoutingPolicy(effectiveTemplate, *state, focus, humanOverride)
 	escalationSLA := buildGovernanceEscalationSLA(effectiveTemplate, focus)
 	notificationPolicy := buildGovernanceNotificationPolicy(*workspace, effectiveTemplate, focus)
 	responseAggregation := buildResponseAggregation(focus, humanOverride)
@@ -212,10 +213,20 @@ func resolveGovernanceFocus(state State) governanceFocus {
 				break
 			}
 		}
-		for index := range state.Runs {
-			if state.Runs[index].RoomID == roomID {
-				focus.Run = &state.Runs[index]
-				break
+		if focus.Room != nil && strings.TrimSpace(focus.Room.RunID) != "" {
+			for index := range state.Runs {
+				if state.Runs[index].ID == focus.Room.RunID {
+					focus.Run = &state.Runs[index]
+					break
+				}
+			}
+		}
+		if focus.Run == nil {
+			for index := range state.Runs {
+				if state.Runs[index].RoomID == roomID {
+					focus.Run = &state.Runs[index]
+					break
+				}
 			}
 		}
 		for index := range state.Issues {
@@ -293,7 +304,7 @@ func buildGovernanceStats(state State) WorkspaceGovernanceStats {
 	return stats
 }
 
-func buildGovernanceRoutingPolicy(template governanceTemplateDefinition, focus governanceFocus, humanOverride WorkspaceHumanOverride) WorkspaceGovernanceRoutingPolicy {
+func buildGovernanceRoutingPolicy(template governanceTemplateDefinition, state State, focus governanceFocus, humanOverride WorkspaceHumanOverride) WorkspaceGovernanceRoutingPolicy {
 	defaultRouteParts := make([]string, 0, len(template.Topology))
 	rules := make([]WorkspaceGovernanceRouteRule, 0, len(template.Topology))
 
@@ -349,10 +360,11 @@ func buildGovernanceRoutingPolicy(template governanceTemplateDefinition, focus g
 			status = "blocked"
 			summary = fmt.Sprintf("routing 当前被 %s 挡住：%s。", rule.ID, rule.Summary)
 			return WorkspaceGovernanceRoutingPolicy{
-				Status:       status,
-				Summary:      summary,
-				DefaultRoute: strings.Join(defaultRouteParts, " -> "),
-				Rules:        rules,
+				Status:           status,
+				Summary:          summary,
+				DefaultRoute:     strings.Join(defaultRouteParts, " -> "),
+				Rules:            rules,
+				SuggestedHandoff: buildGovernanceSuggestedHandoff(state, template, focus),
 			}
 		case "active":
 			status = "active"
@@ -361,11 +373,293 @@ func buildGovernanceRoutingPolicy(template governanceTemplateDefinition, focus g
 	}
 
 	return WorkspaceGovernanceRoutingPolicy{
-		Status:       status,
-		Summary:      summary,
-		DefaultRoute: strings.Join(defaultRouteParts, " -> "),
-		Rules:        rules,
+		Status:           status,
+		Summary:          summary,
+		DefaultRoute:     strings.Join(defaultRouteParts, " -> "),
+		Rules:            rules,
+		SuggestedHandoff: buildGovernanceSuggestedHandoff(state, template, focus),
 	}
+}
+
+func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDefinition, focus governanceFocus) WorkspaceGovernanceSuggestedHandoff {
+	result := WorkspaceGovernanceSuggestedHandoff{
+		Status: "pending",
+		Reason: "当前还没有可建议的 governed handoff。",
+	}
+
+	if focus.Room == nil || focus.Issue == nil {
+		return result
+	}
+
+	result.RoomID = focus.Room.ID
+	result.IssueKey = focus.Issue.Key
+
+	if focus.LatestHandoff != nil && focus.LatestHandoff.Status != "completed" {
+		fromLane := governanceLaneByAgentName(template.Topology, state.Agents, focus.LatestHandoff.FromAgent)
+		toLane := governanceLaneByAgentName(template.Topology, state.Agents, focus.LatestHandoff.ToAgent)
+		return WorkspaceGovernanceSuggestedHandoff{
+			Status:        "active",
+			Reason:        fmt.Sprintf("当前 governed handoff 已在进行中；先围现有 %s -> %s ledger 推进，不要重复创建。", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent),
+			RoomID:        focus.LatestHandoff.RoomID,
+			IssueKey:      focus.LatestHandoff.IssueKey,
+			FromLaneID:    defaultString(laneIDOrEmpty(fromLane), ""),
+			FromLaneLabel: defaultString(laneLabelOrEmpty(fromLane), ""),
+			FromAgentID:   focus.LatestHandoff.FromAgentID,
+			FromAgent:     focus.LatestHandoff.FromAgent,
+			ToLaneID:      defaultString(laneIDOrEmpty(toLane), ""),
+			ToLaneLabel:   defaultString(laneLabelOrEmpty(toLane), ""),
+			ToAgentID:     focus.LatestHandoff.ToAgentID,
+			ToAgent:       focus.LatestHandoff.ToAgent,
+			DraftTitle:    focus.LatestHandoff.Title,
+			DraftSummary:  focus.LatestHandoff.Summary,
+			HandoffID:     focus.LatestHandoff.ID,
+			Href:          mailboxInboxHref(focus.LatestHandoff.ID, focus.LatestHandoff.RoomID),
+		}
+	}
+
+	currentOwner := governanceCurrentOwnerName(focus)
+	if currentOwner == "" {
+		result.Reason = "当前 room 还没有可映射到治理拓扑的 owner。"
+		return result
+	}
+
+	fromLaneIndex := governanceSuggestedCurrentLaneIndex(template.Topology, state.Agents, focus, currentOwner)
+	if fromLaneIndex == -1 {
+		result.Reason = fmt.Sprintf("当前 owner %s 还没有被映射到已配置治理 lane；请先调整 team topology default agent 或继续手动交接。", currentOwner)
+		return result
+	}
+	if fromLaneIndex >= len(template.Topology)-1 {
+		fromLane := template.Topology[fromLaneIndex]
+		return WorkspaceGovernanceSuggestedHandoff{
+			Status:        "done",
+			Reason:        fmt.Sprintf("%s 当前已经在最终 lane %s，不需要再发起新的 governed handoff。", currentOwner, fromLane.Label),
+			RoomID:        focus.Room.ID,
+			IssueKey:      focus.Issue.Key,
+			FromLaneID:    fromLane.ID,
+			FromLaneLabel: fromLane.Label,
+			FromAgent:     currentOwner,
+		}
+	}
+
+	fromLane := template.Topology[fromLaneIndex]
+	toLane := template.Topology[fromLaneIndex+1]
+	fromAgent, fromAgentFound := governanceAgentByName(state.Agents, currentOwner)
+	toAgent, toAgentFound := resolveGovernanceLaneAgent(state.Agents, toLane, currentOwner)
+	suggested := WorkspaceGovernanceSuggestedHandoff{
+		Status:        "ready",
+		Reason:        fmt.Sprintf("当前 owner %s 已落在 %s；按治理链下一棒应交给 %s。", currentOwner, fromLane.Label, toLane.Label),
+		RoomID:        focus.Room.ID,
+		IssueKey:      focus.Issue.Key,
+		FromLaneID:    fromLane.ID,
+		FromLaneLabel: fromLane.Label,
+		ToLaneID:      toLane.ID,
+		ToLaneLabel:   toLane.Label,
+		DraftTitle:    fmt.Sprintf("把 %s lane 交给 %s", fromLane.Label, toLane.Label),
+		DraftSummary: fmt.Sprintf(
+			"%s 当前已把 %s 推到 %s；按治理链下一棒应由 %s 接住 %s，并沿 %s 继续推进。",
+			currentOwner,
+			focus.Issue.Key,
+			focus.Room.Title,
+			defaultString(agentNameOrDefault(toAgent, toAgentFound), toLane.Label),
+			toLane.Label,
+			defaultString(strings.TrimSpace(toLane.Lane), "后续治理 lane"),
+		),
+	}
+	if fromAgentFound {
+		suggested.FromAgentID = fromAgent.ID
+		suggested.FromAgent = fromAgent.Name
+	} else {
+		suggested.FromAgent = currentOwner
+	}
+	if !toAgentFound {
+		suggested.Status = "blocked"
+		suggested.Reason = fmt.Sprintf("%s 当前缺少可映射到 %s 的默认 Agent；请先补 default agent 或手动选择接收方。", toLane.Label, toLane.Label)
+		return suggested
+	}
+	suggested.ToAgentID = toAgent.ID
+	suggested.ToAgent = toAgent.Name
+	return suggested
+}
+
+func governanceCurrentOwnerName(focus governanceFocus) string {
+	switch {
+	case focus.Run != nil && strings.TrimSpace(focus.Run.Owner) != "":
+		return strings.TrimSpace(focus.Run.Owner)
+	case focus.Room != nil && strings.TrimSpace(focus.Room.Topic.Owner) != "":
+		return strings.TrimSpace(focus.Room.Topic.Owner)
+	case focus.Issue != nil && strings.TrimSpace(focus.Issue.Owner) != "":
+		return strings.TrimSpace(focus.Issue.Owner)
+	default:
+		return ""
+	}
+}
+
+func governanceLaneIndexByAgentName(topology []governanceTemplateLaneDefinition, agents []Agent, agentName string) int {
+	for index := range topology {
+		if governanceLaneMatchesAgentName(topology[index], agents, agentName) {
+			return index
+		}
+	}
+	return -1
+}
+
+func governanceSuggestedCurrentLaneIndex(topology []governanceTemplateLaneDefinition, agents []Agent, focus governanceFocus, currentOwner string) int {
+	if focus.LatestCompletion == nil && focus.Run != nil && strings.EqualFold(strings.TrimSpace(focus.Run.Owner), strings.TrimSpace(currentOwner)) {
+		for index := range topology {
+			if isGovernanceExecutionLane(topology[index]) {
+				return index
+			}
+		}
+	}
+	return governanceLaneIndexByAgentName(topology, agents, currentOwner)
+}
+
+func governanceLaneByAgentName(topology []governanceTemplateLaneDefinition, agents []Agent, agentName string) *governanceTemplateLaneDefinition {
+	index := governanceLaneIndexByAgentName(topology, agents, agentName)
+	if index == -1 {
+		return nil
+	}
+	return &topology[index]
+}
+
+func governanceLaneMatchesAgentName(lane governanceTemplateLaneDefinition, agents []Agent, agentName string) bool {
+	name := strings.TrimSpace(agentName)
+	if name == "" {
+		return false
+	}
+	if strings.EqualFold(name, lane.DefaultAgent) || strings.EqualFold(name, lane.Label) {
+		return true
+	}
+	agent, ok := governanceAgentByName(agents, name)
+	if !ok {
+		return false
+	}
+	return governanceLaneMatchesAgent(lane, agent)
+}
+
+func resolveGovernanceLaneAgent(agents []Agent, lane governanceTemplateLaneDefinition, excludeName string) (Agent, bool) {
+	if agent, ok := governanceAgentByName(agents, lane.DefaultAgent); ok && !strings.EqualFold(agent.Name, excludeName) {
+		return agent, true
+	}
+
+	for _, agent := range agents {
+		if strings.EqualFold(agent.Name, excludeName) {
+			continue
+		}
+		if governanceLaneMatchesAgent(lane, agent) {
+			return agent, true
+		}
+	}
+	return Agent{}, false
+}
+
+func governanceLaneMatchesAgent(lane governanceTemplateLaneDefinition, agent Agent) bool {
+	text := strings.ToLower(strings.Join([]string{agent.Name, agent.Role, agent.Description}, " "))
+	if strings.EqualFold(agent.Name, lane.DefaultAgent) ||
+		strings.EqualFold(agent.Name, lane.Label) ||
+		strings.EqualFold(agent.Role, lane.Role) {
+		return true
+	}
+	switch {
+	case isGovernanceOwnerLane(lane):
+		return governanceTextMatchesAny(text, "owner", "lead", "pm", "spec", "product")
+	case isGovernanceArchitectureLane(lane):
+		return governanceTextMatchesAny(text, "architect", "spec", "split", "planner")
+	case isGovernanceVerificationLane(lane):
+		return governanceTextMatchesAny(text, "qa", "test", "verify", "release")
+	case isGovernanceExecutionLane(lane):
+		return governanceTextMatchesAny(text, "build", "developer", "execution", "pilot", "codex", "dockmaster", "collector")
+	case isGovernanceSynthesisLane(lane):
+		return governanceTextMatchesAny(text, "synthesizer", "synthesis", "summary")
+	case isGovernanceReviewLane(lane):
+		return governanceTextMatchesAny(text, "review", "reviewer", "verdict", "claude")
+	default:
+		return false
+	}
+}
+
+func governanceAgentByName(agents []Agent, name string) (Agent, bool) {
+	for _, agent := range agents {
+		if strings.EqualFold(strings.TrimSpace(agent.Name), strings.TrimSpace(name)) {
+			return agent, true
+		}
+	}
+	return Agent{}, false
+}
+
+func governanceTextMatches(text, target string) bool {
+	parts := governanceKeywords(target)
+	if len(parts) == 0 {
+		return false
+	}
+	text = strings.ToLower(text)
+	textTokens := governanceKeywords(text)
+	for _, part := range parts {
+		if governanceKeywordIsASCII(part) {
+			if !governanceTokenListContains(textTokens, part) {
+				return false
+			}
+			continue
+		}
+		if !strings.Contains(text, part) {
+			return false
+		}
+	}
+	return true
+}
+
+func governanceTextMatchesAny(text string, values ...string) bool {
+	for _, value := range values {
+		if governanceTextMatches(text, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func governanceKeywords(value string) []string {
+	return strings.FieldsFunc(strings.ToLower(strings.TrimSpace(value)), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+}
+
+func governanceKeywordIsASCII(value string) bool {
+	for _, r := range value {
+		if r > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
+}
+
+func governanceTokenListContains(tokens []string, target string) bool {
+	for _, token := range tokens {
+		if token == target {
+			return true
+		}
+	}
+	return false
+}
+
+func laneIDOrEmpty(lane *governanceTemplateLaneDefinition) string {
+	if lane == nil {
+		return ""
+	}
+	return lane.ID
+}
+
+func laneLabelOrEmpty(lane *governanceTemplateLaneDefinition) string {
+	if lane == nil {
+		return ""
+	}
+	return lane.Label
+}
+
+func agentNameOrDefault(agent Agent, ok bool) string {
+	if !ok {
+		return ""
+	}
+	return agent.Name
 }
 
 func buildGovernanceEscalationSLA(template governanceTemplateDefinition, focus governanceFocus) WorkspaceGovernanceEscalationSLA {
@@ -592,6 +886,9 @@ func resolveGovernanceLaneState(lane governanceTemplateLaneDefinition, focus gov
 		if focus.Room != nil {
 			return "ready", fmt.Sprintf("%s 已把 room / run / PR 边界锚在 %s。", lane.Label, focus.Room.Title)
 		}
+	case isGovernanceVerificationLane(lane):
+		status, summary := buildVerificationRule(focus)
+		return status, summary
 	case isGovernanceExecutionLane(lane):
 		if focus.Run != nil {
 			return governanceStatusFromRun(focus.Run.Status), fmt.Sprintf("当前 live lane 继续沿 %s 推进：%s。", defaultString(focus.Run.Owner, lane.DefaultAgent), focus.Run.Summary)
@@ -612,9 +909,6 @@ func resolveGovernanceLaneState(lane governanceTemplateLaneDefinition, focus gov
 		case len(focus.ReviewInbox) > 0:
 			return "active", fmt.Sprintf("Inbox 已摆出 reviewer gate：%s。", focus.ReviewInbox[0].Title)
 		}
-	case isGovernanceVerificationLane(lane):
-		status, summary := buildVerificationRule(focus)
-		return status, summary
 	}
 
 	if focus.Issue != nil {
@@ -646,7 +940,7 @@ func isGovernanceArchitectureLane(lane governanceTemplateLaneDefinition) bool {
 }
 
 func isGovernanceExecutionLane(lane governanceTemplateLaneDefinition) bool {
-	return governanceLaneMatchesAny(lane, "developer", "collector", "member", "build", "collect", "实现", "执行", "evidence")
+	return governanceLaneMatchesAny(lane, "developer", "collector", "member", "build", "collect", "实现", "执行")
 }
 
 func isGovernanceSynthesisLane(lane governanceTemplateLaneDefinition) bool {
@@ -767,8 +1061,12 @@ func buildGovernanceWalkthrough(focus governanceFocus, responseAggregation Works
 }
 
 func governanceRouteMatches(handoff AgentHandoff, fromLane, toLane governanceTemplateLaneDefinition) bool {
-	fromMatches := handoff.FromAgent == fromLane.DefaultAgent || strings.EqualFold(handoff.FromAgent, fromLane.Label)
-	toMatches := handoff.ToAgent == toLane.DefaultAgent || strings.EqualFold(handoff.ToAgent, toLane.Label)
+	fromMatches := strings.EqualFold(handoff.FromAgent, fromLane.DefaultAgent) ||
+		strings.EqualFold(handoff.FromAgent, fromLane.Label) ||
+		governanceTextMatches(strings.ToLower(handoff.FromAgent), fromLane.DefaultAgent)
+	toMatches := strings.EqualFold(handoff.ToAgent, toLane.DefaultAgent) ||
+		strings.EqualFold(handoff.ToAgent, toLane.Label) ||
+		governanceTextMatches(strings.ToLower(handoff.ToAgent), toLane.DefaultAgent)
 	return fromMatches && toMatches
 }
 

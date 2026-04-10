@@ -1,6 +1,6 @@
 # 产品需求文档 (PRD): OpenShock.ai
 
-**版本:** 2.6 (全量基线恢复版)
+**版本:** 2.7 (全量基线恢复版)
 **版本日期:** 2026 年 4 月 8 日
 **产品定位:** 面向 AI 原生研发团队的本地优先协作操作系统
 **产品总纲:** **Slock 的壳，Multica 的骨，Lody 的隔离执行。**
@@ -314,6 +314,7 @@ OpenShock 不只是 Agent 控制台，也是一套真正面向团队上线的系
 
 - 正式交接走 Agent Mailbox / handoff ledger，而不是只靠公共频道喊话
 - 角色拓扑、审批链和 escalation path 必须人类可见
+- 角色拓扑不只做静态预览，还要围当前 room / run truth 派生默认下一棒 governed handoff；缺少合法接收方时必须显式 blocked
 - 人类始终能把自动协作降级回单 Agent 或人工接管
 
 ---
@@ -672,9 +673,10 @@ online -> busy -> offline
    - 目标 room / issue / topic
    - handoff 说明
    - SLA / priority / required output
-4. 接收 Agent 必须 ack、blocked 或 complete
-5. Reviewer / QA Agent 把 verdict 写回 Room / Inbox / Run / PR
-6. 人类可以随时 pause、reroute、merge lane 或降级回单 Agent 执行
+4. 系统应能基于当前 lane、team topology 和 room truth 给出默认下一棒 handoff suggestion；如果当前 handoff 未完成则回链当前 ledger，如果下一 lane 没有合法接收方则显式 blocked
+5. 接收 Agent 必须 ack、blocked 或 complete
+6. Reviewer / QA Agent 把 verdict 写回 Room / Inbox / Run / PR
+7. 人类可以随时 pause、reroute、merge lane 或降级回单 Agent 执行
 
 ### 工作流 L：配置持久化与恢复
 
@@ -731,7 +733,7 @@ online -> busy -> offline
 18. Onboarding Studio：`开发团队 / 研究团队 / 空白自定义` 模板
 19. Workspace / User / Agent / Machine 配置持久化与恢复
 20. 多 Agent handoff ledger、ack / blocked / escalation contract
-21. 多 Agent 角色拓扑：PM / Architect / Splitter / Developer / Reviewer / QA 与研究团队变体
+21. 多 Agent 角色拓扑：PM / Architect / Splitter / Developer / Reviewer / QA 与研究团队变体，并能派生 governed next-handoff suggestion
 
 ### P2：后续探索
 

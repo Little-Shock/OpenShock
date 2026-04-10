@@ -182,6 +182,24 @@ function sanitizeWorkspaceGovernance(
       summary: "",
       defaultRoute: "",
       rules: [],
+      suggestedHandoff: {
+        status: "",
+        reason: "",
+        roomId: "",
+        issueKey: "",
+        fromLaneId: "",
+        fromLaneLabel: "",
+        fromAgentId: "",
+        fromAgent: "",
+        toLaneId: "",
+        toLaneLabel: "",
+        toAgentId: "",
+        toAgent: "",
+        draftTitle: "",
+        draftSummary: "",
+        handoffId: "",
+        href: "",
+      },
     },
     escalationSla: {
       status: "",
@@ -284,6 +302,53 @@ function sanitizeWorkspaceGovernance(
       ...safeGovernance.routingPolicy,
       summary: sanitizeDisplayText(safeGovernance.routingPolicy?.summary, "当前 routing policy 正在整理中。"),
       defaultRoute: sanitizeDisplayText(safeGovernance.routingPolicy?.defaultRoute ?? "", ""),
+      suggestedHandoff: {
+        ...(safeGovernance.routingPolicy?.suggestedHandoff ?? {
+          status: "",
+          reason: "",
+          roomId: "",
+          issueKey: "",
+          fromLaneId: "",
+          fromLaneLabel: "",
+          fromAgentId: "",
+          fromAgent: "",
+          toLaneId: "",
+          toLaneLabel: "",
+          toAgentId: "",
+          toAgent: "",
+          draftTitle: "",
+          draftSummary: "",
+          handoffId: "",
+          href: "",
+        }),
+        reason: sanitizeDisplayText(
+          safeGovernance.routingPolicy?.suggestedHandoff?.reason ?? "",
+          "当前 governed handoff 建议正在整理中。"
+        ),
+        roomId: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.roomId ?? "", ""),
+        issueKey: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.issueKey ?? "", ""),
+        fromLaneId: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.fromLaneId ?? "", ""),
+        fromLaneLabel: sanitizeDisplayText(
+          safeGovernance.routingPolicy?.suggestedHandoff?.fromLaneLabel ?? "",
+          ""
+        ),
+        fromAgentId: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.fromAgentId ?? "", ""),
+        fromAgent: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.fromAgent ?? "", ""),
+        toLaneId: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.toLaneId ?? "", ""),
+        toLaneLabel: sanitizeDisplayText(
+          safeGovernance.routingPolicy?.suggestedHandoff?.toLaneLabel ?? "",
+          ""
+        ),
+        toAgentId: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.toAgentId ?? "", ""),
+        toAgent: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.toAgent ?? "", ""),
+        draftTitle: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.draftTitle ?? "", ""),
+        draftSummary: sanitizeDisplayText(
+          safeGovernance.routingPolicy?.suggestedHandoff?.draftSummary ?? "",
+          ""
+        ),
+        handoffId: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.handoffId ?? "", ""),
+        href: sanitizeDisplayText(safeGovernance.routingPolicy?.suggestedHandoff?.href ?? "", ""),
+      },
       rules: (safeGovernance.routingPolicy?.rules ?? []).map((rule) => {
         const safeRoute = rule ?? {
           id: "",
