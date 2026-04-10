@@ -1644,6 +1644,35 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 	if ackDelegatedResp.StatusCode != http.StatusOK {
 		t.Fatalf("POST delegated re-ack status = %d, want %d", ackDelegatedResp.StatusCode, http.StatusOK)
 	}
+	reAckDetailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET re-ack detail error = %v", err)
+	}
+	defer reAckDetailResp.Body.Close()
+	if reAckDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET re-ack detail status = %d, want %d", reAckDetailResp.StatusCode, http.StatusOK)
+	}
+	var reAckDetail store.PullRequestDetail
+	decodeJSON(t, reAckDetailResp, &reAckDetail)
+	if reAckDetail.Delivery.Delegation.Status != "ready" ||
+		reAckDetail.Delivery.Delegation.HandoffStatus != "acknowledged" ||
+		reAckDetail.Delivery.Delegation.ResponseHandoffStatus != "completed" ||
+		!strings.Contains(reAckDetail.Delivery.Delegation.Summary, "第 1 轮") ||
+		!strings.Contains(reAckDetail.Delivery.Delegation.Summary, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("re-ack delegation = %#v, want resumed delivery delegation with preserved response history", reAckDetail.Delivery.Delegation)
+	}
+	relatedResumed := false
+	for _, item := range reAckDetail.RelatedInbox {
+		if item.ID == "inbox-delivery-delegation-pr-runtime-18" {
+			relatedResumed = true
+			if item.Kind != "status" || !strings.Contains(item.Summary, "第 1 轮") || !strings.Contains(item.Summary, "已重新 acknowledge final delivery closeout") {
+				t.Fatalf("re-ack delegation inbox item = %#v, want resumed delivery delegation signal with preserved response history", item)
+			}
+		}
+	}
+	if !relatedResumed {
+		t.Fatalf("re-ack related inbox = %#v, want resumed delivery delegation signal", reAckDetail.RelatedInbox)
+	}
 	completeDelegatedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+detail.Delivery.Delegation.HandoffID, map[string]string{
 		"action":        "completed",
 		"actingAgentId": delegatedHandoff.ToAgentID,
@@ -1665,15 +1694,18 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 	var completedDetail store.PullRequestDetail
 	decodeJSON(t, completedDetailResp, &completedDetail)
 	if completedDetail.Delivery.Delegation.Status != "done" ||
-		completedDetail.Delivery.Delegation.HandoffStatus != "completed" {
-		t.Fatalf("completed delegation = %#v, want done/completed handoff state", completedDetail.Delivery.Delegation)
+		completedDetail.Delivery.Delegation.HandoffStatus != "completed" ||
+		completedDetail.Delivery.Delegation.ResponseHandoffStatus != "completed" ||
+		!strings.Contains(completedDetail.Delivery.Delegation.Summary, "第 1 轮") ||
+		!strings.Contains(completedDetail.Delivery.Delegation.Summary, "也已完成 final delivery closeout") {
+		t.Fatalf("completed delegation = %#v, want done/completed handoff state with preserved response history", completedDetail.Delivery.Delegation)
 	}
 	relatedDone := false
 	for _, item := range completedDetail.RelatedInbox {
 		if item.ID == "inbox-delivery-delegation-pr-runtime-18" {
 			relatedDone = true
-			if item.Kind != "status" || !strings.Contains(item.Title, "已完成") {
-				t.Fatalf("completed delegation inbox item = %#v, want completed delivery delegation signal", item)
+			if item.Kind != "status" || !strings.Contains(item.Title, "已完成") || !strings.Contains(item.Summary, "第 1 轮") || !strings.Contains(item.Summary, "也已完成 final delivery closeout") {
+				t.Fatalf("completed delegation inbox item = %#v, want completed delivery delegation signal with preserved response history", item)
 			}
 		}
 	}

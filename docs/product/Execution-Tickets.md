@@ -1060,6 +1060,28 @@
 - Checklist: `CHK-21`
 - Test Cases: `TC-068`
 
+## TKT-80 Delegated Response History Sync After Parent Resume
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 child `delivery-reply` 带来的 unblock 历史继续保留到 parent re-ack / complete 之后，让 PR detail 和 related inbox 这条 single delivery contract 不会在 parent 恢复后把 reply 轨迹吞掉。
+- 范围:
+  - response history preservation after parent resume
+  - response history preservation after parent complete
+  - PR detail delegation summary sync
+  - related inbox history sync
+- 依赖: `TKT-79`
+- Done When:
+  - parent delegated closeout 被重新 `acknowledged` 后，PR detail `Delivery Delegation` summary 仍会显示 `第 N 轮 unblock response / reply xN` 历史
+  - parent delegated closeout 最终 `completed` 后，related inbox signal 仍会带着这段 response 历史一起收口
+  - response history 不再只留在 Mailbox parent card，而会同步留存在统一交付合同
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api -count=1'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-history-sync -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-history-sync.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-069`
+
 ---
 
 ## 五、已完成批次归档

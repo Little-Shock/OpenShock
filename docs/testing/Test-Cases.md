@@ -931,3 +931,19 @@
   6. 确认父级 card 仍保留 `reply completed`，没有把 child response evidence 冲掉。
 - 预期结果: child `delivery-reply` 不应只是“说明下一步是什么”；它必须能直接触发 parent closeout 的恢复动作。恢复后父级应进入 `acknowledged`，同时继续保留 child response 的完成证据。
 - 业务结论: 2026 年 4 月 11 日 `TKT-79` 已把 child-ledger `Resume Parent Closeout` 收成正式产品能力。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume-parent.md` 已记录 `response completed -> child resume button -> parent acknowledged` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web` 与 `go test ./internal/store ./internal/api` 已锁住 child-ledger resume action、parent re-ack orchestration 与 response chip preservation，因此这条跨 Agent resume action 用例当前转为 `Pass`。
+
+## TC-069 Delegated Response History Preservation After Parent Resume
+
+- 业务目标: 确认 child `delivery-reply` 帮 parent closeout 恢复甚至最终收口后，PR detail 与 related inbox 这条统一交付合同仍会保留 reply 历史，而不是只在 Mailbox 里可见。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 delegated closeout formal handoff、blocked 后自动创建的 `delivery-reply` response handoff，以及 child-ledger `Resume Parent Closeout` 动作。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 delegated closeout handoff。
+  2. 由 target 将 delegated closeout 标记为 `blocked`，并完成 child `delivery-reply`。
+  3. 让 parent delegated closeout 重新进入 `acknowledged`（可通过 child-ledger resume action 或同源 mailbox action）。
+  4. 打开 `/pull-requests/pr-runtime-18`，确认 `Delivery Delegation` summary 仍显示 `第 1 轮 unblock response / reply x1` 历史，并明确 parent 已重新接住 closeout。
+  5. 打开同页 related inbox signal，确认它也同步保留这段 response 历史。
+  6. 完成 parent delegated closeout，再次检查 PR detail 与 related inbox，确认这段 reply 历史会随着 closeout 一起收口，而不是被 done-state 覆盖掉。
+- 预期结果: response handoff 不应只在 blocked 阶段短暂可见。即使 parent 已恢复或完成，PR detail 和 related inbox 也必须继续保留这段 `reply xN / 第 N 轮 unblock response` 历史，保证 single delivery contract 能完整回放跨 Agent closeout 尾链。
+- 业务结论: 2026 年 4 月 11 日 `TKT-80` 已把 parent resume / complete 之后的 response history preservation 收进统一交付合同。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-history-sync.md` 已记录 `reply completed -> parent resumed -> PR detail preserved -> parent completed -> related inbox preserved` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web` 与 `go test ./internal/store ./internal/api -count=1` 已锁住 PR detail summary、related inbox summary 与 done-state closeout 后的 response history retention，因此这条跨 Agent history preservation 用例当前转为 `Pass`。

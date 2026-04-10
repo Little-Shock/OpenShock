@@ -765,11 +765,28 @@ func TestDeliveryDelegationHandoffLifecycleSyncsBackToPullRequest(t *testing.T) 
 		t.Fatalf("response-completed delegation inbox = %#v, want response completion summary", responseCompletedState.Inbox)
 	}
 
-	if _, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+	reAckState, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
 		Action:        "acknowledged",
 		ActingAgentID: delegatedHandoff.ToAgentID,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("AdvanceHandoff(re-ack delegated closeout) error = %v", err)
+	}
+	reAckDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok ||
+		reAckDetail.Delivery.Delegation.Status != "ready" ||
+		reAckDetail.Delivery.Delegation.HandoffStatus != "acknowledged" ||
+		reAckDetail.Delivery.Delegation.ResponseHandoffStatus != "completed" ||
+		!strings.Contains(reAckDetail.Delivery.Delegation.Summary, "第 1 轮") ||
+		!strings.Contains(reAckDetail.Delivery.Delegation.Summary, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("re-ack delegation = %#v, want resumed delivery delegation with preserved response history", reAckDetail.Delivery.Delegation)
+	}
+	reAckInbox := findInboxItemByID(reAckState.Inbox, deliveryDelegationInboxItemID("pr-runtime-18"))
+	if reAckInbox == nil ||
+		reAckInbox.Kind != "status" ||
+		!strings.Contains(reAckInbox.Summary, "第 1 轮") ||
+		!strings.Contains(reAckInbox.Summary, "已重新 acknowledge final delivery closeout") {
+		t.Fatalf("re-ack delegation inbox = %#v, want resumed delivery delegation summary with preserved response history", reAckState.Inbox)
 	}
 	completedState, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
 		Action:        "completed",
@@ -783,12 +800,19 @@ func TestDeliveryDelegationHandoffLifecycleSyncsBackToPullRequest(t *testing.T) 
 	completedDetail, ok := s.PullRequestDetail("pr-runtime-18")
 	if !ok ||
 		completedDetail.Delivery.Delegation.Status != "done" ||
-		completedDetail.Delivery.Delegation.HandoffStatus != "completed" {
-		t.Fatalf("completed delegation = %#v, want done/completed delivery delegation", completedDetail.Delivery.Delegation)
+		completedDetail.Delivery.Delegation.HandoffStatus != "completed" ||
+		completedDetail.Delivery.Delegation.ResponseHandoffStatus != "completed" ||
+		!strings.Contains(completedDetail.Delivery.Delegation.Summary, "第 1 轮") ||
+		!strings.Contains(completedDetail.Delivery.Delegation.Summary, "也已完成 final delivery closeout") {
+		t.Fatalf("completed delegation = %#v, want done/completed delivery delegation with preserved response history", completedDetail.Delivery.Delegation)
 	}
 	completedInbox := findInboxItemByID(completedState.Inbox, deliveryDelegationInboxItemID("pr-runtime-18"))
-	if completedInbox == nil || completedInbox.Kind != "status" || !strings.Contains(completedInbox.Title, "已完成") {
-		t.Fatalf("completed delegation inbox = %#v, want completed delivery delegation signal", completedState.Inbox)
+	if completedInbox == nil ||
+		completedInbox.Kind != "status" ||
+		!strings.Contains(completedInbox.Title, "已完成") ||
+		!strings.Contains(completedInbox.Summary, "第 1 轮") ||
+		!strings.Contains(completedInbox.Summary, "也已完成 final delivery closeout") {
+		t.Fatalf("completed delegation inbox = %#v, want completed delivery delegation signal with preserved response history", completedState.Inbox)
 	}
 	if completedState.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "done" {
 		t.Fatalf("suggested handoff = %#v, want governance route to remain done after delegated closeout completion", completedState.Workspace.Governance.RoutingPolicy.SuggestedHandoff)

@@ -111,6 +111,7 @@ func buildPullRequestDeliveryDelegation(
 		result.HandoffHref = mailboxInboxHref(handoff.ID, handoff.RoomID)
 		result.HandoffStatus = handoff.Status
 		result.ResponseAttemptCount = responseAttemptCount
+		responseSummary := deliveryDelegationResponseSummary(handoff.Status, responseHandoff, responseAttemptCount)
 		if responseHandoff != nil {
 			result.ResponseHandoffID = responseHandoff.ID
 			result.ResponseHandoffHref = mailboxInboxHref(responseHandoff.ID, responseHandoff.RoomID)
@@ -118,7 +119,6 @@ func buildPullRequestDeliveryDelegation(
 		}
 		switch handoff.Status {
 		case "blocked":
-			responseSummary := deliveryDelegationResponseSummary(responseHandoff, responseAttemptCount)
 			result.Status = "blocked"
 			if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
 				result.Summary = fmt.Sprintf(
@@ -142,32 +142,36 @@ func buildPullRequestDeliveryDelegation(
 			result.Status = "done"
 			if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
 				result.Summary = fmt.Sprintf(
-					"%s 已完成 formal delivery closeout handoff；这条 PR 的 merge / release receipt 已归档。%s",
+					"%s 已完成 formal delivery closeout handoff；这条 PR 的 merge / release receipt 已归档。%s%s",
 					targetAgent,
 					commentSuffix,
+					responseSummary,
 				)
 			} else {
 				result.Summary = fmt.Sprintf(
-					"%s 已完成 formal delivery closeout handoff；当前等待最终 merge / release receipt 收口。%s",
+					"%s 已完成 formal delivery closeout handoff；当前等待最终 merge / release receipt 收口。%s%s",
 					targetAgent,
 					commentSuffix,
+					responseSummary,
 				)
 			}
 			return result
 		default:
 			if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
 				result.Summary = fmt.Sprintf(
-					"这条 PR 已合并；%s 的 formal delivery closeout handoff 当前为 %s，继续围 merge / release receipt 做最后收口。%s",
+					"这条 PR 已合并；%s 的 formal delivery closeout handoff 当前为 %s，继续围 merge / release receipt 做最后收口。%s%s",
 					targetAgent,
 					handoff.Status,
 					commentSuffix,
+					responseSummary,
 				)
 			} else {
 				result.Summary = fmt.Sprintf(
-					"%s 已完成 governed closeout；系统已为 %s 自动创建 formal delivery closeout handoff，可直接进入最后一棒收口。%s",
+					"%s 已完成 governed closeout；系统已为 %s 自动创建 formal delivery closeout handoff，可直接进入最后一棒收口。%s%s",
 					defaultString(governedCloseout.FromAgent, "当前治理链"),
 					targetAgent,
 					commentSuffix,
+					responseSummary,
 				)
 			}
 			return result
@@ -337,7 +341,7 @@ func countDeliveryDelegationResponseHandoffs(mailbox []AgentHandoff, parentHando
 	return count
 }
 
-func deliveryDelegationResponseSummary(handoff *AgentHandoff, attemptCount int) string {
+func deliveryDelegationResponseSummary(parentStatus string, handoff *AgentHandoff, attemptCount int) string {
 	if handoff == nil || attemptCount <= 0 {
 		return ""
 	}
@@ -349,6 +353,12 @@ func deliveryDelegationResponseSummary(handoff *AgentHandoff, attemptCount int) 
 	case "blocked":
 		return fmt.Sprintf(" %s unblock response handoff 当前也 blocked：%s。%s", attemptLabel, defaultString(strings.TrimSpace(handoff.LastNote), handoff.LastAction), commentSuffix)
 	case "completed":
+		switch parentStatus {
+		case "acknowledged":
+			return fmt.Sprintf(" %s 已完成%s unblock response；%s 已重新 acknowledge final delivery closeout。%s", handoff.ToAgent, attemptLabel, handoff.FromAgent, commentSuffix)
+		case "completed":
+			return fmt.Sprintf(" %s 已完成%s unblock response；%s 也已完成 final delivery closeout。%s", handoff.ToAgent, attemptLabel, handoff.FromAgent, commentSuffix)
+		}
 		return fmt.Sprintf(" %s 已完成%s unblock response；当前等待 %s 重新 acknowledge final delivery closeout。%s", handoff.ToAgent, attemptLabel, handoff.FromAgent, commentSuffix)
 	default:
 		return fmt.Sprintf(" 系统已为%s向 %s 起 unblock response handoff，等待补 closeout response。%s", attemptLabel, handoff.ToAgent, commentSuffix)
