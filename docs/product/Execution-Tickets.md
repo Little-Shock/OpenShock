@@ -562,7 +562,7 @@
 
 ## TKT-48 Workspace Plan / Usage Limit / Retention Surface
 
-- 状态: `todo`
+- 状态: `done`
 - 优先级: `P2`
 - 目标: 把 workspace 计划、上限、usage 与 retention policy 做成用户可见的产品面。
 - 范围:

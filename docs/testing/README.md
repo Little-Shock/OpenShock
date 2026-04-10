@@ -5,7 +5,7 @@
 - [Test Report 2026-04-11 Windows Chrome Restricted Sandbox Policy](./Test-Report-2026-04-11-windows-chrome-restricted-sandbox-policy.md)
   - `TKT-46` 的 Windows Chrome 有头报告，覆盖 `/runs/:id` restricted profile、allowlist、approval_required 与 same-target override/retry
 - [Test Report 2026-04-11 Windows Chrome PR Conversation / Usage Observability](./Test-Report-2026-04-11-windows-chrome-pr-conversation-usage-observability.md)
-  - `TKT-39` `TKT-41` 的 Windows Chrome 有头报告，覆盖 `webhook review/comment/thread -> Inbox -> Room PR tab -> PR Detail -> run/room/workspace usage`
+  - `TKT-39` `TKT-41` `TKT-48` 的 Windows Chrome 有头报告，覆盖 `webhook review/comment/thread -> Inbox -> Room PR tab -> PR Detail -> run/room/workspace usage`
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)

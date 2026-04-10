@@ -43,10 +43,10 @@
 - 主要 GAP:
   - `app.slock.ai` 式 profile-grade 入口、壳层密度和主视觉细节仍可继续收平
   - PR conversation / review thread backfill 还没形成完整产品真相
-  - token / quota / usage / retention 仍缺更稳定的产品面和时间维度汇总
-  - onboarding 的 identity chain 还没和模板 bootstrap 完全并成一条首次启动旅程
+  - token / quota / usage / retention 的正式产品面已站住，但更细的时间维度 rollup 仍待补齐
+  - onboarding 的首次启动主链已站住，但更细的模板运营与团队默认治理仍可继续增强
   - PM / Architect / Splitter / Developer / Reviewer / QA 等角色拓扑还没做成正式可配置 team topology
-  - restricted sandbox、network / tool allowlist、delivery-ready / handoff contract 仍留后续批次
+  - delivery-ready / handoff contract 仍留后续批次
   - 更重的长期记忆整理与外部 provider 编排仍未完成
 
 ---
@@ -297,9 +297,10 @@
   - [x] `pnpm check:live-truth-hygiene` 已进入 `verify:web`，会拦 direct mock-data import、placeholder 文案和 tracked live-truth residue
   - [x] 2026-04-10 Windows Chrome 有头链路已补齐 control-plane `/v1`、runtime replay、routing SLA / aggregation 与 dirty projection fail-closed 证据
   - [x] 2026-04-11 Windows Chrome 有头链路已补齐 restricted sandbox `approval_required -> same-target override/retry -> reload persistence` 证据
+  - [x] 2026-04-11 Windows Chrome 有头链路已补齐 `/rooms -> /runs -> /settings` 的 workspace plan / usage / quota / retention 证据
 - 当前 GAP:
   - [ ] 历史型 rate 指标仍有一部分只到 `partial`，后续还要补 durable event rollup / time-series truth
-  - [ ] 更细粒度的 release-ready / delivery-ready 指标与 workspace-level 观察面仍留后续
+  - [ ] 更细粒度的 release-ready / delivery-ready 指标仍留后续
 - 对应 Test Cases: `TC-011` `TC-021` `TC-026` `TC-042` `TC-047` `TC-048` `TC-049`
 
 ### CHK-16 app.slock.ai 壳层对齐与导航秩序
@@ -414,6 +415,7 @@
   - [x] workspace / member preference、GitHub identity 与既有 agent profile edit 现在可回到统一 durable store / database schema
   - [x] onboarding progress、template selection、repo binding snapshot、GitHub installation snapshot 已经回到同一份 state/store 真相
   - [x] restart / 换设备后的 config recovery 已有 browser + API 级验证
+  - [x] workspace plan / usage / retention 现在也直接从同一份 durable snapshot 投影到 `/settings`、room workbench 与 run detail
 - 对应 Test Cases: `TC-040`
 
 ---

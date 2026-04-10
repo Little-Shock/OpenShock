@@ -62,22 +62,10 @@
   - invite / verify / reset / blocked recovery 已通过 Windows Chrome 有头链路收成同一条 identity template journey；`/settings` identity template chain 与 `/access` recovery flow 已走同一份 delivery truth。
 - `GAP-25 / TKT-46`
   - restricted sandbox 已通过 Windows Chrome 有头链路收成正式产品面；`run-level profile -> approval_required -> same-target override/retry -> reload persistence` 已有当前轮证据。
+- `GAP-26 / TKT-48`
+  - workspace plan / usage / retention 已通过 Windows Chrome 有头链路收成正式产品面；`/rooms -> /runs -> /settings` 的 plan、quota、warning 与 retention 已共享同一份 live truth。
 
 ### 当前必须先收的 GAP
-
-### GAP-25 Restricted Local Sandbox / Network / Tool Policy
-
-### GAP-26 Workspace Plan / Usage Limit / Retention Surface
-
-- 现状:
-  - 当前 workspace limits 仍主要藏在默认值和内部 truth 里
-  - 用户还看不到 plan、usage、retention 的正式汇总面
-- 对应票:
-  - `TKT-48`
-- 相关合同:
-  - `CHK-15`
-  - `CHK-22`
-- 优先级: P2
 
 ### GAP-27 Delivery Entry / Release Gate / Handoff Contract
 
@@ -95,8 +83,7 @@
 
 ## 四、推荐推进顺序
 
-1. 先做 `TKT-48`，把 workspace plan / usage limit / retention 拉到正式产品面。
-2. 最后做 `TKT-49`，把 release-ready / handoff contract 收成交付闭环。
+1. 最后做 `TKT-49`，把 release-ready / handoff contract 收成交付闭环。
 
 ---
 
