@@ -40,6 +40,62 @@ function handoffStatusTone(status: AgentHandoff["status"]) {
   }
 }
 
+function mailboxKindLabel(kind?: AgentHandoff["kind"]) {
+  switch (kind) {
+    case "governed":
+      return "governed";
+    case "delivery-closeout":
+      return "delivery closeout";
+    case "delivery-reply":
+      return "delivery reply";
+    default:
+      return "manual";
+  }
+}
+
+function mailboxReplyStatusLabel(status: AgentHandoff["status"]) {
+  switch (status) {
+    case "acknowledged":
+      return "reply active";
+    case "blocked":
+      return "reply blocked";
+    case "completed":
+      return "reply completed";
+    default:
+      return "reply requested";
+  }
+}
+
+function mailboxReplyStatusTone(status: AgentHandoff["status"]) {
+  switch (status) {
+    case "acknowledged":
+      return "bg-[var(--shock-lime)]";
+    case "blocked":
+      return "bg-[var(--shock-pink)] text-white";
+    case "completed":
+      return "bg-[var(--shock-yellow)]";
+    default:
+      return "bg-white";
+  }
+}
+
+function findMailboxParent(mailbox: AgentHandoff[], handoff: AgentHandoff) {
+  if (!handoff.parentHandoffId) {
+    return null;
+  }
+  return mailbox.find((item) => item.id === handoff.parentHandoffId) ?? null;
+}
+
+function findLatestMailboxReply(mailbox: AgentHandoff[], parentHandoffId: string) {
+  return (
+    mailbox.find((item) => item.kind === "delivery-reply" && item.parentHandoffId === parentHandoffId) ?? null
+  );
+}
+
+function countMailboxReplies(mailbox: AgentHandoff[], parentHandoffId: string) {
+  return mailbox.filter((item) => item.kind === "delivery-reply" && item.parentHandoffId === parentHandoffId).length;
+}
+
 function formatActionLabel(action: "acknowledged" | "blocked" | "comment" | "completed") {
   switch (action) {
     case "acknowledged":
@@ -153,6 +209,16 @@ export function LiveMailboxPageContent() {
   const [lastAppliedGovernedRouteKey, setLastAppliedGovernedRouteKey] = useState("");
   const highlightedHandoffId = searchParams.get("handoffId");
   const requestedRoomId = searchParams.get("roomId");
+  const orderedMailbox = highlightedHandoffId
+    ? [...state.mailbox].sort((left, right) => {
+        if (left.id === highlightedHandoffId) return -1;
+        if (right.id === highlightedHandoffId) return 1;
+        return right.updatedAt.localeCompare(left.updatedAt);
+      })
+    : state.mailbox;
+  const mailboxForRoom = requestedRoomId
+    ? orderedMailbox.filter((handoff) => handoff.roomId === requestedRoomId)
+    : orderedMailbox;
   const authSession = state.auth.session;
   const canMutate = hasSessionPermission(authSession, "run.execute");
   const mutationStatus = loading ? "syncing" : error ? "sync_failed" : permissionStatus(authSession, "run.execute");
@@ -794,7 +860,7 @@ export function LiveMailboxPageContent() {
           </Panel>
 
           <div className="space-y-4">
-            {state.mailbox.length === 0 ? (
+            {mailboxForRoom.length === 0 ? (
               <Panel tone="white">
                 <p className="font-display text-2xl font-bold">当前还没有 formal handoff</p>
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
@@ -802,11 +868,15 @@ export function LiveMailboxPageContent() {
                 </p>
               </Panel>
             ) : (
-              state.mailbox.map((handoff) => {
+              mailboxForRoom.map((handoff) => {
                 const room = state.rooms.find((item) => item.id === handoff.roomId);
                 const fromAgentHref = `/agents/${handoff.fromAgentId}`;
                 const toAgentHref = `/agents/${handoff.toAgentId}`;
                 const active = highlightedHandoffId === handoff.id;
+                const parentHandoff = findMailboxParent(state.mailbox, handoff);
+                const responseHandoff =
+                  handoff.kind === "delivery-closeout" ? findLatestMailboxReply(state.mailbox, handoff.id) : null;
+                const responseAttemptCount = responseHandoff ? countMailboxReplies(state.mailbox, handoff.id) : 0;
                 const noteValue = notes[handoff.id] ?? "";
                 const commentActorId =
                   commentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
@@ -823,9 +893,36 @@ export function LiveMailboxPageContent() {
                     <article data-testid={`mailbox-card-${handoff.id}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
-                            {handoff.issueKey} / {handoff.id}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
+                              {handoff.issueKey} / {handoff.id}
+                            </p>
+                            <span
+                              data-testid={`mailbox-kind-${handoff.id}`}
+                              className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
+                            >
+                              {mailboxKindLabel(handoff.kind)}
+                            </span>
+                            {responseHandoff ? (
+                              <span
+                                data-testid={`mailbox-response-status-${handoff.id}`}
+                                className={cn(
+                                  "rounded-full border-2 border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+                                  mailboxReplyStatusTone(responseHandoff.status)
+                                )}
+                              >
+                                {mailboxReplyStatusLabel(responseHandoff.status)}
+                              </span>
+                            ) : null}
+                            {responseAttemptCount > 0 ? (
+                              <span
+                                data-testid={`mailbox-response-attempts-${handoff.id}`}
+                                className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
+                              >
+                                reply x{responseAttemptCount}
+                              </span>
+                            ) : null}
+                          </div>
                           <h3 className="mt-2 font-display text-3xl font-bold">{handoff.title}</h3>
                         </div>
                         <span
@@ -841,6 +938,16 @@ export function LiveMailboxPageContent() {
 
                       <p className="mt-3 text-base leading-7">{handoff.summary}</p>
                       <p className="mt-3 text-sm leading-6 opacity-80">{handoff.lastAction}</p>
+                      {parentHandoff ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <span
+                            data-testid={`mailbox-parent-chip-${handoff.id}`}
+                            className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                          >
+                            parent {parentHandoff.title}
+                          </span>
+                        </div>
+                      ) : null}
 
                       <div className="mt-5 grid gap-3 md:grid-cols-4">
                         <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
@@ -880,6 +987,24 @@ export function LiveMailboxPageContent() {
                         >
                           Inbox Back-link
                         </Link>
+                        {parentHandoff ? (
+                          <Link
+                            href={`/inbox?handoffId=${parentHandoff.id}&roomId=${parentHandoff.roomId}`}
+                            data-testid={`mailbox-parent-link-${handoff.id}`}
+                            className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                          >
+                            Open Parent Closeout
+                          </Link>
+                        ) : null}
+                        {responseHandoff ? (
+                          <Link
+                            href={`/inbox?handoffId=${responseHandoff.id}&roomId=${responseHandoff.roomId}`}
+                            data-testid={`mailbox-response-link-${handoff.id}`}
+                            className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                          >
+                            Open Unblock Reply
+                          </Link>
+                        ) : null}
                       </div>
 
                       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">

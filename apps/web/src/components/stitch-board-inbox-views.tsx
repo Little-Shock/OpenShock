@@ -35,6 +35,62 @@ function inboxKindLabel(kind: InboxItem["kind"]) {
   }
 }
 
+function mailboxKindLabel(kind?: AgentHandoff["kind"]) {
+  switch (kind) {
+    case "governed":
+      return "governed";
+    case "delivery-closeout":
+      return "delivery closeout";
+    case "delivery-reply":
+      return "delivery reply";
+    default:
+      return "manual";
+  }
+}
+
+function mailboxReplyStatusLabel(status: AgentHandoff["status"]) {
+  switch (status) {
+    case "acknowledged":
+      return "reply active";
+    case "blocked":
+      return "reply blocked";
+    case "completed":
+      return "reply completed";
+    default:
+      return "reply requested";
+  }
+}
+
+function mailboxReplyStatusTone(status: AgentHandoff["status"]) {
+  switch (status) {
+    case "acknowledged":
+      return "bg-[var(--shock-lime)]";
+    case "blocked":
+      return "bg-[var(--shock-pink)] text-white";
+    case "completed":
+      return "bg-[var(--shock-yellow)]";
+    default:
+      return "bg-white";
+  }
+}
+
+function findMailboxParent(mailbox: AgentHandoff[], handoff: AgentHandoff) {
+  if (!handoff.parentHandoffId) {
+    return null;
+  }
+  return mailbox.find((item) => item.id === handoff.parentHandoffId) ?? null;
+}
+
+function findLatestMailboxReply(mailbox: AgentHandoff[], parentHandoffId: string) {
+  return (
+    mailbox.find((item) => item.kind === "delivery-reply" && item.parentHandoffId === parentHandoffId) ?? null
+  );
+}
+
+function countMailboxReplies(mailbox: AgentHandoff[], parentHandoffId: string) {
+  return mailbox.filter((item) => item.kind === "delivery-reply" && item.parentHandoffId === parentHandoffId).length;
+}
+
 function boardStateLabel(state: Issue["state"]) {
   switch (state) {
     case "blocked":
@@ -1418,6 +1474,10 @@ export function StitchInboxView() {
                         const room = findRoomForHandoff(handoff);
                         const run = findRunForHandoff(handoff);
                         const inboxItem = findInboxForHandoff(handoff);
+                        const parentHandoff = findMailboxParent(mailboxHandoffs, handoff);
+                        const responseHandoff =
+                          handoff.kind === "delivery-closeout" ? findLatestMailboxReply(mailboxHandoffs, handoff.id) : null;
+                        const responseAttemptCount = responseHandoff ? countMailboxReplies(mailboxHandoffs, handoff.id) : 0;
                         const note = handoffNotes[handoff.id] ?? "";
                         const commentActorId =
                           mailboxCommentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
@@ -1452,6 +1512,12 @@ export function StitchInboxView() {
                                 </span>
                                 <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.56)]">{handoff.issueKey}</span>
                                 <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.56)]">{handoff.updatedAt}</span>
+                                <span
+                                  data-testid={`mailbox-kind-${handoff.id}`}
+                                  className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em]"
+                                >
+                                  {mailboxKindLabel(handoff.kind)}
+                                </span>
                                 {highlightedHandoffId === handoff.id ? (
                                   <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em]">
                                     focused
@@ -1475,6 +1541,33 @@ export function StitchInboxView() {
                                 {run ? (
                                   <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1">
                                     run {run.owner}
+                                  </span>
+                                ) : null}
+                                {parentHandoff ? (
+                                  <span
+                                    data-testid={`mailbox-parent-chip-${handoff.id}`}
+                                    className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1"
+                                  >
+                                    parent {parentHandoff.title}
+                                  </span>
+                                ) : null}
+                                {responseHandoff ? (
+                                  <span
+                                    data-testid={`mailbox-response-status-${handoff.id}`}
+                                    className={cn(
+                                      "rounded-full border border-[var(--shock-ink)] px-2 py-1 uppercase tracking-[0.18em]",
+                                      mailboxReplyStatusTone(responseHandoff.status)
+                                    )}
+                                  >
+                                    {mailboxReplyStatusLabel(responseHandoff.status)}
+                                  </span>
+                                ) : null}
+                                {responseAttemptCount > 0 ? (
+                                  <span
+                                    data-testid={`mailbox-response-attempts-${handoff.id}`}
+                                    className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 uppercase tracking-[0.18em]"
+                                  >
+                                    reply x{responseAttemptCount}
                                   </span>
                                 ) : null}
                               </div>
@@ -1514,6 +1607,24 @@ export function StitchInboxView() {
                                 >
                                   Issue
                                 </Link>
+                                {parentHandoff ? (
+                                  <Link
+                                    data-testid={`mailbox-parent-link-${handoff.id}`}
+                                    href={`/inbox?handoffId=${parentHandoff.id}&roomId=${parentHandoff.roomId}`}
+                                    className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px]"
+                                  >
+                                    Open Parent Closeout
+                                  </Link>
+                                ) : null}
+                                {responseHandoff ? (
+                                  <Link
+                                    data-testid={`mailbox-response-link-${handoff.id}`}
+                                    href={`/inbox?handoffId=${responseHandoff.id}&roomId=${responseHandoff.roomId}`}
+                                    className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px]"
+                                  >
+                                    Open Unblock Reply
+                                  </Link>
+                                ) : null}
                               </div>
 
                               <div className="mt-5 border-2 border-[var(--shock-ink)] bg-white p-3">

@@ -38,6 +38,8 @@
   - `TKT-76` 的 Windows Chrome 有头报告，覆盖 `delivery-reply` source / target formal comment、PR detail delegation summary sync、related inbox latest response-comment signal 与 `reply requested` lifecycle 保持
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Resume Signal](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume.md)
   - `TKT-77` 的 Windows Chrome 有头报告，覆盖 `delivery-reply` response progress 回推父级 delegated handoff、其 inbox resume signal，以及 `blocked` lifecycle 保持
+- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Visibility](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md)
+  - `TKT-78` 的 Windows Chrome 有头报告，覆盖 delegated closeout parent/child mailbox visibility、`reply requested / reply completed` chip、`reply x1` attempt 与 parent deep-link
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)
@@ -205,6 +207,8 @@
   - 验证 `delivery-reply` response handoff 上的 source / target formal comment 是否同步回 PR detail `Delivery Delegation` summary 与 related inbox latest-comment signal，并保持 `reply requested` lifecycle 不变
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-resume -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume.md`
   - 验证 `delivery-reply` 的 response progress 是否回推父级 delegated closeout handoff、其 inbox signal 与 re-ack guidance，并保持父级 `blocked` lifecycle 不变
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-visibility -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md`
+  - 验证 delegated closeout parent card 是否直接显示 `reply requested / reply completed` 与 `reply xN`，以及 child `delivery-reply` card 是否支持 parent 回跳
 - `pnpm test:headed-onboarding-studio`
   - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-agent-profile-editor`

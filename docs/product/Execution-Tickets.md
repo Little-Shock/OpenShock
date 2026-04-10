@@ -1016,6 +1016,28 @@
 - Checklist: `CHK-21`
 - Test Cases: `TC-066`
 
+## TKT-78 Delegated Response Mailbox Visibility
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 delegated closeout 和 `delivery-reply` 的 parent/child orchestration 直接做进 Mailbox 壳层，不让用户必须切去 PR detail 才能看懂 reply 进度和回链。
+- 范围:
+  - parent delegated closeout mailbox reply-status chip
+  - `reply xN` attempt visibility inside mailbox
+  - child `delivery-reply` parent chip + parent deep-link
+  - parent blocked lifecycle preservation after response completion
+- 依赖: `TKT-74` `TKT-75` `TKT-77`
+- Done When:
+  - 父级 delegated closeout handoff card 会直接显示 `reply requested / reply completed` 与 `reply xN`
+  - child `delivery-reply` handoff card 会显式展示 parent closeout，并支持 `Open Parent Closeout`
+  - response 完成后，回到父级 closeout card 仍能看到最新 reply 状态，而主 closeout 继续保持 `blocked`
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-visibility -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-067`
+
 ---
 
 ## 五、已完成批次归档

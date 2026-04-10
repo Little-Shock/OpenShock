@@ -752,6 +752,7 @@ export type HandoffStatus = "requested" | "acknowledged" | "blocked" | "complete
 export type AgentHandoff = {
   id: string;
   kind?: string;
+  parentHandoffId?: string;
   title: string;
   summary: string;
   status: HandoffStatus;

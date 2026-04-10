@@ -613,6 +613,7 @@ function sanitizePullRequest(item: PullRequest): PullRequest {
 function sanitizeAgentHandoff(item: AgentHandoff): AgentHandoff {
   return {
     ...item,
+    parentHandoffId: sanitizeDisplayText(item.parentHandoffId ?? "", ""),
     title: sanitizeDisplayText(item.title, "待整理交接"),
     summary: sanitizeDisplayText(item.summary, "当前 handoff 摘要正在整理中。"),
     fromAgent: sanitizeDisplayText(item.fromAgent, "来源 Agent"),

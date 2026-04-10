@@ -899,3 +899,19 @@
   6. 再次查看父级 delegated closeout handoff、其 inbox signal 与 run next action，确认都已切到“response 已完成，等待 target 重新 acknowledge 主 closeout”的同一条 resume guidance，且父级 handoff lifecycle 仍保持 `blocked`。
 - 预期结果: response orchestration 不能只停在 child ledger 或 PR detail；父级 delegated closeout 必须直接收到最新 unblock progress，Mailbox / Inbox / run 也要一起告诉 target 什么时候重新接回主 closeout，同时不能偷改父级 blocked lifecycle。
 - 业务结论: 2026 年 4 月 11 日 `TKT-77` 已把 `delivery-reply` response progress 接回父级 delegated closeout handoff、其 inbox signal 与 run/session next action。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume.md` 已记录 `response comment -> parent handoff sync -> response completed -> re-ack guidance visible` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 与 `pnpm verify:web` 已锁住 parent handoff latest-action sync、parent inbox resume signal 与 next-action guidance，因此这条跨 Agent resume signal 用例当前转为 `Pass`。
+
+## TC-067 Delegated Response Mailbox Visibility
+
+- 业务目标: 确认 delegated closeout 和 `delivery-reply` 的 parent/child orchestration 已经直接进入 Mailbox 壳层，而不是必须切去 PR detail 才能理解 reply 状态和回链。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 delegated closeout formal handoff、blocked 后自动创建的 `delivery-reply` response handoff，以及 response progress 回推父级 handoff / inbox / next action 的正式 contract。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 delegated closeout handoff。
+  2. 由 target 将 delegated closeout 标记为 `blocked`。
+  3. 留在父级 delegated closeout 的 Mailbox card，确认它直接显示 `reply requested` 与 `reply x1`，并提供 `Open Unblock Reply`。
+  4. 打开 child `delivery-reply` handoff，确认 card 上显式出现 parent closeout 标识与 `Open Parent Closeout` 回跳。
+  5. 完成 response handoff 后，再通过 parent link 回到父级 delegated closeout card。
+  6. 确认父级 card 已更新为 `reply completed`，同时主 closeout handoff 仍保持 `blocked`。
+- 预期结果: delegated closeout 的 parent/child orchestration 必须在 Mailbox 壳层直接可见；父级 card 应显示 reply status / attempt，child card 应能回跳 parent，且 response 完成后主 closeout 仍保持 blocked，直到 target 显式 re-ack。
+- 业务结论: 2026 年 4 月 11 日 `TKT-78` 已把 delegated closeout / `delivery-reply` 的 parent-child mailbox visibility 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md` 已记录 `parent reply chip -> child parent link -> response complete -> parent reply completed` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web` 与 `go test ./internal/store ./internal/api` 已锁住 mailbox parent/child deep-link、reply attempt 可见性与主 blocked lifecycle 保持，因此这条 mailbox visibility 用例当前转为 `Pass`。

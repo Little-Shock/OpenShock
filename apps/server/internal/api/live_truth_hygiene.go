@@ -754,6 +754,7 @@ func sanitizeAgentHandoff(item store.AgentHandoff) store.AgentHandoff {
 	item.Title = sanitizeDisplayText(item.Title, "待整理交接")
 	item.Summary = sanitizeDisplayText(item.Summary, "当前 handoff 摘要正在整理中。")
 	item.Kind = sanitizeDisplayText(item.Kind, "manual")
+	item.ParentHandoffID = sanitizeDisplayText(item.ParentHandoffID, "")
 	item.FromAgent = sanitizeDisplayText(item.FromAgent, "来源 Agent")
 	item.ToAgent = sanitizeDisplayText(item.ToAgent, "目标 Agent")
 	item.LastAction = sanitizeDisplayText(item.LastAction, "等待 handoff 同步。")
