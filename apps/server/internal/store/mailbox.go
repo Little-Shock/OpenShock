@@ -186,6 +186,8 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 		if err := s.ensureDeliveryDelegationHandoffLocked(handoff.RoomID); err != nil {
 			return State{}, AgentHandoff{}, err
 		}
+	}
+	if action == "completed" || handoff.Kind == handoffKindDeliveryCloseout {
 		s.syncDeliveryDelegationInboxLocked(handoff.RoomID)
 	}
 

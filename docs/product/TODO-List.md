@@ -82,10 +82,12 @@
   - final lane closeout 现在还会显式派生 delivery delegate；PR detail 已出现 `Delivery Delegation` card，且 related inbox 会写入 deterministic delegation signal，默认 dev-team 会回到 `PM / Spec Captain`。
 - `GAP-38 / TKT-69`
   - final lane closeout 现在还会自动创建 delegated closeout handoff；PR detail delegation card 已能显示 `handoff requested` 并一跳回到 Mailbox / Inbox 的对应 ledger。
+- `GAP-39 / TKT-70`
+  - delegated closeout handoff 现在还会把 `blocked -> completed` lifecycle 同步回 PR detail delegation card 和 deterministic related inbox signal，且不会把 governed closeout done-state 冲回 active。
 
 ### 当前必须先收的 GAP
 
-当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”或“能不能自动创建 delegated closeout handoff”，而是 topology 之后更重的 auto-closeout 策略、agent-to-agent orchestration、delegate automation policy 和跨 Agent closeout 编排。
+当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”“能不能自动创建 delegated closeout handoff”或“能不能把 delegated lifecycle 回写到 PR contract”，而是 topology 之后更重的 auto-closeout 策略、agent-to-agent orchestration、delegate automation policy 和跨 Agent closeout 编排。
 
 ---
 

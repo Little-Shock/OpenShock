@@ -1455,6 +1455,195 @@ func TestPullRequestDetailRouteReflectsGovernedCloseout(t *testing.T) {
 	}
 }
 
+func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	topologyResp := doJSONRequest(t, http.DefaultClient, http.MethodPatch, server.URL+"/v1/workspace", `{
+		"governance": {
+			"teamTopology": [
+				{"id":"pm","label":"PM","role":"目标与验收","defaultAgent":"Spec Captain","lane":"scope / final response"},
+				{"id":"architect","label":"Architect","role":"拆解与边界","defaultAgent":"Spec Captain","lane":"shape / split"},
+				{"id":"developer","label":"Developer","role":"实现与分支推进","defaultAgent":"Build Pilot","lane":"issue -> branch"},
+				{"id":"reviewer","label":"Reviewer","role":"exact-head verdict","defaultAgent":"Review Runner","lane":"review / blocker"},
+				{"id":"qa","label":"QA","role":"verify / release evidence","defaultAgent":"Memory Clerk","lane":"test / release gate"}
+			]
+		}
+	}`)
+	defer topologyResp.Body.Close()
+	if topologyResp.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH /v1/workspace status = %d, want %d", topologyResp.StatusCode, http.StatusOK)
+	}
+
+	createResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox", map[string]string{
+		"roomId":      "room-runtime",
+		"fromAgentId": "agent-codex-dockmaster",
+		"toAgentId":   "agent-claude-review-runner",
+		"title":       "把 developer lane 正式交给 reviewer",
+		"summary":     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /v1/mailbox status = %d, want %d", createResp.StatusCode, http.StatusCreated)
+	}
+
+	var createPayload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+	}
+	decodeJSON(t, createResp, &createPayload)
+	handoff := createPayload.Handoff
+
+	ackReviewerResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": "agent-claude-review-runner",
+	})
+	defer ackReviewerResp.Body.Close()
+	if ackReviewerResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST reviewer acknowledged status = %d, want %d", ackReviewerResp.StatusCode, http.StatusOK)
+	}
+	completeReviewerResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]any{
+		"action":                "completed",
+		"actingAgentId":         "agent-claude-review-runner",
+		"note":                  "review 完成后直接续到 QA。",
+		"continueGovernedRoute": true,
+	})
+	defer completeReviewerResp.Body.Close()
+	if completeReviewerResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST reviewer completed continue status = %d, want %d", completeReviewerResp.StatusCode, http.StatusOK)
+	}
+
+	var reviewerCompletePayload struct {
+		State store.State `json:"state"`
+	}
+	decodeJSON(t, completeReviewerResp, &reviewerCompletePayload)
+	qaHandoff := reviewerCompletePayload.State.Mailbox[0]
+
+	ackQAResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+qaHandoff.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": "agent-memory-clerk",
+	})
+	defer ackQAResp.Body.Close()
+	if ackQAResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST QA acknowledged status = %d, want %d", ackQAResp.StatusCode, http.StatusOK)
+	}
+	completeQAResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+qaHandoff.ID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": "agent-memory-clerk",
+		"note":          "QA 验证完成，可以进入 PR delivery closeout。",
+	})
+	defer completeQAResp.Body.Close()
+	if completeQAResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST QA completed status = %d, want %d", completeQAResp.StatusCode, http.StatusOK)
+	}
+	var qaCompletePayload struct {
+		State store.State `json:"state"`
+	}
+	decodeJSON(t, completeQAResp, &qaCompletePayload)
+	delegatedHandoff := qaCompletePayload.State.Mailbox[0]
+	if delegatedHandoff.Kind != "delivery-closeout" {
+		t.Fatalf("delegated handoff = %#v, want delivery-closeout handoff", delegatedHandoff)
+	}
+
+	detailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET detail error = %v", err)
+	}
+	defer detailResp.Body.Close()
+	if detailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET detail status = %d, want %d", detailResp.StatusCode, http.StatusOK)
+	}
+	var detail store.PullRequestDetail
+	decodeJSON(t, detailResp, &detail)
+	if detail.Delivery.Delegation.HandoffID == "" {
+		t.Fatalf("detail delegation = %#v, want auto-created delegated handoff", detail.Delivery.Delegation)
+	}
+
+	blockNote := "需要先确认最终 release 文案，再继续 closeout。"
+	blockedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+detail.Delivery.Delegation.HandoffID, map[string]string{
+		"action":        "blocked",
+		"actingAgentId": delegatedHandoff.ToAgentID,
+		"note":          blockNote,
+	})
+	defer blockedResp.Body.Close()
+	if blockedResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST delegated blocked status = %d, want %d", blockedResp.StatusCode, http.StatusOK)
+	}
+
+	blockedDetailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET blocked detail error = %v", err)
+	}
+	defer blockedDetailResp.Body.Close()
+	if blockedDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET blocked detail status = %d, want %d", blockedDetailResp.StatusCode, http.StatusOK)
+	}
+	var blockedDetail store.PullRequestDetail
+	decodeJSON(t, blockedDetailResp, &blockedDetail)
+	if blockedDetail.Delivery.Delegation.Status != "blocked" ||
+		blockedDetail.Delivery.Delegation.HandoffStatus != "blocked" ||
+		!strings.Contains(blockedDetail.Delivery.Delegation.Summary, blockNote) {
+		t.Fatalf("blocked delegation = %#v, want blocked summary with blocker note", blockedDetail.Delivery.Delegation)
+	}
+	relatedBlocked := false
+	for _, item := range blockedDetail.RelatedInbox {
+		if item.ID == "inbox-delivery-delegation-pr-runtime-18" {
+			relatedBlocked = true
+			if item.Kind != "blocked" || !strings.Contains(item.Summary, blockNote) {
+				t.Fatalf("blocked delegation inbox item = %#v, want blocked signal with blocker note", item)
+			}
+		}
+	}
+	if !relatedBlocked {
+		t.Fatalf("blocked related inbox = %#v, want delivery delegation signal", blockedDetail.RelatedInbox)
+	}
+
+	ackDelegatedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+detail.Delivery.Delegation.HandoffID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": delegatedHandoff.ToAgentID,
+	})
+	defer ackDelegatedResp.Body.Close()
+	if ackDelegatedResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST delegated re-ack status = %d, want %d", ackDelegatedResp.StatusCode, http.StatusOK)
+	}
+	completeDelegatedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+detail.Delivery.Delegation.HandoffID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": delegatedHandoff.ToAgentID,
+		"note":          "最终 delivery closeout 已收口，等待 merge / release receipt。",
+	})
+	defer completeDelegatedResp.Body.Close()
+	if completeDelegatedResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST delegated completed status = %d, want %d", completeDelegatedResp.StatusCode, http.StatusOK)
+	}
+
+	completedDetailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET completed detail error = %v", err)
+	}
+	defer completedDetailResp.Body.Close()
+	if completedDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET completed detail status = %d, want %d", completedDetailResp.StatusCode, http.StatusOK)
+	}
+	var completedDetail store.PullRequestDetail
+	decodeJSON(t, completedDetailResp, &completedDetail)
+	if completedDetail.Delivery.Delegation.Status != "done" ||
+		completedDetail.Delivery.Delegation.HandoffStatus != "completed" {
+		t.Fatalf("completed delegation = %#v, want done/completed handoff state", completedDetail.Delivery.Delegation)
+	}
+	relatedDone := false
+	for _, item := range completedDetail.RelatedInbox {
+		if item.ID == "inbox-delivery-delegation-pr-runtime-18" {
+			relatedDone = true
+			if item.Kind != "status" || !strings.Contains(item.Title, "已完成") {
+				t.Fatalf("completed delegation inbox item = %#v, want completed delivery delegation signal", item)
+			}
+		}
+	}
+	if !relatedDone {
+		t.Fatalf("completed related inbox = %#v, want delivery delegation signal", completedDetail.RelatedInbox)
+	}
+}
+
 func TestRunHistoryRouteSupportsIncrementalFetchAndRoomFilter(t *testing.T) {
 	root := t.TempDir()
 	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")

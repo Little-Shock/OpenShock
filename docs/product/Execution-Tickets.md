@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal 与 delegated closeout handoff auto-create；下一批继续前滚到更重的 auto-closeout、automation policy 与更深自动协作策略。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create，以及 delegated closeout lifecycle sync；下一批继续前滚到更重的 auto-closeout、automation policy 与更深自动协作策略。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -840,6 +840,27 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-handoff -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-handoff.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-058`
+
+## TKT-70 Delegated Closeout Lifecycle Sync
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 让 delegated closeout handoff 的 `requested -> blocked -> completed` 生命周期，不只停留在 Mailbox ledger，而要即时回写到 PR detail delegation card 和 deterministic related inbox signal。
+- 范围:
+  - delegated closeout handoff lifecycle -> delivery delegation sync
+  - PR detail `Delivery Delegation` blocked / completed state
+  - deterministic delegation inbox signal blocker note / completed status sync
+  - governance done-state isolation during delegated closeout lifecycle
+- 依赖: `TKT-69` `TKT-68`
+- Done When:
+  - delegated closeout handoff 进入 `blocked` 后，PR detail 的 delegation card 会立即切到 `delegate blocked`，并把 blocker note 同步回 related inbox signal
+  - delegated closeout handoff 重新 acknowledge 并 `completed` 后，PR detail 会切到 `delegation done` / `handoff completed`
+  - 整个 delegated closeout lifecycle 不会把 governed route 的 final-lane done-state closeout 错误冲回 active
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-lifecycle -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-lifecycle.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-059`
 
 ---
 

@@ -22,6 +22,8 @@
   - `TKT-68` 的 Windows Chrome 有头报告，覆盖 final lane closeout 后的 delivery delegate card、`PM / Spec Captain` fallback 与 PR-related inbox delegation signal
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Handoff](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-handoff.md)
   - `TKT-69` 的 Windows Chrome 有头报告，覆盖 final QA closeout 后 delegated closeout handoff 自动创建、PR detail handoff deep link 与 Mailbox focus
+- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Lifecycle Sync](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-lifecycle.md)
+  - `TKT-70` 的 Windows Chrome 有头报告，覆盖 delegated closeout handoff blocked/completed 后的 PR detail delegation card、related inbox signal 与 governance done-state 保持
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)
@@ -173,6 +175,8 @@
   - 验证 final lane closeout 后的 delivery delegate ready、`PM · Spec Captain` topology fallback，以及 PR detail related inbox delegation signal
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-handoff -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-handoff.md`
   - 验证 final lane closeout 后 delegated formal handoff 自动创建、`handoff requested` 状态与 Inbox / Mailbox 聚焦回链
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-lifecycle -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-lifecycle.md`
+  - 验证 delegated closeout handoff 的 `blocked -> completed` lifecycle 是否同步回 PR detail delegation card、related inbox signal 与 governed done-state
 - `pnpm test:headed-onboarding-studio`
   - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-agent-profile-editor`

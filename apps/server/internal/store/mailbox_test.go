@@ -632,6 +632,131 @@ func TestGovernedFinalLaneCompletionBridgesDeliveryCloseout(t *testing.T) {
 	}
 }
 
+func TestDeliveryDelegationHandoffLifecycleSyncsBackToPullRequest(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	topology := defaultWorkspaceGovernanceTopology("dev-team")
+	topology[len(topology)-1].DefaultAgent = "Memory Clerk"
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Governance: &WorkspaceGovernanceConfigInput{
+			TeamTopology: topology,
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "把 developer lane 正式交给 reviewer",
+		Summary:     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-claude-review-runner",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged reviewer) error = %v", err)
+	}
+	reviewerClosedState, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:                "completed",
+		ActingAgentID:         "agent-claude-review-runner",
+		Note:                  "review 已完成，直接把 QA 接力拉起来。",
+		ContinueGovernedRoute: true,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed reviewer continue) error = %v", err)
+	}
+	qaHandoff := reviewerClosedState.Mailbox[0]
+
+	if _, _, err := s.AdvanceHandoff(qaHandoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-memory-clerk",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged qa) error = %v", err)
+	}
+	if _, _, err := s.AdvanceHandoff(qaHandoff.ID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: "agent-memory-clerk",
+		Note:          "QA 验证完成，可以进入 PR delivery closeout。",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(completed qa) error = %v", err)
+	}
+
+	initialDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || initialDetail.Delivery.Delegation.HandoffID == "" {
+		t.Fatalf("PullRequestDetail() = %#v, want auto-created delivery delegation handoff", initialDetail)
+	}
+	delegatedHandoffID := initialDetail.Delivery.Delegation.HandoffID
+	delegatedHandoff := findHandoffByID(s.Snapshot().Mailbox, delegatedHandoffID)
+	if delegatedHandoff == nil {
+		t.Fatalf("delegated handoff %q missing from mailbox", delegatedHandoffID)
+	}
+
+	blockNote := "需要先确认最终 release 文案，再继续 closeout。"
+	blockedState, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "blocked",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+		Note:          blockNote,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(blocked delegated closeout) error = %v", err)
+	}
+	blockedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok ||
+		blockedDetail.Delivery.Delegation.Status != "blocked" ||
+		blockedDetail.Delivery.Delegation.HandoffStatus != "blocked" ||
+		!strings.Contains(blockedDetail.Delivery.Delegation.Summary, blockNote) {
+		t.Fatalf("blocked delegation = %#v, want blocked summary with blocker note", blockedDetail.Delivery.Delegation)
+	}
+	blockedInbox := findInboxItemByID(blockedState.Inbox, deliveryDelegationInboxItemID("pr-runtime-18"))
+	if blockedInbox == nil || blockedInbox.Kind != "blocked" || !strings.Contains(blockedInbox.Summary, blockNote) {
+		t.Fatalf("blocked delegation inbox = %#v, want blocked delivery delegation signal", blockedState.Inbox)
+	}
+	if blockedState.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "done" {
+		t.Fatalf("suggested handoff = %#v, want governance route to stay done during delegated closeout", blockedState.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
+	}
+
+	if _, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(re-ack delegated closeout) error = %v", err)
+	}
+	completedState, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+		Note:          "最终 delivery closeout 已收口，等待 merge / release receipt。",
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed delegated closeout) error = %v", err)
+	}
+
+	completedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok ||
+		completedDetail.Delivery.Delegation.Status != "done" ||
+		completedDetail.Delivery.Delegation.HandoffStatus != "completed" {
+		t.Fatalf("completed delegation = %#v, want done/completed delivery delegation", completedDetail.Delivery.Delegation)
+	}
+	completedInbox := findInboxItemByID(completedState.Inbox, deliveryDelegationInboxItemID("pr-runtime-18"))
+	if completedInbox == nil || completedInbox.Kind != "status" || !strings.Contains(completedInbox.Title, "已完成") {
+		t.Fatalf("completed delegation inbox = %#v, want completed delivery delegation signal", completedState.Inbox)
+	}
+	if completedState.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "done" {
+		t.Fatalf("suggested handoff = %#v, want governance route to remain done after delegated closeout completion", completedState.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
+	}
+}
+
 func findInboxItemByHandoffID(items []InboxItem, handoffID string) *InboxItem {
 	for index := range items {
 		if items[index].HandoffID == handoffID {

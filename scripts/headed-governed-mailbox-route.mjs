@@ -27,6 +27,8 @@ const runMode =
         ? "delegation"
         : parsedArgs.mode === "delegate-handoff"
           ? "delegate-handoff"
+          : parsedArgs.mode === "delegate-lifecycle"
+            ? "delegate-lifecycle"
     : requestedReportPath.includes("autocreate")
       ? "auto-create"
       : "route";
@@ -39,6 +41,8 @@ const evidencePrefix =
         ? "openshock-tkt68-governed-route-"
         : runMode === "delegate-handoff"
           ? "openshock-tkt69-governed-route-"
+          : runMode === "delegate-lifecycle"
+            ? "openshock-tkt70-governed-route-"
     : runMode === "auto-create"
       ? "openshock-tkt65-governed-route-"
       : "openshock-tkt64-governed-route-";
@@ -341,7 +345,8 @@ try {
     runMode === "auto-advance" ||
     runMode === "closeout" ||
     runMode === "delegation" ||
-    runMode === "delegate-handoff"
+    runMode === "delegate-handoff" ||
+    runMode === "delegate-lifecycle"
   ) {
     await patchGovernedQATopology(serverURL);
   }
@@ -421,7 +426,8 @@ try {
     runMode === "auto-advance" ||
     runMode === "closeout" ||
     runMode === "delegation" ||
-    runMode === "delegate-handoff"
+    runMode === "delegate-handoff" ||
+    runMode === "delegate-lifecycle"
   ) {
     await page.getByTestId(`mailbox-action-completed-continue-${handoff.id}`).click();
     const followup = await waitForMailboxWhere(
@@ -458,7 +464,12 @@ try {
     await page.getByTestId(`mailbox-card-${followup.id}`).waitFor({ state: "visible" });
     await capture(page, "governed-compose-auto-advanced");
 
-    if (runMode === "closeout" || runMode === "delegation" || runMode === "delegate-handoff") {
+    if (
+      runMode === "closeout" ||
+      runMode === "delegation" ||
+      runMode === "delegate-handoff" ||
+      runMode === "delegate-lifecycle"
+    ) {
       const qaCloseoutNote = "QA 验证完成，可以进入 PR delivery closeout。";
 
       await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${followup.id}`, { waitUntil: "load" });
@@ -487,7 +498,11 @@ try {
       );
       await capture(page, "pull-request-delivery-closeout");
 
-      if (runMode === "delegation" || runMode === "delegate-handoff") {
+      if (
+        runMode === "delegation" ||
+        runMode === "delegate-handoff" ||
+        runMode === "delegate-lifecycle"
+      ) {
         assert(
           (await readText(page, "delivery-delegation-status")) === "delegate ready",
           "delivery delegation should become ready after final QA closeout"
@@ -511,7 +526,7 @@ try {
         });
         await capture(page, "pull-request-delivery-delegation");
 
-        if (runMode === "delegate-handoff") {
+        if (runMode === "delegate-handoff" || runMode === "delegate-lifecycle") {
           assert(
             (await readText(page, "delivery-delegation-handoff-status")) === "handoff requested",
             "delivery delegation should auto-create a requested formal closeout handoff"
@@ -539,6 +554,76 @@ try {
             delegatedHandoffID
           );
           await capture(page, "delivery-delegated-handoff");
+
+          if (runMode === "delegate-lifecycle") {
+            const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
+            await page.getByTestId(`mailbox-note-${delegatedHandoffID}`).fill(blockNote);
+            await page.getByTestId(`mailbox-action-blocked-${delegatedHandoffID}`).click();
+            await page.waitForFunction(
+              (handoffId) =>
+                document.querySelector(`[data-testid="mailbox-status-${handoffId}"]`)?.textContent?.trim() === "blocked",
+              delegatedHandoffID
+            );
+            await page.waitForFunction(
+              ({ handoffId, note }) => {
+                const card = document.querySelector(`[data-testid="mailbox-card-${handoffId}"]`);
+                return card?.textContent?.includes(note) ?? false;
+              },
+              { handoffId: delegatedHandoffID, note: blockNote }
+            );
+            await capture(page, "delivery-delegated-handoff-blocked");
+
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.waitForFunction(() => {
+              return document.querySelector('[data-testid="delivery-delegation-status"]')?.textContent?.trim() === "delegate blocked";
+            });
+            assert(
+              (await readText(page, "delivery-delegation-handoff-status")) === "handoff blocked",
+              "blocked delegated handoff should flow back into PR detail"
+            );
+            await page.waitForFunction(
+              ({ note }) => document.querySelector('[data-testid="delivery-delegation-summary"]')?.textContent?.includes(note),
+              { note: blockNote }
+            );
+            await page.waitForFunction(
+              ({ note }) =>
+                document
+                  .querySelector('[data-testid="pull-request-related-inbox-inbox-delivery-delegation-pr-runtime-18"]')
+                  ?.textContent?.includes(note) ?? false,
+              { note: blockNote }
+            );
+            await capture(page, "pull-request-delivery-delegation-blocked");
+
+            await page.getByTestId("delivery-delegation-open").click();
+            await page.getByTestId(`mailbox-card-${delegatedHandoffID}`).waitFor({ state: "visible" });
+            await page.getByTestId(`mailbox-action-acknowledged-${delegatedHandoffID}`).click();
+            const completeNote = "最终 delivery closeout 已收口，等待 merge / release receipt。";
+            await page.getByTestId(`mailbox-note-${delegatedHandoffID}`).fill(completeNote);
+            await page.getByTestId(`mailbox-action-completed-${delegatedHandoffID}`).click();
+            await page.waitForFunction(
+              (handoffId) =>
+                document.querySelector(`[data-testid="mailbox-status-${handoffId}"]`)?.textContent?.trim() === "completed",
+              delegatedHandoffID
+            );
+            await capture(page, "delivery-delegated-handoff-completed");
+
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.waitForFunction(() => {
+              return document.querySelector('[data-testid="delivery-delegation-status"]')?.textContent?.trim() === "delegation done";
+            });
+            assert(
+              (await readText(page, "delivery-delegation-handoff-status")) === "handoff completed",
+              "completed delegated handoff should show completed status in PR detail"
+            );
+            await page.waitForFunction(() => {
+              return (
+                document
+                  .querySelector('[data-testid="pull-request-related-inbox-inbox-delivery-delegation-pr-runtime-18"]')
+                  ?.textContent?.includes("已完成") ?? false
+              );
+            });
+            await capture(page, "pull-request-delivery-delegation-done");
+          }
         }
       }
 
@@ -549,7 +634,18 @@ try {
       await page.getByTestId("mailbox-compose-governed-route-closeout").waitFor({ state: "visible" });
       await capture(page, "governed-compose-closeout-ready");
 
-      if (runMode === "delegate-handoff") {
+      if (runMode === "delegate-lifecycle") {
+        reportTitle = "# 2026-04-11 Governed Mailbox Delegate Lifecycle Sync Report";
+        reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-lifecycle -- --report ${path.relative(projectRoot, reportPath)}`;
+        reportTicket = "TKT-70";
+        reportTestCase = "TC-059";
+        reportScope = "delegated closeout blocked sync、completed sync、PR detail + inbox signal lifecycle";
+        resultLines = [
+          "- delegated closeout handoff 进入 `blocked` 后，PR detail 的 `Delivery Delegation` card 会立即切到 `delegate blocked`，并把 blocker note 同步回 deterministic inbox signal -> PASS",
+          "- delegated handoff 重新 acknowledge 并 `completed` 后，PR detail 会切到 `delegation done` / `handoff completed`，说明 closeout orchestration 的 lifecycle 已真正回写到 delivery contract -> PASS",
+          "- 整个 delegated lifecycle 过程中，governed route 仍维持 final-lane done-state closeout 回链，没有因为额外 closeout handoff 被错误冲回 active governance -> PASS",
+        ];
+      } else if (runMode === "delegate-handoff") {
         reportTitle = "# 2026-04-11 Governed Mailbox Delegated Closeout Handoff Report";
         reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-handoff -- --report ${path.relative(projectRoot, reportPath)}`;
         reportTicket = "TKT-69";

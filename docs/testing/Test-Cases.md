@@ -772,3 +772,19 @@
   4. 点击 handoff deep link，确认 Inbox / Mailbox 会直接聚焦到自动创建的 `Memory Clerk -> Spec Captain` formal closeout handoff，且 governed route 仍维持 done-state closeout backlink。
 - 预期结果: delegate signal 会继续升级成 formal mailbox contract；人类既能在 PR detail 看到 delegated handoff 状态，也能一跳进入对应 ledger，不需要再手工重新 compose 一条 closeout handoff。
 - 业务结论: 2026 年 4 月 11 日 `TKT-69` 已把 `delivery-closeout` handoff kind、delegate agent auto-materialization 与 PR detail handoff deep-link 接进同一条 closeout orchestration。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-handoff.md` 已记录 `QA closeout -> auto-created delegated handoff -> Inbox/Mailbox focus` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 已锁住 `Memory Clerk -> Spec Captain` requested handoff、delegation handoff status 与 governance done-state 不回退，因此这条 delegated closeout contract 用例当前转为 `Pass`。
+
+## TC-059 Delegated Closeout Lifecycle Sync
+
+- 业务目标: 确认 delegated closeout handoff 后续进入 `blocked` 或 `completed` 时，PR detail 的 `Delivery Delegation` card 和 deterministic related inbox signal 会即时同步，而不是停留在初始 `handoff requested`。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 governed auto-advance、done-state delivery backlink、delivery delegation signal，以及自动创建 delegated closeout handoff 的 contract。
+- 测试步骤:
+  1. 通过 governed route 创建 `Developer -> Reviewer` handoff，并用 `Complete + Auto-Advance` 自动生成 `Reviewer -> QA` followup。
+  2. 由 QA acknowledge 并完成 final lane handoff，生成自动 delegated closeout handoff。
+  3. 进入 delegated handoff，将其标记为 `blocked` 并写入 blocker note。
+  4. 打开 `/pull-requests/pr-runtime-18`，确认 `Delivery Delegation` card 变为 `delegate blocked` / `handoff blocked`，且 summary 与 related inbox signal 同步带回 blocker note。
+  5. 回到 delegated handoff，重新 acknowledge 并完成 closeout。
+  6. 再次打开 `/pull-requests/pr-runtime-18`，确认 delegation card 变为 `delegation done` / `handoff completed`，related inbox signal 也同步显示完成态。
+- 预期结果: delegated closeout handoff 不会成为只在 Mailbox 内可见的孤岛 lifecycle；blocked 和 completed 都应回写到同一条 PR delivery contract，同时 governed route 继续维持 final-lane closeout done-state。
+- 业务结论: 2026 年 4 月 11 日 `TKT-70` 已把 delegated closeout handoff 的 lifecycle sync 接回 `PullRequestDeliveryEntry.delegation` 与 deterministic inbox signal。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-lifecycle.md` 已记录 `delegated handoff blocked -> PR detail blocked -> re-ack -> completed -> PR detail done` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 已锁住 blocker note 回写、completed 状态回写与 governance done-state 隔离，因此这条 delegated lifecycle contract 用例当前转为 `Pass`。
