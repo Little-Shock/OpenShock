@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.11
+**版本:** 1.12
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作接下来重点从已落地的 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance 与 delivery closeout backlink，继续前滚到更重的 auto-closeout、delivery delegation 与更深自动协作策略。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink 与 delivery delegation signal；下一批继续前滚到更重的 auto-closeout、automation policy 与更深自动协作策略。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -796,6 +796,28 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-closeout -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-closeout.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-056`
+
+## TKT-68 Governed Delivery Delegation Signal
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 让 final lane closeout 不只回链 PR delivery entry，还要显式派生最终 delivery delegate，并把这条委派信号写进 PR detail / related inbox truth。
+- 范围:
+  - `PullRequestDeliveryEntry.delegation` contract
+  - final closeout -> delivery delegate topology fallback
+  - PR detail `Delivery Delegation` card
+  - PR-related inbox delegation signal / backlink
+- 依赖: `TKT-67` `TKT-36`
+- Done When:
+  - final QA closeout 后，delivery entry 会显式给出 `delegate ready|blocked|done` 的 delegation truth，而不是只停在 closeout backlink
+  - 委派目标会优先取 publish/closeout lane，缺省时回退到 owner/final-response lane；默认 dev-team 会回到 `PM / Spec Captain`
+  - related inbox 会出现 deterministic delivery delegation signal，并回链到同一条 PR detail
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegation -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegation.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-057`
 
 ---
 

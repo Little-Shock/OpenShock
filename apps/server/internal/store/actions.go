@@ -639,6 +639,7 @@ func (s *Store) CreatePullRequestFromRemote(roomID string, remote PullRequestRem
 		Time:    now,
 	})
 	s.prependPullRequestInboxLocked(s.state.PullRequests[0], roomItem.Title)
+	s.syncDeliveryDelegationInboxLocked(roomID)
 	s.updateAgentStateLocked(runItem.Owner, "idle", "等待 GitHub PR 评审")
 
 	if err := appendRunArtifacts(s.workspaceRoot, roomID, issueItem.Key, runItem.Owner, "Pull Request Created", fmt.Sprintf("- pr: %s\n- url: %s\n- head: %s\n- base: %s\n- run: %s", s.state.PullRequests[0].Label, defaultString(s.state.PullRequests[0].URL, "n/a"), s.state.PullRequests[0].Branch, defaultString(s.state.PullRequests[0].BaseBranch, "n/a"), runItem.ID)); err != nil {
@@ -737,6 +738,7 @@ func (s *Store) SyncPullRequestFromRemote(pullRequestID string, remote PullReque
 			Time:    now,
 		})
 		s.prependPullRequestInboxLocked(*pr, roomItem.Title)
+		s.syncDeliveryDelegationInboxLocked(pr.RoomID)
 
 		if err := appendRunArtifacts(s.workspaceRoot, pr.RoomID, issueItem.Key, runItem.Owner, "Pull Request Status Updated", fmt.Sprintf("- pr: %s\n- status: %s\n- url: %s\n- summary: %s", pr.Label, pr.Status, defaultString(pr.URL, "n/a"), pr.ReviewSummary)); err != nil {
 			return State{}, err

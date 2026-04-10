@@ -868,6 +868,7 @@ export type PullRequestDeliveryEntry = {
   summary: string;
   gates: PullRequestDeliveryGate[];
   templates: PullRequestDeliveryTemplate[];
+  delegation: PullRequestDeliveryDelegation;
   handoffNote: PullRequestDeliveryHandoffNote;
   evidence: PullRequestDeliveryEvidence[];
 };
@@ -889,6 +890,15 @@ export type PullRequestDeliveryTemplate = {
   sentReceipts: number;
   failedReceipts: number;
   href?: string;
+};
+
+export type PullRequestDeliveryDelegation = {
+  status: "pending" | "ready" | "blocked" | "done";
+  targetLane?: string;
+  targetAgent?: string;
+  summary: string;
+  href?: string;
+  inboxItemId?: string;
 };
 
 export type PullRequestDeliveryHandoffNote = {

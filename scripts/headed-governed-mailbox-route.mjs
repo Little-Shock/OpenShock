@@ -23,6 +23,8 @@ const runMode =
     ? "auto-advance"
     : parsedArgs.mode === "closeout"
       ? "closeout"
+      : parsedArgs.mode === "delegation"
+        ? "delegation"
     : requestedReportPath.includes("autocreate")
       ? "auto-create"
       : "route";
@@ -31,6 +33,8 @@ const evidencePrefix =
     ? "openshock-tkt66-governed-route-"
     : runMode === "closeout"
       ? "openshock-tkt67-governed-route-"
+      : runMode === "delegation"
+        ? "openshock-tkt68-governed-route-"
     : runMode === "auto-create"
       ? "openshock-tkt65-governed-route-"
       : "openshock-tkt64-governed-route-";
@@ -329,7 +333,7 @@ let page = null;
 try {
   const { webURL, serverURL } = await startServices();
   resolveChromiumExecutable();
-  if (runMode === "auto-advance" || runMode === "closeout") {
+  if (runMode === "auto-advance" || runMode === "closeout" || runMode === "delegation") {
     await patchGovernedQATopology(serverURL);
   }
   const initialState = await readState(serverURL);
@@ -404,7 +408,7 @@ try {
   await page.getByTestId(`mailbox-action-acknowledged-${handoff.id}`).click();
   await page.getByTestId(`mailbox-note-${handoff.id}`).fill("review 已完成，继续看下一条治理建议。");
 
-  if (runMode === "auto-advance" || runMode === "closeout") {
+  if (runMode === "auto-advance" || runMode === "closeout" || runMode === "delegation") {
     await page.getByTestId(`mailbox-action-completed-continue-${handoff.id}`).click();
     const followup = await waitForMailboxWhere(
       serverURL,
@@ -440,7 +444,7 @@ try {
     await page.getByTestId(`mailbox-card-${followup.id}`).waitFor({ state: "visible" });
     await capture(page, "governed-compose-auto-advanced");
 
-    if (runMode === "closeout") {
+    if (runMode === "closeout" || runMode === "delegation") {
       const qaCloseoutNote = "QA 验证完成，可以进入 PR delivery closeout。";
 
       await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${followup.id}`, { waitUntil: "load" });
@@ -469,6 +473,31 @@ try {
       );
       await capture(page, "pull-request-delivery-closeout");
 
+      if (runMode === "delegation") {
+        assert(
+          (await readText(page, "delivery-delegation-status")) === "delegate ready",
+          "delivery delegation should become ready after final QA closeout"
+        );
+        assert(
+          (await readText(page, "delivery-delegation-target")) === "PM · Spec Captain",
+          "delivery delegation should point back to PM / Spec Captain"
+        );
+        assert(
+          (await readText(page, "delivery-delegation-summary")).includes("Spec Captain"),
+          "delivery delegation summary should mention the delegated agent"
+        );
+        await page
+          .getByTestId("pull-request-related-inbox-inbox-delivery-delegation-pr-runtime-18")
+          .waitFor({ state: "visible" });
+        await page.waitForFunction(() => {
+          const node = document.querySelector(
+            '[data-testid="pull-request-related-inbox-inbox-delivery-delegation-pr-runtime-18"]'
+          );
+          return node?.textContent?.includes("Spec Captain") ?? false;
+        });
+        await capture(page, "pull-request-delivery-delegation");
+      }
+
       await page.goto(`${webURL}/inbox?roomId=room-runtime`, { waitUntil: "load" });
       await page.waitForFunction(() => {
         return document.querySelector('[data-testid="mailbox-compose-governed-route-status"]')?.textContent?.trim() === "done";
@@ -476,16 +505,29 @@ try {
       await page.getByTestId("mailbox-compose-governed-route-closeout").waitFor({ state: "visible" });
       await capture(page, "governed-compose-closeout-ready");
 
-      reportTitle = "# 2026-04-11 Governed Mailbox Closeout Delivery Report";
-      reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-closeout -- --report ${path.relative(projectRoot, reportPath)}`;
-      reportTicket = "TKT-67";
-      reportTestCase = "TC-056";
-      reportScope = "governed final-lane done state、delivery entry closeout backlink、PR handoff note sync";
-      resultLines = [
-        "- QA followup handoff 完成后，`/mailbox` 上的 governed surface 不再停在纯 `done` 文案，而是直接给出 `Open Delivery Entry` closeout 回链 -> PASS",
-        "- 最终 lane 收口后，`workspace.governance.routingPolicy.suggestedHandoff` 会切到 `done` 并指向 `/pull-requests/pr-runtime-18`，说明治理链和交付面已经接上同一条 closeout truth -> PASS",
-        "- 打开 PR delivery entry 后，operator handoff note 与 evidence 会直接带上 QA closeout note；Inbox compose 也同步显示同一条 done-state closeout 回链 -> PASS",
-      ];
+      if (runMode === "delegation") {
+        reportTitle = "# 2026-04-11 Governed Mailbox Delivery Delegation Report";
+        reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegation -- --report ${path.relative(projectRoot, reportPath)}`;
+        reportTicket = "TKT-68";
+        reportTestCase = "TC-057";
+        reportScope = "governed final closeout delegation、delivery delegate card、PR-related inbox signal";
+        resultLines = [
+          "- QA final lane closeout 后，`/mailbox` 与 Inbox compose 继续围同一条 governed done-state closeout 回链工作，不会把治理链和 delivery closeout 拆成两套真相 -> PASS",
+          "- 打开 PR delivery entry 后，`Delivery Delegation` card 会显式给出 `delegate ready`、`PM · Spec Captain` 目标与 summary，说明 final closeout 已经被委托回 owner lane，而不是只停在抽象 done 文案 -> PASS",
+          "- PR detail 的 related inbox 也会同步出现 `inbox-delivery-delegation-pr-runtime-18` 信号，并回链到同一条 PR detail，证明 delivery delegation 已经进入正式 inbox truth，而不只是页面内推导 -> PASS",
+        ];
+      } else {
+        reportTitle = "# 2026-04-11 Governed Mailbox Closeout Delivery Report";
+        reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-closeout -- --report ${path.relative(projectRoot, reportPath)}`;
+        reportTicket = "TKT-67";
+        reportTestCase = "TC-056";
+        reportScope = "governed final-lane done state、delivery entry closeout backlink、PR handoff note sync";
+        resultLines = [
+          "- QA followup handoff 完成后，`/mailbox` 上的 governed surface 不再停在纯 `done` 文案，而是直接给出 `Open Delivery Entry` closeout 回链 -> PASS",
+          "- 最终 lane 收口后，`workspace.governance.routingPolicy.suggestedHandoff` 会切到 `done` 并指向 `/pull-requests/pr-runtime-18`，说明治理链和交付面已经接上同一条 closeout truth -> PASS",
+          "- 打开 PR delivery entry 后，operator handoff note 与 evidence 会直接带上 QA closeout note；Inbox compose 也同步显示同一条 done-state closeout 回链 -> PASS",
+        ];
+      }
     } else {
       reportTitle = "# 2026-04-11 Governed Mailbox Auto-Advance Report";
       reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-auto-advance -- --report ${path.relative(projectRoot, reportPath)}`;

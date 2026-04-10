@@ -175,6 +175,9 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 			return State{}, AgentHandoff{}, err
 		}
 	}
+	if action == "completed" {
+		s.syncDeliveryDelegationInboxLocked(handoff.RoomID)
+	}
 
 	if err := s.persistLocked(); err != nil {
 		return State{}, AgentHandoff{}, err
@@ -301,6 +304,54 @@ func (s *Store) continueGovernedRouteLocked(completed AgentHandoff) error {
 		Summary:     defaultString(suggestion.DraftSummary, "按当前治理链继续推进下一棒。"),
 	})
 	return err
+}
+
+func (s *Store) syncDeliveryDelegationInboxLocked(roomID string) {
+	prIndex := s.findPullRequestByRoomLocked(strings.TrimSpace(roomID))
+	if prIndex == -1 {
+		return
+	}
+
+	snapshot := cloneState(s.state)
+	hydrateWorkspaceGovernance(&snapshot.Workspace, &snapshot)
+	pr := snapshot.PullRequests[prIndex]
+	delegation := buildPullRequestDeliveryDelegation(snapshot, pr, snapshot.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
+	inboxID := deliveryDelegationInboxItemID(pr.ID)
+
+	filtered := make([]InboxItem, 0, len(s.state.Inbox))
+	for _, item := range s.state.Inbox {
+		if item.ID == inboxID {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	s.state.Inbox = filtered
+
+	if delegation.Status != "ready" && delegation.Status != "blocked" {
+		return
+	}
+
+	roomTitle := ""
+	if roomIndex, _, _, ok := s.findRoomRunIssueLocked(pr.RoomID); ok {
+		roomTitle = s.state.Rooms[roomIndex].Title
+	}
+	labelPrefix := defaultString(strings.TrimSpace(pr.Label), fmt.Sprintf("PR %s", strings.TrimSpace(pr.ID)))
+	title := fmt.Sprintf("%s Delivery Delegation Blocked", labelPrefix)
+	kind := "blocked"
+	if delegation.Status == "ready" {
+		title = fmt.Sprintf("%s 交付委托已准备 -> %s", labelPrefix, delegation.TargetAgent)
+		kind = "status"
+	}
+	s.state.Inbox = append([]InboxItem{{
+		ID:      inboxID,
+		Title:   title,
+		Kind:    kind,
+		Room:    defaultString(roomTitle, pr.RoomID),
+		Time:    "刚刚",
+		Summary: delegation.Summary,
+		Action:  "Open Delivery Entry",
+		Href:    delegation.Href,
+	}}, s.state.Inbox...)
 }
 
 func (s *Store) updateHandoffInboxLocked(handoff AgentHandoff, title, summary string) {

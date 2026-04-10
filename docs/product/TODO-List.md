@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.3
+**版本:** 1.4
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -78,17 +78,19 @@
   - governed route 现在已补 `Complete + Auto-Advance`；reviewer handoff 完成后，如果下一条 lane 已映射默认 Agent，就会自动创建 followup handoff，并让 `/mailbox` 与 Inbox compose 一起切到新的 `active` ledger。
 - `GAP-36 / TKT-67`
   - final lane closeout 现在已显式接回 PR delivery entry；`/mailbox` 与 Inbox compose 在 `done` 时都会给出 closeout 回链，PR detail 的 handoff note / evidence 也会直接带上最新 governed closeout note。
+- `GAP-37 / TKT-68`
+  - final lane closeout 现在还会显式派生 delivery delegate；PR detail 已出现 `Delivery Delegation` card，且 related inbox 会写入 deterministic delegation signal，默认 dev-team 会回到 `PM / Spec Captain`。
 
 ### 当前必须先收的 GAP
 
-当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”或“能不能把 final lane 接回 delivery entry”，而是 topology 之后更重的 auto-closeout 策略、agent-to-agent orchestration 和更深入的跨 Agent delivery delegation。
+当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”或“能不能显式给出 delivery delegate”，而是 topology 之后更重的 auto-closeout 策略、agent-to-agent orchestration、delegate automation policy 和跨 Agent closeout 编排。
 
 ---
 
 ## 四、推荐推进顺序
 
 1. 先围 `CHK-16` 的 shell density / high-frequency interaction polish 开票。
-2. 再围 `CHK-21` 的 auto-closeout、automation policy 与 delivery delegation 开票。
+2. 再围 `CHK-21` 的 auto-closeout、automation policy、delegate execution 与跨 Agent closeout orchestration 开票。
 3. 最后继续补 `CHK-10` `CHK-22` 的长期记忆整理、外部 provider 编排与 durable governance。
 
 ---

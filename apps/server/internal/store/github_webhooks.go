@@ -450,6 +450,7 @@ func pullRequestReviewContextHref(pr PullRequest) string {
 
 func trackedPullRequestInboxHrefs(pr PullRequest) []string {
 	return []string{
+		fmt.Sprintf("/pull-requests/%s", pr.ID),
 		pullRequestReviewContextHref(pr),
 		fmt.Sprintf("/rooms/%s/runs/%s", pr.RoomID, pr.RunID),
 		fmt.Sprintf("/rooms/%s", pr.RoomID),

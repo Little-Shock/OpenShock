@@ -37,6 +37,7 @@ func buildPullRequestDeliveryEntry(
 	status, releaseReady, summary := summarizePullRequestDeliveryGates(gates)
 	governanceAggregation := snapshot.Workspace.Governance.ResponseAggregation
 	governedCloseout := snapshot.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	delegation := buildPullRequestDeliveryDelegation(snapshot, pr, governedCloseout)
 	evidence := buildPullRequestDeliveryEvidence(snapshot, pr, room, run, issue, conversation, templates, governanceAggregation, governedCloseout)
 	handoffNote := buildPullRequestDeliveryHandoffNote(
 		pr,
@@ -47,6 +48,7 @@ func buildPullRequestDeliveryEntry(
 		usageGate,
 		quotaGate,
 		notificationGate,
+		delegation,
 		governanceAggregation,
 		governedCloseout,
 		status,
@@ -59,9 +61,106 @@ func buildPullRequestDeliveryEntry(
 		Summary:      summary,
 		Gates:        gates,
 		Templates:    templates,
+		Delegation:   delegation,
 		HandoffNote:  handoffNote,
 		Evidence:     evidence,
 	}
+}
+
+func buildPullRequestDeliveryDelegation(
+	snapshot State,
+	pr PullRequest,
+	governedCloseout WorkspaceGovernanceSuggestedHandoff,
+) PullRequestDeliveryDelegation {
+	result := PullRequestDeliveryDelegation{
+		Status:  "pending",
+		Summary: "等待 final verify / governed closeout 收口后，再明确最终 delivery delegate。",
+		Href:    fmt.Sprintf("/pull-requests/%s", pr.ID),
+	}
+
+	if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
+		result.Status = "done"
+		result.Summary = "这条 PR 已合并，delivery delegation 已完成。"
+		return result
+	}
+	if governedCloseout.Status != "done" {
+		return result
+	}
+
+	lane, targetAgent, laneFound, agentFound := resolvePullRequestDeliveryDelegationTarget(snapshot)
+	if !laneFound {
+		result.Status = "blocked"
+		result.Summary = "governed closeout 已完成，但当前 team topology 还没有可用的 delivery delegate lane。"
+		return result
+	}
+
+	result.TargetLane = lane.Label
+	result.InboxItemID = deliveryDelegationInboxItemID(pr.ID)
+	if !agentFound {
+		result.Status = "blocked"
+		result.Summary = fmt.Sprintf("%s 已完成 governed closeout，但当前缺少可映射到 %s 的默认 Agent。", defaultString(governedCloseout.FromAgent, "当前治理链"), lane.Label)
+		return result
+	}
+
+	result.Status = "ready"
+	result.TargetAgent = targetAgent
+	result.Summary = fmt.Sprintf(
+		"%s 已完成 governed closeout；下一步交给 %s（%s）复核 release gate、operator handoff note 与最终交付收口。",
+		defaultString(governedCloseout.FromAgent, "当前治理链"),
+		targetAgent,
+		lane.Label,
+	)
+	return result
+}
+
+func resolvePullRequestDeliveryDelegationTarget(snapshot State) (governanceTemplateLaneDefinition, string, bool, bool) {
+	topology := deliveryDelegationTopology(snapshot)
+	for _, lane := range topology {
+		if governanceLaneMatchesAny(lane, "publisher", "publish", "delivery", "closeout") {
+			return resolvePullRequestDeliveryDelegationLane(snapshot.Agents, lane)
+		}
+	}
+	for _, lane := range topology {
+		if isGovernanceOwnerLane(lane) {
+			return resolvePullRequestDeliveryDelegationLane(snapshot.Agents, lane)
+		}
+	}
+	return governanceTemplateLaneDefinition{}, "", false, false
+}
+
+func resolvePullRequestDeliveryDelegationLane(
+	agents []Agent,
+	lane governanceTemplateLaneDefinition,
+) (governanceTemplateLaneDefinition, string, bool, bool) {
+	if agent, ok := resolveGovernanceLaneAgent(agents, lane, ""); ok {
+		return lane, agent.Name, true, true
+	}
+	if defaultAgent := strings.TrimSpace(lane.DefaultAgent); defaultAgent != "" {
+		return lane, defaultAgent, true, true
+	}
+	return lane, "", true, false
+}
+
+func deliveryDelegationTopology(snapshot State) []governanceTemplateLaneDefinition {
+	template := governanceTemplateFor(snapshot.Workspace.Governance.TemplateID)
+	if len(snapshot.Workspace.Governance.ConfiguredTopology) > 0 {
+		template = configuredGovernanceTemplate(template, snapshot.Workspace.Governance.ConfiguredTopology)
+	}
+	if len(template.Topology) > 0 {
+		return template.Topology
+	}
+
+	fallback := make([]governanceTemplateLaneDefinition, 0, len(snapshot.Workspace.Governance.TeamTopology))
+	for _, lane := range snapshot.Workspace.Governance.TeamTopology {
+		fallback = append(fallback, governanceTemplateLaneDefinition{
+			ID:           lane.ID,
+			Label:        lane.Label,
+			Role:         lane.Role,
+			DefaultAgent: lane.DefaultAgent,
+			Lane:         lane.Lane,
+		})
+	}
+	return fallback
 }
 
 func buildPullRequestDeliveryReviewGate(snapshot State, pr PullRequest) PullRequestDeliveryGate {
@@ -311,6 +410,7 @@ func buildPullRequestDeliveryHandoffNote(
 	usageGate PullRequestDeliveryGate,
 	quotaGate PullRequestDeliveryGate,
 	notificationGate PullRequestDeliveryGate,
+	delegation PullRequestDeliveryDelegation,
 	governanceAggregation WorkspaceResponseAggregation,
 	governedCloseout WorkspaceGovernanceSuggestedHandoff,
 	status string,
@@ -331,6 +431,11 @@ func buildPullRequestDeliveryHandoffNote(
 	if governedCloseout.Status == "done" {
 		lines = append(lines, "governed route 已到 done；当前不需要新的 formal handoff，直接围这份 delivery entry / release gate 做最后收口。")
 	}
+	if delegation.Status == "ready" {
+		lines = append(lines, fmt.Sprintf("当前 delivery delegation：交给 %s（%s）。", delegation.TargetAgent, delegation.TargetLane))
+	} else if delegation.Status == "blocked" {
+		lines = append(lines, fmt.Sprintf("当前 delivery delegation blocked：%s", delegation.Summary))
+	}
 
 	summary := "当前 closeout 仍需围着 blocked gate 修复后再交付。"
 	switch status {
@@ -341,6 +446,9 @@ func buildPullRequestDeliveryHandoffNote(
 	}
 	if governanceAggregation.Status == "ready" && governedCloseout.Status == "done" {
 		summary = "这条 PR 的 handoff note 已接住 governed closeout，可直接围 delivery entry / release gate 做最后交付收口。"
+	}
+	if delegation.Status == "ready" {
+		summary = fmt.Sprintf("这条 PR 的 handoff note 已接住 governed closeout，并明确委托给 %s 做最终 delivery closeout。", delegation.TargetAgent)
 	}
 	if releaseReady {
 		lines = append(lines, "当前 release-ready 已成立；operator 只需按上面的 release gate 命令补最终验收。")
@@ -407,6 +515,16 @@ func buildPullRequestDeliveryEvidence(
 			Href:    defaultString(strings.TrimSpace(governedCloseout.Href), "/mailbox"),
 		})
 	}
+	delegation := buildPullRequestDeliveryDelegation(snapshot, pr, governedCloseout)
+	if delegation.Status == "ready" {
+		items = append(items, PullRequestDeliveryEvidence{
+			ID:      "delivery-delegate",
+			Label:   "Delivery Delegate",
+			Value:   delegation.TargetAgent,
+			Summary: delegation.Summary,
+			Href:    delegation.Href,
+		})
+	}
 
 	if len(conversation) > 0 {
 		latest := conversation[0]
@@ -444,6 +562,10 @@ func buildPullRequestDeliveryEvidence(
 	}
 
 	return items
+}
+
+func deliveryDelegationInboxItemID(pullRequestID string) string {
+	return "inbox-delivery-delegation-" + strings.TrimSpace(pullRequestID)
 }
 
 func deliveryMatchesPullRequest(inboxItemID, href string, pr PullRequest, relatedInboxIDs map[string]bool) bool {

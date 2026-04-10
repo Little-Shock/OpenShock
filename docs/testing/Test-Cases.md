@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.9
+**版本:** 1.10
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -744,3 +744,17 @@
   4. 打开 PR delivery entry，检查 operator handoff note 与 evidence 是否直接带上这条 governed closeout note。
 - 预期结果: final lane 收口后，治理链会把 closeout 直接委托回 delivery entry；人类不需要自己从 mailbox 再去找 PR detail，且 PR handoff note / evidence 不会丢失最新 QA closeout note。
 - 业务结论: 2026 年 4 月 11 日 `TKT-67` 已把 governed done-state closeout 回链补进 `/mailbox` 与 Inbox compose，并把 PR delivery handoff note / evidence 接到同一条 governed closeout truth。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-closeout.md` 已记录 `reviewer auto-advance -> QA closeout -> PR delivery entry backlink` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 已锁住 governed done href、delivery note 与 governed-closeout evidence，因此这条治理收口回链用例当前转为 `Pass`。
+
+## TC-057 Governed Delivery Delegation / Inbox Signal
+
+- 业务目标: 确认 final lane closeout 后，delivery entry 不只出现 closeout backlink，还会基于 topology 明确交付委派目标，并把这条委派信号写进 PR related inbox。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 governed auto-advance、done-state delivery backlink、PR delivery entry，以及可解析的 team topology / owner lane。
+- 测试步骤:
+  1. 通过 governed route 创建 `Developer -> Reviewer` handoff，并用 `Complete + Auto-Advance` 自动生成 `Reviewer -> QA` followup。
+  2. 由 QA acknowledge 并完成 final lane handoff，写入 closeout note。
+  3. 打开 `/pull-requests/pr-runtime-18`，检查 `Delivery Delegation` card 是否显式显示 `delegate ready`、`PM · Spec Captain` 与对应 summary。
+  4. 检查 PR detail 的 related inbox 是否出现 `inbox-delivery-delegation-pr-runtime-18`，并确认它回链到同一条 PR detail。
+- 预期结果: final lane closeout 后，delivery delegate 会从治理拓扑中被正式派生出来；人类既能在 delivery card 看到委派目标，也能在 related inbox 看到同一条 deterministic signal，不再需要靠隐式约定记住“最后谁来收口”。
+- 业务结论: 2026 年 4 月 11 日 `TKT-68` 已把 `PullRequestDeliveryEntry.delegation`、final-closeout delegation fallback 与 related inbox signal 接进同一条 delivery truth。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegation.md` 已记录 `QA closeout -> delivery delegate ready -> related inbox signal` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 已锁住 `PM / Spec Captain` fallback、`delivery-delegate` evidence 与 deterministic inbox item，因此这条交付委派用例当前转为 `Pass`。

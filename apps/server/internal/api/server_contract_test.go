@@ -1398,6 +1398,11 @@ func TestPullRequestDetailRouteReflectsGovernedCloseout(t *testing.T) {
 	if !strings.Contains(detail.Delivery.HandoffNote.Summary, "governed closeout") {
 		t.Fatalf("detail handoff note summary = %q, want governed closeout summary", detail.Delivery.HandoffNote.Summary)
 	}
+	if detail.Delivery.Delegation.Status != "ready" ||
+		detail.Delivery.Delegation.TargetAgent != "Spec Captain" ||
+		detail.Delivery.Delegation.InboxItemID != "inbox-delivery-delegation-pr-runtime-18" {
+		t.Fatalf("detail delegation = %#v, want ready Spec Captain delivery delegate", detail.Delivery.Delegation)
+	}
 	noteLines := strings.Join(detail.Delivery.HandoffNote.Lines, "\n")
 	if !strings.Contains(noteLines, closeoutNote) || !strings.Contains(noteLines, "governed route 已到 done") {
 		t.Fatalf("detail handoff note lines = %#v, want closeout note + done hint", detail.Delivery.HandoffNote.Lines)
@@ -1410,6 +1415,23 @@ func TestPullRequestDetailRouteReflectsGovernedCloseout(t *testing.T) {
 	closeoutEvidence, ok := evidenceByID["governed-closeout"]
 	if !ok || closeoutEvidence.Href != "/pull-requests/pr-runtime-18" || !strings.Contains(closeoutEvidence.Summary, closeoutNote) {
 		t.Fatalf("detail delivery evidence = %#v, want governed closeout evidence", detail.Delivery.Evidence)
+	}
+	delegateEvidence, ok := evidenceByID["delivery-delegate"]
+	if !ok || delegateEvidence.Value != "Spec Captain" {
+		t.Fatalf("detail delivery evidence = %#v, want delivery delegate evidence", detail.Delivery.Evidence)
+	}
+
+	relatedDelegation := false
+	for _, item := range detail.RelatedInbox {
+		if item.ID == "inbox-delivery-delegation-pr-runtime-18" {
+			relatedDelegation = true
+			if item.Href != "/pull-requests/pr-runtime-18" || !strings.Contains(item.Summary, "Spec Captain") {
+				t.Fatalf("delegation inbox item = %#v, want PR delivery delegation backlink", item)
+			}
+		}
+	}
+	if !relatedDelegation {
+		t.Fatalf("detail related inbox = %#v, want delivery delegation inbox signal", detail.RelatedInbox)
 	}
 }
 

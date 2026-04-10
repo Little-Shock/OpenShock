@@ -986,6 +986,7 @@ type PullRequestDeliveryEntry struct {
 	Summary      string                         `json:"summary"`
 	Gates        []PullRequestDeliveryGate      `json:"gates"`
 	Templates    []PullRequestDeliveryTemplate  `json:"templates"`
+	Delegation   PullRequestDeliveryDelegation  `json:"delegation"`
 	HandoffNote  PullRequestDeliveryHandoffNote `json:"handoffNote"`
 	Evidence     []PullRequestDeliveryEvidence  `json:"evidence"`
 }
@@ -1007,6 +1008,15 @@ type PullRequestDeliveryTemplate struct {
 	SentReceipts      int    `json:"sentReceipts"`
 	FailedReceipts    int    `json:"failedReceipts"`
 	Href              string `json:"href,omitempty"`
+}
+
+type PullRequestDeliveryDelegation struct {
+	Status      string `json:"status"`
+	TargetLane  string `json:"targetLane,omitempty"`
+	TargetAgent string `json:"targetAgent,omitempty"`
+	Summary     string `json:"summary"`
+	Href        string `json:"href,omitempty"`
+	InboxItemID string `json:"inboxItemId,omitempty"`
 }
 
 type PullRequestDeliveryHandoffNote struct {

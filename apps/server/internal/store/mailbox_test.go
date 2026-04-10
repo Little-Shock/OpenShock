@@ -597,6 +597,11 @@ func TestGovernedFinalLaneCompletionBridgesDeliveryCloseout(t *testing.T) {
 	if !strings.Contains(detail.Delivery.HandoffNote.Summary, "governed closeout") {
 		t.Fatalf("handoff note summary = %q, want governed closeout wording", detail.Delivery.HandoffNote.Summary)
 	}
+	if detail.Delivery.Delegation.Status != "ready" ||
+		detail.Delivery.Delegation.TargetAgent != "Spec Captain" ||
+		detail.Delivery.Delegation.TargetLane != "PM" {
+		t.Fatalf("delivery delegation = %#v, want ready Spec Captain / PM delegate", detail.Delivery.Delegation)
+	}
 	joinedLines := strings.Join(detail.Delivery.HandoffNote.Lines, "\n")
 	if !strings.Contains(joinedLines, closeoutNote) || !strings.Contains(joinedLines, "governed route 已到 done") {
 		t.Fatalf("handoff note lines = %#v, want closeout note + governed done guidance", detail.Delivery.HandoffNote.Lines)
@@ -606,11 +611,28 @@ func TestGovernedFinalLaneCompletionBridgesDeliveryCloseout(t *testing.T) {
 	if evidence == nil || evidence.Href != "/pull-requests/pr-runtime-18" || !strings.Contains(evidence.Summary, closeoutNote) {
 		t.Fatalf("delivery evidence = %#v, want governed closeout evidence", detail.Delivery.Evidence)
 	}
+	delegateEvidence := findDeliveryEvidence(detail.Delivery.Evidence, "delivery-delegate")
+	if delegateEvidence == nil || delegateEvidence.Value != "Spec Captain" {
+		t.Fatalf("delivery evidence = %#v, want delivery delegate evidence", detail.Delivery.Evidence)
+	}
+	delegationInbox := findInboxItemByID(finalState.Inbox, deliveryDelegationInboxItemID("pr-runtime-18"))
+	if delegationInbox == nil || delegationInbox.Href != "/pull-requests/pr-runtime-18" || !strings.Contains(delegationInbox.Summary, "Spec Captain") {
+		t.Fatalf("delegation inbox = %#v, want PR delivery delegation inbox signal", finalState.Inbox)
+	}
 }
 
 func findInboxItemByHandoffID(items []InboxItem, handoffID string) *InboxItem {
 	for index := range items {
 		if items[index].HandoffID == handoffID {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func findInboxItemByID(items []InboxItem, inboxID string) *InboxItem {
+	for index := range items {
+		if items[index].ID == inboxID {
 			return &items[index]
 		}
 	}

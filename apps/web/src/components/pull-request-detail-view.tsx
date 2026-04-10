@@ -6,6 +6,7 @@ import { OpenShockShell } from "@/components/open-shock-shell";
 import { Panel } from "@/components/phase-zero-views";
 import type {
   PullRequestConversationEntry,
+  PullRequestDeliveryDelegation,
   PullRequestDeliveryEntry,
   PullRequestDeliveryEvidence,
   PullRequestDeliveryGate,
@@ -98,6 +99,32 @@ function deliveryPanelTone(status: PullRequestDeliveryEntry["status"]) {
       return "yellow" as const;
     default:
       return "ink" as const;
+  }
+}
+
+function delegationStatusLabel(status: PullRequestDeliveryDelegation["status"]) {
+  switch (status) {
+    case "ready":
+      return "delegate ready";
+    case "blocked":
+      return "delegate blocked";
+    case "done":
+      return "delegation done";
+    default:
+      return "waiting";
+  }
+}
+
+function delegationStatusTone(status: PullRequestDeliveryDelegation["status"]) {
+  switch (status) {
+    case "ready":
+      return "bg-[var(--shock-lime)]";
+    case "blocked":
+      return "bg-[var(--shock-pink)] text-white";
+    case "done":
+      return "bg-[var(--shock-yellow)]";
+    default:
+      return "bg-white";
   }
 }
 
@@ -425,6 +452,53 @@ export function PullRequestDetailView({
                         </li>
                       ))}
                     </ul>
+                  </div>
+                </Panel>
+
+                <Panel tone="paper">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                        Delivery Delegation
+                      </p>
+                      <p className="mt-2 font-display text-[22px] font-bold">
+                        {detail.delivery.delegation.targetAgent || "Waiting For Delegate"}
+                      </p>
+                      <p
+                        data-testid="delivery-delegation-summary"
+                        className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]"
+                      >
+                        {detail.delivery.delegation.summary}
+                      </p>
+                    </div>
+                    <span
+                      data-testid="delivery-delegation-status"
+                      className={cn(
+                        "border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+                        delegationStatusTone(detail.delivery.delegation.status)
+                      )}
+                    >
+                      {delegationStatusLabel(detail.delivery.delegation.status)}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {detail.delivery.delegation.targetLane ? (
+                      <span
+                        data-testid="delivery-delegation-target"
+                        className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px]"
+                      >
+                        {detail.delivery.delegation.targetLane} · {detail.delivery.delegation.targetAgent || "unmapped"}
+                      </span>
+                    ) : null}
+                    {detail.delivery.delegation.href ? (
+                      <Link
+                        href={detail.delivery.delegation.href}
+                        data-testid="delivery-delegation-open"
+                        className="border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px]"
+                      >
+                        Open Delivery Context
+                      </Link>
+                    ) : null}
                   </div>
                 </Panel>
 

@@ -555,6 +555,7 @@ func sanitizePullRequestDeliveryEntry(item store.PullRequestDeliveryEntry) store
 	item.Summary = sanitizeDisplayText(item.Summary, "当前 delivery contract 摘要正在整理中。")
 	item.Gates = sanitizeLivePayload(item.Gates).([]store.PullRequestDeliveryGate)
 	item.Templates = sanitizeLivePayload(item.Templates).([]store.PullRequestDeliveryTemplate)
+	item.Delegation = sanitizePullRequestDeliveryDelegation(item.Delegation)
 	item.HandoffNote = sanitizePullRequestDeliveryHandoffNote(item.HandoffNote)
 	item.Evidence = sanitizeLivePayload(item.Evidence).([]store.PullRequestDeliveryEvidence)
 	return item
@@ -570,6 +571,15 @@ func sanitizePullRequestDeliveryGate(item store.PullRequestDeliveryGate) store.P
 func sanitizePullRequestDeliveryTemplate(item store.PullRequestDeliveryTemplate) store.PullRequestDeliveryTemplate {
 	item.Label = sanitizeDisplayText(item.Label, "未命名模板")
 	item.Href = sanitizeDisplayText(item.Href, "")
+	return item
+}
+
+func sanitizePullRequestDeliveryDelegation(item store.PullRequestDeliveryDelegation) store.PullRequestDeliveryDelegation {
+	item.TargetLane = sanitizeDisplayText(item.TargetLane, "")
+	item.TargetAgent = sanitizeDisplayText(item.TargetAgent, "")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前 delivery delegation 正在整理中。")
+	item.Href = sanitizeDisplayText(item.Href, "")
+	item.InboxItemID = sanitizeDisplayText(item.InboxItemID, "")
 	return item
 }
 
