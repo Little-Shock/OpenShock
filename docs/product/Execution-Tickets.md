@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync，以及 delivery delegation automation / auto-complete policy；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy，以及 delegated closeout comment sync；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -905,6 +905,28 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-auto-complete -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-auto-complete.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-061`
+
+## TKT-73 Delegated Closeout Comment Sync
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 delegated closeout handoff 上的 formal comment 从“只留在 Mailbox card”推进成正式 delivery contract，让 source / target 的最新 closeout 沟通能同步回 PR detail 与 related inbox。
+- 范围:
+  - delegated closeout latest formal comment -> PR detail delegation summary
+  - related inbox latest-comment sync
+  - source / target dual-comment closeout coverage
+  - lifecycle preservation during comment sync
+- 依赖: `TKT-69` `TKT-70`
+- Done When:
+  - delegated closeout handoff 上的 source / target formal comment 会同步回 PR detail `Delivery Delegation` summary
+  - related inbox signal 会同步带回最新 delegated closeout formal comment，而不是继续只显示旧 summary
+  - comment sync 不会把 delegated handoff 的 `requested / blocked / completed` lifecycle 偷偷改坏
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-comment-sync -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-comment-sync.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-062`
 
 ---
 

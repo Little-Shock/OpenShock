@@ -105,6 +105,7 @@ func buildPullRequestDeliveryDelegation(
 	result.Status = "ready"
 	result.TargetAgent = targetAgent
 	if handoff := findPullRequestDeliveryDelegationHandoff(snapshot.Mailbox, pr, targetAgent); handoff != nil {
+		commentSuffix := deliveryDelegationLatestCommentSuffix(*handoff)
 		result.HandoffID = handoff.ID
 		result.HandoffHref = mailboxInboxHref(handoff.ID, handoff.RoomID)
 		result.HandoffStatus = handoff.Status
@@ -113,15 +114,17 @@ func buildPullRequestDeliveryDelegation(
 			result.Status = "blocked"
 			if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
 				result.Summary = fmt.Sprintf(
-					"这条 PR 已合并，但 %s 的 delivery closeout handoff 当前 blocked：%s",
+					"这条 PR 已合并，但 %s 的 delivery closeout handoff 当前 blocked：%s%s",
 					targetAgent,
 					defaultString(strings.TrimSpace(handoff.LastNote), handoff.LastAction),
+					commentSuffix,
 				)
 			} else {
 				result.Summary = fmt.Sprintf(
-					"%s 的 delivery closeout handoff 当前 blocked：%s",
+					"%s 的 delivery closeout handoff 当前 blocked：%s%s",
 					targetAgent,
 					defaultString(strings.TrimSpace(handoff.LastNote), handoff.LastAction),
+					commentSuffix,
 				)
 			}
 			return result
@@ -129,28 +132,32 @@ func buildPullRequestDeliveryDelegation(
 			result.Status = "done"
 			if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
 				result.Summary = fmt.Sprintf(
-					"%s 已完成 formal delivery closeout handoff；这条 PR 的 merge / release receipt 已归档。",
+					"%s 已完成 formal delivery closeout handoff；这条 PR 的 merge / release receipt 已归档。%s",
 					targetAgent,
+					commentSuffix,
 				)
 			} else {
 				result.Summary = fmt.Sprintf(
-					"%s 已完成 formal delivery closeout handoff；当前等待最终 merge / release receipt 收口。",
+					"%s 已完成 formal delivery closeout handoff；当前等待最终 merge / release receipt 收口。%s",
 					targetAgent,
+					commentSuffix,
 				)
 			}
 			return result
 		default:
 			if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
 				result.Summary = fmt.Sprintf(
-					"这条 PR 已合并；%s 的 formal delivery closeout handoff 当前为 %s，继续围 merge / release receipt 做最后收口。",
+					"这条 PR 已合并；%s 的 formal delivery closeout handoff 当前为 %s，继续围 merge / release receipt 做最后收口。%s",
 					targetAgent,
 					handoff.Status,
+					commentSuffix,
 				)
 			} else {
 				result.Summary = fmt.Sprintf(
-					"%s 已完成 governed closeout；系统已为 %s 自动创建 formal delivery closeout handoff，可直接进入最后一棒收口。",
+					"%s 已完成 governed closeout；系统已为 %s 自动创建 formal delivery closeout handoff，可直接进入最后一棒收口。%s",
 					defaultString(governedCloseout.FromAgent, "当前治理链"),
 					targetAgent,
+					commentSuffix,
 				)
 			}
 			return result
@@ -274,6 +281,18 @@ func findPullRequestDeliveryDelegationHandoff(
 		return handoff
 	}
 	return nil
+}
+
+func deliveryDelegationLatestCommentSuffix(handoff AgentHandoff) string {
+	if len(handoff.Messages) == 0 {
+		return ""
+	}
+	latest := handoff.Messages[len(handoff.Messages)-1]
+	body := strings.TrimSpace(latest.Body)
+	if latest.Kind != "comment" || body == "" {
+		return ""
+	}
+	return fmt.Sprintf(" 最新 formal comment：%s 说“%s”。", latest.AuthorName, body)
 }
 
 func pullRequestDeliveryDelegationTitle(pr PullRequest, targetAgent string) string {

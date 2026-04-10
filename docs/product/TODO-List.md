@@ -88,6 +88,8 @@
   - workspace governance 现在已支持 `formal-handoff / signal-only` delivery delegation automation policy；`signal-only` 下仍会派 PR delegation signal，但不会自动创建 delegated closeout handoff，且 `/settings` / PR detail / Mailbox 会读同一份 durable truth。
 - `GAP-41 / TKT-72`
   - workspace governance 现在还支持 `auto-complete` delivery delegation automation policy；final lane closeout 后 PR detail / related inbox 会直接写成 `delegation done`，而不是额外再起 delegated closeout handoff，且 `/settings` / Mailbox 继续读同一份 durable truth。
+- `GAP-42 / TKT-73`
+  - delegated closeout handoff 上的 source / target formal comment 现在也会同步回 PR detail `Delivery Delegation` summary 与 related inbox signal；多 Agent closeout 沟通不再只留在 Mailbox 局部 ledger。
 
 ### 当前必须先收的 GAP
 

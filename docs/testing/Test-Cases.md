@@ -820,3 +820,18 @@
   6. 打开 `/settings`，确认 delivery delegation policy 读回同一条 `auto complete` durable truth。
 - 预期结果: 更重的 auto-closeout 策略必须是显式可配置的产品行为；`auto-complete` 模式下系统直接把 delivery delegate 收口成 done，不额外物化 delegated closeout handoff，但 PR detail、Mailbox、related inbox 和 Settings 仍读同一份 workspace truth。
 - 业务结论: 2026 年 4 月 11 日 `TKT-72` 已把 `auto-complete` delivery delegation automation policy 接进 workspace governance durable config。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-auto-complete.md` 已记录 `auto-complete policy -> PR delegation done -> no auto-created handoff -> settings policy truth` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 与 `pnpm verify:web` 已锁住 policy persistence、PR detail auto-closeout summary、related inbox writeback 与 Mailbox no-auto-create contract，因此这条更重 auto-closeout policy 用例当前转为 `Pass`。
+
+## TC-062 Delegated Closeout Comment Sync
+
+- 业务目标: 确认 delegated closeout handoff 上的 source / target formal comment 不再只留在 Mailbox 局部 ledger，而是会同步回 PR detail `Delivery Delegation` summary 与 related inbox signal，形成真实可回放的跨 Agent closeout 沟通。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 formal delegated closeout handoff auto-create、delegation lifecycle sync，以及 source / target 都能在同一条 handoff 上补 formal comment 的 contract。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 `delivery-closeout` handoff。
+  2. 在 delegated handoff 上先以 source agent 身份补一条 formal comment。
+  3. 打开 `/pull-requests/pr-runtime-18`，确认 `Delivery Delegation` summary 与 related inbox signal 已同步出现这条 source comment，且 handoff 仍保持 `requested`。
+  4. 回到 delegated handoff，切换为 target agent 再补一条 formal comment。
+  5. 再次打开 `/pull-requests/pr-runtime-18`，确认 `Delivery Delegation` summary 与 related inbox signal 已更新为最新 target comment，且 handoff lifecycle 仍保持 `requested`，没有被 comment 意外改坏。
+- 预期结果: delegated closeout 上的 formal comment 必须进入同一份 delivery contract；PR detail 和 related inbox 都应显示最新 closeout comment，同时 comment sync 不能偷偷篡改 delegated handoff lifecycle。
+- 业务结论: 2026 年 4 月 11 日 `TKT-73` 已把 delegated closeout latest formal comment 接回 PR detail `Delivery Delegation` summary 与 related inbox signal。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-comment-sync.md` 已记录 `source comment -> PR detail sync -> target comment -> related inbox latest-comment sync` 的 Windows Chrome 有头 walkthrough，同时 `go test ./internal/store ./internal/api` 与 `pnpm verify:web` 已锁住 latest-comment contract 与 lifecycle preservation，因此这条跨 Agent closeout comment sync 用例当前转为 `Pass`。
