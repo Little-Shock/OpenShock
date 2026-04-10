@@ -302,7 +302,9 @@ try {
   const requestTitle = `把 runtime reviewer lane 交给 Claude ${Date.now()}`;
   const requestSummary =
     "请你正式接住 current reviewer lane，并把 blocked / complete 结果回写到 mailbox ledger。";
+  const sourceComment = "这里补充 exact-head reviewer context，先不要切状态。";
   const blockedNote = "等 reviewer comment sync 先收平。";
+  const targetComment = "我已经补看完 thread，但 blocker 还没解除。";
   const completeNote = "review notes 已吸收，后面可以回到 PR 收口。";
 
   browser = await launchChromiumSession(chromium);
@@ -337,6 +339,30 @@ try {
   );
   await capture(page, "mailbox-requested");
 
+  await page.getByTestId(`mailbox-note-${handoffId}`).fill(sourceComment);
+  await page.getByTestId(`mailbox-action-comment-${handoffId}`).click();
+  await waitForMailboxStatus(page, handoffId, "requested");
+
+  const stateAfterSourceComment = await readState(serverURL);
+  const sourceCommentedHandoff = stateAfterSourceComment.mailbox.find((item) => item.id === handoffId);
+  const sourceCommentedInbox = stateAfterSourceComment.inbox.find((item) => item.id === handoff.inboxItemId);
+  const sourceCommentedRoomMessages = stateAfterSourceComment.roomMessages["room-runtime"] ?? [];
+  const sourceCommentMessage = sourceCommentedHandoff?.messages?.at(-1);
+  assert(sourceCommentedHandoff?.status === "requested", "source comment should keep requested status");
+  assert(sourceCommentMessage?.kind === "comment", "source comment should append comment ledger entry");
+  assert(sourceCommentMessage?.authorName === "Codex Dockmaster", "source comment should be authored by source agent");
+  assert(
+    sourceCommentedInbox?.summary?.includes("正式评论"),
+    "source comment should update inbox summary with formal comment copy"
+  );
+  assert(
+    sourceCommentedRoomMessages.some(
+      (message) => message.speaker === "Codex Dockmaster" && message.message.includes("[Mailbox]")
+    ),
+    "source comment should write an agent-authored mailbox trace into the room"
+  );
+  await capture(page, "mailbox-comment-requested");
+
   await page.getByTestId(`mailbox-action-blocked-${handoffId}`).click();
   await page.getByText("blocked handoff requires a note").waitFor({ state: "visible" });
   await waitForMailboxStatus(page, handoffId, "requested");
@@ -352,6 +378,29 @@ try {
   assert(blockedHandoff?.lastNote === blockedNote, "blocked handoff should persist note");
   assert(blockedInbox?.kind === "blocked", "blocked handoff should escalate inbox item tone");
   await capture(page, "mailbox-blocked");
+
+  await page.getByTestId(`mailbox-note-${handoffId}`).fill(targetComment);
+  await page.getByTestId(`mailbox-comment-actor-${handoffId}`).selectOption("agent-claude-review-runner");
+  await page.getByTestId(`mailbox-action-comment-${handoffId}`).click();
+  await waitForMailboxStatus(page, handoffId, "blocked");
+
+  const stateAfterBlockedComment = await readState(serverURL);
+  const blockedCommentHandoff = stateAfterBlockedComment.mailbox.find((item) => item.id === handoffId);
+  const blockedCommentInbox = stateAfterBlockedComment.inbox.find((item) => item.id === handoff.inboxItemId);
+  const blockedCommentRoomMessages = stateAfterBlockedComment.roomMessages["room-runtime"] ?? [];
+  const blockedCommentMessage = blockedCommentHandoff?.messages?.at(-1);
+  assert(blockedCommentHandoff?.status === "blocked", "target comment should keep blocked status");
+  assert(blockedCommentHandoff?.lastNote === blockedNote, "target comment should preserve blocker note");
+  assert(blockedCommentMessage?.kind === "comment", "target comment should append comment ledger entry");
+  assert(blockedCommentMessage?.authorName === "Claude Review Runner", "target comment should be authored by target agent");
+  assert(blockedCommentInbox?.kind === "blocked", "target comment should preserve blocked inbox tone");
+  assert(
+    blockedCommentRoomMessages.some(
+      (message) => message.speaker === "Claude Review Runner" && message.message.includes("正式评论")
+    ),
+    "target comment should write a reviewer-authored room trace"
+  );
+  await capture(page, "mailbox-comment-blocked");
 
   await page.getByTestId(`mailbox-action-acknowledged-${handoffId}`).click();
   await waitForMailboxStatus(page, handoffId, "acknowledged");
@@ -412,16 +461,17 @@ try {
   await capture(page, "inbox-mailbox-ledger-focused");
 
   const report = [
-    "# 2026-04-09 Agent Mailbox / Handoff Contract Report",
+    "# 2026-04-11 Agent Mailbox / Formal Comment Contract Report",
     "",
-    `- Command: \`pnpm test:headed-agent-mailbox-handoff -- --report ${path.relative(projectRoot, reportPath)}\``,
+    `- Command: \`${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-agent-mailbox-handoff -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
     "",
     "## Results",
     "",
     "- `/mailbox` 现在可以从 room truth 正式创建 handoff，并把 request 同步写进 mailbox ledger、room system note 和 inbox back-link -> PASS",
+    "- adversarial path 已覆盖：source agent 可以在 handoff 仍是 `requested` 时补 formal comment，status 不会被误改，但 inbox / room / ledger 会同步露出这条正式通信 -> PASS",
     "- adversarial path 已覆盖：未填 note 直接 `blocked` 会被 server 拒绝，UI 继续停在 `requested`，不会把假 blocked 写进 live truth -> PASS",
-    "- 填写 blocker note 后，handoff 会前滚到 `blocked`，同一条 inbox item 也切到 blocked tone，note 保持在 ledger 上 -> PASS",
+    "- 填写 blocker note 后，handoff 会前滚到 `blocked`，同一条 inbox item 也切到 blocked tone，note 保持在 ledger 上；随后 target agent 继续 formal comment 时 blocker note 和 blocked tone 都不会被冲掉 -> PASS",
     "- `acknowledged` 后，`run_runtime_01.owner`、`room-runtime.topic.owner`、`OPS-18.owner` 会一起切到 `Claude Review Runner`，handoff 不再只是文案提示 -> PASS",
     "- Room context 现在会直接露出 mailbox backlink；`/inbox?handoffId=...` 也能聚焦同一条 handoff，Room / Inbox / Mailbox 三个面读的是同一份 lifecycle truth -> PASS",
     "- `completed` 后，closeout note 会同时回写到 inbox summary 和 room timeline，handoff ledger 落到 `completed`，生命周期可以完整回放 -> PASS",

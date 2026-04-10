@@ -9,19 +9,21 @@ import (
 )
 
 var (
-	ErrMailboxTitleRequired        = errors.New("handoff title is required")
-	ErrMailboxSummaryRequired      = errors.New("handoff summary is required")
-	ErrMailboxRoomNotFound         = errors.New("handoff room not found")
-	ErrMailboxFromAgentRequired    = errors.New("fromAgentId is required")
-	ErrMailboxToAgentRequired      = errors.New("toAgentId is required")
-	ErrMailboxAgentNotFound        = errors.New("handoff agent not found")
-	ErrMailboxSameAgent            = errors.New("handoff target must differ from source agent")
-	ErrMailboxHandoffNotFound      = errors.New("handoff not found")
-	ErrMailboxActionInvalid        = errors.New("handoff action is invalid")
-	ErrMailboxTransitionInvalid    = errors.New("handoff transition is invalid")
-	ErrMailboxBlockedNoteRequired  = errors.New("blocked handoff requires a note")
-	ErrMailboxActingAgentRequired  = errors.New("acting agent is required")
-	ErrMailboxActingAgentForbidden = errors.New("only the target agent can advance this handoff")
+	ErrMailboxTitleRequired         = errors.New("handoff title is required")
+	ErrMailboxSummaryRequired       = errors.New("handoff summary is required")
+	ErrMailboxRoomNotFound          = errors.New("handoff room not found")
+	ErrMailboxFromAgentRequired     = errors.New("fromAgentId is required")
+	ErrMailboxToAgentRequired       = errors.New("toAgentId is required")
+	ErrMailboxAgentNotFound         = errors.New("handoff agent not found")
+	ErrMailboxSameAgent             = errors.New("handoff target must differ from source agent")
+	ErrMailboxHandoffNotFound       = errors.New("handoff not found")
+	ErrMailboxActionInvalid         = errors.New("handoff action is invalid")
+	ErrMailboxTransitionInvalid     = errors.New("handoff transition is invalid")
+	ErrMailboxBlockedNoteRequired   = errors.New("blocked handoff requires a note")
+	ErrMailboxCommentRequired       = errors.New("formal comment requires a note")
+	ErrMailboxActingAgentRequired   = errors.New("acting agent is required")
+	ErrMailboxActingAgentForbidden  = errors.New("only the target agent can advance this handoff")
+	ErrMailboxCommentAgentForbidden = errors.New("only the source or target agent can comment on this handoff")
 )
 
 type MailboxCreateInput struct {
@@ -36,6 +38,19 @@ type MailboxUpdateInput struct {
 	Action        string
 	ActingAgentID string
 	Note          string
+}
+
+type handoffActionPresentationResult struct {
+	MessageKind      string
+	Status           string
+	Title            string
+	Summary          string
+	NextAction       string
+	RoomSpeaker      string
+	RoomRole         string
+	RoomTone         string
+	RoomMessage      string
+	PreserveLastNote bool
 }
 
 func (s *Store) Handoff(handoffID string) (AgentHandoff, bool) {
@@ -178,12 +193,12 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 		return State{}, AgentHandoff{}, ErrMailboxActingAgentRequired
 	}
 	handoff := &s.state.Mailbox[index]
-	if actingAgentID != handoff.ToAgentID {
-		return State{}, AgentHandoff{}, ErrMailboxActingAgentForbidden
-	}
 	note := strings.TrimSpace(input.Note)
 	if action == "blocked" && note == "" {
 		return State{}, AgentHandoff{}, ErrMailboxBlockedNoteRequired
+	}
+	if action == "comment" && note == "" {
+		return State{}, AgentHandoff{}, ErrMailboxCommentRequired
 	}
 	if !handoffStatusAllowsAction(handoff.Status, action) {
 		return State{}, AgentHandoff{}, ErrMailboxTransitionInvalid
@@ -197,23 +212,31 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 	if !ok {
 		return State{}, AgentHandoff{}, ErrMailboxAgentNotFound
 	}
+	if !handoffActionAllowsActor(*handoff, action, actingAgentID) {
+		if action == "comment" {
+			return State{}, AgentHandoff{}, ErrMailboxCommentAgentForbidden
+		}
+		return State{}, AgentHandoff{}, ErrMailboxActingAgentForbidden
+	}
 
 	now := time.Now()
 	nowClock := shortClock()
 	updatedAt := now.UTC().Format(time.RFC3339)
-	messageKind, status, title, summary, nextAction, tone := handoffActionPresentation(*handoff, action, note)
+	presentation := handoffActionPresentation(*handoff, actingAgent, action, note)
 
-	handoff.Status = status
+	handoff.Status = presentation.Status
 	handoff.UpdatedAt = updatedAt
-	handoff.LastAction = nextAction
-	handoff.LastNote = note
+	handoff.LastAction = presentation.NextAction
+	if !presentation.PreserveLastNote {
+		handoff.LastNote = note
+	}
 	handoff.Messages = append(handoff.Messages, MailboxMessage{
 		ID:         fmt.Sprintf("%s-msg-%d", handoff.ID, len(handoff.Messages)+1),
 		HandoffID:  handoff.ID,
-		Kind:       messageKind,
+		Kind:       presentation.MessageKind,
 		AuthorID:   actingAgent.ID,
 		AuthorName: actingAgent.Name,
-		Body:       defaultString(note, summary),
+		Body:       defaultString(note, presentation.Summary),
 		CreatedAt:  updatedAt,
 	})
 	if action == "acknowledged" {
@@ -221,19 +244,19 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 		s.state.Runs[runIndex].Owner = handoff.ToAgent
 		s.state.Issues[issueIndex].Owner = handoff.ToAgent
 	}
-	s.state.Runs[runIndex].NextAction = nextAction
+	s.state.Runs[runIndex].NextAction = presentation.NextAction
 	s.updateSessionLocked(handoff.RunID, func(item *Session) {
-		item.Summary = summary
-		item.ControlNote = nextAction
+		item.Summary = presentation.Summary
+		item.ControlNote = presentation.NextAction
 		item.UpdatedAt = updatedAt
 	})
-	s.updateHandoffInboxLocked(*handoff, title, summary, action, note)
+	s.updateHandoffInboxLocked(*handoff, presentation.Title, presentation.Summary)
 	s.appendRoomMessageLocked(handoff.RoomID, Message{
 		ID:      fmt.Sprintf("%s-system-%d", handoff.RoomID, now.UnixNano()),
-		Speaker: "System",
-		Role:    "system",
-		Tone:    tone,
-		Message: summary,
+		Speaker: presentation.RoomSpeaker,
+		Role:    presentation.RoomRole,
+		Tone:    presentation.RoomTone,
+		Message: presentation.RoomMessage,
 		Time:    nowClock,
 	})
 
@@ -243,7 +266,7 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 	return cloneState(s.state), *handoff, nil
 }
 
-func (s *Store) updateHandoffInboxLocked(handoff AgentHandoff, title, summary, action, note string) {
+func (s *Store) updateHandoffInboxLocked(handoff AgentHandoff, title, summary string) {
 	for index := range s.state.Inbox {
 		if s.state.Inbox[index].ID != handoff.InboxItemID {
 			continue
@@ -254,13 +277,13 @@ func (s *Store) updateHandoffInboxLocked(handoff AgentHandoff, title, summary, a
 		s.state.Inbox[index].Action = "打开 Mailbox"
 		s.state.Inbox[index].Href = mailboxInboxHref(handoff.ID, handoff.RoomID)
 		s.state.Inbox[index].HandoffID = handoff.ID
-		if action == "blocked" {
+		if handoff.Status == "blocked" {
 			s.state.Inbox[index].Kind = "blocked"
 		} else {
 			s.state.Inbox[index].Kind = "status"
 		}
-		if action == "completed" && note != "" {
-			s.state.Inbox[index].Summary = fmt.Sprintf("%s 收口备注：%s", summary, note)
+		if handoff.Status == "completed" && handoff.LastNote != "" {
+			s.state.Inbox[index].Summary = fmt.Sprintf("%s 收口备注：%s", summary, handoff.LastNote)
 		}
 		return
 	}
@@ -279,11 +302,20 @@ func normalizeHandoffAction(action string) string {
 		return "acknowledged"
 	case "blocked", "block":
 		return "blocked"
+	case "comment", "reply":
+		return "comment"
 	case "complete", "completed":
 		return "completed"
 	default:
 		return ""
 	}
+}
+
+func handoffActionAllowsActor(handoff AgentHandoff, action, actingAgentID string) bool {
+	if action == "comment" {
+		return actingAgentID == handoff.FromAgentID || actingAgentID == handoff.ToAgentID
+	}
+	return actingAgentID == handoff.ToAgentID
 }
 
 func handoffStatusAllowsAction(status, action string) bool {
@@ -292,6 +324,8 @@ func handoffStatusAllowsAction(status, action string) bool {
 		return status == "requested" || status == "blocked"
 	case "blocked":
 		return status == "requested" || status == "acknowledged"
+	case "comment":
+		return status == "requested" || status == "acknowledged" || status == "blocked" || status == "completed"
 	case "completed":
 		return status == "acknowledged"
 	default:
@@ -299,28 +333,73 @@ func handoffStatusAllowsAction(status, action string) bool {
 	}
 }
 
-func handoffActionPresentation(handoff AgentHandoff, action, note string) (messageKind, status, title, summary, nextAction, tone string) {
+func handoffActionPresentation(handoff AgentHandoff, actingAgent Agent, action, note string) handoffActionPresentationResult {
 	switch action {
 	case "acknowledged":
-		return "ack",
-			"acknowledged",
-			fmt.Sprintf("%s 已接住交接", handoff.ToAgent),
-			fmt.Sprintf("%s 已确认接住 %s 交来的 \"%s\"，当前 room owner 已切到 %s。", handoff.ToAgent, handoff.FromAgent, handoff.Title, handoff.ToAgent),
-			fmt.Sprintf("%s 已接手执行，后续在 Mailbox 中标记 complete 或 blocked。", handoff.ToAgent),
-			"system"
+		return handoffActionPresentationResult{
+			MessageKind: "ack",
+			Status:      "acknowledged",
+			Title:       fmt.Sprintf("%s 已接住交接", handoff.ToAgent),
+			Summary:     fmt.Sprintf("%s 已确认接住 %s 交来的 \"%s\"，当前 room owner 已切到 %s。", handoff.ToAgent, handoff.FromAgent, handoff.Title, handoff.ToAgent),
+			NextAction:  fmt.Sprintf("%s 已接手执行，后续在 Mailbox 中标记 complete 或 blocked。", handoff.ToAgent),
+			RoomSpeaker: "System",
+			RoomRole:    "system",
+			RoomTone:    "system",
+			RoomMessage: fmt.Sprintf("%s 已确认接住 %s 交来的 \"%s\"，当前 room owner 已切到 %s。", handoff.ToAgent, handoff.FromAgent, handoff.Title, handoff.ToAgent),
+		}
 	case "blocked":
-		return "blocked",
-			"blocked",
-			fmt.Sprintf("%s 阻塞了交接", handoff.ToAgent),
-			fmt.Sprintf("%s 暂时阻塞 \"%s\"：%s", handoff.ToAgent, handoff.Title, note),
-			fmt.Sprintf("%s 需要先解除 blocker，再重新 acknowledge 这次 handoff。", handoff.ToAgent),
-			"blocked"
+		return handoffActionPresentationResult{
+			MessageKind: "blocked",
+			Status:      "blocked",
+			Title:       fmt.Sprintf("%s 阻塞了交接", handoff.ToAgent),
+			Summary:     fmt.Sprintf("%s 暂时阻塞 \"%s\"：%s", handoff.ToAgent, handoff.Title, note),
+			NextAction:  fmt.Sprintf("%s 需要先解除 blocker，再重新 acknowledge 这次 handoff。", handoff.ToAgent),
+			RoomSpeaker: "System",
+			RoomRole:    "system",
+			RoomTone:    "blocked",
+			RoomMessage: fmt.Sprintf("%s 暂时阻塞 \"%s\"：%s", handoff.ToAgent, handoff.Title, note),
+		}
+	case "comment":
+		roomTone := "agent"
+		if handoff.Status == "blocked" {
+			roomTone = "blocked"
+		}
+		return handoffActionPresentationResult{
+			MessageKind:      "comment",
+			Status:           handoff.Status,
+			Title:            fmt.Sprintf("%s 补充了 formal comment", actingAgent.Name),
+			Summary:          fmt.Sprintf("%s 在 \"%s\" 上补充正式评论：%s", actingAgent.Name, handoff.Title, note),
+			NextAction:       handoffCommentNextAction(handoff, actingAgent.Name),
+			RoomSpeaker:      actingAgent.Name,
+			RoomRole:         "agent",
+			RoomTone:         roomTone,
+			RoomMessage:      fmt.Sprintf("[Mailbox] %s 在 \"%s\" 上补充正式评论：%s", actingAgent.Name, handoff.Title, note),
+			PreserveLastNote: true,
+		}
 	default:
-		return "complete",
-			"completed",
-			fmt.Sprintf("%s 已完成交接收口", handoff.ToAgent),
-			fmt.Sprintf("%s 已在 Mailbox 中把 \"%s\" 标记为 complete，room / inbox / mailbox 都能回放这次交接。", handoff.ToAgent, handoff.Title),
-			fmt.Sprintf("%s 已完成这次 handoff，可以继续推进 PR / response 收口。", handoff.ToAgent),
-			"system"
+		return handoffActionPresentationResult{
+			MessageKind: "complete",
+			Status:      "completed",
+			Title:       fmt.Sprintf("%s 已完成交接收口", handoff.ToAgent),
+			Summary:     fmt.Sprintf("%s 已在 Mailbox 中把 \"%s\" 标记为 complete，room / inbox / mailbox 都能回放这次交接。", handoff.ToAgent, handoff.Title),
+			NextAction:  fmt.Sprintf("%s 已完成这次 handoff，可以继续推进 PR / response 收口。", handoff.ToAgent),
+			RoomSpeaker: "System",
+			RoomRole:    "system",
+			RoomTone:    "system",
+			RoomMessage: fmt.Sprintf("%s 已在 Mailbox 中把 \"%s\" 标记为 complete，room / inbox / mailbox 都能回放这次交接。", handoff.ToAgent, handoff.Title),
+		}
+	}
+}
+
+func handoffCommentNextAction(handoff AgentHandoff, actorName string) string {
+	switch handoff.Status {
+	case "requested":
+		return fmt.Sprintf("%s 刚补充了正式评论；仍等待 %s acknowledge / block 这次交接。", actorName, handoff.ToAgent)
+	case "acknowledged":
+		return fmt.Sprintf("%s 刚补充了正式评论；%s 继续推进执行并在 Mailbox 中收口。", actorName, handoff.ToAgent)
+	case "blocked":
+		return fmt.Sprintf("%s 刚补充了正式评论；当前 blocker 仍需解除后再由 %s 重新 acknowledge。", actorName, handoff.ToAgent)
+	default:
+		return fmt.Sprintf("%s 刚补充了正式评论；这次 handoff 已完成，后续可以回放完整上下文。", actorName)
 	}
 }

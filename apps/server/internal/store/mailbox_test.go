@@ -176,6 +176,135 @@ func TestAdvanceHandoffRejectsInvalidActorAndMissingBlockNote(t *testing.T) {
 	}
 }
 
+func TestAdvanceHandoffCommentKeepsLifecycleAndAllowsBothEnds(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "把 reviewer lane 接过去",
+		Summary:     "请你正式接住 reviewer lane，并在需要时用 mailbox comment 对齐上下文。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+
+	requestedState, requestedComment, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "comment",
+		ActingAgentID: "agent-codex-dockmaster",
+		Note:          "补充 exact-head reviewer context，先别丢掉前序评论。",
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(comment from source) error = %v", err)
+	}
+	if requestedComment.Status != "requested" {
+		t.Fatalf("commented handoff = %#v, want requested status preserved", requestedComment)
+	}
+	if requestedComment.LastNote != "" {
+		t.Fatalf("commented handoff last note = %q, want lifecycle note untouched", requestedComment.LastNote)
+	}
+	lastRequestedMessage := requestedComment.Messages[len(requestedComment.Messages)-1]
+	if lastRequestedMessage.Kind != "comment" || lastRequestedMessage.AuthorID != "agent-codex-dockmaster" {
+		t.Fatalf("requested comment message = %#v, want source-authored comment", lastRequestedMessage)
+	}
+	requestedInbox := findInboxItemByHandoffID(requestedState.Inbox, handoff.ID)
+	if requestedInbox == nil || requestedInbox.Kind != "status" || !strings.Contains(requestedInbox.Summary, "正式评论") {
+		t.Fatalf("requested inbox item = %#v, want status tone with comment summary", requestedInbox)
+	}
+	requestedRoomMessages := requestedState.RoomMessages["room-runtime"]
+	if len(requestedRoomMessages) == 0 {
+		t.Fatalf("room messages missing after comment")
+	}
+	lastRequestedRoomMessage := requestedRoomMessages[len(requestedRoomMessages)-1]
+	if lastRequestedRoomMessage.Speaker != "Codex Dockmaster" ||
+		lastRequestedRoomMessage.Role != "agent" ||
+		!strings.Contains(lastRequestedRoomMessage.Message, "[Mailbox]") {
+		t.Fatalf("requested room message = %#v, want agent-authored mailbox comment trace", lastRequestedRoomMessage)
+	}
+
+	_, blocked, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "blocked",
+		ActingAgentID: "agent-claude-review-runner",
+		Note:          "还缺 review diff 上下文。",
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(blocked) error = %v", err)
+	}
+	if blocked.LastNote != "还缺 review diff 上下文。" {
+		t.Fatalf("blocked handoff = %#v, want blocker note retained", blocked)
+	}
+
+	blockedState, blockedComment, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "comment",
+		ActingAgentID: "agent-claude-review-runner",
+		Note:          "我已经补看了 reviewer thread，现在只差最终 diff。",
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(comment from target) error = %v", err)
+	}
+	if blockedComment.Status != "blocked" || blockedComment.LastNote != "还缺 review diff 上下文。" {
+		t.Fatalf("blocked comment handoff = %#v, want blocked status and blocker note preserved", blockedComment)
+	}
+	lastBlockedMessage := blockedComment.Messages[len(blockedComment.Messages)-1]
+	if lastBlockedMessage.Kind != "comment" || lastBlockedMessage.AuthorID != "agent-claude-review-runner" {
+		t.Fatalf("blocked comment message = %#v, want target-authored comment", lastBlockedMessage)
+	}
+	blockedInbox := findInboxItemByHandoffID(blockedState.Inbox, handoff.ID)
+	if blockedInbox == nil || blockedInbox.Kind != "blocked" {
+		t.Fatalf("blocked inbox item = %#v, want blocked tone preserved after comment", blockedInbox)
+	}
+	blockedRoomMessages := blockedState.RoomMessages["room-runtime"]
+	lastBlockedRoomMessage := blockedRoomMessages[len(blockedRoomMessages)-1]
+	if lastBlockedRoomMessage.Speaker != "Claude Review Runner" ||
+		lastBlockedRoomMessage.Tone != "blocked" ||
+		!strings.Contains(lastBlockedRoomMessage.Message, "正式评论") {
+		t.Fatalf("blocked room message = %#v, want blocked-tone agent comment trace", lastBlockedRoomMessage)
+	}
+}
+
+func TestAdvanceHandoffCommentRejectsEmptyNoteAndUnrelatedActor(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "补 comment guardrail",
+		Summary:     "验证 mailbox comment 的 note 与 actor 约束。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "comment",
+		ActingAgentID: "agent-codex-dockmaster",
+	}); err != ErrMailboxCommentRequired {
+		t.Fatalf("AdvanceHandoff(comment without note) error = %v, want %v", err, ErrMailboxCommentRequired)
+	}
+
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "comment",
+		ActingAgentID: "agent-memory-clerk",
+		Note:          "我是无关 agent，不应该被允许评论。",
+	}); err != ErrMailboxCommentAgentForbidden {
+		t.Fatalf("AdvanceHandoff(comment from unrelated actor) error = %v, want %v", err, ErrMailboxCommentAgentForbidden)
+	}
+}
+
 func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")

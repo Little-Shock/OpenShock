@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.6
+**版本:** 1.7
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -674,3 +674,17 @@
   3. 刷新浏览器并重启 server，再次检查 topology 和 lane label 是否保持一致。
 - 预期结果: team topology 会作为 durable workspace truth 被持久化；治理预览和治理回放都围同一份 lane / role / default-agent 配置前滚，不会退回固定模板。
 - 业务结论: 2026 年 4 月 11 日 `TKT-62` 已新增 `/settings` team topology editor、workspace durable topology persistence，以及 headed `pnpm test:headed-configurable-team-topology`。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-configurable-team-topology.md` 已记录 `/settings -> /setup -> /mailbox -> /agents` 的 exact replay，并验证 reload / server restart / second browser context 后仍保持同一份 Builder/Ops topology，因此这条可配置治理拓扑用例当前转为 `Pass`。
+
+## TC-052 Mailbox Formal Comment / Bilateral Handoff Communication
+
+- 业务目标: 确认 mailbox 不只支持 target agent 的单向状态推进，而是允许 source / target 围绕同一条 handoff 做正式评论，并保持 lifecycle truth 不被污染。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 `/v1/mailbox` create/update contract、Mailbox ledger UI 与 room / inbox backlink。
+- 测试步骤:
+  1. 创建一条 handoff，并在 `requested` 状态下由 source agent 提交 formal comment。
+  2. 直接尝试 `blocked` 且不填 note，确认 server fail-closed 拒绝。
+  3. 提交 blocker note 进入 `blocked`，再由 target agent 继续追加 formal comment。
+  4. 最后执行 `acknowledged -> completed`，检查 Room / Inbox / Mailbox 是否还能回放完整链路。
+- 预期结果: source / target 都能在同一条 handoff 上补 formal comment；comment 只追加 ledger / room trace / inbox summary，不会偷偷改 lifecycle status，也不会冲掉 blocked tone 或 closeout note。
+- 业务结论: 2026 年 4 月 11 日 `TKT-63` 已把 `comment` action 补进 `/v1/mailbox/:id`，并更新 `/mailbox`、`/inbox` 上的 mailbox surface。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md` 已记录 `create -> source comment -> blocked(note required probe) -> target comment -> acknowledged -> completed` 的 Windows Chrome 有头 exact replay，并验证 comment 会同步写入 handoff ledger、room agent trace 与 inbox summary，同时保留 blocked / complete 的 lifecycle 语义，因此这条双边正式通信用例当前转为 `Pass`。

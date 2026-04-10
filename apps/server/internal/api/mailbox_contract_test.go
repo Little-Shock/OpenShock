@@ -183,6 +183,94 @@ func TestMailboxRoutesAdvanceLifecycleAndGuardrails(t *testing.T) {
 	}
 }
 
+func TestMailboxRoutesCommentPersistsFormalRepliesWithoutChangingLifecycle(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	createResp, handoff := mustCreateMailboxHandoff(t, server.URL)
+	defer createResp.Body.Close()
+
+	emptyCommentResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "comment",
+		"actingAgentId": "agent-codex-dockmaster",
+	})
+	defer emptyCommentResp.Body.Close()
+	if emptyCommentResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST empty comment status = %d, want %d", emptyCommentResp.StatusCode, http.StatusBadRequest)
+	}
+
+	forbiddenCommentResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "comment",
+		"actingAgentId": "agent-memory-clerk",
+		"note":          "无关 agent 不应被允许插入 formal comment。",
+	})
+	defer forbiddenCommentResp.Body.Close()
+	if forbiddenCommentResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST unrelated comment status = %d, want %d", forbiddenCommentResp.StatusCode, http.StatusForbidden)
+	}
+
+	sourceCommentResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "comment",
+		"actingAgentId": "agent-codex-dockmaster",
+		"note":          "这里补充 reviewer context，先不要切状态。",
+	})
+	defer sourceCommentResp.Body.Close()
+	if sourceCommentResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST source comment status = %d, want %d", sourceCommentResp.StatusCode, http.StatusOK)
+	}
+
+	var sourceCommentPayload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+		State   store.State        `json:"state"`
+	}
+	decodeJSON(t, sourceCommentResp, &sourceCommentPayload)
+	if sourceCommentPayload.Handoff.Status != "requested" {
+		t.Fatalf("source comment handoff = %#v, want requested lifecycle preserved", sourceCommentPayload.Handoff)
+	}
+	sourceCommentMessage := sourceCommentPayload.Handoff.Messages[len(sourceCommentPayload.Handoff.Messages)-1]
+	if sourceCommentMessage.Kind != "comment" || sourceCommentMessage.AuthorName != "Codex Dockmaster" {
+		t.Fatalf("source comment message = %#v, want source-authored comment", sourceCommentMessage)
+	}
+	requestedInbox, ok := findInboxByID(t, sourceCommentPayload.State.Inbox, sourceCommentPayload.Handoff.InboxItemID)
+	if !ok || requestedInbox.Kind != "status" || !strings.Contains(requestedInbox.Summary, "正式评论") {
+		t.Fatalf("requested inbox item = %#v, want status inbox with comment summary", requestedInbox)
+	}
+
+	blockedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "blocked",
+		"actingAgentId": "agent-claude-review-runner",
+		"note":          "还缺 diff evidence。",
+	})
+	defer blockedResp.Body.Close()
+	if blockedResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST blocked status = %d, want %d", blockedResp.StatusCode, http.StatusOK)
+	}
+
+	targetCommentResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "comment",
+		"actingAgentId": "agent-claude-review-runner",
+		"note":          "我已经补看完 thread，但 blocker 还没解除。",
+	})
+	defer targetCommentResp.Body.Close()
+	if targetCommentResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST target comment status = %d, want %d", targetCommentResp.StatusCode, http.StatusOK)
+	}
+
+	var targetCommentPayload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+		State   store.State        `json:"state"`
+	}
+	decodeJSON(t, targetCommentResp, &targetCommentPayload)
+	if targetCommentPayload.Handoff.Status != "blocked" || targetCommentPayload.Handoff.LastNote != "还缺 diff evidence。" {
+		t.Fatalf("target comment handoff = %#v, want blocked lifecycle and blocker note preserved", targetCommentPayload.Handoff)
+	}
+	blockedInbox, ok := findInboxByID(t, targetCommentPayload.State.Inbox, targetCommentPayload.Handoff.InboxItemID)
+	if !ok || blockedInbox.Kind != "blocked" {
+		t.Fatalf("blocked inbox item = %#v, want blocked tone preserved after comment", blockedInbox)
+	}
+}
+
 func mustCreateMailboxHandoff(t *testing.T, serverURL string) (*http.Response, store.AgentHandoff) {
 	t.Helper()
 

@@ -123,13 +123,15 @@ func writeMailboxError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrMailboxActionInvalid),
 		errors.Is(err, store.ErrMailboxTransitionInvalid),
 		errors.Is(err, store.ErrMailboxBlockedNoteRequired),
+		errors.Is(err, store.ErrMailboxCommentRequired),
 		errors.Is(err, store.ErrMailboxActingAgentRequired):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	case errors.Is(err, store.ErrMailboxRoomNotFound),
 		errors.Is(err, store.ErrMailboxAgentNotFound),
 		errors.Is(err, store.ErrMailboxHandoffNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-	case errors.Is(err, store.ErrMailboxActingAgentForbidden):
+	case errors.Is(err, store.ErrMailboxActingAgentForbidden),
+		errors.Is(err, store.ErrMailboxCommentAgentForbidden):
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

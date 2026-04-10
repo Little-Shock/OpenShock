@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.8
+**版本:** 1.9
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作接下来重点从基础 SLA / routing / aggregation，前滚到更深的 agent-to-agent communication、delivery handoff 和默认角色治理。
+4. 多 Agent 协作接下来重点从基础 SLA / routing / aggregation 与 formal comment，前滚到默认角色治理、delivery handoff 和自动协作策略。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -687,6 +687,28 @@
   - `docs/testing/Test-Report-2026-04-11-windows-chrome-configurable-team-topology.md`
 - Checklist: `CHK-21` `CHK-22`
 - Test Cases: `TC-051`
+
+## TKT-63 Formal Mailbox Comment / Bilateral Handoff Communication
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 在现有 mailbox lifecycle 上补齐 source / target 双边 formal comment，让 handoff 不只剩 request / ack / blocked / complete 的单向状态推进。
+- 范围:
+  - `POST /v1/mailbox/:id` comment action
+  - source / target actor guard
+  - same-handoff ledger / inbox / room trace writeback
+  - blocked / completed lifecycle preservation
+- 依赖: `TKT-35` `TKT-62`
+- Done When:
+  - source agent 与 target agent 都能在同一条 handoff 上补 formal comment
+  - comment 不会偷偷改 lifecycle status，也不会冲掉 blocked / completed 的关键 note
+  - 至少有一条 Windows Chrome 有头证据覆盖 `create -> source comment -> blocked -> target comment -> ack -> complete`
+- 最新证据:
+  - `go test ./internal/store -run TestAdvanceHandoffComment`
+  - `go test ./internal/api -run TestMailboxRoutesComment`
+  - `docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-052`
 
 ---
 

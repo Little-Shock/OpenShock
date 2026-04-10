@@ -714,7 +714,7 @@ export type InboxItem = {
   handoffId?: string;
 };
 
-export type MailboxMessageKind = "request" | "ack" | "blocked" | "complete";
+export type MailboxMessageKind = "request" | "ack" | "blocked" | "comment" | "complete";
 
 export type MailboxMessage = {
   id: string;

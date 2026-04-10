@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.0
+**版本:** 1.1
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -68,17 +68,19 @@
   - PR delivery entry 已通过 Windows Chrome 有头链路收成单一判断入口；release gate、operator handoff note、delivery template 和 evidence bundle 已同页可复核。
 - `GAP-31 / TKT-62`
   - configurable team topology 现在已通过 Windows Chrome 有头链路收成正式产品面；`/settings -> /setup -> /mailbox -> /agents` 会共享同一份 durable lane / role / default-agent truth，并覆盖 reload / restart recovery。
+- `GAP-32 / TKT-63`
+  - mailbox 现在已补 source / target 双边 formal comment；`request -> source comment -> blocked -> target comment -> ack -> complete` 已有 Windows Chrome 有头链路，且 comment 不会冲掉 blocked tone 或 lifecycle note。
 
 ### 当前必须先收的 GAP
 
-当前需要优先收的已不再是“能不能配 topology”，而是 topology 之后更深的 agent-to-agent communication、默认角色治理和自动协作策略。
+当前需要优先收的已不再是“能不能配 topology”或“能不能正式对话”，而是 topology 之后的默认角色治理、自动协作策略和更重的跨 Agent delivery delegation。
 
 ---
 
 ## 四、推荐推进顺序
 
 1. 先围 `CHK-16` 的 shell density / high-frequency interaction polish 开票。
-2. 再围 `CHK-21` 的 deeper agent-to-agent communication / role governance / automation policy 开票。
+2. 再围 `CHK-21` 的 role governance / automation policy / delivery delegation 开票。
 3. 最后继续补 `CHK-10` `CHK-22` 的长期记忆整理、外部 provider 编排与 durable governance。
 
 ---

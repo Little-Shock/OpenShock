@@ -163,12 +163,14 @@ function handoffStatusTone(status: AgentHandoff["status"]) {
   }
 }
 
-function handoffActionLabel(action: "acknowledged" | "blocked" | "completed") {
+function handoffActionLabel(action: "acknowledged" | "blocked" | "comment" | "completed") {
   switch (action) {
     case "acknowledged":
       return "Acknowledge";
     case "blocked":
       return "Mark Blocked";
+    case "comment":
+      return "Formal Comment";
     default:
       return "Mark Complete";
   }
@@ -182,6 +184,8 @@ function mailboxMessageKindLabel(kind: AgentHandoff["messages"][number]["kind"])
       return "ack";
     case "blocked":
       return "blocked";
+    case "comment":
+      return "comment";
     default:
       return "complete";
   }
@@ -531,6 +535,7 @@ export function StitchInboxView() {
   const [composeSummary, setComposeSummary] = useState("请你接住 current exact-head reviewer lane，并在 mailbox 里显式回写 blocked / complete。");
   const [creatingHandoff, setCreatingHandoff] = useState(false);
   const [handoffNotes, setHandoffNotes] = useState<Record<string, string>>({});
+  const [mailboxCommentActors, setMailboxCommentActors] = useState<Record<string, string>>({});
   const sidebarChannels = loading || error ? [] : state.channels;
   const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = loading || error ? [] : state.machines;
@@ -692,21 +697,23 @@ export function StitchInboxView() {
 
   async function handleMailboxAction(
     handoff: AgentHandoff,
-    action: "acknowledged" | "blocked" | "completed"
+    action: "acknowledged" | "blocked" | "comment" | "completed"
   ) {
     if (mailboxBusyId) {
       return;
     }
     const note = handoffNotes[handoff.id]?.trim() ?? "";
+    const commentActorId =
+      mailboxCommentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
     setMailboxBusyId(handoff.id);
     setMailboxError(null);
     try {
       await updateHandoff(handoff.id, {
         action,
-        actingAgentId: handoff.toAgentId,
+        actingAgentId: action === "comment" ? commentActorId : handoff.toAgentId,
         note,
       });
-      if (note) {
+      if (action === "comment" && note) {
         setHandoffNotes((current) => ({ ...current, [handoff.id]: "" }));
       }
     } catch (handoffError) {
@@ -1244,14 +1251,16 @@ export function StitchInboxView() {
                         const run = findRunForHandoff(handoff);
                         const inboxItem = findInboxForHandoff(handoff);
                         const note = handoffNotes[handoff.id] ?? "";
+                        const commentActorId =
+                          mailboxCommentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
                         const availableActions =
                           handoff.status === "requested"
-                            ? (["acknowledged", "blocked"] as const)
+                            ? (["acknowledged", "blocked", "comment"] as const)
                             : handoff.status === "acknowledged"
-                              ? (["blocked", "completed"] as const)
+                              ? (["blocked", "comment", "completed"] as const)
                               : handoff.status === "blocked"
-                                ? (["acknowledged"] as const)
-                                : ([] as const);
+                                ? (["acknowledged", "comment"] as const)
+                                : (["comment"] as const);
 
                         return (
                           <article
@@ -1375,7 +1384,7 @@ export function StitchInboxView() {
                                 <textarea
                                   data-testid={`mailbox-note-${handoff.id}`}
                                   value={note}
-                                  disabled={!canManageMailbox || handoff.status === "completed"}
+                                  disabled={!canManageMailbox}
                                   onChange={(event) =>
                                     setHandoffNotes((current) => ({
                                       ...current,
@@ -1383,8 +1392,28 @@ export function StitchInboxView() {
                                     }))
                                   }
                                   className="mt-3 min-h-[112px] w-full border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60"
-                                  placeholder="blocked 时必须写 note；complete 时可以补收口备注。"
+                                  placeholder="comment / blocked 时必须写 note；complete 时可以补收口备注。"
                                 />
+                                <label className="mt-3 block">
+                                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                                    Comment As
+                                  </span>
+                                  <select
+                                    data-testid={`mailbox-comment-actor-${handoff.id}`}
+                                    value={commentActorId}
+                                    disabled={!canManageMailbox}
+                                    onChange={(event) =>
+                                      setMailboxCommentActors((current) => ({
+                                        ...current,
+                                        [handoff.id]: event.target.value,
+                                      }))
+                                    }
+                                    className="mt-2 w-full border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none disabled:opacity-60"
+                                  >
+                                    <option value={handoff.fromAgentId}>{handoff.fromAgent}</option>
+                                    <option value={handoff.toAgentId}>{handoff.toAgent}</option>
+                                  </select>
+                                </label>
                                 <div className="mt-3 flex flex-col gap-2">
                                   {availableActions.map((action) => (
                                     <button
@@ -1394,13 +1423,15 @@ export function StitchInboxView() {
                                       disabled={
                                         !canManageMailbox ||
                                         mailboxBusyId === handoff.id ||
-                                        (action === "blocked" && !note.trim())
+                                        ((action === "blocked" || action === "comment") && !note.trim())
                                       }
                                       onClick={() => void handleMailboxAction(handoff, action)}
                                       className={cn(
                                         "inline-flex min-h-[42px] items-center justify-center border-2 border-[var(--shock-ink)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-60",
                                         action === "blocked"
                                           ? "bg-[var(--shock-pink)] text-white"
+                                          : action === "comment"
+                                            ? "bg-white"
                                           : action === "completed"
                                             ? "bg-[var(--shock-yellow)]"
                                             : "bg-[var(--shock-lime)]"

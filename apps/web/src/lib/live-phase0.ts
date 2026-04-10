@@ -138,7 +138,7 @@ type CreateHandoffInput = {
 };
 
 type UpdateHandoffInput = {
-  action: "acknowledged" | "blocked" | "completed";
+  action: "acknowledged" | "blocked" | "comment" | "completed";
   actingAgentId: string;
   note?: string;
 };

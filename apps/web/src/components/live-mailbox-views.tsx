@@ -40,14 +40,31 @@ function handoffStatusTone(status: AgentHandoff["status"]) {
   }
 }
 
-function formatActionLabel(action: "acknowledged" | "blocked" | "completed") {
+function formatActionLabel(action: "acknowledged" | "blocked" | "comment" | "completed") {
   switch (action) {
     case "acknowledged":
       return "Acknowledge";
     case "blocked":
       return "Block";
+    case "comment":
+      return "Formal Comment";
     default:
       return "Complete";
+  }
+}
+
+function mailboxMessageKindLabel(kind: AgentHandoff["messages"][number]["kind"]) {
+  switch (kind) {
+    case "request":
+      return "request";
+    case "ack":
+      return "ack";
+    case "blocked":
+      return "blocked";
+    case "comment":
+      return "comment";
+    default:
+      return "complete";
   }
 }
 
@@ -128,6 +145,7 @@ export function LiveMailboxPageContent() {
   const [busyKey, setBusyKey] = useState("");
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [commentActors, setCommentActors] = useState<Record<string, string>>({});
   const highlightedHandoffId = searchParams.get("handoffId");
   const requestedRoomId = searchParams.get("roomId");
   const authSession = state.auth.session;
@@ -199,18 +217,24 @@ export function LiveMailboxPageContent() {
     }
   }
 
-  async function handleAdvance(handoff: AgentHandoff, action: "acknowledged" | "blocked" | "completed") {
+  async function handleAdvance(handoff: AgentHandoff, action: "acknowledged" | "blocked" | "comment" | "completed") {
     if (busyKey || !canMutate) {
       return;
     }
     setBusyKey(`${handoff.id}:${action}`);
     setActionError(null);
+    const note = notes[handoff.id]?.trim() || undefined;
+    const commentActorId =
+      commentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
     try {
       await updateHandoff(handoff.id, {
         action,
-        actingAgentId: handoff.toAgentId,
-        note: notes[handoff.id]?.trim() || undefined,
+        actingAgentId: action === "comment" ? commentActorId : handoff.toAgentId,
+        note,
       });
+      if (action === "comment" && note) {
+        setNotes((current) => ({ ...current, [handoff.id]: "" }));
+      }
     } catch (mutationError) {
       setActionError({
         id: handoff.id,
@@ -475,7 +499,7 @@ export function LiveMailboxPageContent() {
                 </p>
                 <h3 className="mt-2 font-display text-3xl font-bold">从 room 当前 owner 发起正式交接</h3>
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                  这一步会同时写入 mailbox ledger、room system note 和 inbox back-link。收到方之后只在同一条对象上 ack / block / complete。
+                  这一步会同时写入 mailbox ledger、room system note 和 inbox back-link。收到方之后只在同一条对象上 ack / block / comment / complete。
                 </p>
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
                   <label className="space-y-2">
@@ -592,6 +616,8 @@ export function LiveMailboxPageContent() {
                 const toAgentHref = `/agents/${handoff.toAgentId}`;
                 const active = highlightedHandoffId === handoff.id;
                 const noteValue = notes[handoff.id] ?? "";
+                const commentActorId =
+                  commentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
                 const canAck = handoff.status === "requested" || handoff.status === "blocked";
                 const canBlock = handoff.status === "requested" || handoff.status === "acknowledged";
                 const canComplete = handoff.status === "acknowledged";
@@ -676,7 +702,7 @@ export function LiveMailboxPageContent() {
                               >
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
-                                    {message.kind}
+                                    {mailboxMessageKindLabel(message.kind)}
                                   </span>
                                   <span className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
                                     {message.createdAt}
@@ -691,7 +717,7 @@ export function LiveMailboxPageContent() {
 
                         <div className="space-y-3">
                           <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
-                            <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">Transition Note</p>
+                            <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">Mailbox Note</p>
                             <textarea
                               data-testid={`mailbox-note-${handoff.id}`}
                               value={noteValue}
@@ -700,20 +726,46 @@ export function LiveMailboxPageContent() {
                               }
                               disabled={!canMutate}
                               className="mt-3 min-h-[120px] w-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3 text-sm"
-                              placeholder="blocked 时请写 blocker；complete 时可补收口说明。"
+                              placeholder="comment / blocked 时请写清楚上下文；complete 时可补收口说明。"
                             />
+                            <label className="mt-3 block space-y-2">
+                              <span className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
+                                Comment As
+                              </span>
+                              <select
+                                data-testid={`mailbox-comment-actor-${handoff.id}`}
+                                value={commentActorId}
+                                disabled={!canMutate}
+                                onChange={(event) =>
+                                  setCommentActors((current) => ({
+                                    ...current,
+                                    [handoff.id]: event.target.value,
+                                  }))
+                                }
+                                className="w-full border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm"
+                              >
+                                <option value={handoff.fromAgentId}>{handoff.fromAgent}</option>
+                                <option value={handoff.toAgentId}>{handoff.toAgent}</option>
+                              </select>
+                            </label>
                           </div>
                           <div className="grid gap-2">
                             {([
                               ["acknowledged", canAck],
                               ["blocked", canBlock],
+                              ["comment", true],
                               ["completed", canComplete],
                             ] as const).map(([action, enabled]) => (
                               <button
                                 key={action}
                                 type="button"
                                 data-testid={`mailbox-action-${action}-${handoff.id}`}
-                                disabled={!canMutate || !enabled || busyKey === `${handoff.id}:${action}`}
+                                disabled={
+                                  !canMutate ||
+                                  !enabled ||
+                                  busyKey === `${handoff.id}:${action}` ||
+                                  (action === "comment" && !noteValue.trim())
+                                }
                                 onClick={() => void handleAdvance(handoff, action)}
                                 className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] disabled:opacity-50"
                               >

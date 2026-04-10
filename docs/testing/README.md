@@ -8,6 +8,8 @@
   - `TKT-49` 的 Windows Chrome 有头报告，覆盖 PR detail 的 release gate、handoff note、delivery template、evidence bundle 与回链
 - [Test Report 2026-04-11 Windows Chrome PR Conversation / Usage Observability](./Test-Report-2026-04-11-windows-chrome-pr-conversation-usage-observability.md)
   - `TKT-39` `TKT-41` `TKT-48` 的 Windows Chrome 有头报告，覆盖 `webhook review/comment/thread -> Inbox -> Room PR tab -> PR Detail -> run/room/workspace usage`
+- [Test Report 2026-04-11 Windows Chrome Mailbox Formal Comment](./Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md)
+  - `TKT-63` 的 Windows Chrome 有头报告，覆盖 `create -> source comment -> blocked -> target comment -> acknowledged -> completed` 的双边 mailbox 通信链路
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)
@@ -145,6 +147,8 @@
   - 验证 workspace/member config 在 `/settings -> /access -> /setup` 的同源投影，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-configurable-team-topology`
   - 验证 `/settings` team topology editor、`/setup` `/mailbox` `/agents` 的同源治理投影，以及 reload / server restart / second browser context recovery
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-agent-mailbox-handoff -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md`
+  - 验证 mailbox 的 source / target formal comment、blocked note guard、blocked-tone preservation 与 lifecycle closeout 回放
 - `pnpm test:headed-onboarding-studio`
   - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-agent-profile-editor`
