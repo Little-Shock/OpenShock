@@ -735,7 +735,14 @@ export type InboxItem = {
   handoffId?: string;
 };
 
-export type MailboxMessageKind = "request" | "ack" | "blocked" | "comment" | "complete" | "parent-progress";
+export type MailboxMessageKind =
+  | "request"
+  | "ack"
+  | "blocked"
+  | "comment"
+  | "complete"
+  | "parent-progress"
+  | "response-progress";
 
 export type MailboxMessage = {
   id: string;

@@ -125,6 +125,8 @@ function mailboxMessageKindLabel(kind: AgentHandoff["messages"][number]["kind"])
       return "comment";
     case "parent-progress":
       return "parent progress";
+    case "response-progress":
+      return "response progress";
     default:
       return "complete";
   }

@@ -1635,6 +1635,20 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 		!strings.Contains(responseDetail.Delivery.Delegation.Summary, "重新 acknowledge final delivery closeout") {
 		t.Fatalf("response detail delegation = %#v, want blocked delegation with completed response handoff", responseDetail.Delivery.Delegation)
 	}
+	mailboxAfterResponseResp, err := http.Get(server.URL + "/v1/mailbox")
+	if err != nil {
+		t.Fatalf("GET /v1/mailbox after response completion error = %v", err)
+	}
+	defer mailboxAfterResponseResp.Body.Close()
+	if mailboxAfterResponseResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/mailbox after response completion status = %d, want %d", mailboxAfterResponseResp.StatusCode, http.StatusOK)
+	}
+	var mailboxAfterResponse []store.AgentHandoff
+	decodeJSON(t, mailboxAfterResponseResp, &mailboxAfterResponse)
+	parentAfterResponse := findMailboxHandoffByID(mailboxAfterResponse, delegatedHandoff.ID)
+	if parentAfterResponse == nil || !hasMailboxMessageContract(parentAfterResponse.Messages, "response-progress", "release receipt checklist 已补齐") {
+		t.Fatalf("parent handoff after response completion = %#v, want response-progress timeline entry", parentAfterResponse)
+	}
 
 	ackDelegatedResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+detail.Delivery.Delegation.HandoffID, map[string]string{
 		"action":        "acknowledged",
@@ -1689,6 +1703,9 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 		!strings.Contains(parentResume.LastAction, "第 1 轮") ||
 		!strings.Contains(parentResume.LastAction, "已重新 acknowledge final delivery closeout") {
 		t.Fatalf("parent handoff after delegated resume = %#v, want preserved response history in mailbox", parentResume)
+	}
+	if !hasMailboxMessageContract(parentResume.Messages, "response-progress", "release receipt checklist 已补齐") {
+		t.Fatalf("parent handoff messages after delegated resume = %#v, want preserved response-progress history", parentResume.Messages)
 	}
 
 	inboxResumeResp, err := http.Get(server.URL + "/v1/inbox")
@@ -1796,6 +1813,9 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 		!strings.Contains(parentCompleted.LastAction, "第 1 轮") ||
 		!strings.Contains(parentCompleted.LastAction, "也已完成 final delivery closeout") {
 		t.Fatalf("parent handoff after delegated completion = %#v, want preserved completion history in mailbox", parentCompleted)
+	}
+	if !hasMailboxMessageContract(parentCompleted.Messages, "response-progress", "release receipt checklist 已补齐") {
+		t.Fatalf("parent handoff messages after delegated completion = %#v, want preserved response-progress history", parentCompleted.Messages)
 	}
 
 	inboxCompletedResp, err := http.Get(server.URL + "/v1/inbox")
@@ -3621,6 +3641,18 @@ func findInboxItemByIDContract(inbox []store.InboxItem, inboxID string) *store.I
 		}
 	}
 	return nil
+}
+
+func hasMailboxMessageContract(items []store.MailboxMessage, kind, needle string) bool {
+	for _, item := range items {
+		if item.Kind != kind {
+			continue
+		}
+		if strings.Contains(item.Body, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func findSessionByID(state store.State, sessionID string) *store.Session {

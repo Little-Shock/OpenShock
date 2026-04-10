@@ -198,7 +198,7 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 		s.syncDeliveryDelegationInboxLocked(handoff.RoomID)
 	}
 	if handoff.Kind == handoffKindDeliveryReply {
-		s.syncDeliveryDelegationResponseParentLocked(*handoff, action, note, actingAgent.Name)
+		s.syncDeliveryDelegationResponseParentLocked(*handoff, action, note, actingAgent.ID, actingAgent.Name)
 	}
 	if handoff.Kind == handoffKindDeliveryCloseout {
 		s.syncDeliveryDelegationParentProgressIntoLatestResponseLocked(*handoff, action)
@@ -737,6 +737,7 @@ func (s *Store) syncDeliveryDelegationResponseParentLocked(
 	response AgentHandoff,
 	action string,
 	note string,
+	actorID string,
 	actorName string,
 ) {
 	if response.Kind != handoffKindDeliveryReply || strings.TrimSpace(response.ParentHandoffID) == "" {
@@ -767,6 +768,14 @@ func (s *Store) syncDeliveryDelegationResponseParentLocked(
 
 	parent.LastAction = progressAction
 	parent.UpdatedAt = response.UpdatedAt
+	appendMailboxMessageLocked(
+		parent,
+		"response-progress",
+		actorID,
+		defaultString(strings.TrimSpace(actorName), "System"),
+		progressAction,
+		response.UpdatedAt,
+	)
 
 	if runIndex := s.findRunByIDLocked(parent.RunID); runIndex != -1 {
 		s.state.Runs[runIndex].NextAction = progressAction

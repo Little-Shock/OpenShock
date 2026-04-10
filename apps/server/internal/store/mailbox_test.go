@@ -1257,6 +1257,9 @@ func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T
 		!strings.Contains(parentCommentInbox.Summary, sourceComment) {
 		t.Fatalf("parent inbox after response comment = %#v, want blocker + response progress summary", parentCommentInbox)
 	}
+	if !hasMailboxMessage(parentAfterComment.Messages, "response-progress", sourceComment) {
+		t.Fatalf("parent handoff messages after response comment = %#v, want response-progress ledger entry", parentAfterComment.Messages)
+	}
 	commentRun := findRunByID(commentState, delegatedHandoff.RunID)
 	if commentRun == nil || !strings.Contains(commentRun.NextAction, sourceComment) {
 		t.Fatalf("comment run = %#v, want response progress next action", commentRun)
@@ -1291,6 +1294,9 @@ func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T
 		!strings.Contains(parentCompleteInbox.Summary, blockNote) ||
 		!strings.Contains(parentCompleteInbox.Summary, completeNote) {
 		t.Fatalf("parent inbox after response completion = %#v, want completion progress summary", parentCompleteInbox)
+	}
+	if !hasMailboxMessage(parentAfterComplete.Messages, "response-progress", completeNote) {
+		t.Fatalf("parent handoff messages after response completion = %#v, want response-progress completion entry", parentAfterComplete.Messages)
 	}
 	completedRun := findRunByID(completedState, delegatedHandoff.RunID)
 	if completedRun == nil || !strings.Contains(completedRun.NextAction, completeNote) {
@@ -1361,6 +1367,9 @@ func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T
 		!strings.Contains(parentAfterFinalCloseout.LastAction, "第 1 轮") ||
 		!strings.Contains(parentAfterFinalCloseout.LastAction, "也已完成 final delivery closeout") {
 		t.Fatalf("parent handoff after final closeout = %#v, want reply-history-aware completion action", parentAfterFinalCloseout)
+	}
+	if !hasMailboxMessage(parentAfterFinalCloseout.Messages, "response-progress", completeNote) {
+		t.Fatalf("parent handoff messages after final closeout = %#v, want preserved response-progress history", parentAfterFinalCloseout.Messages)
 	}
 	parentCompletedInbox := findInboxItemByID(parentCompleteState.Inbox, delegatedHandoff.InboxItemID)
 	if parentCompletedInbox == nil ||
@@ -1708,6 +1717,18 @@ func findHandoffByID(items []AgentHandoff, handoffID string) *AgentHandoff {
 		}
 	}
 	return nil
+}
+
+func hasMailboxMessage(items []MailboxMessage, kind, needle string) bool {
+	for _, item := range items {
+		if item.Kind != kind {
+			continue
+		}
+		if strings.Contains(item.Body, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func findIssueByID(state State, issueID string) *Issue {

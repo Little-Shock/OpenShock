@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.15
+**版本:** 1.16
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync，以及 child response timeline sync；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync，以及 parent response timeline sync；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -1171,6 +1171,29 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-child-timeline -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-child-timeline.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-073`
+
+## TKT-85 Delegated Parent Response Timeline
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 child `delivery-reply` 的 formal comment / response complete 正式写进 parent delegated closeout 自己的 lifecycle messages，而不是只更新 parent `lastAction`。target 深看 parent ledger 时，必须能回放 child response 轨迹。
+- 范围:
+  - parent delegated closeout `response-progress` timeline messages
+  - parent ledger preservation after parent resume/completion
+  - live mailbox + inbox mailbox timeline label alignment
+  - Windows Chrome walkthrough for parent timeline replay
+- 依赖: `TKT-77` `TKT-82` `TKT-84`
+- Done When:
+  - child `delivery-reply` 的 formal comment 和 response complete 会在 parent delegated closeout 自己的 lifecycle messages 里显式新增 `response-progress` entry
+  - parent 自己后续重新 `acknowledged` / `completed` 后，这些 child-response timeline entry 仍会保留在 parent ledger 历史里
+  - target 打开 parent card 时，可以直接从 parent timeline 回放 child response 的关键节点，而不只依赖一条会被后续动作覆盖的 `lastAction`
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api -run "TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff|TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail|TestDelegatedResponseProgressReflectsInParentMailboxAndRun|TestDelegatedResponseCommentsReflectInPullRequestDetail" -count=1'`
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api -count=1'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-parent-timeline -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-timeline.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-074`
 
 ---
 

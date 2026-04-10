@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.13
+**版本:** 1.14
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1010,3 +1010,19 @@
   6. 回到 PR detail，确认 `Delivery Delegation` summary 同时保留最新 formal comment 与 parent completed 的 follow-through 文案。
 - 预期结果: child `delivery-reply` 的时间线不应在 parent 恢复后仍停留在“response 自己完成了”的阶段；它必须把 parent 后续接住和收口也记录进去。同时，这些后续 lifecycle event 不能把 latest formal comment 从 PR detail 摘要里洗掉。
 - 业务结论: 2026 年 4 月 11 日 `TKT-84` 已把 child-ledger timeline sync 与 latest-comment preservation 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-child-timeline.md` 已记录 `latest comment preserved -> parent acknowledged timeline -> parent completed timeline` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web`、`go test ./internal/store ./internal/api -count=1`、定向回归 `go test ./internal/store ./internal/api -run "TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff|TestDelegatedCloseoutCommentsSyncToDeliveryContract|TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail|TestDelegatedResponseCommentsReflectInPullRequestDetail" -count=1` 与对抗性回归 `go test ./internal/store -run "TestAdvanceHandoffLifecycleUpdatesOwnerAndLedger|TestDeliveryDelegationResponseRetryAttemptsSyncBackToPullRequest" -count=1` 已锁住 child `parent-progress` ledger、comment preservation、普通 handoff 与 retry truth 不被污染，因此这条 child timeline / comment preservation 用例当前转为 `Pass`。
+
+## TC-074 Delegated Parent Response Timeline
+
+- 业务目标: 确认 parent delegated closeout 自己的 lifecycle messages 不只记录 parent 本人的动作；child `delivery-reply` 的 formal comment 和 response complete 也必须显式进入 parent ledger 的 timeline。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 delegated closeout formal handoff、blocked 后自动创建的 `delivery-reply` response handoff，以及 parent / child mailbox orchestration 主链已成立。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 delegated closeout handoff，并让 parent 进入 `blocked`。
+  2. 在 child `delivery-reply` 上补一条 formal comment。
+  3. 打开 parent delegated closeout card，确认 lifecycle messages 新增一条 `response progress` entry，内容包含这条 child comment。
+  4. 完成 child `delivery-reply`，再次打开 parent card，确认 lifecycle messages 再新增一条 `response progress` completion entry。
+  5. 让 parent delegated closeout 自己重新 `acknowledged` 并最终 `completed`。
+  6. 再次打开 parent card，确认前面的 `response progress` timeline entry 仍然保留，没有被 parent 自己后续的新动作洗掉。
+- 预期结果: parent delegated closeout 不应只靠一条不断被覆盖的 `lastAction` 来表达 child response 的进度。target 深看 parent ledger 历史时，必须能直接回放 child comment / child complete 这些关键节点。
+- 业务结论: 2026 年 4 月 11 日 `TKT-85` 已把 parent-ledger response timeline 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-timeline.md` 已记录 `child comment -> parent response-progress timeline -> child complete -> parent follow-through history preserved` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web`、`go test ./internal/store ./internal/api -count=1` 与定向回归 `go test ./internal/store ./internal/api -run "TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff|TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail|TestDelegatedResponseProgressReflectsInParentMailboxAndRun|TestDelegatedResponseCommentsReflectInPullRequestDetail" -count=1` 已锁住 parent `response-progress` ledger、既有 summary contract 与 parent/child lifecycle 不被污染，因此这条 parent timeline visibility 用例当前转为 `Pass`。
