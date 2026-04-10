@@ -1105,6 +1105,48 @@ func TestDeliveryDelegationResponseCommentsSyncBackToPullRequest(t *testing.T) {
 	if targetCommentInbox == nil || !strings.Contains(targetCommentInbox.Summary, targetComment) {
 		t.Fatalf("target-comment inbox = %#v, want latest target response comment summary", targetCommentState.Inbox)
 	}
+
+	if _, _, err := s.AdvanceHandoff(responseHandoffID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: delegatedHandoff.FromAgentID,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged response handoff) error = %v", err)
+	}
+	if _, _, err := s.AdvanceHandoff(responseHandoffID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: delegatedHandoff.FromAgentID,
+		Note:          "release receipt checklist 已补齐，请重新接住 delivery closeout。",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(completed response handoff) error = %v", err)
+	}
+
+	responseCompletedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || !strings.Contains(responseCompletedDetail.Delivery.Delegation.Summary, targetComment) {
+		t.Fatalf("response-completed delegation = %#v, want latest target response comment preserved", responseCompletedDetail.Delivery.Delegation)
+	}
+
+	if _, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged delegated closeout after response comments) error = %v", err)
+	}
+	resumedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || !strings.Contains(resumedDetail.Delivery.Delegation.Summary, targetComment) {
+		t.Fatalf("resumed delegation = %#v, want latest target response comment preserved after parent resume", resumedDetail.Delivery.Delegation)
+	}
+
+	if _, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+		Note:          "最终 delivery closeout 已收口，等待 merge / release receipt。",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(completed delegated closeout after response comments) error = %v", err)
+	}
+	completedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || !strings.Contains(completedDetail.Delivery.Delegation.Summary, targetComment) {
+		t.Fatalf("completed delegation = %#v, want latest target response comment preserved after parent completion", completedDetail.Delivery.Delegation)
+	}
 }
 
 func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T) {
@@ -1281,6 +1323,11 @@ func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T
 		!strings.Contains(responseAfterResume.LastAction, "第 1 轮") {
 		t.Fatalf("response handoff after resume = %#v, want child ledger synced to parent acknowledged", responseAfterResume)
 	}
+	responseResumeLastMessage := responseAfterResume.Messages[len(responseAfterResume.Messages)-1]
+	if responseResumeLastMessage.Kind != "parent-progress" ||
+		!strings.Contains(responseResumeLastMessage.Body, "已重新 acknowledge 主 closeout") {
+		t.Fatalf("response handoff messages after resume = %#v, want latest parent-progress ledger entry", responseAfterResume.Messages)
+	}
 	responseResumeInbox := findInboxItemByID(reAckState.Inbox, responseAfterResume.InboxItemID)
 	if responseResumeInbox == nil ||
 		!strings.Contains(responseResumeInbox.Summary, "已重新 acknowledge 主 closeout") ||
@@ -1326,6 +1373,11 @@ func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T
 		!strings.Contains(responseAfterFinalCloseout.LastAction, "已完成主 closeout") ||
 		!strings.Contains(responseAfterFinalCloseout.LastAction, "第 1 轮") {
 		t.Fatalf("response handoff after final closeout = %#v, want child ledger synced to parent completion", responseAfterFinalCloseout)
+	}
+	responseCompletedLastMessage := responseAfterFinalCloseout.Messages[len(responseAfterFinalCloseout.Messages)-1]
+	if responseCompletedLastMessage.Kind != "parent-progress" ||
+		!strings.Contains(responseCompletedLastMessage.Body, "已完成主 closeout") {
+		t.Fatalf("response handoff messages after final closeout = %#v, want completion parent-progress ledger entry", responseAfterFinalCloseout.Messages)
 	}
 	responseCompletedInbox := findInboxItemByID(parentCompleteState.Inbox, responseAfterFinalCloseout.InboxItemID)
 	if responseCompletedInbox == nil ||

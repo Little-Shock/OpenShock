@@ -151,15 +151,14 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 	if !presentation.PreserveLastNote {
 		handoff.LastNote = note
 	}
-	handoff.Messages = append(handoff.Messages, MailboxMessage{
-		ID:         fmt.Sprintf("%s-msg-%d", handoff.ID, len(handoff.Messages)+1),
-		HandoffID:  handoff.ID,
-		Kind:       presentation.MessageKind,
-		AuthorID:   actingAgent.ID,
-		AuthorName: actingAgent.Name,
-		Body:       defaultString(note, presentation.Summary),
-		CreatedAt:  updatedAt,
-	})
+	appendMailboxMessageLocked(
+		handoff,
+		presentation.MessageKind,
+		actingAgent.ID,
+		actingAgent.Name,
+		defaultString(note, presentation.Summary),
+		updatedAt,
+	)
 	if action == "acknowledged" && handoff.Kind != handoffKindDeliveryCloseout && handoff.Kind != handoffKindDeliveryReply {
 		s.state.Rooms[roomIndex].Topic.Owner = handoff.ToAgent
 		s.state.Runs[runIndex].Owner = handoff.ToAgent
@@ -872,6 +871,14 @@ func (s *Store) syncDeliveryDelegationParentProgressIntoLatestResponseLocked(par
 
 	response.LastAction = progressAction
 	response.UpdatedAt = parent.UpdatedAt
+	appendMailboxMessageLocked(
+		response,
+		"parent-progress",
+		parent.ToAgentID,
+		defaultString(strings.TrimSpace(parent.ToAgent), "System"),
+		progressAction,
+		parent.UpdatedAt,
+	)
 	s.updateDeliveryDelegationResponseChildInboxProgressLocked(*response, progressAction)
 }
 
@@ -913,4 +920,16 @@ func (s *Store) updateDeliveryDelegationResponseChildInboxProgressLocked(respons
 		s.state.Inbox[index].Summary = progressAction
 		return
 	}
+}
+
+func appendMailboxMessageLocked(handoff *AgentHandoff, kind, authorID, authorName, body, createdAt string) {
+	handoff.Messages = append(handoff.Messages, MailboxMessage{
+		ID:         fmt.Sprintf("%s-msg-%d", handoff.ID, len(handoff.Messages)+1),
+		HandoffID:  handoff.ID,
+		Kind:       kind,
+		AuthorID:   authorID,
+		AuthorName: authorName,
+		Body:       body,
+		CreatedAt:  createdAt,
+	})
 }

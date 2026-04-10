@@ -123,6 +123,8 @@ function mailboxMessageKindLabel(kind: AgentHandoff["messages"][number]["kind"])
       return "blocked";
     case "comment":
       return "comment";
+    case "parent-progress":
+      return "parent progress";
     default:
       return "complete";
   }

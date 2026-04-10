@@ -298,15 +298,15 @@ func findPullRequestDeliveryDelegationHandoff(
 }
 
 func deliveryDelegationLatestCommentSuffix(handoff AgentHandoff) string {
-	if len(handoff.Messages) == 0 {
-		return ""
+	for index := len(handoff.Messages) - 1; index >= 0; index -= 1 {
+		message := handoff.Messages[index]
+		body := strings.TrimSpace(message.Body)
+		if message.Kind != "comment" || body == "" {
+			continue
+		}
+		return fmt.Sprintf(" 最新 formal comment：%s 说“%s”。", message.AuthorName, body)
 	}
-	latest := handoff.Messages[len(handoff.Messages)-1]
-	body := strings.TrimSpace(latest.Body)
-	if latest.Kind != "comment" || body == "" {
-		return ""
-	}
-	return fmt.Sprintf(" 最新 formal comment：%s 说“%s”。", latest.AuthorName, body)
+	return ""
 }
 
 func findLatestDeliveryDelegationResponseHandoff(mailbox []AgentHandoff, parentHandoffID string) (*AgentHandoff, int) {

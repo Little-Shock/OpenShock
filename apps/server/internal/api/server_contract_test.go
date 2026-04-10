@@ -1713,6 +1713,11 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 		!strings.Contains(responseResume.LastAction, "第 1 轮") {
 		t.Fatalf("response handoff after delegated resume = %#v, want child ledger synced to parent acknowledged", responseResume)
 	}
+	responseResumeLastMessage := responseResume.Messages[len(responseResume.Messages)-1]
+	if responseResumeLastMessage.Kind != "parent-progress" ||
+		!strings.Contains(responseResumeLastMessage.Body, "已重新 acknowledge 主 closeout") {
+		t.Fatalf("response handoff messages after delegated resume = %#v, want latest parent-progress ledger entry", responseResume.Messages)
+	}
 	responseResumeInbox := findInboxItemByIDContract(inboxAfterResume, responseResume.InboxItemID)
 	if responseResumeInbox == nil ||
 		!strings.Contains(responseResumeInbox.Summary, "已重新 acknowledge 主 closeout") ||
@@ -1814,6 +1819,11 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 		!strings.Contains(responseCompleted.LastAction, "已完成主 closeout") ||
 		!strings.Contains(responseCompleted.LastAction, "第 1 轮") {
 		t.Fatalf("response handoff after delegated completion = %#v, want child ledger synced to parent completion", responseCompleted)
+	}
+	responseCompletedLastMessage := responseCompleted.Messages[len(responseCompleted.Messages)-1]
+	if responseCompletedLastMessage.Kind != "parent-progress" ||
+		!strings.Contains(responseCompletedLastMessage.Body, "已完成主 closeout") {
+		t.Fatalf("response handoff messages after delegated completion = %#v, want completion parent-progress ledger entry", responseCompleted.Messages)
 	}
 	responseCompletedInbox := findInboxItemByIDContract(inboxAfterParentComplete, responseCompleted.InboxItemID)
 	if responseCompletedInbox == nil ||
@@ -2205,6 +2215,86 @@ func TestDelegatedResponseCommentsReflectInPullRequestDetail(t *testing.T) {
 	if targetDetail.Delivery.Delegation.ResponseHandoffStatus != "requested" ||
 		!strings.Contains(targetDetail.Delivery.Delegation.Summary, targetComment) {
 		t.Fatalf("target comment delegation = %#v, want latest target response comment sync", targetDetail.Delivery.Delegation)
+	}
+
+	responseAckResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+responseHandoffID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": delegatedHandoff.FromAgentID,
+	})
+	defer responseAckResp.Body.Close()
+	if responseAckResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST response acknowledged status = %d, want %d", responseAckResp.StatusCode, http.StatusOK)
+	}
+
+	responseCompleteResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+responseHandoffID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": delegatedHandoff.FromAgentID,
+		"note":          "release receipt checklist 已补齐，请重新接住 delivery closeout。",
+	})
+	defer responseCompleteResp.Body.Close()
+	if responseCompleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST response completed status = %d, want %d", responseCompleteResp.StatusCode, http.StatusOK)
+	}
+
+	responseCompletedDetailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET response completed detail error = %v", err)
+	}
+	defer responseCompletedDetailResp.Body.Close()
+	if responseCompletedDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET response completed detail status = %d, want %d", responseCompletedDetailResp.StatusCode, http.StatusOK)
+	}
+	var responseCompletedDetail store.PullRequestDetail
+	decodeJSON(t, responseCompletedDetailResp, &responseCompletedDetail)
+	if !strings.Contains(responseCompletedDetail.Delivery.Delegation.Summary, targetComment) {
+		t.Fatalf("response completed delegation = %#v, want latest target response comment preserved", responseCompletedDetail.Delivery.Delegation)
+	}
+
+	parentAckResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+delegatedHandoff.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": delegatedHandoff.ToAgentID,
+	})
+	defer parentAckResp.Body.Close()
+	if parentAckResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST parent acknowledged after response comment status = %d, want %d", parentAckResp.StatusCode, http.StatusOK)
+	}
+
+	parentResumedDetailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET parent resumed detail error = %v", err)
+	}
+	defer parentResumedDetailResp.Body.Close()
+	if parentResumedDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET parent resumed detail status = %d, want %d", parentResumedDetailResp.StatusCode, http.StatusOK)
+	}
+	var parentResumedDetail store.PullRequestDetail
+	decodeJSON(t, parentResumedDetailResp, &parentResumedDetail)
+	if !strings.Contains(parentResumedDetail.Delivery.Delegation.Summary, targetComment) {
+		t.Fatalf("parent resumed delegation = %#v, want latest target response comment preserved", parentResumedDetail.Delivery.Delegation)
+	}
+
+	parentCompleteResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+delegatedHandoff.ID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": delegatedHandoff.ToAgentID,
+		"note":          "最终 delivery closeout 已收口，等待 merge / release receipt。",
+	})
+	defer parentCompleteResp.Body.Close()
+	if parentCompleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST parent completed after response comment status = %d, want %d", parentCompleteResp.StatusCode, http.StatusOK)
+	}
+
+	parentCompletedDetailResp, err := http.Get(server.URL + "/v1/pull-requests/pr-runtime-18/detail")
+	if err != nil {
+		t.Fatalf("GET parent completed detail error = %v", err)
+	}
+	defer parentCompletedDetailResp.Body.Close()
+	if parentCompletedDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET parent completed detail status = %d, want %d", parentCompletedDetailResp.StatusCode, http.StatusOK)
+	}
+	var parentCompletedDetail store.PullRequestDetail
+	decodeJSON(t, parentCompletedDetailResp, &parentCompletedDetail)
+	if !strings.Contains(parentCompletedDetail.Delivery.Delegation.Summary, targetComment) {
+		t.Fatalf("parent completed delegation = %#v, want latest target response comment preserved", parentCompletedDetail.Delivery.Delegation)
 	}
 }
 

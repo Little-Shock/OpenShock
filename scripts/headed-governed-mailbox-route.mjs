@@ -33,6 +33,7 @@ const supportedModes = new Set([
   "delegate-parent-status",
   "delegate-parent-context",
   "delegate-child-context",
+  "delegate-child-timeline",
   "delegate-policy",
   "delegate-auto-complete",
   "delegate-comment-sync",
@@ -64,6 +65,7 @@ const evidencePrefixByMode = {
   "delegate-parent-status": "openshock-tkt81-governed-route-",
   "delegate-parent-context": "openshock-tkt82-governed-route-",
   "delegate-child-context": "openshock-tkt83-governed-route-",
+  "delegate-child-timeline": "openshock-tkt84-governed-route-",
 };
 const evidencePrefix = evidencePrefixByMode[runMode] ?? evidencePrefixByMode.route;
 const evidenceRoot =
@@ -387,6 +389,7 @@ try {
     runMode === "delegate-parent-status" ||
     runMode === "delegate-parent-context" ||
     runMode === "delegate-child-context" ||
+    runMode === "delegate-child-timeline" ||
     runMode === "delegate-policy" ||
     runMode === "delegate-auto-complete" ||
     runMode === "delegate-comment-sync" ||
@@ -494,6 +497,7 @@ try {
     runMode === "delegate-parent-status" ||
     runMode === "delegate-parent-context" ||
     runMode === "delegate-child-context" ||
+    runMode === "delegate-child-timeline" ||
     runMode === "delegate-policy" ||
     runMode === "delegate-auto-complete" ||
     runMode === "delegate-comment-sync" ||
@@ -548,6 +552,7 @@ try {
 	      runMode === "delegate-parent-status" ||
 	      runMode === "delegate-parent-context" ||
 	      runMode === "delegate-child-context" ||
+	      runMode === "delegate-child-timeline" ||
 	      runMode === "delegate-policy" ||
       runMode === "delegate-auto-complete" ||
       runMode === "delegate-comment-sync" ||
@@ -625,6 +630,7 @@ try {
         runMode === "delegate-parent-status" ||
         runMode === "delegate-parent-context" ||
         runMode === "delegate-child-context" ||
+        runMode === "delegate-child-timeline" ||
         runMode === "delegate-policy" ||
         runMode === "delegate-auto-complete" ||
         runMode === "delegate-comment-sync" ||
@@ -742,6 +748,7 @@ try {
           runMode === "delegate-parent-status" ||
           runMode === "delegate-parent-context" ||
           runMode === "delegate-child-context" ||
+          runMode === "delegate-child-timeline" ||
           runMode === "delegate-lifecycle"
         ) {
           assert(
@@ -1893,6 +1900,144 @@ try {
               "- parent 最终 `completed` 后，child card 的正文会继续前滚到 parent completed，而不是卡在旧的“等待 parent 重新 acknowledge”文案 -> PASS",
               "- source agent 现在在 child ledger 里既能看到 parent status，也能看到 parent follow-through 的正文真相，跨 Agent closeout 不再只靠 chip 猜测 -> PASS",
             ];
+          } else if (runMode === "delegate-child-timeline") {
+            const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
+            const targetComment = "target 回应：等 owner 签字后我会重新接住。";
+            await page.getByTestId(`mailbox-note-${delegatedHandoffID}`).fill(blockNote);
+            await page.getByTestId(`mailbox-action-blocked-${delegatedHandoffID}`).click();
+            await page.waitForFunction(
+              (handoffId) =>
+                document.querySelector(`[data-testid="mailbox-status-${handoffId}"]`)?.textContent?.trim() === "blocked",
+              delegatedHandoffID
+            );
+
+            const responseHandoffHref = await page.getByTestId(`mailbox-response-link-${delegatedHandoffID}`).getAttribute("href");
+            assert(responseHandoffHref, "parent delegated closeout should expose response handoff link");
+            const responseURL = new URL(responseHandoffHref, webURL);
+            const responseHandoffID = responseURL.searchParams.get("handoffId");
+            assert(responseHandoffID, "response link should include handoffId");
+            const responseHandoff = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === responseHandoffID,
+              "response handoff missing during child-timeline run"
+            );
+
+            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "comment",
+                actingAgentId: responseHandoff.fromAgentId,
+                note: targetComment,
+              }),
+            });
+            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "acknowledged",
+                actingAgentId: responseHandoff.toAgentId,
+              }),
+            });
+            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "completed",
+                actingAgentId: responseHandoff.toAgentId,
+                note: "release receipt checklist 已补齐，请重新接住 delivery closeout。",
+              }),
+            });
+
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.waitForFunction(
+              (comment) => document.querySelector('[data-testid="delivery-delegation-summary"]')?.textContent?.includes(comment),
+              targetComment
+            );
+            await capture(page, "delivery-response-child-timeline-comment-preserved");
+
+            await page.goto(responseURL.toString(), { waitUntil: "load" });
+            await page.getByTestId(`mailbox-card-${responseHandoffID}`).waitFor({ state: "visible" });
+            const timelineMessages = page.locator(`[data-testid^="mailbox-message-${responseHandoffID}-"]`);
+            assert(
+              ((await page.getByTestId(`mailbox-card-${responseHandoffID}`).textContent()) ?? "").includes(targetComment),
+              "child response ledger should still show the latest formal comment before parent follow-through"
+            );
+
+            const delegatedParent = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === delegatedHandoffID,
+              "delegated closeout missing during child-timeline resume"
+            );
+            await fetchJSON(`${serverURL}/v1/mailbox/${delegatedHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "acknowledged",
+                actingAgentId: delegatedParent.toAgentId,
+              }),
+            });
+            await page.reload({ waitUntil: "load" });
+            assert(
+              (await readText(page, `mailbox-last-action-${responseHandoffID}`)).includes("已重新 acknowledge 主 closeout"),
+              "child response last action should sync to parent acknowledged during timeline replay"
+            );
+            const resumedTimelineMessage = (await timelineMessages.last().textContent())?.trim() ?? "";
+            assert(
+              resumedTimelineMessage.includes("parent progress") &&
+                resumedTimelineMessage.includes("已重新 acknowledge 主 closeout"),
+              "child response lifecycle messages should append parent-progress entry after parent resume"
+            );
+            await capture(page, "delivery-response-child-timeline-acknowledged");
+
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.waitForFunction(
+              ({ comment, marker }) => {
+                const text = document.querySelector('[data-testid="delivery-delegation-summary"]')?.textContent ?? "";
+                return text.includes(comment) && text.includes(marker);
+              },
+              { comment: targetComment, marker: "已重新 acknowledge final delivery closeout" }
+            );
+            await capture(page, "delivery-response-child-timeline-pr-acknowledged");
+
+            const resumedParent = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === delegatedHandoffID,
+              "delegated closeout missing during child-timeline completion"
+            );
+            await fetchJSON(`${serverURL}/v1/mailbox/${delegatedHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "completed",
+                actingAgentId: resumedParent.toAgentId,
+                note: "最终 delivery closeout 已收口，等待 merge / release receipt。",
+              }),
+            });
+            await page.goto(responseURL.toString(), { waitUntil: "load" });
+            await page.getByTestId(`mailbox-card-${responseHandoffID}`).waitFor({ state: "visible" });
+            const completedTimelineMessage = (await timelineMessages.last().textContent())?.trim() ?? "";
+            assert(
+              completedTimelineMessage.includes("parent progress") && completedTimelineMessage.includes("已完成主 closeout"),
+              "child response lifecycle messages should append parent-progress completion entry"
+            );
+            await capture(page, "delivery-response-child-timeline-completed");
+
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.waitForFunction(
+              ({ comment, marker }) => {
+                const text = document.querySelector('[data-testid="delivery-delegation-summary"]')?.textContent ?? "";
+                return text.includes(comment) && text.includes(marker);
+              },
+              { comment: targetComment, marker: "也已完成 final delivery closeout" }
+            );
+            await capture(page, "delivery-response-child-timeline-pr-completed");
+
+            reportTitle = "# 2026-04-11 Governed Mailbox Delegate Child Timeline Report";
+            reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-child-timeline -- --report ${path.relative(projectRoot, reportPath)}`;
+            reportTicket = "TKT-84";
+            reportTestCase = "TC-073";
+            reportScope = "delivery-reply lifecycle messages parent-progress sync with latest formal comment preservation";
+            resultLines = [
+              "- child `delivery-reply` 的 lifecycle messages 现在会显式追加 parent-progress 事件；source 打开 child ledger 历史时，不再像 parent 后续从未接住过这条 closeout -> PASS",
+              "- parent 重新 `acknowledged` / 最终 `completed` 后，child ledger 的最新 timeline entry 会分别写出这两次 follow-through，而不是只改卡片摘要 -> PASS",
+              "- PR detail `Delivery Delegation` summary 在这些后续 lifecycle 之后仍会保留最新 formal comment，说明 parent-progress 事件没有把 comment truth 洗掉 -> PASS",
+            ];
           } else if (runMode === "delegate-lifecycle") {
             const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
             await page.getByTestId(`mailbox-note-${delegatedHandoffID}`).fill(blockNote);
@@ -1996,6 +2141,8 @@ try {
           // report metadata already set inside the delegate-parent-context branch above
         } else if (runMode === "delegate-child-context") {
           // report metadata already set inside the delegate-child-context branch above
+        } else if (runMode === "delegate-child-timeline") {
+          // report metadata already set inside the delegate-child-timeline branch above
         } else if (runMode === "delegate-lifecycle") {
           reportTitle = "# 2026-04-11 Governed Mailbox Delegate Lifecycle Sync Report";
           reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-lifecycle -- --report ${path.relative(projectRoot, reportPath)}`;
