@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.15
+**版本:** 1.16
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1042,3 +1042,18 @@
   6. 检查 Room 历史，确认 comment sync 和 completion sync 两条记录同时保留。
 - 预期结果: Room 不应继续是这条跨 Agent closeout 尾链的盲区。即使人类不打开 Mailbox / PR / Inbox，也必须能在 Room 主消息流里直接回放 child response 已经回推 parent 的关键轨迹。
 - 业务结论: 2026 年 4 月 11 日 `TKT-86` 已把 room main-trace sync 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-room-trace.md` 已记录 `child comment -> room [Mailbox Sync] -> child complete -> room [Mailbox Sync] preserved` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web`、`go test ./internal/store ./internal/api -run "TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff|TestDelegatedResponseProgressReflectsInParentMailboxAndRun" -count=1` 与对抗性回归 `go test ./internal/store -run "TestAdvanceHandoffLifecycleUpdatesOwnerAndLedger|TestDeliveryDelegationResponseRetryAttemptsSyncBackToPullRequest" -count=1` 已锁住 room trace writeback、既有 parent/inbox/run sync 以及普通 handoff / retry truth 不被污染，因此这条 room-trace sync 用例当前转为 `Pass`。
+
+## TC-076 Delegated Blocked Response Room Trace
+
+- 业务目标: 确认 child `delivery-reply` 如果自己再次 `blocked`，Room 主消息流也会同步追加正式 `[Mailbox Sync]` 阻塞叙事，而不是只把这层二次阻塞留在 Mailbox / PR / Inbox。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 delegated closeout formal handoff、blocked 后自动创建的 `delivery-reply` response handoff，以及 child response progress 已能回写 parent handoff / inbox / run / room。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 delegated closeout handoff，并让 parent 进入 `blocked`。
+  2. 打开 child `delivery-reply`，由 source agent 再次提交 `blocked`，写入新的 blocker note。
+  3. 打开 `/rooms/room-runtime?tab=chat`，确认 Room 主消息流新增一条 `[Mailbox Sync]` 阻塞叙事。
+  4. 检查这条 room trace，确认同时包含 child blocker note 与“当前也 blocked / 主 closeout 继续保持 blocked”的 parent guidance。
+  5. 刷新 Room 历史，确认这条 blocked-response trace 没有丢失。
+- 预期结果: Room 不应只显示 unblock 链顺利推进时的乐观同步。即使 child response 本身再次受阻，房间里也必须能直接看到这条正式阻塞真相，便于人类快速判断下一步该由谁继续接力或介入。
+- 业务结论: 2026 年 4 月 11 日 `TKT-87` 已把 blocked child-response room trace 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-room-trace-blocked.md` 已记录 `parent blocked -> child response blocked -> room [Mailbox Sync] blocked trace` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web`、`go test ./internal/store ./internal/api -run "TestDeliveryDelegationBlockedResponseSyncsIntoParentRoomTrace|TestDelegatedBlockedResponseReflectsInParentRoomTrace" -count=1` 与对抗性回归 `go test ./internal/store -run "TestAdvanceHandoffLifecycleUpdatesOwnerAndLedger|TestDeliveryDelegationResponseRetryAttemptsSyncBackToPullRequest" -count=1` 已锁住 blocked response 的 room trace、parent/inbox/run sync 与普通 handoff / retry truth 不被污染，因此这条 blocked-response room trace 用例当前转为 `Pass`。

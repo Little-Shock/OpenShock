@@ -56,6 +56,8 @@
   - `TKT-85` 的 Windows Chrome 有头报告，覆盖 parent delegated closeout 上的 `response-progress` lifecycle messages 与 child response history preservation
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Room Trace](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-room-trace.md)
   - `TKT-86` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 对 parent closeout 的 `[Mailbox Sync]` room main-trace writeback 与 comment/completion history preservation
+- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Blocked Room Trace](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-room-trace-blocked.md)
+  - `TKT-87` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 再次 `blocked` 后回写到 Room `[Mailbox Sync]` 主消息流的二次阻塞叙事
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)

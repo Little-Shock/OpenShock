@@ -776,7 +776,7 @@ func (s *Store) syncDeliveryDelegationResponseParentLocked(
 		progressAction,
 		response.UpdatedAt,
 	)
-	if action == "comment" || action == "completed" {
+	if action == "comment" || action == "blocked" || action == "completed" {
 		s.appendDeliveryDelegationResponseParentRoomTraceLocked(*parent, progressAction)
 	}
 

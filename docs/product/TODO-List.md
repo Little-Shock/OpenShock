@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.9
+**版本:** 1.10
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -116,6 +116,8 @@
   - child `delivery-reply` 的 formal comment / response complete 现在也会显式写进 parent delegated closeout 自己的 lifecycle messages，成为 `response-progress` timeline；target 深看 parent ledger 时，不再只剩一条不断被覆盖的 `lastAction`。
 - `GAP-55 / TKT-86`
   - child `delivery-reply` 对 parent delegated closeout 的关键 progress 现在也会显式写进 Room 主消息流，作为 `[Mailbox Sync]` orchestration 叙事；房间里不再只靠 Mailbox / PR / Inbox 才知道 parent closeout 已收到这轮 unblock response。
+- `GAP-56 / TKT-87`
+  - child `delivery-reply` 如果自己再次 `blocked`，Room 主消息流现在也会显式追加 `[Mailbox Sync]` 阻塞叙事；房间里可以直接看到 unblock 链本身又被卡住，不再只剩乐观的 comment / completion sync。
 
 ### 当前必须先收的 GAP
 

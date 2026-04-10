@@ -1416,6 +1416,135 @@ func TestDeliveryDelegationResponseProgressSyncsBackToParentHandoff(t *testing.T
 	}
 }
 
+func TestDeliveryDelegationBlockedResponseSyncsIntoParentRoomTrace(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	topology := defaultWorkspaceGovernanceTopology("dev-team")
+	topology[len(topology)-1].DefaultAgent = "Memory Clerk"
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Governance: &WorkspaceGovernanceConfigInput{
+			TeamTopology: topology,
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "把 developer lane 正式交给 reviewer",
+		Summary:     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-claude-review-runner",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged reviewer) error = %v", err)
+	}
+	reviewerClosedState, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:                "completed",
+		ActingAgentID:         "agent-claude-review-runner",
+		Note:                  "review 已完成，直接把 QA 接力拉起来。",
+		ContinueGovernedRoute: true,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed reviewer continue) error = %v", err)
+	}
+	qaHandoff := reviewerClosedState.Mailbox[0]
+
+	if _, _, err := s.AdvanceHandoff(qaHandoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-memory-clerk",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged qa) error = %v", err)
+	}
+	if _, _, err := s.AdvanceHandoff(qaHandoff.ID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: "agent-memory-clerk",
+		Note:          "QA 验证完成，可以进入 PR delivery closeout。",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(completed qa) error = %v", err)
+	}
+
+	initialDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || initialDetail.Delivery.Delegation.HandoffID == "" {
+		t.Fatalf("PullRequestDetail() = %#v, want auto-created delivery delegation handoff", initialDetail)
+	}
+	delegatedHandoffID := initialDetail.Delivery.Delegation.HandoffID
+	delegatedHandoff := findHandoffByID(s.Snapshot().Mailbox, delegatedHandoffID)
+	if delegatedHandoff == nil {
+		t.Fatalf("delegated handoff %q missing from mailbox", delegatedHandoffID)
+	}
+
+	blockNote := "需要先确认最终 release 文案，再继续 closeout。"
+	if _, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "blocked",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+		Note:          blockNote,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(blocked delegated closeout) error = %v", err)
+	}
+	blockedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || blockedDetail.Delivery.Delegation.ResponseHandoffID == "" {
+		t.Fatalf("blocked detail = %#v, want response handoff", blockedDetail)
+	}
+	responseHandoffID := blockedDetail.Delivery.Delegation.ResponseHandoffID
+
+	responseBlockNote := "source 也卡住了：release owner 还没签字。"
+	blockedResponseState, _, err := s.AdvanceHandoff(responseHandoffID, MailboxUpdateInput{
+		Action:        "blocked",
+		ActingAgentID: delegatedHandoff.FromAgentID,
+		Note:          responseBlockNote,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(blocked response handoff) error = %v", err)
+	}
+
+	responseBlockedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok ||
+		responseBlockedDetail.Delivery.Delegation.ResponseHandoffStatus != "blocked" ||
+		!strings.Contains(responseBlockedDetail.Delivery.Delegation.Summary, responseBlockNote) {
+		t.Fatalf("response-blocked delegation = %#v, want blocked response summary preserved", responseBlockedDetail.Delivery.Delegation)
+	}
+	parentAfterBlockedResponse := findHandoffByID(blockedResponseState.Mailbox, delegatedHandoffID)
+	if parentAfterBlockedResponse == nil ||
+		parentAfterBlockedResponse.Status != "blocked" ||
+		parentAfterBlockedResponse.LastNote != blockNote ||
+		!strings.Contains(parentAfterBlockedResponse.LastAction, responseBlockNote) ||
+		!strings.Contains(parentAfterBlockedResponse.LastAction, "当前也 blocked") {
+		t.Fatalf("parent handoff after blocked response = %#v, want blocked response guidance", parentAfterBlockedResponse)
+	}
+	parentBlockedResponseInbox := findInboxItemByID(blockedResponseState.Inbox, delegatedHandoff.InboxItemID)
+	if parentBlockedResponseInbox == nil ||
+		!strings.Contains(parentBlockedResponseInbox.Summary, blockNote) ||
+		!strings.Contains(parentBlockedResponseInbox.Summary, responseBlockNote) {
+		t.Fatalf("parent inbox after blocked response = %#v, want blocker + blocked response summary", parentBlockedResponseInbox)
+	}
+	if !hasMailboxMessage(parentAfterBlockedResponse.Messages, "response-progress", responseBlockNote) {
+		t.Fatalf("parent handoff messages after blocked response = %#v, want response-progress blocked entry", parentAfterBlockedResponse.Messages)
+	}
+	if !roomMessagesContain(blockedResponseState.RoomMessages["room-runtime"], "[Mailbox Sync]") ||
+		!roomMessagesContain(blockedResponseState.RoomMessages["room-runtime"], responseBlockNote) ||
+		!roomMessagesContain(blockedResponseState.RoomMessages["room-runtime"], "当前也 blocked") {
+		t.Fatalf("room messages after blocked response = %#v, want room sync trace for blocked child response", blockedResponseState.RoomMessages["room-runtime"])
+	}
+	blockedRun := findRunByID(blockedResponseState, delegatedHandoff.RunID)
+	if blockedRun == nil || !strings.Contains(blockedRun.NextAction, responseBlockNote) {
+		t.Fatalf("blocked run = %#v, want blocked response next action", blockedRun)
+	}
+}
+
 func TestDeliveryDelegationSignalOnlyPolicySkipsAutoCreatedHandoff(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "state.json")
