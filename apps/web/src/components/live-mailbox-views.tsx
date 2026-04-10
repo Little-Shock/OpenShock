@@ -877,6 +877,11 @@ export function LiveMailboxPageContent() {
                 const responseHandoff =
                   handoff.kind === "delivery-closeout" ? findLatestMailboxReply(state.mailbox, handoff.id) : null;
                 const responseAttemptCount = responseHandoff ? countMailboxReplies(state.mailbox, handoff.id) : 0;
+                const canResumeParent =
+                  handoff.kind === "delivery-reply" &&
+                  parentHandoff &&
+                  handoff.status === "completed" &&
+                  parentHandoff.status === "blocked";
                 const noteValue = notes[handoff.id] ?? "";
                 const commentActorId =
                   commentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
@@ -1004,6 +1009,17 @@ export function LiveMailboxPageContent() {
                           >
                             Open Unblock Reply
                           </Link>
+                        ) : null}
+                        {canResumeParent ? (
+                          <button
+                            type="button"
+                            data-testid={`mailbox-action-resume-parent-${handoff.id}`}
+                            disabled={!canMutate || busyKey === `${parentHandoff.id}:acknowledged`}
+                            onClick={() => void handleAdvance(parentHandoff, "acknowledged")}
+                            className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-50"
+                          >
+                            {busyKey === `${parentHandoff.id}:acknowledged` ? "Working..." : "Resume Parent Closeout"}
+                          </button>
                         ) : null}
                       </div>
 

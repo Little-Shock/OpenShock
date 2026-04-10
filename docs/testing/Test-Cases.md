@@ -915,3 +915,19 @@
   6. 确认父级 card 已更新为 `reply completed`，同时主 closeout handoff 仍保持 `blocked`。
 - 预期结果: delegated closeout 的 parent/child orchestration 必须在 Mailbox 壳层直接可见；父级 card 应显示 reply status / attempt，child card 应能回跳 parent，且 response 完成后主 closeout 仍保持 blocked，直到 target 显式 re-ack。
 - 业务结论: 2026 年 4 月 11 日 `TKT-78` 已把 delegated closeout / `delivery-reply` 的 parent-child mailbox visibility 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md` 已记录 `parent reply chip -> child parent link -> response complete -> parent reply completed` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web` 与 `go test ./internal/store ./internal/api` 已锁住 mailbox parent/child deep-link、reply attempt 可见性与主 blocked lifecycle 保持，因此这条 mailbox visibility 用例当前转为 `Pass`。
+
+## TC-068 Delegated Response Resume Parent Action
+
+- 业务目标: 确认 child `delivery-reply` 完成后，blocker agent 可以直接从 child ledger 一键恢复父级 delegated closeout，而不是再手动回找 parent card。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 delegated closeout formal handoff、blocked 后自动创建的 `delivery-reply` response handoff，以及 mailbox parent/child visibility contract。
+- 测试步骤:
+  1. 使用 `formal-handoff` policy，让 final QA closeout 自动生成 delegated closeout handoff。
+  2. 由 target 将 delegated closeout 标记为 `blocked`，并完成 child `delivery-reply`。
+  3. 打开 child `delivery-reply` card，确认它出现 `Resume Parent Closeout`。
+  4. 点击 `Resume Parent Closeout`。
+  5. 回到父级 delegated closeout card，确认它已切到 `acknowledged`。
+  6. 确认父级 card 仍保留 `reply completed`，没有把 child response evidence 冲掉。
+- 预期结果: child `delivery-reply` 不应只是“说明下一步是什么”；它必须能直接触发 parent closeout 的恢复动作。恢复后父级应进入 `acknowledged`，同时继续保留 child response 的完成证据。
+- 业务结论: 2026 年 4 月 11 日 `TKT-79` 已把 child-ledger `Resume Parent Closeout` 收成正式产品能力。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume-parent.md` 已记录 `response completed -> child resume button -> parent acknowledged` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web` 与 `go test ./internal/store ./internal/api` 已锁住 child-ledger resume action、parent re-ack orchestration 与 response chip preservation，因此这条跨 Agent resume action 用例当前转为 `Pass`。

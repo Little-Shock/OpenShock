@@ -1478,6 +1478,11 @@ export function StitchInboxView() {
                         const responseHandoff =
                           handoff.kind === "delivery-closeout" ? findLatestMailboxReply(mailboxHandoffs, handoff.id) : null;
                         const responseAttemptCount = responseHandoff ? countMailboxReplies(mailboxHandoffs, handoff.id) : 0;
+                        const canResumeParent =
+                          handoff.kind === "delivery-reply" &&
+                          parentHandoff &&
+                          handoff.status === "completed" &&
+                          parentHandoff.status === "blocked";
                         const note = handoffNotes[handoff.id] ?? "";
                         const commentActorId =
                           mailboxCommentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
@@ -1624,6 +1629,17 @@ export function StitchInboxView() {
                                   >
                                     Open Unblock Reply
                                   </Link>
+                                ) : null}
+                                {canResumeParent ? (
+                                  <button
+                                    type="button"
+                                    data-testid={`mailbox-action-resume-parent-${handoff.id}`}
+                                    disabled={!canManageMailbox || mailboxBusyId === parentHandoff.id}
+                                    onClick={() => void handleMailboxAction(parentHandoff, "acknowledged")}
+                                    className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] disabled:opacity-60"
+                                  >
+                                    {mailboxBusyId === parentHandoff.id ? "working..." : "Resume Parent Closeout"}
+                                  </button>
                                 ) : null}
                               </div>
 

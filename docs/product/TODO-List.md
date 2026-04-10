@@ -100,10 +100,12 @@
   - `delivery-reply` 的 response progress 现在还会回推父级 delegated closeout handoff、其 handoff inbox signal 与 run/session next action；target 在 Mailbox / Inbox 也能直接看到“source 已回复，轮到你 re-ack”的 resume signal。
 - `GAP-47 / TKT-78`
   - Mailbox 现在也会直接显示 delegated closeout parent/child orchestration；父级 closeout card 会出现 `reply requested / reply completed` 与 `reply xN`，child `delivery-reply` card 则可一跳回 parent closeout。
+- `GAP-48 / TKT-79`
+  - child `delivery-reply` 完成后，Mailbox 现在还可以直接 `Resume Parent Closeout`；blocker agent 可从 child ledger 一键把父级 delegated closeout 重新接住，而不是手动回找 parent card。
 
 ### 当前必须先收的 GAP
 
-当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”“能不能自动创建 delegated closeout handoff”“能不能把 delegated lifecycle / latest comment 回写到 PR contract”“能不能把 delivery delegation policy 做成正式配置 / auto-complete 策略”“能不能把 blocked delegated closeout 物化成 response handoff”“能不能把第二轮 retry attempt 显式收成产品真相”“能不能把 response handoff formal comment 回写到统一 delivery contract”“能不能把 response progress 回推父级 delegated handoff / inbox / next action”或“能不能把 parent/child response orchestration 直接做进 mailbox shell”，而是更深的 agent-to-agent communication 与跨 Agent closeout 编排。
+当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”“能不能自动创建 delegated closeout handoff”“能不能把 delegated lifecycle / latest comment 回写到 PR contract”“能不能把 delivery delegation policy 做成正式配置 / auto-complete 策略”“能不能把 blocked delegated closeout 物化成 response handoff”“能不能把第二轮 retry attempt 显式收成产品真相”“能不能把 response handoff formal comment 回写到统一 delivery contract”“能不能把 response progress 回推父级 delegated handoff / inbox / next action”“能不能把 parent/child response orchestration 直接做进 mailbox shell”或“能不能从 child ledger 直接恢复 parent closeout”，而是更深的 agent-to-agent communication 与跨 Agent closeout 编排。
 
 ---
 

@@ -1038,6 +1038,28 @@
 - Checklist: `CHK-21`
 - Test Cases: `TC-067`
 
+## TKT-79 Delegated Response Parent Resume Action
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 child `delivery-reply` 的完成态继续升级成可操作 orchestration，让 blocker agent 能直接从 child ledger 把父级 delegated closeout re-ack 回来，而不是再手动回找 parent card。
+- 范围:
+  - child `delivery-reply` resume-parent action
+  - parent closeout re-ack from child ledger
+  - response chip preservation after parent resume
+  - common governed-route ready-state stabilization
+- 依赖: `TKT-77` `TKT-78`
+- Done When:
+  - child `delivery-reply` 在 completed 且 parent closeout 仍 blocked 时，会出现 `Resume Parent Closeout`
+  - 点击后父级 delegated closeout 会直接切到 `acknowledged`
+  - parent closeout 被重新接住后，父级 card 仍保留 `reply completed`，不会把 response evidence 冲掉
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-resume-parent -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume-parent.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-068`
+
 ---
 
 ## 五、已完成批次归档

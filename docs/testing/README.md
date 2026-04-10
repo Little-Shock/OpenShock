@@ -40,6 +40,8 @@
   - `TKT-77` 的 Windows Chrome 有头报告，覆盖 `delivery-reply` response progress 回推父级 delegated handoff、其 inbox resume signal，以及 `blocked` lifecycle 保持
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Visibility](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md)
   - `TKT-78` 的 Windows Chrome 有头报告，覆盖 delegated closeout parent/child mailbox visibility、`reply requested / reply completed` chip、`reply x1` attempt 与 parent deep-link
+- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Resume Parent](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume-parent.md)
+  - `TKT-79` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 的 `Resume Parent Closeout`、parent re-ack orchestration 与 `reply completed` 证据保持
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)
@@ -209,6 +211,8 @@
   - 验证 `delivery-reply` 的 response progress 是否回推父级 delegated closeout handoff、其 inbox signal 与 re-ack guidance，并保持父级 `blocked` lifecycle 不变
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-visibility -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md`
   - 验证 delegated closeout parent card 是否直接显示 `reply requested / reply completed` 与 `reply xN`，以及 child `delivery-reply` card 是否支持 parent 回跳
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-resume-parent -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume-parent.md`
+  - 验证 child `delivery-reply` 完成后是否可直接 `Resume Parent Closeout`，以及父级 closeout 是否切到 `acknowledged` 并保留 `reply completed`
 - `pnpm test:headed-onboarding-studio`
   - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-agent-profile-editor`
