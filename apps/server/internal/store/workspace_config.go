@@ -15,6 +15,7 @@ const (
 
 	governanceDeliveryDelegationModeFormalHandoff = "formal-handoff"
 	governanceDeliveryDelegationModeSignalOnly    = "signal-only"
+	governanceDeliveryDelegationModeAutoComplete  = "auto-complete"
 )
 
 var (
@@ -214,6 +215,8 @@ func normalizeWorkspaceGovernanceDeliveryDelegationMode(value string) (string, e
 		return governanceDeliveryDelegationModeFormalHandoff, nil
 	case governanceDeliveryDelegationModeSignalOnly, "signal_only", "signal":
 		return governanceDeliveryDelegationModeSignalOnly, nil
+	case governanceDeliveryDelegationModeAutoComplete, "auto_complete", "autocomplete", "auto":
+		return governanceDeliveryDelegationModeAutoComplete, nil
 	default:
 		return "", ErrWorkspaceGovernanceDeliveryDelegationModeInvalid
 	}

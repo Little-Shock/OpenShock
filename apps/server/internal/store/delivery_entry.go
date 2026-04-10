@@ -156,6 +156,22 @@ func buildPullRequestDeliveryDelegation(
 			return result
 		}
 	}
+	if delegationMode == governanceDeliveryDelegationModeAutoComplete {
+		result.Status = "done"
+		result.Summary = fmt.Sprintf(
+			"%s 已完成 governed closeout；当前 workspace delivery policy = auto-complete，%s（%s）的 final delivery closeout 已自动收口，无需额外 formal handoff。",
+			defaultString(governedCloseout.FromAgent, "当前治理链"),
+			targetAgent,
+			lane.Label,
+		)
+		if strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
+			result.Summary = fmt.Sprintf(
+				"这条 PR 已合并；当前 workspace delivery policy = auto-complete，%s 的 final delivery closeout 已自动完成。",
+				targetAgent,
+			)
+		}
+		return result
+	}
 	if delegationMode == governanceDeliveryDelegationModeSignalOnly {
 		result.Summary = fmt.Sprintf(
 			"%s 已完成 governed closeout；当前 workspace delivery policy = signal-only，由 %s（%s）按 delivery signal 决定是否手动起 formal closeout handoff。",
@@ -568,6 +584,8 @@ func buildPullRequestDeliveryHandoffNote(
 		lines = append(lines, fmt.Sprintf("当前 delivery delegation blocked：%s", delegation.Summary))
 	} else if delegation.Status == "done" && strings.TrimSpace(delegation.HandoffStatus) != "" {
 		lines = append(lines, fmt.Sprintf("delivery delegation handoff 已完成：%s。", delegation.TargetAgent))
+	} else if delegation.Status == "done" && strings.TrimSpace(delegation.TargetAgent) != "" {
+		lines = append(lines, fmt.Sprintf("delivery delegation 已按 workspace auto-closeout policy 自动收口：%s。", delegation.TargetAgent))
 	}
 
 	summary := "当前 closeout 仍需围着 blocked gate 修复后再交付。"
@@ -582,6 +600,8 @@ func buildPullRequestDeliveryHandoffNote(
 	}
 	if delegation.Status == "ready" {
 		summary = fmt.Sprintf("这条 PR 的 handoff note 已接住 governed closeout，并明确委托给 %s 做最终 delivery closeout。", delegation.TargetAgent)
+	} else if delegation.Status == "done" && strings.TrimSpace(delegation.HandoffStatus) == "" && strings.TrimSpace(delegation.TargetAgent) != "" {
+		summary = fmt.Sprintf("这条 PR 的 handoff note 已接住 governed closeout，并按 auto-closeout policy 自动替 %s 收口 delivery closeout。", delegation.TargetAgent)
 	}
 	if releaseReady {
 		lines = append(lines, "当前 release-ready 已成立；operator 只需按上面的 release gate 命令补最终验收。")

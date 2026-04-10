@@ -26,6 +26,8 @@
   - `TKT-70` 的 Windows Chrome 有头报告，覆盖 delegated closeout handoff blocked/completed 后的 PR detail delegation card、related inbox signal 与 governance done-state 保持
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Policy](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-policy.md)
   - `TKT-71` 的 Windows Chrome 有头报告，覆盖 `signal-only` delivery delegation policy、PR detail delegation signal、Mailbox no-auto-create 与 `/settings` durable policy truth
+- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Auto-Complete](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-auto-complete.md)
+  - `TKT-72` 的 Windows Chrome 有头报告，覆盖 `auto-complete` delivery delegation policy、PR detail delegation done、related inbox auto-closeout signal 与 `/settings` durable policy truth
 - [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
   - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
 - [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)
@@ -181,6 +183,8 @@
   - 验证 delegated closeout handoff 的 `blocked -> completed` lifecycle 是否同步回 PR detail delegation card、related inbox signal 与 governed done-state
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-policy -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-policy.md`
   - 验证 `signal-only` delivery delegation policy 是否只派 signal、不自动起 delegated closeout handoff，并且 `/settings` / PR detail / Mailbox 读取同一份 durable truth
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-auto-complete -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-auto-complete.md`
+  - 验证 `auto-complete` delivery delegation policy 是否直接把 delegation 收成 `done`、不自动起 delegated closeout handoff，并且 `/settings` / PR detail / Mailbox / related inbox 读取同一份 durable truth
 - `pnpm test:headed-onboarding-studio`
   - 验证 `/setup` 的 template selection、progress refresh、finish closeout，以及 reload / server restart / second browser context recovery
 - `pnpm test:headed-agent-profile-editor`

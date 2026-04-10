@@ -118,7 +118,7 @@ const ONBOARDING_STATUS_OPTIONS = [
 const START_ROUTE_OPTIONS = ["/chat/all", "/rooms", "/inbox", "/mailbox", "/setup", "/board", "/settings", "/access"] as const;
 type GovernanceLaneDraft = WorkspaceGovernanceLaneConfig;
 
-type DeliveryDelegationMode = "formal-handoff" | "signal-only";
+type DeliveryDelegationMode = "formal-handoff" | "signal-only" | "auto-complete";
 
 const DELIVERY_DELEGATION_MODE_OPTIONS: Array<{
   mode: DeliveryDelegationMode;
@@ -134,6 +134,11 @@ const DELIVERY_DELEGATION_MODE_OPTIONS: Array<{
     mode: "signal-only",
     value: "signal-only",
     label: "final lane closeout 只派 delivery delegation signal；是否起 formal closeout handoff 由人类按 signal 决定。",
+  },
+  {
+    mode: "auto-complete",
+    value: "auto-complete",
+    label: "final lane closeout 后直接把 delivery delegate 收口为 done，不额外创建 delegated closeout handoff，适合明确要自动收尾的团队。",
   },
 ];
 
@@ -352,11 +357,23 @@ function nextGovernanceLaneId(lanes: GovernanceLaneDraft[]) {
 }
 
 function normalizeDeliveryDelegationMode(value?: string): DeliveryDelegationMode {
-  return value === "signal-only" ? "signal-only" : "formal-handoff";
+  if (value === "signal-only") {
+    return "signal-only";
+  }
+  if (value === "auto-complete") {
+    return "auto-complete";
+  }
+  return "formal-handoff";
 }
 
 function deliveryDelegationModeLabel(mode: DeliveryDelegationMode) {
-  return mode === "signal-only" ? "signal only" : "formal handoff";
+  if (mode === "signal-only") {
+    return "signal only";
+  }
+  if (mode === "auto-complete") {
+    return "auto complete";
+  }
+  return "formal handoff";
 }
 
 function hasWorkspaceManagePermission(state: PhaseZeroState) {
@@ -1167,14 +1184,14 @@ function GovernanceTopologyPanel() {
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">delivery delegation policy</p>
               <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                final lane closeout 后，是直接自动起 delegated closeout handoff，还是先只发 signal，由人类决定是否补 formal handoff。
+                final lane closeout 后，是自动起 delegated closeout handoff、只发 signal，还是直接 auto-complete delivery closeout，都在这里收成同一份 durable policy。
               </p>
             </div>
             <span className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
               {deliveryDelegationModeLabel(deliveryDelegationMode)}
             </span>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
             {DELIVERY_DELEGATION_MODE_OPTIONS.map((option) => (
               <PolicyButton
                 key={option.mode}

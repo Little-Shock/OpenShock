@@ -29,6 +29,8 @@ const runMode =
           ? "delegate-handoff"
           : parsedArgs.mode === "delegate-policy"
             ? "delegate-policy"
+          : parsedArgs.mode === "delegate-auto-complete"
+            ? "delegate-auto-complete"
           : parsedArgs.mode === "delegate-lifecycle"
             ? "delegate-lifecycle"
     : requestedReportPath.includes("autocreate")
@@ -45,6 +47,8 @@ const evidencePrefix =
           ? "openshock-tkt69-governed-route-"
           : runMode === "delegate-policy"
             ? "openshock-tkt71-governed-route-"
+          : runMode === "delegate-auto-complete"
+            ? "openshock-tkt72-governed-route-"
           : runMode === "delegate-lifecycle"
             ? "openshock-tkt70-governed-route-"
     : runMode === "auto-create"
@@ -352,9 +356,17 @@ try {
     runMode === "delegation" ||
     runMode === "delegate-handoff" ||
     runMode === "delegate-policy" ||
+    runMode === "delegate-auto-complete" ||
     runMode === "delegate-lifecycle"
   ) {
-    await patchGovernedQATopology(serverURL, runMode === "delegate-policy" ? "signal-only" : "formal-handoff");
+    await patchGovernedQATopology(
+      serverURL,
+      runMode === "delegate-policy"
+        ? "signal-only"
+        : runMode === "delegate-auto-complete"
+          ? "auto-complete"
+          : "formal-handoff"
+    );
   }
   const initialState = await readState(serverURL);
   const requestTitle = initialState.workspace.governance.routingPolicy.suggestedHandoff.draftTitle;
@@ -434,6 +446,7 @@ try {
     runMode === "delegation" ||
     runMode === "delegate-handoff" ||
     runMode === "delegate-policy" ||
+    runMode === "delegate-auto-complete" ||
     runMode === "delegate-lifecycle"
   ) {
     await page.getByTestId(`mailbox-action-completed-continue-${handoff.id}`).click();
@@ -476,6 +489,7 @@ try {
       runMode === "delegation" ||
       runMode === "delegate-handoff" ||
       runMode === "delegate-policy" ||
+      runMode === "delegate-auto-complete" ||
       runMode === "delegate-lifecycle"
     ) {
       const qaCloseoutNote = "QA 验证完成，可以进入 PR delivery closeout。";
@@ -510,11 +524,14 @@ try {
         runMode === "delegation" ||
         runMode === "delegate-handoff" ||
         runMode === "delegate-policy" ||
+        runMode === "delegate-auto-complete" ||
         runMode === "delegate-lifecycle"
       ) {
+        const expectedDelegationStatus =
+          runMode === "delegate-auto-complete" ? "delegation done" : "delegate ready";
         assert(
-          (await readText(page, "delivery-delegation-status")) === "delegate ready",
-          "delivery delegation should become ready after final QA closeout"
+          (await readText(page, "delivery-delegation-status")) === expectedDelegationStatus,
+          "delivery delegation should reflect the configured post-closeout policy"
         );
         assert(
           (await readText(page, "delivery-delegation-target")) === "PM · Spec Captain",
@@ -535,7 +552,46 @@ try {
         });
         await capture(page, "pull-request-delivery-delegation");
 
-        if (runMode === "delegate-policy") {
+        if (runMode === "delegate-auto-complete") {
+          assert(
+            (await readText(page, "delivery-delegation-status")) === "delegation done",
+            "auto-complete policy should mark delivery delegation done immediately"
+          );
+          assert(
+            (await readText(page, "delivery-delegation-summary")).includes("auto-complete"),
+            "auto-complete policy should be reflected in delivery delegation summary"
+          );
+          assert(
+            (await page.getByTestId("delivery-delegation-handoff-status").count()) === 0,
+            "auto-complete policy should not render a delegated handoff status chip"
+          );
+          assert(
+            (await readText(page, "delivery-delegation-open")) === "Open Delivery Context",
+            "auto-complete policy should keep the PR-level delivery context link"
+          );
+          const mailboxAfterCloseout = await readMailbox(serverURL);
+          assert(
+            !mailboxAfterCloseout.some((item) => item.kind === "delivery-closeout" && item.roomId === "room-runtime"),
+            "auto-complete policy should skip auto-created delivery-closeout handoffs"
+          );
+          await capture(page, "pull-request-delivery-delegation-auto-complete");
+
+          await page.goto(`${webURL}/settings`, { waitUntil: "load" });
+          await page.waitForFunction(() => {
+            return document.querySelector('[data-testid="settings-governance-delivery-policy"]')?.textContent?.includes("auto complete") ?? false;
+          });
+          await capture(page, "settings-governance-delivery-auto-complete");
+          reportTitle = "# 2026-04-11 Governed Mailbox Delegate Auto-Complete Report";
+          reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-auto-complete -- --report ${path.relative(projectRoot, reportPath)}`;
+          reportTicket = "TKT-72";
+          reportTestCase = "TC-061";
+          reportScope = "auto-complete delivery policy、PR delegation done truth、settings durable policy truth";
+          resultLines = [
+            "- workspace governance 现在支持 `auto-complete` delivery delegation policy；final lane closeout 后 PR detail 会直接把 `Delivery Delegation` 收成 `delegation done`，不再额外创建 delegated closeout handoff -> PASS",
+            "- related inbox signal 会同步写回 auto-complete delivery summary，说明这条更重的 auto-closeout 策略已经进入正式 delivery contract，而不是只在某一页本地推导 -> PASS",
+            "- `/settings` 会把同一份 `auto complete` delivery policy 读回前台，Mailbox 里也不会偷偷物化 `delivery-closeout` handoff，证明 durable policy truth 已经统一 -> PASS",
+          ];
+        } else if (runMode === "delegate-policy") {
           assert(
             (await readText(page, "delivery-delegation-summary")).includes("signal-only"),
             "signal-only policy should be reflected in delivery delegation summary"
@@ -671,7 +727,7 @@ try {
         }
       }
 
-      if (runMode !== "delegate-policy") {
+      if (runMode !== "delegate-policy" && runMode !== "delegate-auto-complete") {
         await page.goto(`${webURL}/inbox?roomId=room-runtime`, { waitUntil: "load" });
         await page.waitForFunction(() => {
           return document.querySelector('[data-testid="mailbox-compose-governed-route-status"]')?.textContent?.trim() === "done";
@@ -680,7 +736,7 @@ try {
         await capture(page, "governed-compose-closeout-ready");
       }
 
-      if (runMode !== "delegate-policy") {
+      if (runMode !== "delegate-policy" && runMode !== "delegate-auto-complete") {
         if (runMode === "delegate-lifecycle") {
           reportTitle = "# 2026-04-11 Governed Mailbox Delegate Lifecycle Sync Report";
           reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-lifecycle -- --report ${path.relative(projectRoot, reportPath)}`;

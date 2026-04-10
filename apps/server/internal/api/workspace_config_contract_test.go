@@ -30,7 +30,7 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 			"resumeUrl":"/setup?resume=tkt-37"
 			},
 			"governance":{
-				"deliveryDelegationMode":"signal-only",
+				"deliveryDelegationMode":"auto-complete",
 				"teamTopology":[
 				{"id":"lead","label":"Research Lead","role":"方向与验收","defaultAgent":"Lead Operator","lane":"scope / final synthesis"},
 				{"id":"collector","label":"Field Collector","role":"一线证据收集","defaultAgent":"Collector","lane":"intake -> evidence"},
@@ -70,8 +70,8 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 	if len(payload.Workspace.Governance.ConfiguredTopology) != 5 || payload.Workspace.Governance.ConfiguredTopology[1].Label != "Field Collector" {
 		t.Fatalf("workspace governance configured topology = %#v, want persisted custom topology", payload.Workspace.Governance.ConfiguredTopology)
 	}
-	if payload.Workspace.Governance.DeliveryDelegationMode != "signal-only" {
-		t.Fatalf("workspace governance mode = %q, want signal-only", payload.Workspace.Governance.DeliveryDelegationMode)
+	if payload.Workspace.Governance.DeliveryDelegationMode != "auto-complete" {
+		t.Fatalf("workspace governance mode = %q, want auto-complete", payload.Workspace.Governance.DeliveryDelegationMode)
 	}
 	if len(payload.State.Workspace.Governance.TeamTopology) != 5 || payload.State.Workspace.Governance.TeamTopology[4].ID != "publisher" {
 		t.Fatalf("state governance topology = %#v, want derived publisher lane", payload.State.Workspace.Governance.TeamTopology)
@@ -120,8 +120,8 @@ func TestWorkspaceConfigRoutePersistsDurableSnapshot(t *testing.T) {
 	if len(workspace.Governance.TeamTopology) != 5 || workspace.Governance.TeamTopology[1].Label != "Field Collector" {
 		t.Fatalf("GET workspace governance team topology = %#v, want derived custom lane labels", workspace.Governance.TeamTopology)
 	}
-	if workspace.Governance.DeliveryDelegationMode != "signal-only" {
-		t.Fatalf("GET workspace governance mode = %q, want signal-only", workspace.Governance.DeliveryDelegationMode)
+	if workspace.Governance.DeliveryDelegationMode != "auto-complete" {
+		t.Fatalf("GET workspace governance mode = %q, want auto-complete", workspace.Governance.DeliveryDelegationMode)
 	}
 }
 

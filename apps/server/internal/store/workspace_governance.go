@@ -170,6 +170,8 @@ func hydrateWorkspaceGovernance(workspace *WorkspaceSnapshot, state *State) {
 	}
 	if deliveryDelegationMode == governanceDeliveryDelegationModeSignalOnly {
 		summary += " final closeout 当前只派 delivery signal，不自动起 delegated closeout handoff。"
+	} else if deliveryDelegationMode == governanceDeliveryDelegationModeAutoComplete {
+		summary += " final closeout 当前会按 auto-complete policy 直接收口 delivery delegate，不再额外起 delegated closeout handoff。"
 	}
 
 	workspace.Governance = WorkspaceGovernanceSnapshot{

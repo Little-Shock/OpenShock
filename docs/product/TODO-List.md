@@ -86,17 +86,19 @@
   - delegated closeout handoff 现在还会把 `blocked -> completed` lifecycle 同步回 PR detail delegation card 和 deterministic related inbox signal，且不会把 governed closeout done-state 冲回 active。
 - `GAP-40 / TKT-71`
   - workspace governance 现在已支持 `formal-handoff / signal-only` delivery delegation automation policy；`signal-only` 下仍会派 PR delegation signal，但不会自动创建 delegated closeout handoff，且 `/settings` / PR detail / Mailbox 会读同一份 durable truth。
+- `GAP-41 / TKT-72`
+  - workspace governance 现在还支持 `auto-complete` delivery delegation automation policy；final lane closeout 后 PR detail / related inbox 会直接写成 `delegation done`，而不是额外再起 delegated closeout handoff，且 `/settings` / Mailbox 继续读同一份 durable truth。
 
 ### 当前必须先收的 GAP
 
-当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”“能不能自动创建 delegated closeout handoff”“能不能把 delegated lifecycle 回写到 PR contract”或“能不能把 delivery delegation policy 做成正式配置”，而是 topology 之后更重的 auto-closeout 策略、agent-to-agent orchestration 和跨 Agent closeout 编排。
+当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”“能不能自动创建 delegated closeout handoff”“能不能把 delegated lifecycle 回写到 PR contract”或“能不能把 delivery delegation policy 做成正式配置 / auto-complete 策略”，而是更深的 agent-to-agent orchestration 和跨 Agent closeout 编排。
 
 ---
 
 ## 四、推荐推进顺序
 
 1. 先围 `CHK-16` 的 shell density / high-frequency interaction polish 开票。
-2. 再围 `CHK-21` 的 auto-closeout、automation policy、delegate execution 与跨 Agent closeout orchestration 开票。
+2. 再围 `CHK-21` 的更深 agent-to-agent communication、delegate execution 与跨 Agent closeout orchestration 开票。
 3. 最后继续补 `CHK-10` `CHK-22` 的长期记忆整理、外部 provider 编排与 durable governance。
 
 ---
