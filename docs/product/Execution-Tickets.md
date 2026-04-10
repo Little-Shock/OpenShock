@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作接下来重点从已落地的 SLA / routing / aggregation、formal comment、governed next-route default 与 one-click auto-create，继续前滚到 auto-advance、auto-closeout、delivery delegation 与更深自动协作策略。
+4. 多 Agent 协作接下来重点从已落地的 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create 与 governed auto-advance，继续前滚到 auto-closeout、delivery delegation 与更深自动协作策略。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -752,6 +752,28 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-route -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-autocreate.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-054`
+
+## TKT-66 Governed Mailbox Auto-Advance
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 governed route 从“能一键起单”推进到“当前一棒完成后能继续自动前滚”，减少 reviewer/tester 链路中的重复 closeout + recreate 摩擦。
+- 范围:
+  - `POST /v1/mailbox/:id` governed auto-advance contract
+  - `/mailbox` acknowledged handoff `Complete + Auto-Advance`
+  - Inbox mailbox ledger `Complete + Auto-Advance`
+  - same-truth governed followup replay
+- 依赖: `TKT-64` `TKT-65`
+- Done When:
+  - acknowledged handoff 在完成时允许显式请求 `continueGovernedRoute`
+  - 若下一条 governed lane 已映射合法 default agent，则 server 会自动创建 followup handoff，而不是要求前端串两次 mutation
+  - `/mailbox` 与 Inbox compose 会一起切到 followup handoff 的 `active`，并维持同一条 focus backlink
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store ./internal/api'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-auto-advance -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-auto-advance.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-055`
 
 ---
 

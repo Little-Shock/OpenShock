@@ -783,7 +783,8 @@ export function StitchInboxView() {
 
   async function handleMailboxAction(
     handoff: AgentHandoff,
-    action: "acknowledged" | "blocked" | "comment" | "completed"
+    action: "acknowledged" | "blocked" | "comment" | "completed",
+    options?: { continueGovernedRoute?: boolean }
   ) {
     if (mailboxBusyId) {
       return;
@@ -798,6 +799,7 @@ export function StitchInboxView() {
         action,
         actingAgentId: action === "comment" ? commentActorId : handoff.toAgentId,
         note,
+        continueGovernedRoute: options?.continueGovernedRoute,
       });
       if (action === "comment" && note) {
         setHandoffNotes((current) => ({ ...current, [handoff.id]: "" }));
@@ -1593,6 +1595,17 @@ export function StitchInboxView() {
                                       {mailboxBusyId === handoff.id ? "working..." : handoffActionLabel(action)}
                                     </button>
                                   ))}
+                                  {handoff.status === "acknowledged" ? (
+                                    <button
+                                      type="button"
+                                      data-testid={`mailbox-action-completed-continue-${handoff.id}`}
+                                      disabled={!canManageMailbox || mailboxBusyId === handoff.id}
+                                      onClick={() => void handleMailboxAction(handoff, "completed", { continueGovernedRoute: true })}
+                                      className="inline-flex min-h-[42px] items-center justify-center border-2 border-[var(--shock-ink)] bg-[var(--shock-ink)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white disabled:opacity-60"
+                                    >
+                                      {mailboxBusyId === handoff.id ? "working..." : "Complete + Auto-Advance"}
+                                    </button>
+                                  ) : null}
                                 </div>
                                 {!canManageMailbox ? (
                                   <p className="mt-3 text-[12px] leading-6 text-[color:rgba(24,20,14,0.68)]">

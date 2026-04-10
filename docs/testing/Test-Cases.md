@@ -716,3 +716,17 @@
   4. 完成当前 reviewer handoff，确认 `/mailbox` 与 Inbox compose 两处 governed route 都同步前滚到 `blocked QA` fallback。
 - 预期结果: governed route 在两处 surface 上都能一键起单；起单后不会出现一处 active、一处还停在 ready 的分裂状态；完成后也会围同一条 topology truth 前滚到下一 lane。
 - 业务结论: 2026 年 4 月 11 日 `TKT-65` 已把 governed auto-create shortcut 补进 `/mailbox` 与 Inbox compose。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-autocreate.md` 已记录 `compose ready -> mailbox one-click create -> both active -> blocked replay` 的 Windows Chrome 有头 exact replay，因此这条 friction-reduction 增强当前转为 `Pass`。
+
+## TC-055 Governed Mailbox Auto-Advance / Followup Handoff
+
+- 业务目标: 确认 acknowledged handoff 在 governed topology 下完成时，可以直接自动前滚到下一条 formal handoff，而不是要求人类重复去 compose/create。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 已存在 `workspace.governance.routingPolicy.suggestedHandoff`、governed auto-create surface，且 team topology 中下一条 lane 已映射到合法 default agent。
+- 测试步骤:
+  1. 打开 `/mailbox?roomId=room-runtime`，通过 governed route 创建 `Developer -> Reviewer` 的 formal handoff，并确认 `/mailbox` 与 Inbox compose 都切到同一条 `active` handoff。
+  2. 在 reviewer handoff 上执行 `acknowledged`，然后点击 `Complete + Auto-Advance`。
+  3. 检查 server / UI 是否自动创建下一条 `Reviewer -> QA` followup handoff，而不是停在 `ready` 让人手工再起一单。
+  4. 返回 Inbox，确认 compose governed route 与 `/mailbox` 一起指向这条新的 `active` followup，并能直接 focus 回新 handoff。
+- 预期结果: auto-advance 走 server-side truth，不依赖前端拼接两次 mutation；followup handoff 被创建后，两处 surface 都会围同一条 active ledger 前滚，不会出现旧 handoff 已完成但 governed route 仍停在 ready / blocked 的分裂状态。
+- 业务结论: 2026 年 4 月 11 日 `TKT-66` 已新增 `continueGovernedRoute` mailbox contract，并把 `/mailbox` 与 Inbox mailbox ledger 补成 `Complete + Auto-Advance`。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-auto-advance.md` 已记录 `reviewer closeout -> auto-create QA followup -> dual-surface active replay` 的 Windows Chrome 有头 exact walkthrough，同时 `go test ./internal/store ./internal/api` 已锁住 governed followup creation 与 active pointer，因此这条自动前滚用例当前转为 `Pass`。

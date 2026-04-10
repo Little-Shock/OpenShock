@@ -35,9 +35,10 @@ type MailboxCreateInput struct {
 }
 
 type MailboxUpdateInput struct {
-	Action        string
-	ActingAgentID string
-	Note          string
+	Action                string
+	ActingAgentID         string
+	Note                  string
+	ContinueGovernedRoute bool
 }
 
 type handoffActionPresentationResult struct {
@@ -67,100 +68,10 @@ func (s *Store) CreateHandoff(input MailboxCreateInput) (State, AgentHandoff, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	title := strings.TrimSpace(input.Title)
-	if title == "" {
-		return State{}, AgentHandoff{}, ErrMailboxTitleRequired
+	handoff, err := s.createHandoffLocked(input)
+	if err != nil {
+		return State{}, AgentHandoff{}, err
 	}
-	summary := strings.TrimSpace(input.Summary)
-	if summary == "" {
-		return State{}, AgentHandoff{}, ErrMailboxSummaryRequired
-	}
-
-	roomID := strings.TrimSpace(input.RoomID)
-	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
-	if !ok {
-		return State{}, AgentHandoff{}, ErrMailboxRoomNotFound
-	}
-	fromAgentID := strings.TrimSpace(input.FromAgentID)
-	if fromAgentID == "" {
-		return State{}, AgentHandoff{}, ErrMailboxFromAgentRequired
-	}
-	toAgentID := strings.TrimSpace(input.ToAgentID)
-	if toAgentID == "" {
-		return State{}, AgentHandoff{}, ErrMailboxToAgentRequired
-	}
-	if fromAgentID == toAgentID {
-		return State{}, AgentHandoff{}, ErrMailboxSameAgent
-	}
-
-	fromAgent, ok := findAgentByID(s.state.Agents, fromAgentID)
-	if !ok {
-		return State{}, AgentHandoff{}, ErrMailboxAgentNotFound
-	}
-	toAgent, ok := findAgentByID(s.state.Agents, toAgentID)
-	if !ok {
-		return State{}, AgentHandoff{}, ErrMailboxAgentNotFound
-	}
-
-	now := time.Now()
-	nowClock := shortClock()
-	createdAt := now.UTC().Format(time.RFC3339)
-	handoffID := fmt.Sprintf("handoff-%d", now.UnixNano())
-	inboxItemID := fmt.Sprintf("inbox-handoff-%d", now.UnixNano())
-	message := MailboxMessage{
-		ID:         fmt.Sprintf("%s-msg-1", handoffID),
-		HandoffID:  handoffID,
-		Kind:       "request",
-		AuthorID:   fromAgent.ID,
-		AuthorName: fromAgent.Name,
-		Body:       summary,
-		CreatedAt:  createdAt,
-	}
-	handoff := AgentHandoff{
-		ID:          handoffID,
-		Title:       title,
-		Summary:     summary,
-		Status:      "requested",
-		IssueKey:    s.state.Issues[issueIndex].Key,
-		RoomID:      roomID,
-		RunID:       s.state.Runs[runIndex].ID,
-		FromAgentID: fromAgent.ID,
-		FromAgent:   fromAgent.Name,
-		ToAgentID:   toAgent.ID,
-		ToAgent:     toAgent.Name,
-		InboxItemID: inboxItemID,
-		RequestedAt: createdAt,
-		UpdatedAt:   createdAt,
-		LastAction:  fmt.Sprintf("等待 %s acknowledge / block 这次交接。", toAgent.Name),
-		Messages:    []MailboxMessage{message},
-	}
-
-	s.state.Mailbox = append([]AgentHandoff{handoff}, s.state.Mailbox...)
-	s.state.Inbox = append([]InboxItem{{
-		ID:        inboxItemID,
-		Title:     fmt.Sprintf("%s -> %s 正式交接", fromAgent.Name, toAgent.Name),
-		Kind:      "status",
-		Room:      s.state.Rooms[roomIndex].Title,
-		Time:      "刚刚",
-		Summary:   summary,
-		Action:    "打开 Mailbox",
-		Href:      mailboxInboxHref(handoffID, roomID),
-		HandoffID: handoffID,
-	}}, s.state.Inbox...)
-	s.state.Runs[runIndex].NextAction = fmt.Sprintf("等待 %s 在 Mailbox 中接住这次 handoff。", toAgent.Name)
-	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
-		item.Summary = fmt.Sprintf("%s -> %s handoff requested", fromAgent.Name, toAgent.Name)
-		item.ControlNote = handoff.LastAction
-		item.UpdatedAt = createdAt
-	})
-	s.appendRoomMessageLocked(roomID, Message{
-		ID:      fmt.Sprintf("%s-system-%d", roomID, now.UnixNano()),
-		Speaker: "System",
-		Role:    "system",
-		Tone:    "system",
-		Message: fmt.Sprintf("%s 向 %s 发起正式交接：%s。Mailbox 里现在可以追踪 request -> ack / blocked / complete。", fromAgent.Name, toAgent.Name, title),
-		Time:    nowClock,
-	})
 
 	if err := s.persistLocked(); err != nil {
 		return State{}, AgentHandoff{}, err
@@ -259,11 +170,137 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 		Message: presentation.RoomMessage,
 		Time:    nowClock,
 	})
+	if action == "completed" && input.ContinueGovernedRoute {
+		if err := s.continueGovernedRouteLocked(*handoff); err != nil {
+			return State{}, AgentHandoff{}, err
+		}
+	}
 
 	if err := s.persistLocked(); err != nil {
 		return State{}, AgentHandoff{}, err
 	}
 	return cloneState(s.state), *handoff, nil
+}
+
+func (s *Store) createHandoffLocked(input MailboxCreateInput) (AgentHandoff, error) {
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		return AgentHandoff{}, ErrMailboxTitleRequired
+	}
+	summary := strings.TrimSpace(input.Summary)
+	if summary == "" {
+		return AgentHandoff{}, ErrMailboxSummaryRequired
+	}
+
+	roomID := strings.TrimSpace(input.RoomID)
+	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
+	if !ok {
+		return AgentHandoff{}, ErrMailboxRoomNotFound
+	}
+	fromAgentID := strings.TrimSpace(input.FromAgentID)
+	if fromAgentID == "" {
+		return AgentHandoff{}, ErrMailboxFromAgentRequired
+	}
+	toAgentID := strings.TrimSpace(input.ToAgentID)
+	if toAgentID == "" {
+		return AgentHandoff{}, ErrMailboxToAgentRequired
+	}
+	if fromAgentID == toAgentID {
+		return AgentHandoff{}, ErrMailboxSameAgent
+	}
+
+	fromAgent, ok := findAgentByID(s.state.Agents, fromAgentID)
+	if !ok {
+		return AgentHandoff{}, ErrMailboxAgentNotFound
+	}
+	toAgent, ok := findAgentByID(s.state.Agents, toAgentID)
+	if !ok {
+		return AgentHandoff{}, ErrMailboxAgentNotFound
+	}
+
+	now := time.Now()
+	nowClock := shortClock()
+	createdAt := now.UTC().Format(time.RFC3339)
+	handoffID := fmt.Sprintf("handoff-%d", now.UnixNano())
+	inboxItemID := fmt.Sprintf("inbox-handoff-%d", now.UnixNano())
+	message := MailboxMessage{
+		ID:         fmt.Sprintf("%s-msg-1", handoffID),
+		HandoffID:  handoffID,
+		Kind:       "request",
+		AuthorID:   fromAgent.ID,
+		AuthorName: fromAgent.Name,
+		Body:       summary,
+		CreatedAt:  createdAt,
+	}
+	handoff := AgentHandoff{
+		ID:          handoffID,
+		Title:       title,
+		Summary:     summary,
+		Status:      "requested",
+		IssueKey:    s.state.Issues[issueIndex].Key,
+		RoomID:      roomID,
+		RunID:       s.state.Runs[runIndex].ID,
+		FromAgentID: fromAgent.ID,
+		FromAgent:   fromAgent.Name,
+		ToAgentID:   toAgent.ID,
+		ToAgent:     toAgent.Name,
+		InboxItemID: inboxItemID,
+		RequestedAt: createdAt,
+		UpdatedAt:   createdAt,
+		LastAction:  fmt.Sprintf("等待 %s acknowledge / block 这次交接。", toAgent.Name),
+		Messages:    []MailboxMessage{message},
+	}
+
+	s.state.Mailbox = append([]AgentHandoff{handoff}, s.state.Mailbox...)
+	s.state.Inbox = append([]InboxItem{{
+		ID:        inboxItemID,
+		Title:     fmt.Sprintf("%s -> %s 正式交接", fromAgent.Name, toAgent.Name),
+		Kind:      "status",
+		Room:      s.state.Rooms[roomIndex].Title,
+		Time:      "刚刚",
+		Summary:   summary,
+		Action:    "打开 Mailbox",
+		Href:      mailboxInboxHref(handoffID, roomID),
+		HandoffID: handoffID,
+	}}, s.state.Inbox...)
+	s.state.Runs[runIndex].NextAction = fmt.Sprintf("等待 %s 在 Mailbox 中接住这次 handoff。", toAgent.Name)
+	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
+		item.Summary = fmt.Sprintf("%s -> %s handoff requested", fromAgent.Name, toAgent.Name)
+		item.ControlNote = handoff.LastAction
+		item.UpdatedAt = createdAt
+	})
+	s.appendRoomMessageLocked(roomID, Message{
+		ID:      fmt.Sprintf("%s-system-%d", roomID, now.UnixNano()),
+		Speaker: "System",
+		Role:    "system",
+		Tone:    "system",
+		Message: fmt.Sprintf("%s 向 %s 发起正式交接：%s。Mailbox 里现在可以追踪 request -> ack / blocked / complete。", fromAgent.Name, toAgent.Name, title),
+		Time:    nowClock,
+	})
+	return handoff, nil
+}
+
+func (s *Store) continueGovernedRouteLocked(completed AgentHandoff) error {
+	snapshot := cloneState(s.state)
+	suggestion := snapshot.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	if suggestion.Status != "ready" || suggestion.RoomID != completed.RoomID {
+		return nil
+	}
+	if strings.TrimSpace(suggestion.FromAgentID) == "" || strings.TrimSpace(suggestion.ToAgentID) == "" {
+		return nil
+	}
+	if strings.TrimSpace(suggestion.DraftTitle) == "" {
+		return nil
+	}
+
+	_, err := s.createHandoffLocked(MailboxCreateInput{
+		RoomID:      suggestion.RoomID,
+		FromAgentID: suggestion.FromAgentID,
+		ToAgentID:   suggestion.ToAgentID,
+		Title:       suggestion.DraftTitle,
+		Summary:     defaultString(suggestion.DraftSummary, "按当前治理链继续推进下一棒。"),
+	})
+	return err
 }
 
 func (s *Store) updateHandoffInboxLocked(handoff AgentHandoff, title, summary string) {

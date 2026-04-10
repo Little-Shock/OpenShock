@@ -271,6 +271,61 @@ func TestMailboxRoutesCommentPersistsFormalRepliesWithoutChangingLifecycle(t *te
 	}
 }
 
+func TestMailboxRoutesCompletedCanAutoAdvanceGovernedRoute(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	mustPatchGovernedQATopology(t, server.URL)
+
+	createResp, handoff := mustCreateMailboxHandoff(t, server.URL)
+	defer createResp.Body.Close()
+
+	ackResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
+		"action":        "acknowledged",
+		"actingAgentId": "agent-claude-review-runner",
+	})
+	defer ackResp.Body.Close()
+	if ackResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST acknowledged status = %d, want %d", ackResp.StatusCode, http.StatusOK)
+	}
+
+	completeResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]any{
+		"action":                "completed",
+		"actingAgentId":         "agent-claude-review-runner",
+		"note":                  "review 完成后直接续到 QA。",
+		"continueGovernedRoute": true,
+	})
+	defer completeResp.Body.Close()
+	if completeResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST completed continue status = %d, want %d", completeResp.StatusCode, http.StatusOK)
+	}
+
+	var completePayload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+		State   store.State        `json:"state"`
+	}
+	decodeJSON(t, completeResp, &completePayload)
+	if completePayload.Handoff.Status != "completed" {
+		t.Fatalf("complete handoff = %#v, want completed", completePayload.Handoff)
+	}
+	if len(completePayload.State.Mailbox) < 2 {
+		t.Fatalf("mailbox = %#v, want followup handoff created", completePayload.State.Mailbox)
+	}
+
+	followup := completePayload.State.Mailbox[0]
+	if followup.ID == handoff.ID ||
+		followup.Status != "requested" ||
+		followup.FromAgent != "Claude Review Runner" ||
+		followup.ToAgent != "Memory Clerk" {
+		t.Fatalf("followup handoff = %#v, want reviewer -> Memory Clerk followup", followup)
+	}
+	if completePayload.State.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "active" ||
+		completePayload.State.Workspace.Governance.RoutingPolicy.SuggestedHandoff.HandoffID != followup.ID {
+		t.Fatalf("governance suggestion = %#v, want active followup pointer", completePayload.State.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
+	}
+}
+
 func mustCreateMailboxHandoff(t *testing.T, serverURL string) (*http.Response, store.AgentHandoff) {
 	t.Helper()
 
@@ -292,7 +347,7 @@ func mustCreateMailboxHandoff(t *testing.T, serverURL string) (*http.Response, s
 	return resp, payload.Handoff
 }
 
-func doMailboxRouteRequest(t *testing.T, url string, payload map[string]string) *http.Response {
+func doMailboxRouteRequest(t *testing.T, url string, payload any) *http.Response {
 	t.Helper()
 
 	body, err := json.Marshal(payload)
@@ -304,4 +359,33 @@ func doMailboxRouteRequest(t *testing.T, url string, payload map[string]string) 
 		t.Fatalf("POST %s error = %v", url, err)
 	}
 	return resp
+}
+
+func mustPatchGovernedQATopology(t *testing.T, serverURL string) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPatch, serverURL+"/v1/workspace", bytes.NewReader([]byte(`{
+		"governance":{
+			"teamTopology":[
+				{"id":"pm","label":"PM","role":"目标与验收","defaultAgent":"Spec Captain","lane":"scope / final response"},
+				{"id":"architect","label":"Architect","role":"拆解与边界","defaultAgent":"Spec Captain","lane":"shape / split"},
+				{"id":"developer","label":"Developer","role":"实现与分支推进","defaultAgent":"Build Pilot","lane":"issue -> branch"},
+				{"id":"reviewer","label":"Reviewer","role":"exact-head verdict","defaultAgent":"Review Runner","lane":"review / blocker"},
+				{"id":"qa","label":"QA","role":"verify / release evidence","defaultAgent":"Memory Clerk","lane":"test / release gate"}
+			]
+		}
+	}`)))
+	if err != nil {
+		t.Fatalf("new PATCH /v1/workspace request error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /v1/workspace error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH /v1/workspace status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
 }

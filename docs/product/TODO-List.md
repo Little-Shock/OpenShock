@@ -74,17 +74,19 @@
   - governed next-handoff 默认治理现在已站住；`/mailbox` 与 Inbox compose 会按当前 room truth 和 team topology 自动建议下一棒，并在缺少 QA target 时显式 blocked，而不是随机回退。
 - `GAP-34 / TKT-65`
   - governed route 现在已补一键起单；`/mailbox` 与 Inbox compose 都可以直接 `Create Handoff`，并在创建后同步切到 `active`，完成后一起回放到 blocked QA fallback。
+- `GAP-35 / TKT-66`
+  - governed route 现在已补 `Complete + Auto-Advance`；reviewer handoff 完成后，如果下一条 lane 已映射默认 Agent，就会自动创建 followup handoff，并让 `/mailbox` 与 Inbox compose 一起切到新的 `active` ledger。
 
 ### 当前必须先收的 GAP
 
-当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”或“能不能一键起单”，而是 topology 之后的自动推进/自动收口策略、agent-to-agent orchestration 和更重的跨 Agent delivery delegation。
+当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”或“能不能自动续下一棒”，而是 topology 之后的 auto-closeout 策略、agent-to-agent orchestration 和更重的跨 Agent delivery delegation。
 
 ---
 
 ## 四、推荐推进顺序
 
 1. 先围 `CHK-16` 的 shell density / high-frequency interaction polish 开票。
-2. 再围 `CHK-21` 的 auto-advance / auto-closeout、automation policy 与 delivery delegation 开票。
+2. 再围 `CHK-21` 的 auto-closeout、automation policy 与 delivery delegation 开票。
 3. 最后继续补 `CHK-10` `CHK-22` 的长期记忆整理、外部 provider 编排与 durable governance。
 
 ---

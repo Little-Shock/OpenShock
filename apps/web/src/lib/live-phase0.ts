@@ -141,6 +141,7 @@ type UpdateHandoffInput = {
   action: "acknowledged" | "blocked" | "comment" | "completed";
   actingAgentId: string;
   note?: string;
+  continueGovernedRoute?: boolean;
 };
 
 type PhaseZeroStreamPresence = {

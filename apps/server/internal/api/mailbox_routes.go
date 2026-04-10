@@ -22,9 +22,10 @@ type CreateMailboxHandoffRequest struct {
 }
 
 type UpdateMailboxHandoffRequest struct {
-	Action        string `json:"action"`
-	ActingAgentID string `json:"actingAgentId"`
-	Note          string `json:"note"`
+	Action                string `json:"action"`
+	ActingAgentID         string `json:"actingAgentId"`
+	Note                  string `json:"note"`
+	ContinueGovernedRoute bool   `json:"continueGovernedRoute,omitempty"`
 }
 
 func registerMailboxRoutes(s *Server, mux *http.ServeMux) {
@@ -95,9 +96,10 @@ func (s *Server) handleMailboxRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 
 		nextState, handoff, err := s.store.AdvanceHandoff(handoffID, store.MailboxUpdateInput{
-			Action:        req.Action,
-			ActingAgentID: req.ActingAgentID,
-			Note:          req.Note,
+			Action:                req.Action,
+			ActingAgentID:         req.ActingAgentID,
+			Note:                  req.Note,
+			ContinueGovernedRoute: req.ContinueGovernedRoute,
 		})
 		if err != nil {
 			writeMailboxError(w, err)

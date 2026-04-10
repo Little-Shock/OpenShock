@@ -441,6 +441,79 @@ func TestGovernanceSuggestedHandoffTracksDefaultRoleRoute(t *testing.T) {
 	}
 }
 
+func TestAdvanceHandoffCanAutoAdvanceGovernedRoute(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	topology := defaultWorkspaceGovernanceTopology("dev-team")
+	topology[len(topology)-1].DefaultAgent = "Memory Clerk"
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Governance: &WorkspaceGovernanceConfigInput{
+			TeamTopology: topology,
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "把 developer lane 正式交给 reviewer",
+		Summary:     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-claude-review-runner",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged) error = %v", err)
+	}
+
+	nextState, completed, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:                "completed",
+		ActingAgentID:         "agent-claude-review-runner",
+		Note:                  "review 已完成，直接把 QA 接力拉起来。",
+		ContinueGovernedRoute: true,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed continue) error = %v", err)
+	}
+	if completed.Status != "completed" {
+		t.Fatalf("completed handoff = %#v, want completed", completed)
+	}
+	if len(nextState.Mailbox) < 2 {
+		t.Fatalf("mailbox = %#v, want followup handoff created at front", nextState.Mailbox)
+	}
+
+	followup := nextState.Mailbox[0]
+	if followup.ID == handoff.ID ||
+		followup.Status != "requested" ||
+		followup.FromAgent != "Claude Review Runner" ||
+		followup.ToAgent != "Memory Clerk" {
+		t.Fatalf("followup handoff = %#v, want new requested reviewer -> Memory Clerk handoff", followup)
+	}
+	if !strings.Contains(followup.Title, "QA") {
+		t.Fatalf("followup title = %q, want QA lane draft", followup.Title)
+	}
+	run := findRunByID(nextState, "run_runtime_01")
+	if run == nil || !strings.Contains(run.NextAction, "Memory Clerk") {
+		t.Fatalf("run = %#v, want next action waiting for Memory Clerk", run)
+	}
+	suggested := nextState.Workspace.Governance.RoutingPolicy.SuggestedHandoff
+	if suggested.Status != "active" || suggested.HandoffID != followup.ID || suggested.ToAgent != "Memory Clerk" {
+		t.Fatalf("suggested handoff = %#v, want active followup pointing at Memory Clerk", suggested)
+	}
+}
+
 func findInboxItemByHandoffID(items []InboxItem, handoffID string) *InboxItem {
 	for index := range items {
 		if items[index].HandoffID == handoffID {

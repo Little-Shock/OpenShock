@@ -320,11 +320,16 @@ export function LiveMailboxPageContent() {
     await submitCreate(input, "governed-create");
   }
 
-  async function handleAdvance(handoff: AgentHandoff, action: "acknowledged" | "blocked" | "comment" | "completed") {
+  async function handleAdvance(
+    handoff: AgentHandoff,
+    action: "acknowledged" | "blocked" | "comment" | "completed",
+    options?: { continueGovernedRoute?: boolean }
+  ) {
     if (busyKey || !canMutate) {
       return;
     }
-    setBusyKey(`${handoff.id}:${action}`);
+    const actionKey = options?.continueGovernedRoute ? `${handoff.id}:${action}:continue` : `${handoff.id}:${action}`;
+    setBusyKey(actionKey);
     setActionError(null);
     const note = notes[handoff.id]?.trim() || undefined;
     const commentActorId =
@@ -334,6 +339,7 @@ export function LiveMailboxPageContent() {
         action,
         actingAgentId: action === "comment" ? commentActorId : handoff.toAgentId,
         note,
+        continueGovernedRoute: options?.continueGovernedRoute,
       });
       if (action === "comment" && note) {
         setNotes((current) => ({ ...current, [handoff.id]: "" }));
@@ -945,6 +951,17 @@ export function LiveMailboxPageContent() {
                                 {busyKey === `${handoff.id}:${action}` ? "Working..." : formatActionLabel(action)}
                               </button>
                             ))}
+                            {canComplete ? (
+                              <button
+                                type="button"
+                                data-testid={`mailbox-action-completed-continue-${handoff.id}`}
+                                disabled={!canMutate || busyKey === `${handoff.id}:completed:continue`}
+                                onClick={() => void handleAdvance(handoff, "completed", { continueGovernedRoute: true })}
+                                className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-ink)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-white disabled:opacity-50"
+                              >
+                                {busyKey === `${handoff.id}:completed:continue` ? "Working..." : "Complete + Auto-Advance"}
+                              </button>
+                            ) : null}
                           </div>
                           {actionError?.id === handoff.id ? (
                             <p className="text-sm leading-6 text-[var(--shock-pink)]">{actionError.message}</p>

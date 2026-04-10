@@ -14,14 +14,27 @@ import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
+const parsedArgs = parseArgs(process.argv.slice(2));
+const requestedReportPath = parsedArgs.reportPath
+  ? path.resolve(projectRoot, parsedArgs.reportPath)
+  : "";
+const runMode =
+  parsedArgs.mode === "auto-advance"
+    ? "auto-advance"
+    : requestedReportPath.includes("autocreate")
+      ? "auto-create"
+      : "route";
+const evidencePrefix =
+  runMode === "auto-advance"
+    ? "openshock-tkt66-governed-route-"
+    : runMode === "auto-create"
+      ? "openshock-tkt65-governed-route-"
+      : "openshock-tkt64-governed-route-";
 const evidenceRoot =
   process.env.OPENSHOCK_E2E_ARTIFACTS_DIR?.trim() ||
-  (await mkdtemp(path.join(os.tmpdir(), "openshock-tkt65-governed-route-")));
+  (await mkdtemp(path.join(os.tmpdir(), evidencePrefix)));
 const artifactsDir = path.resolve(evidenceRoot);
-const parsedArgs = parseArgs(process.argv.slice(2));
-const reportPath = parsedArgs.reportPath
-  ? path.resolve(projectRoot, parsedArgs.reportPath)
-  : path.join(artifactsDir, "report.md");
+const reportPath = requestedReportPath || path.join(artifactsDir, "report.md");
 const screenshotsDir = path.join(artifactsDir, "screenshots");
 const logsDir = path.join(artifactsDir, "logs");
 
@@ -32,10 +45,13 @@ const screenshots = [];
 const processes = [];
 
 function parseArgs(args) {
-  const result = { reportPath: "" };
+  const result = { reportPath: "", mode: "default" };
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--report") {
       result.reportPath = args[index + 1] ?? "";
+      index += 1;
+    } else if (args[index] === "--mode") {
+      result.mode = args[index + 1] ?? "default";
       index += 1;
     }
   }
@@ -196,11 +212,35 @@ async function readMailbox(serverURL) {
   return fetchJSON(`${serverURL}/v1/mailbox`, { cache: "no-store" });
 }
 
+async function patchGovernedQATopology(serverURL) {
+  return fetchJSON(`${serverURL}/v1/workspace`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      governance: {
+        teamTopology: [
+          { id: "pm", label: "PM", role: "目标与验收", defaultAgent: "Spec Captain", lane: "scope / final response" },
+          { id: "architect", label: "Architect", role: "拆解与边界", defaultAgent: "Spec Captain", lane: "shape / split" },
+          { id: "developer", label: "Developer", role: "实现与分支推进", defaultAgent: "Build Pilot", lane: "issue -> branch" },
+          { id: "reviewer", label: "Reviewer", role: "exact-head verdict", defaultAgent: "Review Runner", lane: "review / blocker" },
+          { id: "qa", label: "QA", role: "verify / release evidence", defaultAgent: "Memory Clerk", lane: "test / release gate" },
+        ],
+      },
+    }),
+  });
+}
+
 async function waitForMailbox(serverURL, title) {
   return waitFor(async () => {
     const handoffs = await readMailbox(serverURL);
     return handoffs.find((item) => item.title === title) ?? false;
   }, `mailbox handoff ${title} did not appear`);
+}
+
+async function waitForMailboxWhere(serverURL, predicate, message) {
+  return waitFor(async () => {
+    const handoffs = await readMailbox(serverURL);
+    return handoffs.find((item) => predicate(item)) ?? false;
+  }, message);
 }
 
 async function readText(page, testId) {
@@ -285,6 +325,9 @@ let page = null;
 try {
   const { webURL, serverURL } = await startServices();
   resolveChromiumExecutable();
+  if (runMode === "auto-advance") {
+    await patchGovernedQATopology(serverURL);
+  }
   const initialState = await readState(serverURL);
   const requestTitle = initialState.workspace.governance.routingPolicy.suggestedHandoff.draftTitle;
   assert(requestTitle, "governed route should expose a draft title before auto-create");
@@ -341,38 +384,113 @@ try {
   await page.getByTestId(`mailbox-card-${handoff.id}`).waitFor({ state: "visible" });
   await capture(page, "governed-route-focus-inbox");
 
+  let reportTitle = "# 2026-04-11 Governed Mailbox Route Report";
+  let reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-route -- --report ${path.relative(projectRoot, reportPath)}`;
+  let reportTicket = "TKT-64";
+  let reportChecklist = "CHK-21";
+  let reportTestCase = "TC-053";
+  let reportScope = "governed default route、active handoff focus、blocked fallback";
+  let resultLines = [
+    "- `/mailbox` 与 Inbox compose 都会读取 `workspace.governance.routingPolicy.suggestedHandoff`，并在 `ready` 状态下显式给出 `Create Governed Handoff` 一键起单入口 -> PASS",
+    "- 通过 governed route 一键起单后，`/mailbox` 与 Inbox compose 会一起切到 `active`，并提供聚焦当前 handoff 的回链，防止同一路由被重复创建 -> PASS",
+    "- 完成当前 reviewer handoff 后，两处 governed surface 会一起前滚到下一条 lane；当 QA lane 缺少可映射 agent 时，状态会显式转成 `blocked`，不会静默回退到随机接收方 -> PASS",
+  ];
+
   await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${handoff.id}`, { waitUntil: "load" });
   await page.getByTestId(`mailbox-action-acknowledged-${handoff.id}`).click();
   await page.getByTestId(`mailbox-note-${handoff.id}`).fill("review 已完成，继续看下一条治理建议。");
-  await page.getByTestId(`mailbox-action-completed-${handoff.id}`).click();
-  await page.getByTestId(`mailbox-status-${handoff.id}`).waitFor({ state: "visible" });
 
-  const stateAfterComplete = await readState(serverURL);
-  const governedSuggestion = stateAfterComplete.workspace.governance.routingPolicy.suggestedHandoff;
-  assert(governedSuggestion.status === "blocked", "next governed handoff should block when QA lane has no mapped agent");
-  assert(governedSuggestion.toLaneLabel === "QA", "next governed handoff should point at the QA lane");
-  await page.waitForFunction(() => {
-    return document.querySelector('[data-testid="mailbox-governed-route-status"]')?.textContent?.trim() === "blocked";
-  });
-  await capture(page, "governed-route-next-blocked");
+  if (runMode === "auto-advance") {
+    await page.getByTestId(`mailbox-action-completed-continue-${handoff.id}`).click();
+    const followup = await waitForMailboxWhere(
+      serverURL,
+      (item) =>
+        item.id !== handoff.id &&
+        item.status === "requested" &&
+        item.fromAgent === "Claude Review Runner" &&
+        item.toAgent === "Memory Clerk",
+      "auto-advanced governed handoff did not appear"
+    );
 
-  await page.goto(`${webURL}/inbox?roomId=room-runtime`, { waitUntil: "load" });
-  await page.waitForFunction(() => {
-    return document.querySelector('[data-testid="mailbox-compose-governed-route-status"]')?.textContent?.trim() === "blocked";
-  });
-  await capture(page, "governed-compose-next-blocked");
+    await page.getByTestId(`mailbox-card-${followup.id}`).waitFor({ state: "visible" });
+    await page.waitForFunction(() => {
+      return document.querySelector('[data-testid="mailbox-governed-route-status"]')?.textContent?.trim() === "active";
+    });
+    await capture(page, "governed-route-auto-advanced");
+
+    const stateAfterContinue = await readState(serverURL);
+    const governedSuggestion = stateAfterContinue.workspace.governance.routingPolicy.suggestedHandoff;
+    assert(governedSuggestion.status === "active", "next governed handoff should become active after auto-advance");
+    assert(governedSuggestion.handoffId === followup.id, "governed suggestion should point at the auto-created followup");
+    assert(governedSuggestion.toLaneLabel === "QA", "auto-advanced governed handoff should move into the QA lane");
+    assert(
+      governedSuggestion.toAgent === "Memory Clerk",
+      "auto-advanced governed handoff should target the mapped QA agent"
+    );
+
+    await page.goto(`${webURL}/inbox?roomId=room-runtime&handoffId=${followup.id}`, { waitUntil: "load" });
+    await page.waitForFunction(() => {
+      return document.querySelector('[data-testid="mailbox-compose-governed-route-status"]')?.textContent?.trim() === "active";
+    });
+    await page.getByTestId("mailbox-compose-governed-route-focus").click();
+    await page.getByTestId(`mailbox-card-${followup.id}`).waitFor({ state: "visible" });
+    await capture(page, "governed-compose-auto-advanced");
+
+    reportTitle = "# 2026-04-11 Governed Mailbox Auto-Advance Report";
+    reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-auto-advance -- --report ${path.relative(projectRoot, reportPath)}`;
+    reportTicket = "TKT-66";
+    reportTestCase = "TC-055";
+    reportScope = "governed complete + auto-advance、QA followup auto-create、dual-surface active replay";
+    resultLines = [
+      "- `/mailbox` 上的 `Complete + Auto-Advance` 现在会把当前 governed handoff 正式收口，并继续围当前 topology 自动创建下一棒 formal handoff，而不是要求人类重新手工起单 -> PASS",
+      "- 当 QA lane 已映射到 `Memory Clerk` 时，reviewer closeout 会自动前滚出 `Claude Review Runner -> Memory Clerk` 的下一条 handoff，同时 `workspace.governance.routingPolicy.suggestedHandoff` 会切到同一条 `active` 指针 -> PASS",
+      "- Inbox compose 与 `/mailbox` 在 auto-advance 后都会继续显示同一条 active followup，focus 回链直接跳到新 handoff，不会停在旧 reviewer ledger 或回退成 `ready`/`blocked` 假状态 -> PASS",
+    ];
+  } else {
+    await page.getByTestId(`mailbox-action-completed-${handoff.id}`).click();
+    await page.getByTestId(`mailbox-status-${handoff.id}`).waitFor({ state: "visible" });
+
+    const stateAfterComplete = await readState(serverURL);
+    const governedSuggestion = stateAfterComplete.workspace.governance.routingPolicy.suggestedHandoff;
+    assert(governedSuggestion.status === "blocked", "next governed handoff should block when QA lane has no mapped agent");
+    assert(governedSuggestion.toLaneLabel === "QA", "next governed handoff should point at the QA lane");
+    await page.waitForFunction(() => {
+      return document.querySelector('[data-testid="mailbox-governed-route-status"]')?.textContent?.trim() === "blocked";
+    });
+    await capture(page, "governed-route-next-blocked");
+
+    await page.goto(`${webURL}/inbox?roomId=room-runtime`, { waitUntil: "load" });
+    await page.waitForFunction(() => {
+      return document.querySelector('[data-testid="mailbox-compose-governed-route-status"]')?.textContent?.trim() === "blocked";
+    });
+    await capture(page, "governed-compose-next-blocked");
+
+    if (runMode === "auto-create") {
+      reportTitle = "# 2026-04-11 Governed Mailbox Auto-Create Report";
+      reportTicket = "TKT-65";
+      reportTestCase = "TC-054";
+      reportScope = "governed one-click create、dual-surface active sync、blocked replay";
+      resultLines = [
+        "- `/mailbox` 与 Inbox compose 在 `ready` governed route 下都提供 `Create Governed Handoff` 一键入口，不再要求人类重复选择 source / target -> PASS",
+        "- 通过 governed route 一键起单后，`/mailbox` 与 Inbox compose 会同步切到同一条 `active` handoff，并提供 focus 回链，避免出现双面状态分裂 -> PASS",
+        "- 当前 reviewer handoff 完成后，两处 governed surface 会围同一条 topology truth 一起前滚到下一条 lane；当 QA lane 缺少映射 agent 时，两处都显式 `blocked` -> PASS",
+      ];
+    }
+  }
 
   const report = [
-    "# 2026-04-11 Governed Mailbox Route Report",
+    reportTitle,
     "",
-    `- Command: \`${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-route -- --report ${path.relative(projectRoot, reportPath)}\``,
+    `- Ticket: \`${reportTicket}\``,
+    `- Checklist: \`${reportChecklist}\``,
+    `- Test Case: \`${reportTestCase}\``,
+    `- Scope: ${reportScope}`,
+    `- Command: \`${reportCommand}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
     "",
     "## Results",
     "",
-    "- `/mailbox` 与 Inbox compose 都会读取 `workspace.governance.routingPolicy.suggestedHandoff`，并在 `ready` 状态下显式给出 `Create Governed Handoff` 一键起单入口 -> PASS",
-    "- 通过 governed route 一键起单后，`/mailbox` 与 Inbox compose 会一起切到 `active`，并提供聚焦当前 handoff 的回链，防止同一路由被重复创建 -> PASS",
-    "- 完成当前 reviewer handoff 后，两处 governed surface 会一起前滚到下一条 lane；当 QA lane 缺少可映射 agent 时，状态会显式转成 `blocked`，不会静默回退到随机接收方 -> PASS",
+    ...resultLines,
     "",
     "## Screenshots",
     "",
