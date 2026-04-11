@@ -84,16 +84,6 @@ function SearchIcon() {
   );
 }
 
-function DirectMessageIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-      <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h9A2.5 2.5 0 0 1 17 6.5v5A2.5 2.5 0 0 1 14.5 14H9l-3.5 2v-2H5.5A2.5 2.5 0 0 1 3 11.5z" />
-      <circle cx="8" cy="9" r="1" />
-      <circle cx="12" cy="9" r="1" />
-    </svg>
-  );
-}
-
 function kindLabel(kind: QuickSearchEntryKind) {
   switch (kind) {
     case "channel":
@@ -147,23 +137,6 @@ function highlightText(text: string, query: string) {
   );
 }
 
-function ThreadIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-      <path d="M5 4.5h8A2.5 2.5 0 0 1 15.5 7v1.5A2.5 2.5 0 0 1 13 11H8.5A2.5 2.5 0 0 0 6 13.5V16" />
-      <path d="m4 14 2 2 2-2" />
-    </svg>
-  );
-}
-
-function BookmarkIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-      <path d="M5 4h10v12l-5-3-5 3z" />
-    </svg>
-  );
-}
-
 type DirectMessageSidebarEntry = {
   id: string;
   name: string;
@@ -212,6 +185,17 @@ type StitchSidebarProps = {
   inboxCount?: number;
   profileEntries?: SidebarProfileEntry[];
   onOpenQuickSearch?: () => void;
+};
+
+type SidebarDeskEntry = {
+  id: string;
+  href: string;
+  title: string;
+  summary: string;
+  unread?: number;
+  badge: string;
+  toneClassName: string;
+  selected: boolean;
 };
 
 function profileEntryTone(tone: SidebarProfileEntry["tone"]) {
@@ -314,7 +298,6 @@ export function StitchSidebar({
   followedThreads,
   savedLaterItems,
   rooms,
-  machines,
   agents,
   workspaceName,
   workspaceSubtitle,
@@ -332,16 +315,55 @@ export function StitchSidebar({
   const followedList = followedThreads ?? [];
   const savedList = savedLaterItems ?? [];
   const roomList = rooms ?? [];
-  const machineList = machines ?? [];
   const agentList = agents ?? [];
   const openInboxCount = inboxCount ?? 0;
   const runningAgents = agentList.filter((agent) => agent.state === "running").length;
   const blockedAgents = agentList.filter((agent) => agent.state === "blocked").length;
   const selectedRoom = selectedRoomId ? roomList.find((room) => room.id === selectedRoomId) : undefined;
   const shellProfiles = profileEntries ?? [];
+  const deskEntries: SidebarDeskEntry[] = [
+    ...dmList.map((dm) => ({
+      id: `dm-${dm.id}`,
+      href: dm.href,
+      title: dm.name,
+      summary: dm.summary,
+      unread: dm.unread,
+      badge: "DM",
+      toneClassName:
+        dm.presence === "running"
+          ? "bg-[var(--shock-lime)]"
+          : dm.presence === "blocked"
+            ? "bg-[var(--shock-pink)] text-white"
+            : "bg-white",
+      selected: selectedDirectMessageId === dm.id,
+    })),
+    ...followedList.map((item) => ({
+      id: `followed-${item.id}`,
+      href: item.href,
+      title: item.title,
+      summary: item.summary,
+      unread: item.unread,
+      badge: "TH",
+      toneClassName: "bg-white",
+      selected: selectedFollowedThreadId === item.id,
+    })),
+    ...savedList.map((item) => ({
+      id: `saved-${item.id}`,
+      href: item.href,
+      title: item.title,
+      summary: item.summary,
+      unread: item.unread,
+      badge: "SV",
+      toneClassName: "bg-[var(--shock-paper)]",
+      selected: selectedSavedLaterId === item.id,
+    })),
+  ];
+  const selectedWorkspaceLabel = selectedRoom
+    ? `${selectedRoom.issueKey} · ${selectedRoom.topic.status}`
+    : workspaceSubtitle || "local-first command room";
 
   return (
-    <aside className="hidden h-full w-[258px] flex-col border-r-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] md:flex">
+    <aside className="hidden h-full min-w-0 w-full flex-col border-r-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] md:flex">
       <div className="border-b-2 border-[var(--shock-ink)] px-2 py-2">
         <button
           type="button"
@@ -401,14 +423,18 @@ export function StitchSidebar({
           </button>
         </div>
 
-        <SidebarSection title="Channels" count={navChannels.length}>
+        <SidebarSection
+          title="Channels"
+          count={navChannels.length}
+          defaultOpen={active === "channels" || Boolean(selectedChannelId)}
+        >
           {navChannels.map((channel) => (
             <Link
               key={channel.id}
               href={`/chat/${channel.id}`}
               data-testid={`sidebar-channel-${channel.id}`}
               className={cn(
-                "block min-h-[52px] rounded-[16px] border-2 px-2.5 py-2 text-sm transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
+                "block min-h-[46px] rounded-[16px] border-2 px-2.5 py-2 text-sm transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
                 selectedChannelId === channel.id
                   ? "border-[var(--shock-ink)] bg-[var(--shock-pink)] text-white shadow-[var(--shock-shadow-sm)]"
                   : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
@@ -423,119 +449,24 @@ export function StitchSidebar({
                   </span>
                 ) : null}
               </div>
-              <p className={cn("mt-1 truncate pl-6 text-[10px] leading-4", selectedChannelId === channel.id ? "text-white/80" : "text-[color:rgba(24,20,14,0.56)]")}>
-                {channel.summary}
-              </p>
+              {selectedChannelId === channel.id ? (
+                <p className="mt-1 truncate pl-6 text-[10px] leading-4 text-white/80">{channel.summary}</p>
+              ) : null}
             </Link>
           ))}
         </SidebarSection>
 
-        <SidebarSection title="DMs" count={dmList.length} defaultOpen={Boolean(selectedDirectMessageId) || dmList.length <= 4}>
-          {dmList.map((dm) => (
-            <Link
-              key={dm.id}
-              href={dm.href}
-              data-testid={`sidebar-dm-${dm.id}`}
-              className={cn(
-                "block border-2 px-2 py-1.5 text-sm transition-colors",
-                selectedDirectMessageId === dm.id
-                  ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
-                  : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <DirectMessageIcon />
-                <p className="min-w-0 flex-1 truncate font-medium">{dm.name}</p>
-                <span
-                  className={cn(
-                    "rounded-full border border-[var(--shock-ink)] px-1.5 py-0.5 font-mono text-[9px] uppercase",
-                    dm.presence === "running"
-                      ? "bg-[var(--shock-lime)]"
-                      : dm.presence === "blocked"
-                        ? "bg-[var(--shock-pink)] text-white"
-                        : "bg-white"
-                  )}
-                >
-                  {dm.presence}
-                </span>
-                {dm.unread > 0 ? (
-                  <span className="min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
-                    {dm.unread}
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-0.5 truncate pl-6 text-[10px] text-[color:rgba(24,20,14,0.56)]">{dm.summary}</p>
-            </Link>
-          ))}
-        </SidebarSection>
-
-        <SidebarSection title="Followed Threads" count={followedList.length} defaultOpen={followedList.length > 0}>
-          {followedList.map((item) => (
-            <Link
-              key={item.id}
-              href={item.href}
-              data-testid={`sidebar-followed-${item.id}`}
-              className={cn(
-                "block border-2 px-2 py-1.5 text-sm transition-colors",
-                selectedFollowedThreadId === item.id
-                  ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
-                  : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <ThreadIcon />
-                <p className="min-w-0 flex-1 truncate font-medium">{item.title}</p>
-                {typeof item.unread === "number" && item.unread > 0 ? (
-                  <span className="min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
-                    {item.unread}
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-0.5 truncate pl-6 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.56)]">
-                {item.meta}
-              </p>
-              <p className="mt-0.5 truncate pl-6 text-[10px] text-[color:rgba(24,20,14,0.56)]">{item.summary}</p>
-            </Link>
-          ))}
-        </SidebarSection>
-
-        <SidebarSection title="Saved Later" count={savedList.length} defaultOpen={savedList.length > 0}>
-          {savedList.map((item) => (
-            <Link
-              key={item.id}
-              href={item.href}
-              data-testid={`sidebar-saved-${item.id}`}
-              className={cn(
-                "block border-2 px-2 py-1.5 text-sm transition-colors",
-                selectedSavedLaterId === item.id
-                  ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
-                  : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <BookmarkIcon />
-                <p className="min-w-0 flex-1 truncate font-medium">{item.title}</p>
-                {typeof item.unread === "number" && item.unread > 0 ? (
-                  <span className="min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
-                    {item.unread}
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-0.5 truncate pl-6 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.56)]">
-                {item.meta}
-              </p>
-              <p className="mt-0.5 truncate pl-6 text-[10px] text-[color:rgba(24,20,14,0.56)]">{item.summary}</p>
-            </Link>
-          ))}
-        </SidebarSection>
-
-        <SidebarSection title="Rooms" count={roomList.length} defaultOpen={Boolean(selectedRoomId) || roomList.length <= 5}>
+        <SidebarSection
+          title="Rooms"
+          count={roomList.length}
+          defaultOpen={active === "rooms" || active === "board" || active === "inbox" || Boolean(selectedRoomId)}
+        >
           {roomList.map((room) => (
             <Link
               key={room.id}
               href={`/rooms/${room.id}`}
               className={cn(
-                "block min-h-[52px] rounded-[16px] border-2 px-2.5 py-2 text-sm transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
+                "block min-h-[46px] rounded-[16px] border-2 px-2.5 py-2 text-sm transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
                 selectedRoomId === room.id
                   ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
                   : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
@@ -548,114 +479,139 @@ export function StitchSidebar({
                   {room.topic.status}
                 </span>
               </div>
-              <p className="mt-1 truncate pl-6 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.56)]">
-                {room.issueKey}
-              </p>
+              {selectedRoomId === room.id ? (
+                <p className="mt-1 truncate pl-6 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.56)]">
+                  {room.issueKey}
+                </p>
+              ) : null}
             </Link>
           ))}
         </SidebarSection>
+
+        {deskEntries.length > 0 ? (
+          <SidebarSection
+            title="Desk"
+            count={deskEntries.length}
+            defaultOpen={Boolean(selectedDirectMessageId || selectedFollowedThreadId || selectedSavedLaterId)}
+          >
+            {deskEntries.map((entry) => (
+              <Link
+                key={entry.id}
+                href={entry.href}
+                data-testid={`sidebar-desk-${entry.id}`}
+                className={cn(
+                  "block min-h-[46px] rounded-[16px] border-2 px-2.5 py-2 text-sm transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
+                  entry.selected
+                    ? "border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]"
+                    : "border-transparent hover:border-[var(--shock-ink)] hover:bg-white"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "inline-flex min-w-[38px] items-center justify-center rounded-[10px] border border-[var(--shock-ink)] px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em]",
+                      entry.toneClassName
+                    )}
+                  >
+                    {entry.badge}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium leading-5">{entry.title}</p>
+                    {entry.selected ? (
+                      <p className="truncate text-[10px] leading-4 text-[color:rgba(24,20,14,0.56)]">{entry.summary}</p>
+                    ) : null}
+                  </div>
+                  {typeof entry.unread === "number" && entry.unread > 0 ? (
+                    <span className="min-w-5 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-1 text-center font-mono text-[10px]">
+                      {entry.unread}
+                    </span>
+                  ) : null}
+                </div>
+              </Link>
+            ))}
+          </SidebarSection>
+        ) : null}
       </div>
 
       <div className="border-t-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-2">
-        <div className="grid grid-cols-2 gap-2">
-          <Link
-            href="/inbox"
-            className={cn(
-              "flex min-h-[44px] items-center justify-between gap-2 rounded-[14px] border-2 px-2.5 py-2 text-sm shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
-              active === "inbox" ? "border-[var(--shock-ink)] bg-[var(--shock-pink)] text-white" : "bg-white"
-            )}
-          >
-            <span className="flex items-center gap-2 font-medium">
-              <InboxIcon />
-              Inbox
-            </span>
-            <span className="font-mono text-[10px]">{openInboxCount}</span>
-          </Link>
+        <Link
+          href="/inbox"
+          className={cn(
+            "flex min-h-[44px] items-center justify-between gap-2 rounded-[14px] border-2 px-2.5 py-2 text-sm shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
+            active === "inbox" ? "border-[var(--shock-ink)] bg-[var(--shock-pink)] text-white" : "bg-white"
+          )}
+        >
+          <span className="flex items-center gap-2 font-medium">
+            <InboxIcon />
+            Inbox
+          </span>
+          <span className="font-mono text-[10px]">{openInboxCount}</span>
+        </Link>
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <Link
             href="/board"
             className={cn(
-              "flex min-h-[44px] items-center justify-between gap-2 rounded-[14px] border-2 px-2.5 py-2 text-sm shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
-              active === "board" ? "border-[var(--shock-ink)] bg-white" : "bg-white"
+              "inline-flex min-h-[44px] flex-1 items-center justify-between rounded-[14px] border-2 px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
+              active === "board" ? "border-[var(--shock-ink)] bg-white" : "bg-[var(--shock-paper)]"
             )}
           >
-            <span className="flex items-center gap-2 font-medium">
+            <span className="flex items-center gap-2">
               <WorkspaceModeIcon />
               Board
             </span>
-            <span className="font-mono text-[10px]">{roomList.length}</span>
+            <span>{roomList.length}</span>
           </Link>
+          <span className="inline-flex min-h-[40px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]">
+            {runningAgents} live
+          </span>
+          <span className="inline-flex min-h-[40px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]">
+            {blockedAgents} blocked
+          </span>
         </div>
 
         <div className="mt-2 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-2.5 py-2.5 shadow-[var(--shock-shadow-sm)]">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate font-display text-[14px] font-bold leading-none">
-                {selectedRoom?.title || workspaceName || "OpenShock"}
-              </p>
-              <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
-                {selectedRoom ? selectedRoom.issueKey : workspaceSubtitle || "shock-main"}
-              </p>
-            </div>
-            <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em]">
-              {runningAgents}/{machineList.length} live
-            </span>
-          </div>
-          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.62)]">
-            {runningAgents} live · {blockedAgents} blocked · {openInboxCount} inbox
+          <p className="truncate font-display text-[14px] font-bold leading-none">
+            {selectedRoom?.title || workspaceName || "OpenShock"}
+          </p>
+          <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
+            {selectedWorkspaceLabel}
           </p>
         </div>
 
         {shellProfiles.length > 0 ? (
-          <div
-            data-testid="sidebar-profile-hub"
-            className="mt-2 rounded-[18px] border-2 border-[var(--shock-ink)] bg-black px-2.5 py-2.5 text-[var(--shock-paper)] shadow-[var(--shock-shadow-sm)]"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(255,248,231,0.72)]">
-                  Profiles
-                </p>
-                <p className="mt-1 font-display text-[14px] font-bold leading-none">Current People / Machine</p>
-              </div>
-              <span className="font-mono text-[10px] uppercase text-[color:rgba(255,248,231,0.62)]">
-                {shellProfiles.length} links
-              </span>
-            </div>
-            <div className="mt-2 space-y-1.5">
-              {shellProfiles.map((entry) => (
-                <Link
-                  key={entry.id}
-                  href={entry.href}
-                  data-testid={`sidebar-profile-${entry.id}`}
-                  className="block rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-2.5 py-2 text-[var(--shock-ink)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-paper)] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+          <div data-testid="sidebar-profile-hub" className="mt-2 grid gap-2">
+            {shellProfiles.map((entry) => (
+              <Link
+                key={entry.id}
+                href={entry.href}
+                data-testid={`sidebar-profile-${entry.id}`}
+                className="flex min-h-[40px] items-center gap-2 rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-2.5 py-2 text-[var(--shock-ink)] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]"
+              >
+                <span
+                  className={cn(
+                    "inline-flex min-h-[28px] min-w-[44px] items-center justify-center rounded-[10px] border-2 border-[var(--shock-ink)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em]",
+                    profileEntryBadgeTone(entry.id)
+                  )}
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "inline-flex min-h-[28px] min-w-[50px] items-center justify-center rounded-[10px] border-2 border-[var(--shock-ink)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em]",
-                        profileEntryBadgeTone(entry.id)
-                      )}
-                    >
-                      {entry.badge}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold leading-5">{entry.title}</p>
-                      <p className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
-                        {entry.meta}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em]",
-                        profileEntryTone(entry.tone)
-                      )}
-                    >
-                      {entry.status}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
+                  {entry.badge}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold leading-none">{entry.title}</p>
+                  <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
+                    {entry.status}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em]",
+                    profileEntryTone(entry.tone)
+                  )}
+                >
+                  {entry.id}
+                </span>
+              </Link>
+            ))}
           </div>
         ) : null}
       </div>

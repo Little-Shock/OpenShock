@@ -1407,7 +1407,6 @@ function RoomWorkbenchRailSummary({
   activeAgentsCount,
   relatedSignals,
   relatedHandoffs,
-  planningMirrorHref,
   pullRequestActionLabel,
   pullRequestActionDisabled,
   onPullRequestAction,
@@ -1424,7 +1423,6 @@ function RoomWorkbenchRailSummary({
   activeAgentsCount: number;
   relatedSignals: ApprovalCenterItem[];
   relatedHandoffs: AgentHandoff[];
-  planningMirrorHref: string;
   pullRequestActionLabel: string;
   pullRequestActionDisabled: boolean;
   onPullRequestAction: (() => Promise<void>) | null;
@@ -1458,32 +1456,23 @@ function RoomWorkbenchRailSummary({
       </Panel>
 
       <Panel tone="white">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
-          <Link
-            href={`/issues/${room.issueKey}`}
-            className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-          >
-            打开 Issue
-          </Link>
-          <Link
-            href={buildRoomWorkbenchHref(room.id, "run")}
-            className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-          >
-            打开 Run Sheet
-          </Link>
-          <Link
-            href={buildRoomWorkbenchHref(room.id, "pr")}
-            className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-          >
-            打开 PR Sheet
-          </Link>
-          <Link
-            href={planningMirrorHref}
-            data-testid="room-context-open-planning-mirror"
-            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-          >
-            Board Mirror
-          </Link>
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">Rail Snapshot</p>
+        <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.66)]">
+          Chat 保持主面，Topic / Run / PR / Context 统一改走顶部 tabs，右侧 rail 只保留摘要，不再重复摆一套跳转入口。
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+            {ROOM_WORKBENCH_TAB_LABEL[activeTab]}
+          </span>
+          <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+            {activeAgentsCount} active agents
+          </span>
+          <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+            {relatedSignals.length} signals
+          </span>
+          <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+            {relatedHandoffs.length} handoffs
+          </span>
         </div>
       </Panel>
 
@@ -2436,7 +2425,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
         onQueryChange={quickSearch.onQueryChange}
         onSelect={quickSearch.onSelectQuickSearch}
       />
-      <div className="grid h-full min-h-0 w-full overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[274px_minmax(0,1fr)]">
+      <div className="grid h-full min-h-0 w-full overflow-hidden border-y-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] md:grid-cols-[258px_minmax(0,1fr)]">
         <StitchSidebar
           active="channels"
           channels={sidebarChannels}
@@ -2463,7 +2452,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
           inboxCount={inboxCount}
           onOpenQuickSearch={quickSearch.onOpenQuickSearch}
         />
-        <section className="flex min-h-0 flex-col bg-white">
+        <section className="flex min-h-0 flex-col bg-[var(--shock-paper)]">
           <WorkspaceStatusStrip
             workspaceName={workspaceName}
             disconnected={loading || Boolean(error) || sidebarMachines.every((machine) => machine.state === "offline")}
@@ -2824,6 +2813,11 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
   const workspaceName = loading || error ? undefined : state.workspace.name;
   const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
   const activeWorkbenchTab = parseRoomWorkbenchTab(searchParams.get("tab"));
+  const roomWorkbenchTabs = (["chat", "topic", "run", "pr", "context"] as RoomWorkbenchTab[]).map((tab) => ({
+    label: ROOM_WORKBENCH_TAB_LABEL[tab],
+    href: buildRoomWorkbenchHref(roomId, tab),
+    testId: `room-workbench-tab-${tab}`,
+  }));
   const planningMirrorHref = room
     ? buildPlanningMirrorHref({
         roomId: room.id,
@@ -3008,7 +3002,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
         onQueryChange={quickSearch.onQueryChange}
         onSelect={quickSearch.onSelectQuickSearch}
       />
-      <div className="grid h-full min-h-0 w-full overflow-hidden border-y-2 border-[var(--shock-ink)] bg-white md:grid-cols-[274px_minmax(0,1fr)]">
+      <div className="grid h-full min-h-0 w-full overflow-hidden border-y-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] md:grid-cols-[258px_minmax(0,1fr)]">
         <StitchSidebar
           active="rooms"
           channels={sidebarChannels}
@@ -3022,7 +3016,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
           inboxCount={inboxCount}
           onOpenQuickSearch={quickSearch.onOpenQuickSearch}
         />
-        <section className="flex min-h-0 flex-col bg-white">
+        <section className="flex min-h-0 flex-col bg-[var(--shock-paper)]">
           <WorkspaceStatusStrip
             workspaceName={workspaceName}
             disconnected={loading || Boolean(error) || sidebarMachines.every((machine) => machine.state === "offline")}
@@ -3039,6 +3033,8 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
             }
             searchPlaceholder="Search room / issue / run"
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
+            tabs={roomWorkbenchTabs}
+            activeTab={ROOM_WORKBENCH_TAB_LABEL[activeWorkbenchTab]}
           />
           <div className="border-b-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -3057,7 +3053,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
             </div>
           </div>
           <div className="grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="flex min-h-0 flex-col border-r-2 border-[var(--shock-ink)]">
+            <div className="flex min-h-0 flex-col bg-[var(--shock-paper)]">
               <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -3069,26 +3065,18 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {activeWorkbenchTab !== "chat" ? (
-                      <Link
-                        href={buildRoomWorkbenchHref(roomId, "chat")}
-                        className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                      >
-                        Back to Chat
-                      </Link>
-                    ) : null}
                     <Link
                       href={room ? `/issues/${room.issueKey}` : "/issues"}
-                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                      className="flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                     >
                       Issue
                     </Link>
                     <Link
                       href={planningMirrorHref}
                       data-testid="room-open-planning-mirror"
-                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                      className="flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                     >
-                      Board mirror
+                      Board
                     </Link>
                   </div>
                 </div>
@@ -3322,7 +3310,6 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                     activeAgentsCount={activeAgents.length}
                     relatedSignals={relatedSignals}
                     relatedHandoffs={relatedHandoffs}
-                    planningMirrorHref={planningMirrorHref}
                     pullRequestActionLabel={pullRequestActionLabel}
                     pullRequestActionDisabled={pullRequestActionDisabled}
                     onPullRequestAction={pullRequestActionHandler}

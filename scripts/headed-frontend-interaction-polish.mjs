@@ -321,7 +321,7 @@ try {
   await assertNoHorizontalOverflow(page, "Setup work surface", "work");
   await capture(page, "setup-density");
 
-  await waitForPage(page, `${webURL}/inbox`, "Approval Center");
+  await waitForPage(page, `${webURL}/inbox`, "Inbox");
   await assertNoHorizontalOverflow(page, "Inbox work surface", "work");
   record("work", "Setup / Inbox 都沿用更紧凑的 work shell 卡片密度，没有再出现需要横向挤压的白缝 -> PASS");
   await capture(page, "inbox-density");
