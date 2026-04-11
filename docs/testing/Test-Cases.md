@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.19
+**版本:** 1.20
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1104,3 +1104,19 @@
   6. 点击 action card 的 `Open In Mailbox`，确认仍能 deep-link 回对应 Mailbox handoff。
 - 预期结果: PR detail 必须成为正式 closeout 执行入口，而不是只读旁观面。用户应能在同一页完成 parent block、child reply comment/ack/complete、以及 parent resume，并看到这些 mutation 直接以前台 live truth 回刷。
 - 业务结论: 2026 年 4 月 11 日 `TKT-90` 已把 PR detail thread action surface 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-thread-actions.md` 已记录 `parent blocked -> child comment -> child completed -> resume parent` 的 Windows Chrome 有头 walkthrough，同时 `pnpm --dir apps/web typecheck`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/pull-request-detail-view.tsx'` 与 `pnpm verify:web` 已锁住前端类型、lint、构建和 live truth hygiene，因此这条 PR detail inline-action 用例当前转为 `Pass`。
+
+## TC-080 Mailbox Batch Queue
+
+- 业务目标: 确认 `/mailbox` 已能围当前可见 room ledger 的多条 open handoff 做统一批量处理，而不是让 reviewer / tester lane 逐卡重复点 `acknowledged / comment / completed`。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 当前 room 已存在至少两条 open handoff；当前会话具备 `run.execute` 权限。
+- 测试步骤:
+  1. 打开 `/mailbox?roomId=room-runtime`，确认两条 open handoff 已出现在当前 room ledger。
+  2. 点击 `Select Open`，确认 `Batch Queue` 会把当前可见 open handoff 全部锁定，并出现对应 selected chip。
+  3. 执行 `Batch Acknowledge`，确认两条 handoff 都切到 `acknowledged`。
+  4. 填写统一 note，选择 `source agent`，执行 `Batch Formal Comment`，确认每条 handoff 都追加 formal comment，且 lifecycle 继续保持 `acknowledged`。
+  5. 再填写统一 closeout note，执行 `Batch Complete`，确认两条 handoff 都切到 `completed`，open queue 清零、selection 自动清空。
+  6. 回读 state / inbox，确认 closeout note 进入 handoff truth 与 inbox summary。
+- 预期结果: Mailbox 必须提供真实可用的批量 closeout 面。多条 handoff 的批量动作应继续沿既有单条 handoff contract 顺序写回，不允许出现前端 fake batch state、selection 残留或 inbox 摘要不同步。
+- 业务结论: 2026 年 4 月 11 日 `TKT-91` 已把 mailbox batch queue 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md` 已记录 `requested -> selected -> batch acknowledged -> batch comment -> batch completed` 的 Windows Chrome 有头 walkthrough，同时 `pnpm --dir apps/web typecheck`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx src/components/stitch-board-inbox-views.tsx'` 与 `node --check scripts/headed-mailbox-batch-actions.mjs` 已锁住前端类型、lint 与脚本合法性，因此这条 mailbox bulk-closeout 用例当前转为 `Pass`。

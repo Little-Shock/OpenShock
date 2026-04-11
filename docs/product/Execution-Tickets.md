@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.21
+**版本:** 1.22
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace），以及 PR detail collaboration thread + inline thread actions；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace）、PR detail collaboration thread + inline thread actions，以及 mailbox 当前 room ledger 的 multi-select batch queue；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -1309,6 +1309,30 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-thread-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-thread-actions.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-079`
+
+## TKT-91 Mailbox Batch Queue
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 `/mailbox` 从单卡逐条操作推进到当前 room ledger 的多选批量处理面，让 open handoff 能用同一条 batch queue 顺序完成 `acknowledged / comment / completed`。
+- 范围:
+  - `/mailbox` live ledger 的 multi-select state
+  - batch selected chips / note / actor mode surface
+  - sequential `updateHandoff` bulk replay
+  - selection auto-clear after closeout
+  - Windows Chrome walkthrough + report
+- 依赖: `TKT-63` `TKT-64` `TKT-90`
+- Done When:
+  - `/mailbox` 会出现 `Batch Queue`，并能围当前可见 open handoff 做多选
+  - batch `acknowledged / comment / completed` 会顺序落到每条 selected handoff，而不是只做前端假状态
+  - handoff complete 后 selection 会自动清空，closeout note 与 inbox summary 会跟随正式 ledger 前滚
+- 最新证据:
+  - `pnpm --dir apps/web typecheck`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx src/components/stitch-board-inbox-views.tsx'`
+  - `node --check scripts/headed-mailbox-batch-actions.mjs`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-080`
 
 ---
 
