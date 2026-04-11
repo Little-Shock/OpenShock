@@ -426,7 +426,7 @@
 - 预期结果: 用户围绕同一条 room 完成讨论、执行、交付和回溯，不需要频繁跨页。
 - 业务结论: `TKT-23` 已用 `pnpm test:headed-room-workbench-topic-context` 完成有头 exact replay，并在 2026 年 4 月 11 日收成 chat-first room shell。当前 `/rooms/:roomId` 默认先回到聊天主面，`Topic / Run / PR / Context` 退成 room 内的次级 sheet；`follow_thread` 仍可在 Run sheet 使用，PR entry 不再强制跳独立详情页，Context sheet 也能在 reload 与 inbox 往返后保留 room-first 状态，因此这条用例当前继续保持 `Pass`。
 
-## TC-032 Board Secondary Planning Surface
+## TC-032 Board Planning Mirror Surface
 
 - 业务目标: 确认 Board 仍可用，但已经退到次级 planning surface。
 - 当前执行状态: Pass
@@ -437,7 +437,7 @@
   2. 查看 board lane 并创建或打开一条 issue。
   3. 返回 room，确认 Board 不是默认首页心智中心。
 - 预期结果: Board 服务于规划，不抢占协作壳主路径。
-- 业务结论: 2026 年 4 月 9 日 `TKT-26` 已新增 `pnpm test:headed-board-planning-surface -- --report docs/testing/Test-Report-2026-04-09-board-planning-surface.md`，在 headed Chromium 下完成 `room -> board -> issue -> board -> room` exact replay。当前 `/board` 会带上 room / issue context 并显式提供回跳按钮，planning card 语言也已压缩成轻量 mirror，因此这条用例当前转为 `Pass`。
+- 业务结论: 2026 年 4 月 11 日 `TKT-26` 已用 `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-board-planning-surface -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-board-planning-surface.md` 完成有头 exact replay。当前 `/board` 会带上 room / issue context 并显式提供回跳按钮，顶栏与摘要条已压成紧凑 planning mirror，lane 区也从超宽 6 栏主工作台收成 room-return 优先的次级规划面，因此这条用例当前继续保持 `Pass`。
 
 ## TC-033 Quick Search / Search Result Surface
 

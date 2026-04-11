@@ -1479,7 +1479,7 @@ function RoomWorkbenchRailSummary({
           </Link>
           <Link
             href={planningMirrorHref}
-            data-testid="room-open-planning-mirror"
+            data-testid="room-context-open-planning-mirror"
             className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
           >
             Board Mirror

@@ -158,8 +158,8 @@
   - `TKT-33` 的 machine shell / daemon / provider-model catalog 与 Agent provider+model+runtime affinity headed evidence
 - [Test Report 2026-04-09 Live Truth Hygiene](./Test-Report-2026-04-09-live-truth-hygiene.md)
   - `TKT-38` 的 state / SSE visible truth negative scan、copy cleanup 与 release-gate hygiene evidence
-- [Test Report 2026-04-09 Board Planning Surface](./Test-Report-2026-04-09-board-planning-surface.md)
-  - `TKT-26` 的 room / issue -> board planning mirror -> room exact replay，与轻量 card 语言 evidence
+- [Test Report 2026-04-11 Windows Chrome Board Planning Mirror Surface](./Test-Report-2026-04-11-windows-chrome-board-planning-surface.md)
+  - `TKT-26` 的 room / issue -> board planning mirror -> room exact replay，与紧凑 lane 概览、room-return card 语言 evidence
 - [Test Report 2026-04-09 Runtime Lease Conflict / Scheduler Hardening](./Test-Report-2026-04-09-runtime-lease-conflict-scheduler-hardening.md)
   - `TKT-31` 的 lease conflict recovery、scheduler failover continuity 与 `/setup` `/agents` live decision-reason evidence
 - [Test Report 2026-04-09 Memory Viewer / Correction / Forget Surface](./Test-Report-2026-04-09-memory-viewer-correction-forget.md)

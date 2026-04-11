@@ -378,6 +378,9 @@ export function StitchBoardView() {
   const sidebarAgents = liveAgents;
   const activeAgents = liveAgents.filter((agent) => agent.state === "running").length;
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
+  const openLaneCount = liveIssues.filter((issue) => issue.state !== "done").length;
+  const reviewLaneCount = liveIssues.filter((issue) => issue.state === "review").length;
+  const blockedLaneCount = liveIssues.filter((issue) => issue.state === "blocked" || issue.state === "paused").length;
   const workspaceName = loading || error ? undefined : state.workspace.name;
   const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
   const disconnected = loading || Boolean(error) || liveMachines.every((machine) => machine.state === "offline");
@@ -391,6 +394,8 @@ export function StitchBoardView() {
   const returnLabel = searchParams.get("returnLabel");
   const safeReturnTo = returnTo?.startsWith("/") ? returnTo : null;
   const planningContextVisible = Boolean(sourceRoom || sourceIssue || safeReturnTo);
+  const visibleColumns = columns.filter((column) => column.cards.length > 0);
+  const displayColumns = visibleColumns.length > 0 ? visibleColumns : columns;
 
   const contextActions = [
     sourceRoom
@@ -461,27 +466,25 @@ export function StitchBoardView() {
         <section className="flex min-h-0 flex-col">
           <WorkspaceStatusStrip workspaceName={workspaceName} disconnected={disconnected} />
           <StitchTopBar
-            eyebrow="Secondary Planning"
-            title="Planning Mirror"
-            description="这里保留 lane 排序和轻量计划，但真正的 owner、run、PR 与 blocker 仍然以 room / inbox 为主。"
-            tabs={["Rooms First", "Planning Mirror", "Machines"]}
-            activeTab="Planning Mirror"
-            searchPlaceholder="Search issue / room / run"
+            eyebrow="Planning Mirror"
+            title="Board"
+            description="这里只负责排优先级和看推进节奏，真正的讨论、执行和追问仍然回到 room。"
+            searchPlaceholder="Search issue / room / agent"
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
           />
           {planningContextVisible ? (
             <div className="border-b-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-                <div>
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.62)]">
-                    planning mirror context
+                    return context
                   </p>
-                  <p className="mt-1 text-sm leading-6">
+                  <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
                     {sourceRoom
-                      ? `当前从讨论间 ${sourceRoom.title} 打开规划面，先在这里整理 lane，再回 room 收口执行。`
+                      ? `当前从 ${sourceRoom.title} 回到 board 排优先级，处理完直接回讨论间继续推进。`
                       : sourceIssue
-                        ? `当前从 ${sourceIssue.key} 打开规划面。Issue 仍是耐久对象，但协作上下文优先留在 room。`
-                        : "当前规划面带着来源上下文打开，处理完请直接回原工作面。 "}
+                        ? `当前从 ${sourceIssue.key} 进入 board。Issue 保持耐久真值，协作上下文仍以 room 为主。`
+                        : "当前 board 带着来源上下文打开，处理完请直接回原工作面。"}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -502,21 +505,30 @@ export function StitchBoardView() {
               </div>
             </div>
           ) : null}
-          <div className="border-b-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-2">
-            <div className="grid items-center gap-3 xl:grid-cols-[220px_160px_1fr_auto_auto]">
-              <p className="font-mono text-[10px] tracking-[0.16em]">{liveMachines.length} machines visible</p>
-              <p className="font-mono text-[10px] tracking-[0.16em]">{activeAgents} agents running</p>
-              <div className="flex gap-1">
-                <span className="h-3 w-3 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-purple)]" />
-                <span className="h-3 w-3 rounded-full border border-[var(--shock-ink)] bg-[var(--shock-lime)]" />
-                <span className="h-3 w-3 rounded-full border border-[var(--shock-ink)] bg-black" />
-              </div>
-              <span className="rounded-[4px] border-2 border-[var(--shock-ink)] bg-white px-3 py-1 font-mono text-[10px]">{livePullRequests.length} PR links</span>
-              <span className="font-mono text-[10px]">paired_at: {loading || error ? "同步中" : state.workspace.lastPairedAt || "未配对"}</span>
+          <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                open lanes {String(openLaneCount).padStart(2, "0")}
+              </span>
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                review {String(reviewLaneCount).padStart(2, "0")}
+              </span>
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                blocked {String(blockedLaneCount).padStart(2, "0")}
+              </span>
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                agents live {String(activeAgents).padStart(2, "0")}
+              </span>
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                pr links {String(livePullRequests.length).padStart(2, "0")}
+              </span>
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.64)]">
+                paired {loading || error ? "syncing" : state.workspace.lastPairedAt || "unpaired"}
+              </span>
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_296px]">
             <div className="min-h-0 overflow-auto bg-[var(--shock-paper)] px-4 py-4">
               {loading ? (
                 <SurfaceStateMessage
@@ -528,12 +540,20 @@ export function StitchBoardView() {
               ) : liveIssues.length === 0 ? (
                 <SurfaceStateMessage title="当前还没有任务卡" message="等第一条 Issue 创建后，Board 会直接显示 live lane truth。" />
               ) : (
-                <div className="grid min-w-[1500px] gap-4 xl:grid-cols-6">
-                  {columns.map((column) => (
-                    <section key={column.title}>
-                      <div className="mb-3 flex items-center justify-between">
-                        <h3 className="font-display text-lg font-bold uppercase italic">{column.title}</h3>
-                        <span className="rounded-[4px] border-2 border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px]">
+                <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                  {displayColumns.map((column) => (
+                    <section
+                      key={column.title}
+                      className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[#fbf7eb] p-3 shadow-[var(--shock-shadow-sm)]"
+                    >
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-display text-lg font-bold uppercase italic">{column.title}</h3>
+                          <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">
+                            {column.cards.length > 0 ? "room-return mirror" : "empty lane"}
+                          </p>
+                        </div>
+                        <span className="rounded-[8px] border-2 border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px]">
                           {String(column.cards.length).padStart(2, "0")}
                         </span>
                       </div>
@@ -542,7 +562,7 @@ export function StitchBoardView() {
                           <article
                             key={card.id}
                             className={cn(
-                              "border-2 border-[var(--shock-ink)] bg-white px-3 py-3 shadow-[var(--shock-shadow-sm)]",
+                              "rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-3.5 py-3.5 shadow-[var(--shock-shadow-sm)]",
                               card.state === "running" && "bg-[var(--shock-yellow)]",
                               card.state === "paused" && "bg-[var(--shock-paper)]"
                             )}
@@ -554,11 +574,16 @@ export function StitchBoardView() {
                                 <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em]">
                                   {boardStateLabel(card.state)}
                                 </span>
+                                {card.pullRequest ? (
+                                  <span className="rounded-full border border-[var(--shock-ink)] bg-[#f6f1df] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em]">
+                                    {card.pullRequest}
+                                  </span>
+                                ) : null}
                               </div>
-                              <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.52)]">
-                                planning
-                              </span>
                             </div>
+                            <p className="mt-3 truncate font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.54)]">
+                              {roomMap.get(card.roomId)?.title ?? "linked room"}
+                            </p>
                             <h4 className="mt-3 text-sm font-semibold leading-6">{card.title}</h4>
                             <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">
                               {card.summary}
@@ -567,15 +592,12 @@ export function StitchBoardView() {
                               <span className="rounded-full border border-[var(--shock-ink)] bg-[#f7f7f7] px-2 py-1">
                                 owner {card.owner}
                               </span>
-                              <span className="rounded-full border border-[var(--shock-ink)] bg-[#f7f7f7] px-2 py-1">
-                                room {roomMap.get(card.roomId)?.title ?? card.roomId}
-                              </span>
                             </div>
                             <div className="mt-4 flex flex-wrap gap-2">
                               <Link
                                 href={`/rooms/${card.roomId}?tab=context`}
                                 data-testid={`board-card-room-${card.key}`}
-                                className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                                className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
                               >
                                 回讨论间
                               </Link>
@@ -584,7 +606,7 @@ export function StitchBoardView() {
                                 data-testid={`board-card-issue-${card.key}`}
                                 className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                               >
-                                打开 Issue
+                                看 Issue
                               </Link>
                             </div>
                           </article>
@@ -598,19 +620,23 @@ export function StitchBoardView() {
 
             <aside className="hidden min-h-0 border-l-2 border-[var(--shock-ink)] bg-[#f1efe7] xl:block">
               <div className="h-full overflow-y-auto p-4">
-                <div className="border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
-                  <p className="font-mono text-[10px] tracking-[0.16em]">创建新 Issue Room</p>
-                <div className="mt-4 space-y-3">
-                  <input data-testid="board-create-issue-title" value={title} onChange={(event) => setTitle(event.target.value)} disabled={!canCreateIssue} className="w-full border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="需求标题" />
-                  <textarea data-testid="board-create-issue-summary" value={summary} onChange={(event) => setSummary(event.target.value)} disabled={!canCreateIssue} className="min-h-[120px] w-full border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="需求摘要" />
-                  <button data-testid="board-create-issue-submit" onClick={handleCreateIssue} disabled={creating || !canCreateIssue} className="w-full border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] shadow-[var(--shock-shadow-sm)] disabled:opacity-60">
-                    {creating ? "创建中..." : "创建并进入讨论间"}
-                  </button>
-                  <p data-testid="board-create-issue-authz" className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                    {createIssueStatus}
+                <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">new issue room</p>
+                  <h3 className="mt-2 font-display text-[24px] font-bold leading-none">起一条新讨论</h3>
+                  <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">
+                    新需求先在这里起卡，真正的沟通、追问和交付闭环都回到 room 里完成。
                   </p>
+                  <div className="mt-4 space-y-3">
+                    <input data-testid="board-create-issue-title" value={title} onChange={(event) => setTitle(event.target.value)} disabled={!canCreateIssue} className="w-full rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="需求标题" />
+                    <textarea data-testid="board-create-issue-summary" value={summary} onChange={(event) => setSummary(event.target.value)} disabled={!canCreateIssue} className="min-h-[120px] w-full rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="需求摘要" />
+                    <button data-testid="board-create-issue-submit" onClick={handleCreateIssue} disabled={creating || !canCreateIssue} className="w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] shadow-[var(--shock-shadow-sm)] disabled:opacity-60">
+                      {creating ? "创建中..." : "创建并进入讨论间"}
+                    </button>
+                    <p data-testid="board-create-issue-authz" className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                      {createIssueStatus}
+                    </p>
+                  </div>
                 </div>
-              </div>
               </div>
             </aside>
           </div>

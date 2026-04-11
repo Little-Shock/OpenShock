@@ -350,7 +350,7 @@
   - [x] board lane 与 issue -> room -> run 主链已联动
   - [x] Board 已从主消息导航挪到左下角次级入口，不再和频道 / room 同层抢主壳心智
   - [x] room / issue 进入 `/board` 时会带上 source-aware planning mirror context，并显式提供回讨论间 / 看 Issue 回跳
-  - [x] Board card 已压成更轻的 planning 语言，只保留状态、owner、room 摘要与最短动作，不再像独立后台详情页
+  - [x] Board 顶栏、摘要条和 lane 已压成更轻的 planning mirror，只保留状态、PR、owner 与回 room / issue 的最短动作，不再像独立后台详情页
 - 对应 Test Cases: `TC-032`
 
 ### CHK-19 Agent / Machine Profile 与本地能力配置
