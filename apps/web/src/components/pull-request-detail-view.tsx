@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 import { OpenShockShell } from "@/components/open-shock-shell";
 import { Panel } from "@/components/phase-zero-views";
+import { usePhaseZeroState } from "@/lib/live-phase0";
 import type {
+  AgentHandoff,
   PullRequestConversationEntry,
   PullRequestDeliveryCommunicationEntry,
   PullRequestDeliveryDelegation,
@@ -14,6 +18,7 @@ import type {
   PullRequestDeliveryTemplate,
   PullRequestDetail,
 } from "@/lib/phase-zero-types";
+import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -249,6 +254,62 @@ function delegationCommunicationKindTone(kind: PullRequestDeliveryCommunicationE
   }
 }
 
+function mailboxKindLabel(kind?: AgentHandoff["kind"]) {
+  switch (kind) {
+    case "governed":
+      return "governed";
+    case "delivery-closeout":
+      return "delivery closeout";
+    case "delivery-reply":
+      return "delivery reply";
+    default:
+      return "manual";
+  }
+}
+
+function mailboxReplyStatusLabel(status: AgentHandoff["status"]) {
+  switch (status) {
+    case "acknowledged":
+      return "reply active";
+    case "blocked":
+      return "reply blocked";
+    case "completed":
+      return "reply completed";
+    default:
+      return "reply requested";
+  }
+}
+
+function mailboxReplyStatusTone(status: AgentHandoff["status"]) {
+  switch (status) {
+    case "acknowledged":
+      return "bg-[var(--shock-lime)]";
+    case "blocked":
+      return "bg-[var(--shock-pink)] text-white";
+    case "completed":
+      return "bg-[var(--shock-yellow)]";
+    default:
+      return "bg-white";
+  }
+}
+
+function mailboxParentStatusLabel(status: AgentHandoff["status"]) {
+  return `parent ${delegationHandoffStatusLabel(status)}`;
+}
+
+function formatMailboxActionLabel(action: "acknowledged" | "blocked" | "comment" | "completed") {
+  switch (action) {
+    case "acknowledged":
+      return "Acknowledge";
+    case "blocked":
+      return "Block";
+    case "comment":
+      return "Formal Comment";
+    default:
+      return "Complete";
+  }
+}
+
 function conversationKindLabel(kind: PullRequestConversationEntry["kind"]) {
   switch (kind) {
     case "review":
@@ -444,6 +505,273 @@ function DeliveryCommunicationCard({ entry }: { entry: PullRequestDeliveryCommun
         </Link>
       ) : null}
     </article>
+  );
+}
+
+function ThreadActionCard({
+  handoff,
+  parentHandoff,
+  canMutate,
+  busyKey,
+  noteValue,
+  commentActorId,
+  actionError,
+  onNoteChange,
+  onCommentActorChange,
+  onAdvance,
+}: {
+  handoff: AgentHandoff;
+  parentHandoff: AgentHandoff | null;
+  canMutate: boolean;
+  busyKey: string;
+  noteValue: string;
+  commentActorId: string;
+  actionError?: string | null;
+  onNoteChange: (value: string) => void;
+  onCommentActorChange: (value: string) => void;
+  onAdvance: (
+    handoff: AgentHandoff,
+    action: "acknowledged" | "blocked" | "comment" | "completed",
+    options?: { continueGovernedRoute?: boolean }
+  ) => void;
+}) {
+  const canAck = handoff.status === "requested" || handoff.status === "blocked";
+  const canBlock = handoff.status === "requested" || handoff.status === "acknowledged";
+  const canComplete = handoff.status === "acknowledged";
+  const canResumeParent =
+    handoff.kind === "delivery-reply" && parentHandoff && handoff.status === "completed" && parentHandoff.status === "blocked";
+
+  return (
+    <article
+      data-testid={`thread-action-card-${handoff.id}`}
+      className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[var(--shock-shadow-sm)]"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+              {mailboxKindLabel(handoff.kind)}
+            </span>
+            <span
+              data-testid={`thread-action-status-${handoff.id}`}
+              className={cn(
+                "border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+                handoff.kind === "delivery-reply" ? mailboxReplyStatusTone(handoff.status) : delegationHandoffStatusTone(handoff.status)
+              )}
+            >
+              {handoff.kind === "delivery-reply" ? mailboxReplyStatusLabel(handoff.status) : delegationHandoffStatusLabel(handoff.status)}
+            </span>
+            {parentHandoff ? (
+              <span
+                data-testid={`thread-action-parent-status-${handoff.id}`}
+                className={cn(
+                  "border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+                  delegationHandoffStatusTone(parentHandoff.status)
+                )}
+              >
+                {mailboxParentStatusLabel(parentHandoff.status)}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-3 font-display text-[20px] font-bold leading-6">{handoff.title}</p>
+          <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{handoff.lastAction}</p>
+        </div>
+        <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+          {compactTimestamp(handoff.updatedAt)}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px]">
+        <div className="space-y-3">
+          <textarea
+            data-testid={`thread-action-note-${handoff.id}`}
+            value={noteValue}
+            onChange={(event) => onNoteChange(event.target.value)}
+            disabled={!canMutate}
+            className="min-h-[108px] w-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3 text-sm"
+            placeholder="comment / blocked 时请写清楚上下文；complete 时可补收口说明。"
+          />
+          <label className="block space-y-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+              Comment As
+            </span>
+            <select
+              data-testid={`thread-action-comment-actor-${handoff.id}`}
+              value={commentActorId}
+              disabled={!canMutate}
+              onChange={(event) => onCommentActorChange(event.target.value)}
+              className="w-full border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm"
+            >
+              <option value={handoff.fromAgentId}>{handoff.fromAgent}</option>
+              <option value={handoff.toAgentId}>{handoff.toAgent}</option>
+            </select>
+          </label>
+          {actionError ? <p className="text-sm leading-6 text-[var(--shock-pink)]">{actionError}</p> : null}
+        </div>
+
+        <div className="grid gap-2">
+          {([
+            ["acknowledged", canAck],
+            ["blocked", canBlock],
+            ["comment", true],
+            ["completed", canComplete],
+          ] as const).map(([action, enabled]) => (
+            <button
+              key={action}
+              type="button"
+              data-testid={`thread-action-${action}-${handoff.id}`}
+              disabled={
+                !canMutate ||
+                !enabled ||
+                busyKey === `${handoff.id}:${action}` ||
+                ((action === "comment" || action === "blocked") && !noteValue.trim())
+              }
+              onClick={() => onAdvance(handoff, action)}
+              className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] disabled:opacity-50"
+            >
+              {busyKey === `${handoff.id}:${action}` ? "Working..." : formatMailboxActionLabel(action)}
+            </button>
+          ))}
+          {canResumeParent && parentHandoff ? (
+            <button
+              type="button"
+              data-testid={`thread-action-resume-parent-${handoff.id}`}
+              disabled={!canMutate || busyKey === `${parentHandoff.id}:acknowledged`}
+              onClick={() => onAdvance(parentHandoff, "acknowledged")}
+              className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] disabled:opacity-50"
+            >
+              {busyKey === `${parentHandoff.id}:acknowledged` ? "Working..." : "Resume Parent Closeout"}
+            </button>
+          ) : null}
+          <Link
+            href={`/mailbox?handoffId=${handoff.id}&roomId=${handoff.roomId}`}
+            className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em]"
+          >
+            Open In Mailbox
+          </Link>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function DeliveryThreadActionSurface({ detail }: { detail: PullRequestDetail }) {
+  const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
+  const { state, loading, error, updateHandoff } = usePhaseZeroState();
+  const [busyKey, setBusyKey] = useState("");
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [commentActors, setCommentActors] = useState<Record<string, string>>({});
+
+  const authSession = state.auth.session;
+  const canMutate = hasSessionPermission(authSession, "run.execute");
+  const mutationStatus = loading ? "syncing" : error ? "sync_failed" : permissionStatus(authSession, "run.execute");
+  const mutationBoundary = permissionBoundaryCopy(authSession, "run.execute");
+
+  const parentHandoff = detail.delivery.delegation.handoffId
+    ? state.mailbox.find((item) => item.id === detail.delivery.delegation.handoffId) ?? null
+    : null;
+  const responseHandoff = detail.delivery.delegation.responseHandoffId
+    ? state.mailbox.find((item) => item.id === detail.delivery.delegation.responseHandoffId) ?? null
+    : null;
+  const actionHandoffs = [parentHandoff, responseHandoff].filter(Boolean) as AgentHandoff[];
+
+  async function handleAdvance(
+    handoff: AgentHandoff,
+    action: "acknowledged" | "blocked" | "comment" | "completed",
+    options?: { continueGovernedRoute?: boolean }
+  ) {
+    if (!canMutate) {
+      return;
+    }
+    const note = notes[handoff.id]?.trim() ?? "";
+    const commentActorId =
+      commentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
+    const actingAgentId = action === "comment" ? commentActorId : handoff.toAgentId;
+    const nextBusyKey = `${handoff.id}:${action}`;
+
+    setBusyKey(nextBusyKey);
+    setActionError(null);
+    try {
+      await updateHandoff(handoff.id, {
+        action,
+        actingAgentId,
+        note: note || undefined,
+        continueGovernedRoute: options?.continueGovernedRoute,
+      });
+      setNotes((current) => ({ ...current, [handoff.id]: "" }));
+      startRefresh(() => {
+        router.refresh();
+      });
+    } catch (mutationError) {
+      setActionError({
+        id: handoff.id,
+        message: mutationError instanceof Error ? mutationError.message : "thread action failed",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  return (
+    <Panel tone="paper">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+            Thread Actions
+          </p>
+          <p className="mt-2 font-display text-[22px] font-bold">Operate Current Closeout Without Leaving PR</p>
+          <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+            当前活动的 delegated closeout / unblock reply 可以直接在 PR detail 里 formal ack、block、comment、complete，不必先跳去 Mailbox。
+          </p>
+        </div>
+        <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
+          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">Mutation Gate</p>
+          <p data-testid="pull-request-thread-action-gate" className="mt-1.5 font-display text-[18px] font-semibold">
+            {isRefreshing ? "refreshing" : mutationStatus}
+          </p>
+        </div>
+      </div>
+      {!canMutate ? (
+        <p className="mt-4 text-sm leading-6 text-[var(--shock-pink)]">{mutationBoundary}</p>
+      ) : null}
+      <div className="mt-4 space-y-3">
+        {actionHandoffs.length > 0 ? (
+          actionHandoffs.map((handoff) => {
+            const noteValue = notes[handoff.id] ?? "";
+            const commentActorId =
+              commentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
+            const actionParent = handoff.parentHandoffId
+              ? state.mailbox.find((item) => item.id === handoff.parentHandoffId) ?? null
+              : null;
+            return (
+              <ThreadActionCard
+                key={handoff.id}
+                handoff={handoff}
+                parentHandoff={actionParent}
+                canMutate={canMutate}
+                busyKey={busyKey}
+                noteValue={noteValue}
+                commentActorId={commentActorId}
+                actionError={actionError?.id === handoff.id ? actionError.message : null}
+                onNoteChange={(value) => setNotes((current) => ({ ...current, [handoff.id]: value }))}
+                onCommentActorChange={(value) => setCommentActors((current) => ({ ...current, [handoff.id]: value }))}
+                onAdvance={handleAdvance}
+              />
+            );
+          })
+        ) : detail.delivery.delegation.handoffId || detail.delivery.delegation.responseHandoffId ? (
+          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+            当前 live mailbox truth 还在同步，稍后会在这里出现可操作 handoff。
+          </p>
+        ) : (
+          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+            当前还没有 formal delivery handoff；一旦 delegated closeout / unblock reply 起单，这里会直接变成 thread action surface。
+          </p>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -734,6 +1062,8 @@ export function PullRequestDetailView({
                     )}
                   </div>
                 </Panel>
+
+                <DeliveryThreadActionSurface detail={detail} />
 
                 <Panel tone="paper">
                   <div className="flex items-center justify-between gap-3">

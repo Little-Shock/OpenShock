@@ -27,6 +27,7 @@ const supportedModes = new Set([
   "delegate-retry",
   "delegate-response-comment-sync",
   "delegate-communication-thread",
+  "delegate-thread-actions",
   "delegate-resume",
   "delegate-visibility",
   "delegate-resume-parent",
@@ -63,6 +64,7 @@ const evidencePrefixByMode = {
   "delegate-retry": "openshock-tkt75-governed-route-",
   "delegate-response-comment-sync": "openshock-tkt76-governed-route-",
   "delegate-communication-thread": "openshock-tkt89-governed-route-",
+  "delegate-thread-actions": "openshock-tkt90-governed-route-",
   "delegate-resume": "openshock-tkt77-governed-route-",
   "delegate-visibility": "openshock-tkt78-governed-route-",
   "delegate-resume-parent": "openshock-tkt79-governed-route-",
@@ -391,6 +393,7 @@ try {
     runMode === "delegate-retry" ||
     runMode === "delegate-response-comment-sync" ||
     runMode === "delegate-communication-thread" ||
+    runMode === "delegate-thread-actions" ||
     runMode === "delegate-resume" ||
     runMode === "delegate-visibility" ||
     runMode === "delegate-resume-parent" ||
@@ -503,6 +506,7 @@ try {
     runMode === "delegate-retry" ||
     runMode === "delegate-response-comment-sync" ||
     runMode === "delegate-communication-thread" ||
+    runMode === "delegate-thread-actions" ||
     runMode === "delegate-resume" ||
     runMode === "delegate-visibility" ||
     runMode === "delegate-resume-parent" ||
@@ -562,6 +566,7 @@ try {
       runMode === "delegate-retry" ||
       runMode === "delegate-response-comment-sync" ||
       runMode === "delegate-communication-thread" ||
+      runMode === "delegate-thread-actions" ||
       runMode === "delegate-resume" ||
       runMode === "delegate-visibility" ||
 	      runMode === "delegate-resume-parent" ||
@@ -584,6 +589,7 @@ try {
 	      if (
 	        runMode === "delegate-history-sync" ||
 	        runMode === "delegate-communication-thread" ||
+	        runMode === "delegate-thread-actions" ||
 	        runMode === "delegate-room-trace" ||
 	        runMode === "delegate-room-trace-blocked"
 	      ) {
@@ -649,6 +655,7 @@ try {
         runMode === "delegate-retry" ||
         runMode === "delegate-response-comment-sync" ||
         runMode === "delegate-communication-thread" ||
+        runMode === "delegate-thread-actions" ||
         runMode === "delegate-resume" ||
         runMode === "delegate-visibility" ||
         runMode === "delegate-resume-parent" ||
@@ -771,6 +778,7 @@ try {
           runMode === "delegate-retry" ||
           runMode === "delegate-response-comment-sync" ||
           runMode === "delegate-communication-thread" ||
+          runMode === "delegate-thread-actions" ||
           runMode === "delegate-resume" ||
           runMode === "delegate-visibility" ||
           runMode === "delegate-resume-parent" ||
@@ -1347,6 +1355,110 @@ try {
               "- PR detail 新增 `Delivery Collaboration Thread`，在父级 delegated closeout blocked 后会先后展示 `Parent Closeout request -> blocker -> Unblock Reply x1 request`，证明 parent / child 沟通已经进入单一时间线 -> PASS",
               "- child `delivery-reply` 的 source comment、response completion，以及 parent 重新 acknowledge 后回写给 child 的 `parent-progress`，现在都会一起出现在同一条 PR detail thread 中，而不是散落在多个卡片摘要里 -> PASS",
               "- 浏览器里读取到的 thread DOM 顺序保持 `parent blocker -> child comment -> parent resume -> child parent-progress`，说明这条 timeline 是按真实发生顺序收口，而不是静态分组拼接 -> PASS",
+            ];
+          } else if (runMode === "delegate-thread-actions") {
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.getByTestId(`thread-action-card-${delegatedHandoffID}`).waitFor({ state: "visible" });
+            assert(
+              (await readText(page, "pull-request-thread-action-gate")) === "allowed",
+              "PR detail thread action gate should allow live handoff mutations"
+            );
+
+            const blockNote = "PR detail inline action：先确认最终 release 文案。";
+            await page.getByTestId(`thread-action-note-${delegatedHandoffID}`).fill(blockNote);
+            await waitForActionEnabled(page, `thread-action-blocked-${delegatedHandoffID}`);
+            await page.getByTestId(`thread-action-blocked-${delegatedHandoffID}`).click();
+            const responseHandoff = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.kind === "delivery-reply" && item.parentHandoffId === delegatedHandoffID,
+              "response handoff missing after PR detail blocked action"
+            );
+
+            await page.waitForFunction(
+              ({ responseHandoffId }) => {
+                return document.querySelector(`[data-testid="thread-action-card-${responseHandoffId}"]`) !== null;
+              },
+              { responseHandoffId: responseHandoff.id }
+            );
+            await page.waitForFunction(
+              ({ note }) => {
+                return document.querySelector('[data-testid="delivery-delegation-summary"]')?.textContent?.includes(note) ?? false;
+              },
+              { note: blockNote }
+            );
+            await capture(page, "pull-request-delivery-thread-actions-blocked");
+
+            const sourceComment = "PR detail inline action：receipt checklist 正在补。";
+            await page.getByTestId(`thread-action-comment-actor-${responseHandoff.id}`).selectOption(responseHandoff.toAgentId);
+            await page.getByTestId(`thread-action-note-${responseHandoff.id}`).fill(sourceComment);
+            await waitForActionEnabled(page, `thread-action-comment-${responseHandoff.id}`);
+            await page.getByTestId(`thread-action-comment-${responseHandoff.id}`).click();
+            await page.waitForFunction(
+              ({ note }) => {
+                const text = document.querySelector('[data-testid="delivery-delegation-summary"]')?.textContent ?? "";
+                const thread = document.querySelector('[data-testid="delivery-communication-count"]')?.textContent ?? "";
+                return text.includes(note) && Number(thread.trim()) >= 4;
+              },
+              { note: sourceComment }
+            );
+            await capture(page, "pull-request-delivery-thread-actions-comment");
+
+            await waitForActionEnabled(page, `thread-action-acknowledged-${responseHandoff.id}`);
+            await page.getByTestId(`thread-action-acknowledged-${responseHandoff.id}`).click();
+            await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === responseHandoff.id && item.status === "acknowledged",
+              "response handoff did not acknowledge from PR detail action surface"
+            );
+            const completeNote = "PR detail inline action：receipt 已补齐，请重新接住 closeout。";
+            await page.getByTestId(`thread-action-note-${responseHandoff.id}`).fill(completeNote);
+            await waitForActionEnabled(page, `thread-action-completed-${responseHandoff.id}`);
+            await page.getByTestId(`thread-action-completed-${responseHandoff.id}`).click();
+            await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === responseHandoff.id && item.status === "completed",
+              "response handoff did not complete from PR detail action surface"
+            );
+            await page.waitForFunction(
+              ({ responseHandoffId }) => {
+                return document.querySelector(`[data-testid="thread-action-resume-parent-${responseHandoffId}"]`) !== null;
+              },
+              { responseHandoffId: responseHandoff.id }
+            );
+            await capture(page, "pull-request-delivery-thread-actions-response-completed");
+
+            await waitForActionEnabled(page, `thread-action-resume-parent-${responseHandoff.id}`);
+            await page.getByTestId(`thread-action-resume-parent-${responseHandoff.id}`).click();
+            await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === delegatedHandoffID && item.status === "acknowledged",
+              "parent delegated closeout did not resume from PR detail action surface"
+            );
+            await page.waitForFunction(
+              (handoffId) => {
+                const text = document.querySelector(`[data-testid="thread-action-status-${handoffId}"]`)?.textContent?.trim();
+                return text === "handoff acknowledged";
+              },
+              delegatedHandoffID
+            );
+            await page.waitForFunction(
+              () => {
+                const count = Number(document.querySelector('[data-testid="delivery-communication-count"]')?.textContent?.trim() ?? "0");
+                const text = document.body.textContent ?? "";
+                return count >= 8 && text.includes("已重新 acknowledge 主 closeout");
+              }
+            );
+            await capture(page, "pull-request-delivery-thread-actions-resumed");
+
+            reportTitle = "# 2026-04-11 Governed Mailbox Delivery Thread Actions Report";
+            reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-thread-actions -- --report ${path.relative(projectRoot, reportPath)}`;
+            reportTicket = "TKT-90";
+            reportTestCase = "TC-079";
+            reportScope = "PR detail inline thread actions, delegated closeout mutation from PR surface, child reply resume path";
+            resultLines = [
+              "- PR detail `Thread Actions` 现在可以直接把 parent delegated closeout 标成 `blocked`，并在同页长出 child `delivery-reply` action card，不必先跳回 Mailbox -> PASS",
+              "- child `delivery-reply` 现在也能直接在 PR detail 内做 formal comment、acknowledge、complete；这些 mutation 会同步回 `Delivery Delegation` summary 与 collaboration thread，而不是只在局部输入框里假更新 -> PASS",
+              "- child response 完成后，PR detail 还能直接 `Resume Parent Closeout`；点击后 parent handoff 会在同页前滚到 `handoff acknowledged`，证明 thread action surface 不是只读回放，而是正式执行入口 -> PASS",
             ];
           } else if (runMode === "delegate-resume") {
             const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
@@ -2530,6 +2642,8 @@ try {
           // report metadata already set inside the delegate-response-comment-sync branch above
         } else if (runMode === "delegate-communication-thread") {
           // report metadata already set inside the delegate-communication-thread branch above
+        } else if (runMode === "delegate-thread-actions") {
+          // report metadata already set inside the delegate-thread-actions branch above
         } else if (runMode === "delegate-resume") {
           // report metadata already set inside the delegate-resume branch above
         } else if (runMode === "delegate-visibility") {

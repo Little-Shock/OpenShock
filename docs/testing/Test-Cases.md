@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.18
+**版本:** 1.19
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1088,3 +1088,19 @@
   6. 点击任一 thread entry 的回链按钮，确认能 deep-link 回对应 Mailbox handoff。
 - 预期结果: PR detail 不应再只把跨 Agent closeout 压成一段不断被覆盖的摘要。用户必须能在同一屏直接回放 parent / child 两条 ledger 的 request、blocker、formal comment、resume 与 progress，并能一跳回到对应 Mailbox 上下文。
 - 业务结论: 2026 年 4 月 11 日 `TKT-89` 已把 unified delivery collaboration thread 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-communication-thread.md` 已记录 `parent request -> blocker -> child request -> child comment -> parent resume -> child parent-progress` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web`、`go test ./internal/store -run "TestDeliveryDelegationCommunicationThreadAggregatesParentAndReplyMessages" -count=1` 与 `go test ./internal/api -run "TestDeliveryDelegationCommunicationThreadRoute" -count=1` 已锁住 store/API contract、前端 type/build 与 chronological thread truth，因此这条 PR detail collaboration-thread 用例当前转为 `Pass`。
+
+## TC-079 PR Detail Delivery Thread Actions
+
+- 业务目标: 确认 PR detail 不只是回放 parent / child delivery thread，而是能直接驱动当前 delegated closeout 与 `delivery-reply` 的正式 mutation。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: final lane closeout 已自动创建 delegated closeout handoff；parent 被 `blocked` 后，会自动生成 child `delivery-reply`；当前会话具备 `run.execute` 权限。
+- 测试步骤:
+  1. 使用 `formal-handoff` delivery policy，让 final QA closeout 自动生成 delegated closeout handoff，并打开 `/pull-requests/pr-runtime-18`。
+  2. 在 PR detail `Thread Actions` 内给 parent delegated closeout 填写 blocker note，执行 `blocked`。
+  3. 确认同页长出 child `delivery-reply` action card，且 `Delivery Delegation` summary 与 `Delivery Collaboration Thread` 一起出现这条 blocker 上下文。
+  4. 在 child action card 内直接执行 formal comment、`acknowledged`、`completed`，确认 PR detail summary / thread count / card status 同页同步刷新。
+  5. 点击 `Resume Parent Closeout`，确认 parent handoff 在同页切到 `handoff acknowledged`，且 thread 继续保留 child response 完成后的历史。
+  6. 点击 action card 的 `Open In Mailbox`，确认仍能 deep-link 回对应 Mailbox handoff。
+- 预期结果: PR detail 必须成为正式 closeout 执行入口，而不是只读旁观面。用户应能在同一页完成 parent block、child reply comment/ack/complete、以及 parent resume，并看到这些 mutation 直接以前台 live truth 回刷。
+- 业务结论: 2026 年 4 月 11 日 `TKT-90` 已把 PR detail thread action surface 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-thread-actions.md` 已记录 `parent blocked -> child comment -> child completed -> resume parent` 的 Windows Chrome 有头 walkthrough，同时 `pnpm --dir apps/web typecheck`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/pull-request-detail-view.tsx'` 与 `pnpm verify:web` 已锁住前端类型、lint、构建和 live truth hygiene，因此这条 PR detail inline-action 用例当前转为 `Pass`。

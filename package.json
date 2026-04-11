@@ -40,6 +40,7 @@
     "test:headed-governed-mailbox-delegate-retry": "node ./scripts/headed-governed-mailbox-route.mjs --mode delegate-retry",
     "test:headed-governed-mailbox-delegate-response-comment-sync": "node ./scripts/headed-governed-mailbox-route.mjs --mode delegate-response-comment-sync",
     "test:headed-governed-mailbox-delegate-communication-thread": "node ./scripts/headed-governed-mailbox-route.mjs --mode delegate-communication-thread",
+    "test:headed-governed-mailbox-delegate-thread-actions": "node ./scripts/headed-governed-mailbox-route.mjs --mode delegate-thread-actions",
     "test:headed-governed-mailbox-delegate-resume": "node ./scripts/headed-governed-mailbox-route.mjs --mode delegate-resume",
     "test:headed-governed-mailbox-delegate-visibility": "node ./scripts/headed-governed-mailbox-route.mjs --mode delegate-visibility",
     "test:headed-governed-mailbox-delegate-resume-parent": "node ./scripts/headed-governed-mailbox-route.mjs --mode delegate-resume-parent",

@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.20
+**版本:** 1.21
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync，以及 room main-trace sync（含 blocked response trace）；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace），以及 PR detail collaboration thread + inline thread actions；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -1285,6 +1285,30 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-communication-thread -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-communication-thread.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-078`
+
+## TKT-90 PR Detail Delivery Thread Actions
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 PR detail 里的 `Delivery Collaboration Thread` 从只读回放推进成正式 action surface，让当前 delegated closeout / `delivery-reply` 能直接在 PR 页执行。
+- 范围:
+  - PR detail `Thread Actions` 面板
+  - current parent / child mailbox handoff lookup
+  - inline `acknowledged / blocked / comment / completed` mutation
+  - child reply complete 后的 `Resume Parent Closeout`
+  - Windows Chrome walkthrough + report
+- 依赖: `TKT-79` `TKT-89`
+- Done When:
+  - PR detail 会直接显示当前 active parent / child handoff action card，而不必先跳去 Mailbox
+  - parent closeout 与 child reply 都能在 PR detail 内直接做 formal ack / block / comment / complete
+  - child response 完成后，用户能同页 `Resume Parent Closeout`，并看到 parent status 刷新到最新 mailbox truth
+- 最新证据:
+  - `pnpm --dir apps/web typecheck`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/pull-request-detail-view.tsx'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-thread-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-thread-actions.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-079`
 
 ---
 
