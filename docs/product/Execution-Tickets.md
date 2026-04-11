@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.25
+**版本:** 1.26
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace）、PR detail collaboration thread + inline thread actions、mailbox 当前 room ledger 的 multi-select batch queue、governed batch policy auto-advance、workspace governance escalation queue mirror，以及 cross-room escalation rollup；下一批继续前滚到更深跨 room 治理编排。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace）、PR detail collaboration thread + inline thread actions、mailbox 当前 room ledger 的 multi-select batch queue、governed batch policy auto-advance、workspace governance escalation queue mirror、cross-room escalation rollup，以及 room-level governed create action；下一批继续前滚到更重的 multi-room dependency graph / auto-closeout。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -1409,6 +1409,31 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-083`
+
+## TKT-95 Cross-Room Governance Orchestration
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 cross-room governance 从“能看见哪些 room 在冒烟”推进到“能直接从 hot room 上发起下一棒 governed handoff”，让 `/mailbox` rollup 成为真正可执行的跨 room 治理面。
+- 范围:
+  - `workspace.governance.escalationSla.rollup` room-level route metadata
+  - `POST /v1/mailbox/governed`
+  - `/mailbox` cross-room rollup `Create Governed Handoff`
+  - `/agents` orchestration rollup route mirror
+  - Windows Chrome walkthrough + report
+- 依赖: `TKT-93` `TKT-94`
+- Done When:
+  - cross-room rollup 不只显示 `room / status / count / latest escalation`，还会给出 `current owner / current lane / next governed route`
+  - `/mailbox` 能对 `nextRouteStatus=ready` 的 room 直接发起 room-level governed handoff，而不是逼用户先切回当前 room compose
+  - create 后 `/mailbox` 与 `/agents` 都会把 room-level route 从 `ready` 前滚到 `active`，并 deep-link 到新 handoff
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store -run "TestCreateGovernedHandoffForRoomUsesRoomSpecificSuggestion|TestAdvanceHandoffCanAutoAdvanceGovernedRoute|TestMailboxLifecycleHydratesWorkspaceGovernance" -count=1'`
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/api -run "TestMailboxRoutesCreateGovernedHandoffForRoom|TestMailboxRoutesCreateAndListLiveTruth|TestStateRouteExposesGovernanceSnapshot|TestMailboxLifecycleUpdatesGovernanceSnapshot" -count=1'`
+  - `pnpm verify:web`
+  - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-cross-room-governance-orchestration -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-cross-room-governance-orchestration.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-084`
 
 ---
 
