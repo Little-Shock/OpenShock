@@ -10,6 +10,9 @@ import { usePhaseZeroState } from "@/lib/live-phase0";
 import type { AgentHandoff } from "@/lib/phase-zero-types";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
 
+type MailboxAdvanceAction = "acknowledged" | "blocked" | "comment" | "completed";
+type MailboxCommentActorMode = "from" | "to";
+
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -38,6 +41,32 @@ function handoffStatusTone(status: AgentHandoff["status"]) {
     default:
       return "bg-[var(--shock-yellow)]";
   }
+}
+
+function availableHandoffActions(status: AgentHandoff["status"]): MailboxAdvanceAction[] {
+  switch (status) {
+    case "requested":
+      return ["acknowledged", "blocked", "comment"];
+    case "acknowledged":
+      return ["blocked", "comment", "completed"];
+    case "blocked":
+      return ["acknowledged", "comment"];
+    default:
+      return ["comment"];
+  }
+}
+
+function batchSelectableHandoff(handoff: AgentHandoff) {
+  return handoff.status !== "completed";
+}
+
+function commonBatchActions(handoffs: AgentHandoff[]) {
+  if (handoffs.length === 0) {
+    return [] as MailboxAdvanceAction[];
+  }
+  return availableHandoffActions(handoffs[0].status).filter((action) =>
+    handoffs.every((handoff) => availableHandoffActions(handoff.status).includes(action))
+  );
 }
 
 function mailboxKindLabel(kind?: AgentHandoff["kind"]) {
@@ -215,6 +244,11 @@ export function LiveMailboxPageContent() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [commentActors, setCommentActors] = useState<Record<string, string>>({});
   const [lastAppliedGovernedRouteKey, setLastAppliedGovernedRouteKey] = useState("");
+  const [selectedMailboxIds, setSelectedMailboxIds] = useState<string[]>([]);
+  const [mailboxBatchNote, setMailboxBatchNote] = useState("");
+  const [mailboxBatchCommentActorMode, setMailboxBatchCommentActorMode] =
+    useState<MailboxCommentActorMode>("from");
+  const [mailboxBatchBusyAction, setMailboxBatchBusyAction] = useState<MailboxAdvanceAction | null>(null);
   const highlightedHandoffId = searchParams.get("handoffId");
   const requestedRoomId = searchParams.get("roomId");
   const orderedMailbox = highlightedHandoffId
@@ -231,9 +265,14 @@ export function LiveMailboxPageContent() {
   const canMutate = hasSessionPermission(authSession, "run.execute");
   const mutationStatus = loading ? "syncing" : error ? "sync_failed" : permissionStatus(authSession, "run.execute");
   const mutationBoundary = permissionBoundaryCopy(authSession, "run.execute");
+  const mailboxMutationBusy = busyKey !== "" || mailboxBatchBusyAction !== null;
   const openCount = loading || error ? 0 : state.mailbox.filter((item) => item.status !== "completed").length;
   const blockedCount = loading || error ? 0 : state.mailbox.filter((item) => item.status === "blocked").length;
   const completedCount = loading || error ? 0 : state.mailbox.filter((item) => item.status === "completed").length;
+  const selectableMailboxHandoffs = mailboxForRoom.filter(batchSelectableHandoff);
+  const selectableMailboxIds = selectableMailboxHandoffs.map((handoff) => handoff.id);
+  const selectedMailboxHandoffs = mailboxForRoom.filter((handoff) => selectedMailboxIds.includes(handoff.id));
+  const batchActions = commonBatchActions(selectedMailboxHandoffs);
   const governance = state.workspace.governance;
   const governedSuggestion = governance.routingPolicy.suggestedHandoff;
   const governedRouteKey = [
@@ -333,6 +372,19 @@ export function LiveMailboxPageContent() {
     roomId,
   ]);
 
+  useEffect(() => {
+    if (loading || error) {
+      return;
+    }
+    setSelectedMailboxIds((current) => {
+      const next = current.filter((handoffId) => selectableMailboxIds.includes(handoffId));
+      if (next.length === current.length && next.every((handoffId, index) => handoffId === current[index])) {
+        return current;
+      }
+      return next;
+    });
+  }, [error, loading, selectableMailboxIds]);
+
   function governedCreateInput() {
     if (governedSuggestion.roomId !== roomId || governedSuggestion.status !== "ready") {
       return null;
@@ -359,7 +411,7 @@ export function LiveMailboxPageContent() {
     },
     busyLabel: string
   ) {
-    if (busyKey || !canMutate) {
+    if (mailboxMutationBusy || !canMutate) {
       return;
     }
     setBusyKey(busyLabel);
@@ -400,10 +452,10 @@ export function LiveMailboxPageContent() {
 
   async function handleAdvance(
     handoff: AgentHandoff,
-    action: "acknowledged" | "blocked" | "comment" | "completed",
+    action: MailboxAdvanceAction,
     options?: { continueGovernedRoute?: boolean }
   ) {
-    if (busyKey || !canMutate) {
+    if (mailboxMutationBusy || !canMutate) {
       return;
     }
     const actionKey = options?.continueGovernedRoute ? `${handoff.id}:${action}:continue` : `${handoff.id}:${action}`;
@@ -429,6 +481,50 @@ export function LiveMailboxPageContent() {
       });
     } finally {
       setBusyKey("");
+    }
+  }
+
+  function toggleMailboxSelection(handoffId: string, selected: boolean) {
+    setSelectedMailboxIds((current) => {
+      if (selected) {
+        return current.includes(handoffId) ? current : [...current, handoffId];
+      }
+      return current.filter((item) => item !== handoffId);
+    });
+  }
+
+  async function handleBatchMailboxAction(action: MailboxAdvanceAction) {
+    if (!canMutate || mailboxMutationBusy || selectedMailboxHandoffs.length === 0 || !batchActions.includes(action)) {
+      return;
+    }
+    const note = mailboxBatchNote.trim();
+    if ((action === "blocked" || action === "comment") && !note) {
+      return;
+    }
+
+    setActionError(null);
+    setMailboxBatchBusyAction(action);
+    try {
+      for (const handoff of [...selectedMailboxHandoffs]) {
+        await updateHandoff(handoff.id, {
+          action,
+          actingAgentId:
+            action === "comment"
+              ? mailboxBatchCommentActorMode === "to"
+                ? handoff.toAgentId
+                : handoff.fromAgentId
+              : handoff.toAgentId,
+          note: action === "acknowledged" ? undefined : note || undefined,
+        });
+      }
+      setMailboxBatchNote("");
+    } catch (mutationError) {
+      setActionError({
+        id: "batch",
+        message: mutationError instanceof Error ? mutationError.message : "mailbox batch action failed",
+      });
+    } finally {
+      setMailboxBatchBusyAction(null);
     }
   }
 
@@ -726,7 +822,7 @@ export function LiveMailboxPageContent() {
                               type="button"
                               data-testid="mailbox-governed-route-create"
                               onClick={() => void handleCreateGovernedRoute()}
-                              disabled={!canMutate || busyKey === "governed-create"}
+                              disabled={!canMutate || mailboxMutationBusy}
                               className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white disabled:opacity-60"
                             >
                               {busyKey === "governed-create" ? "Creating..." : "Create Governed Handoff"}
@@ -855,7 +951,7 @@ export function LiveMailboxPageContent() {
                   type="button"
                   data-testid="mailbox-create-submit"
                   onClick={() => void handleCreate()}
-                  disabled={!canMutate || busyKey === "create"}
+                  disabled={!canMutate || mailboxMutationBusy}
                   className="w-full border-2 border-[var(--shock-ink)] bg-[var(--shock-ink)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-white disabled:opacity-60"
                 >
                   {busyKey === "create" ? "Creating..." : "Create Formal Handoff"}
@@ -876,7 +972,131 @@ export function LiveMailboxPageContent() {
                 </p>
               </Panel>
             ) : (
-              mailboxForRoom.map((handoff) => {
+              <>
+                <Panel tone="paper">
+                  <div
+                    data-testid="mailbox-batch-surface"
+                    className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-[#fff7dd] px-5 py-5"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                          batch queue
+                        </p>
+                        <h3 className="mt-2 font-display text-2xl font-bold">批量处理当前可见 open handoff</h3>
+                        <p className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                          先在当前 room ledger 里选中多条 open handoff，再统一执行 acknowledge / comment / complete。
+                          这里继续复用既有单条 `/v1/mailbox/:id` 提交流程，不额外发明第二套 batch truth。
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span
+                          data-testid="mailbox-batch-selected-count"
+                          className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em]"
+                        >
+                          {selectedMailboxHandoffs.length} selected
+                        </span>
+                        <button
+                          type="button"
+                          data-testid="mailbox-batch-select-open"
+                          disabled={!canMutate || mailboxMutationBusy || selectableMailboxHandoffs.length === 0}
+                          onClick={() => setSelectedMailboxIds(selectableMailboxHandoffs.map((handoff) => handoff.id))}
+                          className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-60"
+                        >
+                          Select Open
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="mailbox-batch-clear"
+                          disabled={mailboxMutationBusy || selectedMailboxIds.length === 0}
+                          onClick={() => setSelectedMailboxIds([])}
+                          className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-60"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+                      <div className="space-y-3">
+                        <textarea
+                          data-testid="mailbox-batch-note"
+                          value={mailboxBatchNote}
+                          disabled={!canMutate}
+                          onChange={(event) => setMailboxBatchNote(event.target.value)}
+                          className="min-h-[108px] w-full rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm disabled:opacity-60"
+                          placeholder="batch blocked / comment 时会把这段 note 顺序写进每条 selected handoff。"
+                        />
+                        <label className="block space-y-2">
+                          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                            Batch Comment As
+                          </span>
+                          <select
+                            data-testid="mailbox-batch-comment-actor-mode"
+                            value={mailboxBatchCommentActorMode}
+                            disabled={!canMutate}
+                            onChange={(event) =>
+                              setMailboxBatchCommentActorMode(event.target.value as MailboxCommentActorMode)
+                            }
+                            className="w-full rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm disabled:opacity-60"
+                          >
+                            <option value="from">source agent</option>
+                            <option value="to">target agent</option>
+                          </select>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedMailboxHandoffs.map((handoff) => (
+                            <span
+                              key={handoff.id}
+                              data-testid={`mailbox-batch-selected-${handoff.id}`}
+                              className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            >
+                              {handoff.title}
+                            </span>
+                          ))}
+                          {selectedMailboxHandoffs.length === 0 ? (
+                            <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.56)]">
+                              还没有选中 handoff。先从下方 ledger 勾选 open 项。
+                            </span>
+                          ) : null}
+                        </div>
+                        {!canMutate ? <p className="text-sm leading-6">{mutationBoundary}</p> : null}
+                        {actionError?.id === "batch" ? (
+                          <p className="text-sm leading-6 text-[var(--shock-pink)]">{actionError.message}</p>
+                        ) : null}
+                      </div>
+                      <div className="grid gap-2">
+                        {(["acknowledged", "blocked", "comment", "completed"] as const).map((action) => (
+                          <button
+                            key={action}
+                            type="button"
+                            data-testid={`mailbox-batch-action-${action}`}
+                            disabled={
+                              !canMutate ||
+                              mailboxMutationBusy ||
+                              selectedMailboxHandoffs.length === 0 ||
+                              !batchActions.includes(action) ||
+                              ((action === "blocked" || action === "comment") && !mailboxBatchNote.trim())
+                            }
+                            onClick={() => void handleBatchMailboxAction(action)}
+                            className={cn(
+                              "rounded-[14px] border-2 border-[var(--shock-ink)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] disabled:opacity-60",
+                              action === "blocked"
+                                ? "bg-[var(--shock-pink)] text-white"
+                                : action === "comment"
+                                  ? "bg-white"
+                                  : action === "completed"
+                                    ? "bg-[var(--shock-yellow)]"
+                                    : "bg-[var(--shock-lime)]"
+                            )}
+                          >
+                            {mailboxBatchBusyAction === action ? "Working..." : `Batch ${formatActionLabel(action)}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+                {mailboxForRoom.map((handoff) => {
                 const room = state.rooms.find((item) => item.id === handoff.roomId);
                 const fromAgentHref = `/agents/${handoff.fromAgentId}`;
                 const toAgentHref = `/agents/${handoff.toAgentId}`;
@@ -890,23 +1110,41 @@ export function LiveMailboxPageContent() {
                   parentHandoff &&
                   handoff.status === "completed" &&
                   parentHandoff.status === "blocked";
+                const selectedForBatch = selectedMailboxIds.includes(handoff.id);
                 const noteValue = notes[handoff.id] ?? "";
                 const commentActorId =
                   commentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
-                const canAck = handoff.status === "requested" || handoff.status === "blocked";
-                const canBlock = handoff.status === "requested" || handoff.status === "acknowledged";
-                const canComplete = handoff.status === "acknowledged";
+                const availableActions = availableHandoffActions(handoff.status);
+                const canAck = availableActions.includes("acknowledged");
+                const canBlock = availableActions.includes("blocked");
+                const canComplete = availableActions.includes("completed");
 
                 return (
                   <Panel
                     key={handoff.id}
                     tone={handoff.status === "blocked" ? "pink" : handoff.status === "acknowledged" ? "lime" : "white"}
-                    className={cn(active && "ring-2 ring-[var(--shock-ink)] ring-offset-2 ring-offset-[var(--shock-paper)]")}
+                    className={cn(
+                      selectedForBatch && "ring-2 ring-[var(--shock-purple)] ring-offset-2 ring-offset-[var(--shock-paper)]",
+                      active && "ring-2 ring-[var(--shock-ink)] ring-offset-2 ring-offset-[var(--shock-paper)]"
+                    )}
                   >
                     <article data-testid={`mailbox-card-${handoff.id}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
+                            {batchSelectableHandoff(handoff) ? (
+                              <label className="inline-flex items-center gap-2 rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+                                <input
+                                  type="checkbox"
+                                  data-testid={`mailbox-select-${handoff.id}`}
+                                  checked={selectedForBatch}
+                                  disabled={!canMutate || mailboxMutationBusy}
+                                  onChange={(event) => toggleMailboxSelection(handoff.id, event.target.checked)}
+                                  className="h-3.5 w-3.5 accent-[var(--shock-purple)]"
+                                />
+                                batch
+                              </label>
+                            ) : null}
                             <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
                               {handoff.issueKey} / {handoff.id}
                             </p>
@@ -933,6 +1171,11 @@ export function LiveMailboxPageContent() {
                                 className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
                               >
                                 reply x{responseAttemptCount}
+                              </span>
+                            ) : null}
+                            {selectedForBatch ? (
+                              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-purple)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-white">
+                                selected
                               </span>
                             ) : null}
                           </div>
@@ -1033,7 +1276,7 @@ export function LiveMailboxPageContent() {
                           <button
                             type="button"
                             data-testid={`mailbox-action-resume-parent-${handoff.id}`}
-                            disabled={!canMutate || busyKey === `${parentHandoff.id}:acknowledged`}
+                            disabled={!canMutate || mailboxMutationBusy}
                             onClick={() => void handleAdvance(parentHandoff, "acknowledged")}
                             className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-50"
                           >
@@ -1115,7 +1358,7 @@ export function LiveMailboxPageContent() {
                                 disabled={
                                   !canMutate ||
                                   !enabled ||
-                                  busyKey === `${handoff.id}:${action}` ||
+                                  mailboxMutationBusy ||
                                   (action === "comment" && !noteValue.trim())
                                 }
                                 onClick={() => void handleAdvance(handoff, action)}
@@ -1128,7 +1371,7 @@ export function LiveMailboxPageContent() {
                               <button
                                 type="button"
                                 data-testid={`mailbox-action-completed-continue-${handoff.id}`}
-                                disabled={!canMutate || busyKey === `${handoff.id}:completed:continue`}
+                                disabled={!canMutate || mailboxMutationBusy}
                                 onClick={() => void handleAdvance(handoff, "completed", { continueGovernedRoute: true })}
                                 className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-ink)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-white disabled:opacity-50"
                               >
@@ -1144,7 +1387,8 @@ export function LiveMailboxPageContent() {
                     </article>
                   </Panel>
                 );
-              })
+              })}
+              </>
             )}
           </div>
         </div>

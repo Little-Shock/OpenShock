@@ -18,6 +18,9 @@ import { usePhaseZeroState } from "@/lib/live-phase0";
 import { useQuickSearchController } from "@/lib/quick-search";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
 
+type MailboxAdvanceAction = "acknowledged" | "blocked" | "comment" | "completed";
+type MailboxCommentActorMode = "from" | "to";
+
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -248,7 +251,33 @@ function handoffStatusTone(status: AgentHandoff["status"]) {
   }
 }
 
-function handoffActionLabel(action: "acknowledged" | "blocked" | "comment" | "completed") {
+function availableHandoffActions(status: AgentHandoff["status"]): MailboxAdvanceAction[] {
+  switch (status) {
+    case "requested":
+      return ["acknowledged", "blocked", "comment"];
+    case "acknowledged":
+      return ["blocked", "comment", "completed"];
+    case "blocked":
+      return ["acknowledged", "comment"];
+    default:
+      return ["comment"];
+  }
+}
+
+function batchSelectableHandoff(handoff: AgentHandoff) {
+  return handoff.status !== "completed";
+}
+
+function commonBatchActions(handoffs: AgentHandoff[]) {
+  if (handoffs.length === 0) {
+    return [] as MailboxAdvanceAction[];
+  }
+  return availableHandoffActions(handoffs[0].status).filter((action) =>
+    handoffs.every((handoff) => availableHandoffActions(handoff.status).includes(action))
+  );
+}
+
+function handoffActionLabel(action: MailboxAdvanceAction) {
   switch (action) {
     case "acknowledged":
       return "Acknowledge";
@@ -615,6 +644,7 @@ export function StitchInboxView() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [mailboxBusyId, setMailboxBusyId] = useState<string | null>(null);
+  const [mailboxBatchBusyAction, setMailboxBatchBusyAction] = useState<MailboxAdvanceAction | null>(null);
   const [mailboxError, setMailboxError] = useState<{ id: string; message: string } | null>(null);
   const [activeFilter, setActiveFilter] = useState<ApprovalCenterFilter>("all");
   const [composeRoomId, setComposeRoomId] = useState("");
@@ -625,6 +655,9 @@ export function StitchInboxView() {
   const [creatingHandoff, setCreatingHandoff] = useState(false);
   const [handoffNotes, setHandoffNotes] = useState<Record<string, string>>({});
   const [mailboxCommentActors, setMailboxCommentActors] = useState<Record<string, string>>({});
+  const [selectedMailboxIds, setSelectedMailboxIds] = useState<string[]>([]);
+  const [mailboxBatchNote, setMailboxBatchNote] = useState("");
+  const [mailboxBatchCommentActorMode, setMailboxBatchCommentActorMode] = useState<MailboxCommentActorMode>("from");
   const sidebarChannels = loading || error ? [] : state.channels;
   const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = loading || error ? [] : state.machines;
@@ -782,6 +815,19 @@ export function StitchInboxView() {
       })
     : mailboxHandoffs;
   const openMailboxCount = mailboxHandoffs.filter((item) => item.status !== "completed").length;
+  const selectableMailboxHandoffs = orderedMailboxHandoffs.filter(batchSelectableHandoff);
+  const selectedMailboxHandoffs = orderedMailboxHandoffs.filter((handoff) => selectedMailboxIds.includes(handoff.id));
+  const batchActions = commonBatchActions(selectedMailboxHandoffs);
+  const mailboxMutationBusy = mailboxBusyId !== null || mailboxBatchBusyAction !== null;
+
+  useEffect(() => {
+    if (loading || error) {
+      return;
+    }
+    setSelectedMailboxIds((current) =>
+      current.filter((handoffId) => state.mailbox.some((item) => item.id === handoffId && batchSelectableHandoff(item)))
+    );
+  }, [error, loading, state.mailbox]);
 
   async function handleInboxDecision(
     item: ApprovalCenterItem,
@@ -851,10 +897,10 @@ export function StitchInboxView() {
 
   async function handleMailboxAction(
     handoff: AgentHandoff,
-    action: "acknowledged" | "blocked" | "comment" | "completed",
+    action: MailboxAdvanceAction,
     options?: { continueGovernedRoute?: boolean }
   ) {
-    if (mailboxBusyId) {
+    if (mailboxMutationBusy) {
       return;
     }
     const note = handoffNotes[handoff.id]?.trim() ?? "";
@@ -879,6 +925,51 @@ export function StitchInboxView() {
       });
     } finally {
       setMailboxBusyId(null);
+    }
+  }
+
+  function toggleMailboxSelection(handoffId: string, selected: boolean) {
+    setSelectedMailboxIds((current) => {
+      if (selected) {
+        return current.includes(handoffId) ? current : [...current, handoffId];
+      }
+      return current.filter((item) => item !== handoffId);
+    });
+  }
+
+  async function handleBatchMailboxAction(action: MailboxAdvanceAction) {
+    if (!canManageMailbox || mailboxMutationBusy || selectedMailboxHandoffs.length === 0 || !batchActions.includes(action)) {
+      return;
+    }
+    const note = mailboxBatchNote.trim();
+    if ((action === "blocked" || action === "comment") && !note) {
+      return;
+    }
+
+    const handoffs = [...selectedMailboxHandoffs];
+    setMailboxError(null);
+    setMailboxBatchBusyAction(action);
+    try {
+      for (const handoff of handoffs) {
+        await updateHandoff(handoff.id, {
+          action,
+          actingAgentId:
+            action === "comment"
+              ? mailboxBatchCommentActorMode === "to"
+                ? handoff.toAgentId
+                : handoff.fromAgentId
+              : handoff.toAgentId,
+          note: action === "acknowledged" ? undefined : note || undefined,
+        });
+      }
+      setMailboxBatchNote("");
+    } catch (handoffError) {
+      setMailboxError({
+        id: "batch",
+        message: handoffError instanceof Error ? handoffError.message : "mailbox batch action failed",
+      });
+    } finally {
+      setMailboxBatchBusyAction(null);
     }
   }
 
@@ -1473,6 +1564,129 @@ export function StitchInboxView() {
                   </section>
 
                   <section className="space-y-3">
+                    <div
+                      data-testid="mailbox-batch-surface"
+                      className="border-2 border-[var(--shock-ink)] bg-[#fff7dd] p-4 shadow-[var(--shock-shadow-sm)]"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                            Batch Queue
+                          </p>
+                          <h3 className="mt-2 font-display text-[18px] font-bold">批量处理当前 open handoff</h3>
+                          <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
+                            先在 ledger 里勾选多条 open handoff，再统一执行 acknowledge / comment / complete。这里仍然按既有 `/v1/mailbox/:id`
+                            顺序提交，不额外发明第二套 batch truth。
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span
+                            data-testid="mailbox-batch-selected-count"
+                            className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
+                          >
+                            {selectedMailboxHandoffs.length} selected
+                          </span>
+                          <button
+                            type="button"
+                            data-testid="mailbox-batch-select-open"
+                            disabled={!canManageMailbox || mailboxMutationBusy || selectableMailboxHandoffs.length === 0}
+                            onClick={() => setSelectedMailboxIds(selectableMailboxHandoffs.map((handoff) => handoff.id))}
+                            className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-60"
+                          >
+                            Select Open
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="mailbox-batch-clear"
+                            disabled={mailboxMutationBusy || selectedMailboxIds.length === 0}
+                            onClick={() => setSelectedMailboxIds([])}
+                            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-60"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+                        <div className="space-y-3">
+                          <textarea
+                            data-testid="mailbox-batch-note"
+                            value={mailboxBatchNote}
+                            disabled={!canManageMailbox}
+                            onChange={(event) => setMailboxBatchNote(event.target.value)}
+                            className="min-h-[108px] w-full border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none disabled:opacity-60"
+                            placeholder="batch blocked / comment 时会把这段 note 顺序写进每条 selected handoff。"
+                          />
+                          <label className="block">
+                            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                              Batch Comment As
+                            </span>
+                            <select
+                              data-testid="mailbox-batch-comment-actor-mode"
+                              value={mailboxBatchCommentActorMode}
+                              disabled={!canManageMailbox}
+                              onChange={(event) => setMailboxBatchCommentActorMode(event.target.value as MailboxCommentActorMode)}
+                              className="mt-2 w-full border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none disabled:opacity-60"
+                            >
+                              <option value="from">source agent</option>
+                              <option value="to">target agent</option>
+                            </select>
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedMailboxHandoffs.map((handoff) => (
+                              <span
+                                key={handoff.id}
+                                data-testid={`mailbox-batch-selected-${handoff.id}`}
+                                className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]"
+                              >
+                                {handoff.title}
+                              </span>
+                            ))}
+                            {selectedMailboxHandoffs.length === 0 ? (
+                              <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.56)]">
+                                还没有选中 handoff。先从右侧 ledger 勾选 open 项。
+                              </span>
+                            ) : null}
+                          </div>
+                          {!canManageMailbox ? (
+                            <p className="text-[12px] leading-6 text-[color:rgba(24,20,14,0.68)]">
+                              {permissionBoundaryCopy(session, "run.execute")}
+                            </p>
+                          ) : null}
+                          {mailboxError?.id === "batch" ? (
+                            <p className="font-mono text-[10px] text-[var(--shock-pink)]">{mailboxError.message}</p>
+                          ) : null}
+                        </div>
+                        <div className="grid gap-2">
+                          {(["acknowledged", "blocked", "comment", "completed"] as const).map((action) => (
+                            <button
+                              key={action}
+                              type="button"
+                              data-testid={`mailbox-batch-action-${action}`}
+                              disabled={
+                                !canManageMailbox ||
+                                mailboxMutationBusy ||
+                                selectedMailboxHandoffs.length === 0 ||
+                                !batchActions.includes(action) ||
+                                ((action === "blocked" || action === "comment") && !mailboxBatchNote.trim())
+                              }
+                              onClick={() => void handleBatchMailboxAction(action)}
+                              className={cn(
+                                "inline-flex min-h-[42px] items-center justify-center border-2 border-[var(--shock-ink)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] disabled:opacity-60",
+                                action === "blocked"
+                                  ? "bg-[var(--shock-pink)] text-white"
+                                  : action === "comment"
+                                    ? "bg-white"
+                                    : action === "completed"
+                                      ? "bg-[var(--shock-yellow)]"
+                                      : "bg-[var(--shock-lime)]"
+                              )}
+                            >
+                              {mailboxBatchBusyAction === action ? "working..." : `Batch ${handoffActionLabel(action)}`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                     {loading ? (
                       <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">等待 mailbox ledger 真值。</p>
                     ) : orderedMailboxHandoffs.length === 0 ? (
@@ -1491,17 +1705,11 @@ export function StitchInboxView() {
                           parentHandoff &&
                           handoff.status === "completed" &&
                           parentHandoff.status === "blocked";
+                        const selectedForBatch = selectedMailboxIds.includes(handoff.id);
                         const note = handoffNotes[handoff.id] ?? "";
                         const commentActorId =
                           mailboxCommentActors[handoff.id] === handoff.toAgentId ? handoff.toAgentId : handoff.fromAgentId;
-                        const availableActions =
-                          handoff.status === "requested"
-                            ? (["acknowledged", "blocked", "comment"] as const)
-                            : handoff.status === "acknowledged"
-                              ? (["blocked", "comment", "completed"] as const)
-                              : handoff.status === "blocked"
-                                ? (["acknowledged", "comment"] as const)
-                                : (["comment"] as const);
+                        const availableActions = availableHandoffActions(handoff.status);
 
                         return (
                           <article
@@ -1509,11 +1717,25 @@ export function StitchInboxView() {
                             data-testid={`mailbox-card-${handoff.id}`}
                             className={cn(
                               "grid gap-4 border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] p-4 shadow-[var(--shock-shadow-sm)] xl:grid-cols-[minmax(0,1fr)_240px]",
+                              selectedForBatch && "border-l-[6px] border-l-[var(--shock-purple)] bg-white",
                               highlightedHandoffId === handoff.id && "border-l-[6px] border-l-[var(--shock-yellow)] bg-white"
                             )}
                           >
                             <div>
                               <div className="flex flex-wrap items-center gap-2">
+                                {batchSelectableHandoff(handoff) ? (
+                                  <label className="inline-flex items-center gap-2 rounded-full border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em]">
+                                    <input
+                                      type="checkbox"
+                                      data-testid={`mailbox-select-${handoff.id}`}
+                                      checked={selectedForBatch}
+                                      disabled={!canManageMailbox || mailboxMutationBusy}
+                                      onChange={(event) => toggleMailboxSelection(handoff.id, event.target.checked)}
+                                      className="h-3.5 w-3.5 accent-[var(--shock-purple)]"
+                                    />
+                                    batch
+                                  </label>
+                                ) : null}
                                 <span
                                   data-testid={`mailbox-status-${handoff.id}`}
                                   className={cn(
@@ -1534,6 +1756,11 @@ export function StitchInboxView() {
                                 {highlightedHandoffId === handoff.id ? (
                                   <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em]">
                                     focused
+                                  </span>
+                                ) : null}
+                                {selectedForBatch ? (
+                                  <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-purple)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-white">
+                                    selected
                                   </span>
                                 ) : null}
                               </div>
@@ -1658,7 +1885,7 @@ export function StitchInboxView() {
                                   <button
                                     type="button"
                                     data-testid={`mailbox-action-resume-parent-${handoff.id}`}
-                                    disabled={!canManageMailbox || mailboxBusyId === parentHandoff.id}
+                                    disabled={!canManageMailbox || mailboxMutationBusy}
                                     onClick={() => void handleMailboxAction(parentHandoff, "acknowledged")}
                                     className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] disabled:opacity-60"
                                   >
@@ -1741,7 +1968,7 @@ export function StitchInboxView() {
                                       data-testid={`mailbox-action-${action}-${handoff.id}`}
                                       disabled={
                                         !canManageMailbox ||
-                                        mailboxBusyId === handoff.id ||
+                                        mailboxMutationBusy ||
                                         ((action === "blocked" || action === "comment") && !note.trim())
                                       }
                                       onClick={() => void handleMailboxAction(handoff, action)}
@@ -1763,7 +1990,7 @@ export function StitchInboxView() {
                                     <button
                                       type="button"
                                       data-testid={`mailbox-action-completed-continue-${handoff.id}`}
-                                      disabled={!canManageMailbox || mailboxBusyId === handoff.id}
+                                      disabled={!canManageMailbox || mailboxMutationBusy}
                                       onClick={() => void handleMailboxAction(handoff, "completed", { continueGovernedRoute: true })}
                                       className="inline-flex min-h-[42px] items-center justify-center border-2 border-[var(--shock-ink)] bg-[var(--shock-ink)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-white disabled:opacity-60"
                                     >
