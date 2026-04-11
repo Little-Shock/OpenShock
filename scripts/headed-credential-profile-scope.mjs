@@ -55,6 +55,15 @@ function timestamp() {
   return new Date().toISOString();
 }
 
+function reportDateLabel() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 async function freePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -322,6 +331,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
   await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
+  await page.getByTestId("settings-advanced-credentials-toggle").click();
   await waitForVisible(page.getByTestId("settings-credential-create-save"), "settings credential create form did not render");
   await waitForEnabled(page.getByTestId("settings-credential-create-label"), "settings credential create form never became editable");
   await page.getByTestId("settings-credential-create-label").fill(credentialLabel);
@@ -420,6 +430,7 @@ try {
   await capture(page, "profile-credential-run-count");
 
   await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
+  await page.getByTestId("settings-advanced-credentials-toggle").click();
   await waitForVisible(page.getByTestId(`settings-credential-usage-${createdCredential.id}`), "settings credential usage summary did not rerender");
   await expectTextIncludes(
     page.getByTestId(`settings-credential-usage-${createdCredential.id}`),
@@ -430,9 +441,9 @@ try {
   results.push("- Settings, agent profile, and run detail stay on the same credential metadata truth after binding: profile shows `1` recent bound run and settings rolls up `1 agent · 1 run` without leaking plaintext.");
 
   const report = [
-    "# Test Report 2026-04-09 Credential Profile / Encrypted Secret Scope",
+    `# Test Report ${reportDateLabel()} Credential Profile / Encrypted Secret Scope`,
     "",
-    `- Command: \`pnpm test:headed-credential-profile-scope -- --report ${path.relative(projectRoot, reportPath)}\``,
+    `- Command: \`${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-credential-profile-scope -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
     "- Scope: `TKT-45 / credential profile / encrypted secret scope`",
     "- Result: `PASS`",

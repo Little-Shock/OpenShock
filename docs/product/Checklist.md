@@ -140,9 +140,9 @@
   - [x] run detail 能展示 runtime、branch/worktree、执行日志等信息
   - [x] bridge 执行链已能跑通同步 prompt
   - [x] room / run 已能真实 stop / resume / follow-thread，并把 paused state 回写到同一条执行真相
-  - [x] `/rooms/:roomId` 已升级成 query-driven room workbench，`Chat / Topic / Run / PR / Context` 可在同一页切换
+  - [x] `/rooms/:roomId` 已收回 chat-first room shell；默认先显示当前讨论，`Topic / Run / PR / Context` 作为次级 sheet 保留在同一条 room URL 上
   - [x] Topic summary、Run control、PR entry 与 inbox / issue / board back-links 已能在 room 内闭环，不再强制跳去独立详情页
-  - [x] `pnpm test:headed-room-workbench-topic-context` 已完成 exact replay，验证切 tab、follow_thread、PR surface、reload persistence 与 inbox back-link
+  - [x] `pnpm test:headed-room-workbench-topic-context` 已完成 exact replay，验证 chat-first room shell、follow_thread、PR surface、reload persistence 与 inbox back-link
   - [x] `/runs` 已切成 paginated run history surface；run detail 与 room run tab 会共享 session-backed resume context，并保留同 room prior-run reopen/history
 - 当前 GAP:
   - [x] Topic 已补齐独立 `/topics/:topicId` route、guidance edit surface 与 resume deep link，不再只困在 room workbench tab 内
@@ -334,7 +334,7 @@
   - [x] channel / room 现在都有 message-centric thread rail，message row 可直接打开 reply 子区，composer 保持常驻可见
   - [x] room thread rail 已直接接上 `follow_thread` 控制，不再只是纯展示卡片
   - [x] channel 现在已有 followed thread / saved later 回访面，thread 可在 `follow -> reopen` 与 `save later -> reopen` 闭环
-  - [x] room 现在已有稳定的 `Chat / Topic / Run / PR / Context` 工作台 tabs，query state 与 room-first back-links 都能留在同一壳层内
+  - [x] room 现在已改成 chat-first 主面 + 次级 sheet 结构；query state 与 room-first back-links 仍留在同一壳层内，但不再把 `Topic / Run / PR / Context` 放成一级 tabs
   - [x] `Agent / Machine / Human` 现在都可从 shell 或 room drill-in 到统一 profile surface，presence / activity / capability / recent room-run 关系直接读取 live truth
 - 当前 GAP:
   - [ ] profile 现已可读，但编辑、持久化默认值与 onboarding 绑定仍留后续票推进
@@ -432,6 +432,7 @@
   - [x] cross-room rollup 现在还会补 `current owner / current lane / next governed route` 元数据；`/mailbox` 可直接从 `ready` room 上 `Create Governed Handoff`，`/agents` 会镜像同一条 room-level route truth
   - [x] PR detail 现在也已升级成 single delivery contract：release gate、operator handoff note、delivery template 与 evidence bundle 可在同页复核
   - [x] `/settings` 现在可直接编辑 team topology，并把 lane / role / default agent / handoff path 写回 durable workspace truth；`/setup` `/mailbox` `/agents` 会继续读取同一份配置，且已补 Windows Chrome 有头证据
+  - [x] `/settings` 当前已改成 `core settings -> advanced governance / credentials / notifications` 的信息层级；高频路径先看 workspace/member 真值，重治理能力继续保留在高级区
 - 当前 GAP:
   - [ ] 更重的 multi-room dependency graph、cross-room auto-closeout 和跨 room 依赖治理仍留后续；当前已不再缺“当前 room ledger 的 bulk closeout”“policy-based batch orchestration”“显式 escalation queue”“跨 room escalation rollup”以及“room-level governed create action”
 - 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052` `TC-053` `TC-054` `TC-055` `TC-056` `TC-057` `TC-058` `TC-059` `TC-060` `TC-061` `TC-062` `TC-063` `TC-064` `TC-065` `TC-066` `TC-067` `TC-068` `TC-069` `TC-070` `TC-071` `TC-072` `TC-073` `TC-074` `TC-075` `TC-076` `TC-078` `TC-079` `TC-080` `TC-081` `TC-082` `TC-083` `TC-084`

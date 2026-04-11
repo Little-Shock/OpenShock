@@ -259,6 +259,7 @@ try {
   page = await context.newPage();
 
   await page.goto(`${webURL}/settings`, { waitUntil: "load" });
+  await page.getByTestId("settings-advanced-notifications-toggle").click();
   await page.getByTestId("notification-subscribers-count").waitFor({ state: "visible" });
   await page.getByTestId("notification-email-policy-all").click();
   await page.getByTestId("notification-save-policy").click();
@@ -285,6 +286,7 @@ try {
   await capture(page, "access-invite-created");
 
   await page.goto(`${webURL}/settings`, { waitUntil: "load" });
+  await page.getByTestId("settings-advanced-notifications-toggle").click();
   await page.getByTestId("notification-identity-template-auth_invite").waitFor({ state: "visible" });
   await waitForContainsText(page, "notification-identity-signal-count", "1");
   await waitForContainsText(page, "notification-identity-ready-count", "1");
@@ -315,6 +317,7 @@ try {
   await capture(page, "access-verify-reset-pending");
 
   await page.goto(`${webURL}/settings`, { waitUntil: "load" });
+  await page.getByTestId("settings-advanced-notifications-toggle").click();
   await page.getByTestId("notification-identity-template-auth_verify_email").waitFor({ state: "visible" });
   await page.getByTestId("notification-identity-template-auth_password_reset").waitFor({ state: "visible" });
   await page.getByTestId("notification-identity-template-auth_blocked_recovery").waitFor({ state: "visible" });

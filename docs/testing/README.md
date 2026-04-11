@@ -8,6 +8,14 @@
   - `TKT-49` 的 Windows Chrome 有头报告，覆盖 PR detail 的 release gate、handoff note、delivery template、evidence bundle 与回链
 - [Test Report 2026-04-11 Windows Chrome PR Conversation / Usage Observability](./Test-Report-2026-04-11-windows-chrome-pr-conversation-usage-observability.md)
   - `TKT-39` `TKT-41` `TKT-48` 的 Windows Chrome 有头报告，覆盖 `webhook review/comment/thread -> Inbox -> Room PR tab -> PR Detail -> run/room/workspace usage`
+- [Test Report 2026-04-11 Windows Chrome Room Simplified Sheet / Topic Context](./Test-Report-2026-04-11-windows-chrome-room-simplified-sheet-topic-context.md)
+  - `TKT-23` 的 Windows Chrome 有头报告，覆盖 chat-first room shell、secondary `Topic / Run / PR / Context` sheets、reload persistence 与 inbox back-link
+- [Test Report 2026-04-11 Windows Chrome Stop / Resume / Follow-Thread](./Test-Report-2026-04-11-windows-chrome-stop-resume-follow-thread.md)
+  - `TKT-13` 的 Windows Chrome 有头报告，覆盖 room / run 的 stop、resume、follow-thread exact replay
+- [Test Report 2026-04-11 Windows Chrome Notification Preference Delivery](./Test-Report-2026-04-11-windows-chrome-notification-preference-delivery.md)
+  - `TKT-11` 的 Windows Chrome 有头报告，覆盖 advanced notifications section 下的 browser/email policy、subscriber、receipts 与 retry
+- [Test Report 2026-04-11 Windows Chrome Credential Profile Scope](./Test-Report-2026-04-11-windows-chrome-credential-profile-scope.md)
+  - `TKT-45` 的 Windows Chrome 有头报告，覆盖 advanced credentials section 下的 encrypted secret create、agent bind、run effective scope 与 plaintext leak check
 - [Test Report 2026-04-11 Windows Chrome Shell Profile Hub](./Test-Report-2026-04-11-windows-chrome-shell-profile-hub.md)
   - `TKT-88` 的 Windows Chrome 有头报告，覆盖左栏 `Profile Hub` 的 current `Human / Machine / Agent` 入口，以及 shell footer / room context 到统一 profile surface 的同源回放
 - [Test Report 2026-04-11 Windows Chrome Mailbox Formal Comment](./Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md)
@@ -129,7 +137,7 @@
 - [Test Report 2026-04-08 DM Followed Thread Saved Later](./Test-Report-2026-04-08-dm-followed-thread-saved-later.md)
   - `TKT-22` 的 DM entry、followed thread revisit、saved-later revisit 有头证据
 - [Test Report 2026-04-08 Room Workbench Topic Context](./Test-Report-2026-04-08-room-workbench-topic-context.md)
-  - `TKT-23` 的 room-first `Chat / Topic / Run / PR / Context` workbench、reload persistence 与 inbox back-link evidence
+  - `TKT-23` 的 chat-first room shell、secondary sheets、reload persistence 与 inbox back-link evidence
 - [Test Report 2026-04-08 Profile Surface](./Test-Report-2026-04-08-profile-surface.md)
   - `TKT-25` 的 `Agent / Machine / Human` unified profile surface、shell / room drill-in 与 live presence evidence
 - [Test Report 2026-04-08 Destructive Guard](./Test-Report-2026-04-08-destructive-guard.md)
@@ -206,7 +214,7 @@
 - `pnpm test:headed-dm-followed-thread-saved-later`
   - 验证 DM entry、thread follow、saved-later、reopen thread 回访闭环
 - `pnpm test:headed-room-workbench-topic-context`
-  - 验证 room-first `Chat / Topic / Run / PR / Context` workbench、follow_thread、PR surface 与 inbox back-link
+  - 验证 chat-first room shell、secondary `Topic / Run / PR / Context` sheets、follow_thread、PR surface 与 inbox back-link
 - `pnpm test:headed-topic-route-resume-lifecycle`
   - 验证 `/topics/:topicId` 的 guidance edit、reload persistence、resume control 与 room backlink
 - `pnpm test:headed-profile-surface`

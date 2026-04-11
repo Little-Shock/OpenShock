@@ -321,6 +321,7 @@ try {
     page.waitForURL((url) => url.pathname === "/settings"),
     templateCard.getByRole("link", { name: "Open Delivery Surface" }).click(),
   ]);
+  await page.getByTestId("settings-advanced-notifications-toggle").click();
   await page.getByTestId("notification-worker-summary").waitFor({ state: "visible" });
   await capture(page, "settings-delivery-surface");
 

@@ -722,6 +722,7 @@ try {
           await capture(page, "pull-request-delivery-delegation-auto-complete");
 
           await page.goto(`${webURL}/settings`, { waitUntil: "load" });
+          await page.getByTestId("settings-advanced-governance-toggle").click();
           await page.waitForFunction(() => {
             return document.querySelector('[data-testid="settings-governance-delivery-policy"]')?.textContent?.includes("auto complete") ?? false;
           });
@@ -757,6 +758,7 @@ try {
           await capture(page, "pull-request-delivery-delegation-signal-only");
 
           await page.goto(`${webURL}/settings`, { waitUntil: "load" });
+          await page.getByTestId("settings-advanced-governance-toggle").click();
           await page.waitForFunction(() => {
             return document.querySelector('[data-testid="settings-governance-delivery-policy"]')?.textContent?.includes("signal only") ?? false;
           });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import { OpenShockShell } from "@/components/open-shock-shell";
 import { DetailRail, Panel } from "@/components/phase-zero-views";
@@ -1814,6 +1814,49 @@ function CredentialProfilesPanel() {
   );
 }
 
+function SettingsDisclosureSection({
+  title,
+  summary,
+  testId,
+  tone = "white",
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  summary: string;
+  testId: string;
+  tone?: "white" | "paper" | "yellow" | "lime" | "ink" | "pink";
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <Panel tone={tone}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-3xl">
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Advanced</p>
+          <h2 className="mt-3 font-display text-3xl font-bold">{title}</h2>
+          <p className="mt-3 text-sm leading-6 opacity-80">{summary}</p>
+        </div>
+        <button
+          type="button"
+          data-testid={`settings-advanced-${testId}-toggle`}
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+          className={cn(
+            "rounded-2xl border-2 border-[var(--shock-ink)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] shadow-[var(--shock-shadow-sm)]",
+            tone === "ink" ? "bg-white text-[var(--shock-ink)]" : "bg-[var(--shock-yellow)] text-[var(--shock-ink)]"
+          )}
+        >
+          {open ? "收起高级配置" : "展开高级配置"}
+        </button>
+      </div>
+      {open ? <div data-testid={`settings-advanced-${testId}-content`} className="mt-5 space-y-4">{children}</div> : null}
+    </Panel>
+  );
+}
+
 function LiveSettingsView({ notifications }: { notifications: LiveNotificationsModel }) {
   const { center, loading: notificationLoading, error: notificationError } = notifications;
   const { state, error: stateError } = usePhaseZeroState();
@@ -1986,12 +2029,42 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
         </Panel>
       ) : null}
 
-      <WorkspaceDurableConfigPanel />
-      <GovernanceTopologyPanel />
       <WorkspacePlanObservabilityPanel />
-      <CredentialProfilesPanel />
+      <Panel tone="paper">
+        <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Core Settings</p>
+        <h2 className="mt-3 font-display text-4xl font-bold">先把 workspace 和当前成员的高频配置收在眼前</h2>
+        <p className="mt-3 max-w-3xl text-base leading-7">
+          这一页默认只直出 plan / quota、onboarding / sandbox、preferred agent / start route。
+          治理拓扑、凭据与通知投递继续保留，但收进高级区，避免第一次进入就像 admin console。
+        </p>
+      </Panel>
+
+      <WorkspaceDurableConfigPanel />
       <MemberPreferencePanel />
 
+      <SettingsDisclosureSection
+        title="Governance Topology"
+        summary="团队 lane、delivery delegation policy 和跨页治理回放仍保留完整能力，但默认不抢占日常配置入口。"
+        testId="governance"
+        tone="paper"
+      >
+        <GovernanceTopologyPanel />
+      </SettingsDisclosureSection>
+
+      <SettingsDisclosureSection
+        title="Credential Profiles"
+        summary="运行时 secret / scope / default profile 继续保留在这里，但默认折叠，避免把所有人都带进高风险配置面。"
+        testId="credentials"
+      >
+        <CredentialProfilesPanel />
+      </SettingsDisclosureSection>
+
+      <SettingsDisclosureSection
+        title="Notifications And Delivery"
+        summary="browser push、email subscriber、identity template chain 和 latest receipts 仍然完整保留，只是不再默认把整页变成通知工作台。"
+        testId="notifications"
+        tone="yellow"
+      >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_0.92fr]">
         <Panel tone="yellow">
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Notification Sidecar</p>
@@ -2462,17 +2535,18 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
         </Panel>
       </div>
 
-      {actionMessage ? (
-        <Panel tone="yellow">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Latest Action</p>
-          <p className="mt-3 text-base leading-7" data-testid="notification-action-message">
-            {actionMessage}
-          </p>
-          <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            当前这层已经把 invite / verify / reset / blocked recovery absorb 到同一条 notification template chain；前台现在直接复用这份 delivery truth。
-          </p>
-        </Panel>
-      ) : null}
+        {actionMessage ? (
+          <Panel tone="yellow">
+            <p className="font-mono text-[11px] uppercase tracking-[0.24em]">Latest Action</p>
+            <p className="mt-3 text-base leading-7" data-testid="notification-action-message">
+              {actionMessage}
+            </p>
+            <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+              当前这层已经把 invite / verify / reset / blocked recovery absorb 到同一条 notification template chain；前台现在直接复用这份 delivery truth。
+            </p>
+          </Panel>
+        ) : null}
+      </SettingsDisclosureSection>
     </div>
   );
 }
@@ -2484,10 +2558,10 @@ export function LiveSettingsRoute() {
     <OpenShockShell
       view="settings"
       eyebrow="Phase 6 Durable Config"
-      title="把 workspace plan / limits / retention 与 member config 收回同一份 durable governance truth"
-      description="这里除了继续把 onboarding、template、repo/install snapshot、preferred agent、github identity 和通知 policy 接回 server snapshot，也把 workspace plan、usage、seat headroom 与 retention 直接公开在 settings。"
+      title="把高频 workspace / member 配置收回同一份 durable truth，把重治理能力退到高级区"
+      description="这里默认先直出 workspace plan、usage、onboarding、sandbox、preferred agent 和 start route；治理拓扑、凭据与通知 delivery 继续保留，但不再一进来就铺满整页。"
       contextTitle="Workspace Governance Truth"
-      contextDescription="当前页除了 `TC-040` 的 settings durable config，也吸收了 `#156`：workspace plan / limits / retention / usage warning 不再只藏在默认值或 setup 边栏里。"
+      contextDescription="当前页除了 `TC-040` 的 settings durable config，也吸收了 `#156`：workspace plan / limits / retention / usage warning 继续公开，但整个设置路径已改成 core-first / advanced-second。"
       contextBody={<LiveSettingsContextRail notifications={notifications} />}
     >
       <LiveSettingsView notifications={notifications} />

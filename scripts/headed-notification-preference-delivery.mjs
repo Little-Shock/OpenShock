@@ -253,6 +253,7 @@ try {
   page = await context.newPage();
 
   await page.goto(`${services.webURL}/settings`, { waitUntil: "load" });
+  await page.getByTestId("settings-advanced-notifications-toggle").click();
   await page.getByTestId("notification-subscribers-count").waitFor({ state: "visible" });
   await waitForContainsText(page, "notification-subscribers-count", "0");
   await waitForContainsText(page, "notification-browser-permission", "已授权");
@@ -313,7 +314,7 @@ try {
   const report = [
     "# TKT-11 Notification Preference / Delivery Report",
     "",
-    `- Command: \`pnpm test:headed-notification-preference-delivery -- --report ${path.relative(projectRoot, reportPath)}\``,
+    `- Command: \`${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-notification-preference-delivery -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
     "",
     "## Results",

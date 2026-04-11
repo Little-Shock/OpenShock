@@ -1,9 +1,9 @@
 # 2026-04-11 Windows Chrome Identity Template Recovery Journey Report
 
 - Command: `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-identity-template-recovery-journey -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-identity-template-recovery-journey.md`
-- Artifacts Dir: `/tmp/openshock-tkt44-identity-template-journey-tCJB2m`
-- Web: `http://127.0.0.1:43730`
-- Server: `http://127.0.0.1:44758`
+- Artifacts Dir: `/tmp/openshock-tkt44-identity-template-journey-pTCGaF`
+- Web: `http://127.0.0.1:43916`
+- Server: `http://127.0.0.1:43700`
 
 ## Results
 
@@ -19,12 +19,12 @@
 
 ## Screenshots
 
-- settings-identity-delivery-ready: `../../../tmp/openshock-tkt44-identity-template-journey-tCJB2m/run/screenshots/01-settings-identity-delivery-ready.png`
-- access-invite-created: `../../../tmp/openshock-tkt44-identity-template-journey-tCJB2m/run/screenshots/02-access-invite-created.png`
-- settings-invite-template-fanout: `../../../tmp/openshock-tkt44-identity-template-journey-tCJB2m/run/screenshots/03-settings-invite-template-fanout.png`
-- access-verify-reset-pending: `../../../tmp/openshock-tkt44-identity-template-journey-tCJB2m/run/screenshots/04-access-verify-reset-pending.png`
-- settings-recovery-template-fanout: `../../../tmp/openshock-tkt44-identity-template-journey-tCJB2m/run/screenshots/05-settings-recovery-template-fanout.png`
-- access-recovery-complete: `../../../tmp/openshock-tkt44-identity-template-journey-tCJB2m/run/screenshots/06-access-recovery-complete.png`
+- settings-identity-delivery-ready: `../../../tmp/openshock-tkt44-identity-template-journey-pTCGaF/run/screenshots/01-settings-identity-delivery-ready.png`
+- access-invite-created: `../../../tmp/openshock-tkt44-identity-template-journey-pTCGaF/run/screenshots/02-access-invite-created.png`
+- settings-invite-template-fanout: `../../../tmp/openshock-tkt44-identity-template-journey-pTCGaF/run/screenshots/03-settings-invite-template-fanout.png`
+- access-verify-reset-pending: `../../../tmp/openshock-tkt44-identity-template-journey-pTCGaF/run/screenshots/04-access-verify-reset-pending.png`
+- settings-recovery-template-fanout: `../../../tmp/openshock-tkt44-identity-template-journey-pTCGaF/run/screenshots/05-settings-recovery-template-fanout.png`
+- access-recovery-complete: `../../../tmp/openshock-tkt44-identity-template-journey-pTCGaF/run/screenshots/06-access-recovery-complete.png`
 
 ## Scope
 

@@ -236,6 +236,7 @@ try {
   page = await context.newPage();
 
   await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
+  await page.getByTestId("settings-advanced-governance-toggle").click();
   await page.getByTestId("settings-governance-topology-count").waitFor({ state: "visible" });
   await waitFor(async () => (await readText(page, "settings-governance-topology-count")).includes("5"), "baseline topology should start with 5 configured lanes");
   await capture(page, "settings-governance-before");
@@ -251,7 +252,10 @@ try {
   await page.getByTestId("settings-governance-lane-default-agent-5").fill("QA Relay");
   await page.getByTestId("settings-governance-lane-path-5").fill("release / closeout");
   await page.getByTestId("settings-governance-save").click();
-  await waitFor(async () => (await readText(page, "settings-governance-success")).includes("team topology 已写回"), "governance save success message did not appear");
+  await waitFor(
+    async () => (await readText(page, "settings-governance-success")).includes("delivery policy 已写回 workspace truth"),
+    "governance save success message did not appear"
+  );
   await capture(page, "settings-governance-after-save");
 
   let state = await readState(serverURL);
@@ -260,6 +264,7 @@ try {
   assert(state.workspace.governance.teamTopology.some((lane) => lane.id === "developer" && lane.label === "Builder"), "developer lane should be renamed to Builder in derived topology");
 
   await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId("settings-advanced-governance-toggle").click();
   await waitForInputValue(page, "settings-governance-lane-label-2", "Builder");
   await waitForInputValue(page, "settings-governance-lane-id-5", "ops");
   await waitForInputValue(page, "settings-governance-lane-label-5", "Ops");
@@ -291,6 +296,7 @@ try {
   await waitForHealth(serverURL);
 
   await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
+  await page.getByTestId("settings-advanced-governance-toggle").click();
   await waitForInputValue(page, "settings-governance-lane-label-2", "Builder");
   await waitForInputValue(page, "settings-governance-lane-id-5", "ops");
   await capture(page, "settings-governance-after-restart");

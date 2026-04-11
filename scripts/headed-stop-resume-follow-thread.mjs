@@ -291,10 +291,9 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
   await page.goto(`${webURL}/rooms/room-runtime`, { waitUntil: "load" });
-  await page.getByTestId("room-workbench-tab-chat").waitFor({ state: "visible", timeout: 30_000 });
   await waitForText(page, "room-reply-authz", "allowed");
   await expectButtonState(page, "room-send-message", false);
-  await page.getByTestId("room-workbench-tab-run").click();
+  await page.goto(`${webURL}/rooms/room-runtime?tab=run`, { waitUntil: "load" });
   await page.getByTestId("room-workbench-run-panel").waitFor({ state: "visible", timeout: 30_000 });
   await waitForText(page, "room-run-control-authz", "allowed");
   await waitForText(page, "room-run-status", "执行中");
@@ -307,7 +306,7 @@ try {
   await waitForText(page, "room-run-status", "已暂停");
   await waitForText(page, "room-run-control-status", "已暂停");
   await waitForContains(page, "room-run-control-note-preview", stopNote);
-  await page.getByTestId("room-workbench-tab-chat").click();
+  await page.goto(`${webURL}/rooms/room-runtime`, { waitUntil: "load" });
   await waitForText(page, "room-reply-authz", "paused");
   await expectButtonState(page, "room-send-message", true);
   await capture(page, screenshotsDir, "room-paused");
@@ -355,9 +354,8 @@ try {
   assert(followState.session.controlNote.includes(followNote), "follow-thread note did not persist on session");
 
   await page.goto(`${webURL}/rooms/room-runtime`, { waitUntil: "load" });
-  await page.getByTestId("room-workbench-tab-chat").waitFor({ state: "visible", timeout: 30_000 });
   await waitForText(page, "room-reply-authz", "paused");
-  await page.getByTestId("room-workbench-tab-run").click();
+  await page.goto(`${webURL}/rooms/room-runtime?tab=run`, { waitUntil: "load" });
   await page.getByTestId("room-workbench-run-panel").waitFor({ state: "visible", timeout: 30_000 });
   await waitForText(page, "room-run-status", "已暂停");
   await waitForText(page, "room-run-follow-thread-status", "跟随当前线程");
@@ -368,7 +366,7 @@ try {
   await waitForText(page, "room-run-control-status", "执行中");
   await waitForText(page, "room-run-follow-thread-status", "跟随当前线程");
   await waitForContains(page, "room-run-control-note-preview", resumeNote);
-  await page.getByTestId("room-workbench-tab-chat").click();
+  await page.goto(`${webURL}/rooms/room-runtime`, { waitUntil: "load" });
   await waitForText(page, "room-reply-authz", "allowed");
   await expectButtonState(page, "room-send-message", false);
   await capture(page, screenshotsDir, "room-resumed");
@@ -404,7 +402,7 @@ try {
   const report = [
     "# TKT-13 Stop / Resume / Follow-thread Report",
     "",
-    `- Command: \`pnpm test:headed-stop-resume-follow-thread -- --report ${path.relative(projectRoot, reportPath)}\``,
+    `- Command: \`${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-stop-resume-follow-thread -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
     "",
     "## Results",

@@ -418,13 +418,13 @@
 - 业务目标: 确认 Room 已经成为主工作台，而不是聊天页再跳多个详情页。
 - 当前执行状态: Pass
 - 对应 Checklist: `CHK-06` `CHK-17`
-- 前置条件: room workbench 已提供 `Chat / Topic / Run / PR / Context` tabs 或等价切换面。
+- 前置条件: room 已提供 chat-first 主面，并保留 `Topic / Run / PR / Context` 的次级 sheet 或等价切换面。
 - 测试步骤:
   1. 打开一条 room。
-  2. 在不离开 room 的情况下切换 `Chat / Topic / Run / PR / Context`。
+  2. 默认确认聊天主面直接可用，再在不离开 room 的情况下打开 `Topic / Run / PR / Context` 次级 sheet。
   3. 验证 run control、PR entry、inbox back-link 仍保持可用。
 - 预期结果: 用户围绕同一条 room 完成讨论、执行、交付和回溯，不需要频繁跨页。
-- 业务结论: 2026 年 4 月 8 日 `TKT-23` 已用 `pnpm test:headed-room-workbench-topic-context -- --report docs/testing/Test-Report-2026-04-08-room-workbench-topic-context.md` 完成有头 exact replay；当前 `/rooms/:roomId` 已成为 query-driven room workbench，`Chat / Topic / Run / PR / Context` 可在同一页切换，`follow_thread` 可在 Run tab 保持可用，PR entry 不再强制跳独立详情页，Context tab 也能在 reload 与 inbox 往返后保留 room-first 状态，因此这条用例当前转为 `Pass`。
+- 业务结论: `TKT-23` 已用 `pnpm test:headed-room-workbench-topic-context` 完成有头 exact replay，并在 2026 年 4 月 11 日收成 chat-first room shell。当前 `/rooms/:roomId` 默认先回到聊天主面，`Topic / Run / PR / Context` 退成 room 内的次级 sheet；`follow_thread` 仍可在 Run sheet 使用，PR entry 不再强制跳独立详情页，Context sheet 也能在 reload 与 inbox 往返后保留 room-first 状态，因此这条用例当前继续保持 `Pass`。
 
 ## TC-032 Board Secondary Planning Surface
 

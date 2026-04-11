@@ -229,21 +229,20 @@ try {
   const results = [];
 
   await page.goto(`${webURL}/rooms/room-runtime`, { waitUntil: "domcontentloaded" });
-  await waitForVisible(page.locator('[data-testid="room-workbench-tab-chat"]'), "room workbench tabs did not render");
   await waitForVisible(page.locator("text=Runtime 讨论间"), "room title did not render");
   await waitForVisible(page.locator('[data-testid="room-message-list"]'), "chat message list did not render");
   await page.locator('[data-testid="room-rail-mode-thread"]').click();
   await waitForVisible(page.locator('[data-testid="room-thread-follow-current"]'), "chat thread rail action did not render");
   await capture(page, "room-chat");
-  results.push("- Chat tab loads room-first shell and keeps thread rail available.");
+  results.push("- 默认房间现在直接回到聊天主面，thread rail 仍保留在右侧，不再先展示一排一级 workbench tabs。");
 
-  await page.locator('[data-testid="room-workbench-tab-topic"]').click();
+  await page.goto(`${webURL}/rooms/room-runtime?tab=topic`, { waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=topic");
   await waitForVisible(page.locator('[data-testid="room-workbench-topic-panel"]'), "topic workbench panel did not render");
   await capture(page, "room-topic");
-  results.push("- Topic tab stays inside the same room URL and surfaces topic summary plus recent guidance.");
+  results.push("- Topic 继续作为 room 内的次级 sheet 保留，可从同一条 room URL 打开 topic summary 和最近 guidance。");
 
-  await page.locator('[data-testid="room-workbench-tab-run"]').click();
+  await page.goto(`${webURL}/rooms/room-runtime?tab=run`, { waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=run");
   await waitForVisible(page.locator('[data-testid="room-workbench-run-panel"]'), "run workbench panel did not render");
   await page.locator('[data-testid="room-run-control-note"]').fill("TC-031 follow thread from room workbench");
@@ -253,23 +252,23 @@ try {
     return text?.includes("跟随当前线程");
   }, "follow_thread did not persist on room workbench");
   await capture(page, "room-run");
-  results.push("- Run tab keeps run control usable; follow_thread writes back while staying on the room workbench.");
+  results.push("- Run sheet 仍可在 room 内直接执行 stop / resume / follow_thread，不需要被拆成完全独立的新工作流。");
 
-  await page.locator('[data-testid="room-workbench-tab-pr"]').click();
+  await page.goto(`${webURL}/rooms/room-runtime?tab=pr`, { waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=pr");
   await waitForVisible(page.locator('[data-testid="room-workbench-pr-panel"]'), "PR workbench panel did not render");
   await waitForVisible(page.locator('[data-testid="room-workbench-pr-primary-action"]'), "PR primary action did not render");
   await capture(page, "room-pr");
-  results.push("- PR tab keeps review / merge entry visible inside the same room without jumping to a separate detail page.");
+  results.push("- PR sheet 继续保留在 room 语境里，可直接看到 review / merge 入口，而不是强制跳走。");
 
-  await page.locator('[data-testid="room-workbench-tab-context"]').click();
+  await page.goto(`${webURL}/rooms/room-runtime?tab=context`, { waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=context");
   await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "context workbench panel did not render");
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=context");
   await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "context tab did not survive reload");
   await capture(page, "room-context");
-  results.push("- Context tab survives reload via query state and keeps issue / board / inbox back-links inside the room.");
+  results.push("- Context sheet 继续支持 query-state reload，并保留 issue / board / inbox back-links。");
 
   await page.locator('[data-testid="room-workbench-open-inbox"]').first().click();
   await waitForUrlIncludes(page, "/inbox");
@@ -278,12 +277,12 @@ try {
   await page.goBack({ waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=context");
   await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "room context did not restore after inbox backlink");
-  results.push("- Inbox back-link stays usable and returns the operator to the same room context state.");
+  results.push("- Inbox back-link 仍能把人带回同一条 room context state。");
 
   const report = [
-    "# 2026-04-08 Room Workbench / Topic Context Report",
+    "# 2026-04-11 Room Simplified Sheet / Topic Context Report",
     "",
-    `- Command: \`pnpm test:headed-room-workbench-topic-context -- --report ${path.relative(projectRoot, reportPath)}\``,
+    `- Command: \`${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-room-workbench-topic-context -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
     "",
     "## Results",
@@ -293,7 +292,7 @@ try {
     ...screenshots.map((shot) => `- ${shot.name}: ${shot.path}`),
     "",
     "## Single Value",
-    "- `/rooms/:roomId` now behaves as a query-driven room workbench: `Chat / Topic / Run / PR / Context` switch inside one room, `follow_thread` remains usable on the Run tab, PR entry stays local to the room, and the Context tab survives reload while preserving inbox back-links.",
+    "- `/rooms/:roomId` 现在默认回到 chat-first room shell：聊天主面始终优先，`Topic / Run / PR / Context` 退成次级 sheet，但 `follow_thread`、PR review 入口、reload persistence 与 inbox back-links 仍完整保留。",
   ].join("\n");
 
   await writeFile(reportPath, `${report}\n`, "utf8");
