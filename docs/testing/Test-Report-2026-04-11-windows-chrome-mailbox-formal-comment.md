@@ -1,7 +1,7 @@
 # 2026-04-11 Agent Mailbox / Formal Comment Contract Report
 
 - Command: `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-agent-mailbox-handoff -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md`
-- Artifacts Dir: `/tmp/openshock-tkt35-mailbox-wwlHCY`
+- Artifacts Dir: `/tmp/openshock-tkt35-mailbox-5g095x`
 
 ## Results
 
@@ -15,12 +15,12 @@
 
 ## Screenshots
 
-- mailbox-requested: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/01-mailbox-requested.png
-- mailbox-comment-requested: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/02-mailbox-comment-requested.png
-- mailbox-blocked-note-required: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/03-mailbox-blocked-note-required.png
-- mailbox-blocked: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/04-mailbox-blocked.png
-- mailbox-comment-blocked: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/05-mailbox-comment-blocked.png
-- mailbox-acknowledged: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/06-mailbox-acknowledged.png
-- room-context-mailbox-backlink: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/07-room-context-mailbox-backlink.png
-- mailbox-completed: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/08-mailbox-completed.png
-- inbox-mailbox-ledger-focused: /tmp/openshock-tkt35-mailbox-wwlHCY/screenshots/09-inbox-mailbox-ledger-focused.png
+- mailbox-requested: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/01-mailbox-requested.png
+- mailbox-comment-requested: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/02-mailbox-comment-requested.png
+- mailbox-blocked-note-required: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/03-mailbox-blocked-note-required.png
+- mailbox-blocked: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/04-mailbox-blocked.png
+- mailbox-comment-blocked: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/05-mailbox-comment-blocked.png
+- mailbox-acknowledged: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/06-mailbox-acknowledged.png
+- room-context-mailbox-backlink: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/07-room-context-mailbox-backlink.png
+- mailbox-completed: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/08-mailbox-completed.png
+- inbox-mailbox-ledger-focused: /tmp/openshock-tkt35-mailbox-5g095x/screenshots/09-inbox-mailbox-ledger-focused.png

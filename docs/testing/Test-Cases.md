@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.20
+**版本:** 1.21
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1120,3 +1120,18 @@
   6. 回读 state / inbox，确认 closeout note 进入 handoff truth 与 inbox summary。
 - 预期结果: Mailbox 必须提供真实可用的批量 closeout 面。多条 handoff 的批量动作应继续沿既有单条 handoff contract 顺序写回，不允许出现前端 fake batch state、selection 残留或 inbox 摘要不同步。
 - 业务结论: 2026 年 4 月 11 日 `TKT-91` 已把 mailbox batch queue 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md` 已记录 `requested -> selected -> batch acknowledged -> batch comment -> batch completed` 的 Windows Chrome 有头 walkthrough，同时 `pnpm --dir apps/web typecheck`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx src/components/stitch-board-inbox-views.tsx'` 与 `node --check scripts/headed-mailbox-batch-actions.mjs` 已锁住前端类型、lint 与脚本合法性，因此这条 mailbox bulk-closeout 用例当前转为 `Pass`。
+
+## TC-081 Governance Escalation Queue
+
+- 业务目标: 确认 workspace governance 的 escalation 不再只剩 SLA summary，而是把 active handoff 与 blocked inbox signal 收成正式 queue truth，并在 `/mailbox` 与 `/agents` 同源展示。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: 当前 workspace 已启用 governance snapshot；存在至少一条 formal handoff；当前会话具备 `run.execute` 权限。
+- 测试步骤:
+  1. 打开 `/mailbox?roomId=room-runtime`，确认 baseline 下 escalation queue 为空或只显示当前真实 queue entry。
+  2. 创建一条 formal handoff，确认 governance panel 会新增 `mailbox handoff` entry，并带出 `label / source / owner / next-step / deep-link`。
+  3. 打开 `/agents`，确认 orchestration governance 面会镜像同一条 escalation queue entry，而不是另一套本地状态。
+  4. 将 handoff 标记为 `blocked`，确认 queue 会同时出现 blocked handoff 与 related `inbox blocker` entry。
+  5. 将 handoff 重新 `acknowledged -> completed`，确认 `/mailbox` 与 `/agents` 的 escalation queue 一起清空，state snapshot 的 queue truth 同步归零。
+- 预期结果: escalation queue 必须成为正式治理对象，而不是 aggregate SLA 的装饰性解释。queue entry 应持续引用既有 handoff / inbox 真相，并在 closeout 后自动消退。
+- 业务结论: 2026 年 4 月 11 日 `TKT-92` 已把 governance escalation queue 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md` 已记录 `requested -> blocked -> cleared` 的 Windows Chrome 有头 walkthrough，同时 `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store -run "TestMailboxLifecycleHydratesWorkspaceGovernance" -count=1'`、`bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/api -run "TestStateRouteExposesGovernanceSnapshot|TestMailboxLifecycleUpdatesGovernanceSnapshot" -count=1'`、`pnpm --dir apps/web typecheck`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx src/components/live-orchestration-views.tsx src/lib/phase-zero-helpers.ts src/lib/live-phase0.ts src/lib/phase-zero-types.ts'` 与 `node --check scripts/headed-governance-escalation-queue.mjs` 已锁住 store/API contract、前端类型、lint 与脚本合法性，因此这条 escalation queue 用例当前转为 `Pass`。

@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.22
+**版本:** 1.23
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace）、PR detail collaboration thread + inline thread actions，以及 mailbox 当前 room ledger 的 multi-select batch queue；下一批继续前滚到更深自动协作策略与跨 Agent closeout orchestration。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace）、PR detail collaboration thread + inline thread actions、mailbox 当前 room ledger 的 multi-select batch queue，以及 workspace governance escalation queue mirror；下一批继续前滚到跨 room 治理编排与 policy-based batch orchestration。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -1333,6 +1333,32 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-080`
+
+## TKT-92 Governance Escalation Queue
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 workspace governance 的 escalation 从抽象 SLA summary 推进成正式 queue truth，让 active handoff 与 blocked inbox signal 能以同一条队列 entry 出现在 `/mailbox` 与 `/agents`。
+- 范围:
+  - `workspace.governance.escalationSla.queue` contract
+  - handoff / blocked inbox -> queue entry 派生
+  - `/mailbox` governance escalation queue panel
+  - `/agents` orchestration governance queue mirror
+  - Windows Chrome walkthrough + report
+- 依赖: `TKT-61` `TKT-63` `TKT-64` `TKT-91`
+- Done When:
+  - governance escalation 不再只显示 aggregate counter，而是有正式 queue entry truth
+  - active handoff 与 blocked inbox signal 都会以 `label / source / owner / next-step / deep-link` 出现在队列里
+  - `/mailbox` 与 `/agents` 会镜像同一份 escalation queue，handoff closeout 后队列自动清空
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store -run "TestMailboxLifecycleHydratesWorkspaceGovernance" -count=1'`
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/api -run "TestStateRouteExposesGovernanceSnapshot|TestMailboxLifecycleUpdatesGovernanceSnapshot" -count=1'`
+  - `pnpm --dir apps/web typecheck`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx src/components/live-orchestration-views.tsx src/lib/phase-zero-helpers.ts src/lib/live-phase0.ts src/lib/phase-zero-types.ts'`
+  - `node --check scripts/headed-governance-escalation-queue.mjs`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-queue -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-081`
 
 ---
 

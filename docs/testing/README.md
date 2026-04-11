@@ -14,6 +14,8 @@
   - `TKT-63` 的 Windows Chrome 有头报告，覆盖 `create -> source comment -> blocked -> target comment -> acknowledged -> completed` 的双边 mailbox 通信链路
 - [Test Report 2026-04-11 Windows Chrome Mailbox Batch Queue](./Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md)
   - `TKT-91` 的 Windows Chrome 有头报告，覆盖 `/mailbox` 当前 room ledger 的 multi-select `Batch Queue`、batch `acknowledged / comment / completed`、selection auto-clear 与 inbox summary sync
+- [Test Report 2026-04-11 Windows Chrome Governance Escalation Queue](./Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md)
+  - `TKT-92` 的 Windows Chrome 有头报告，覆盖 `workspace.governance.escalationSla.queue` 在 `/mailbox` 与 `/agents` 的同源镜像、blocked inbox escalation 与 queue clear-down
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Route](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-route.md)
   - `TKT-64` 的 Windows Chrome 有头报告，覆盖 `/mailbox` 与 Inbox compose 的 governed next-handoff 默认路由、active focus 与 missing-target blocked fallback
 - [Test Report 2026-04-11 Windows Chrome Governed Mailbox Auto-Create](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-autocreate.md)
@@ -209,6 +211,8 @@
   - 验证 mailbox 的 source / target formal comment、blocked note guard、blocked-tone preservation 与 lifecycle closeout 回放
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
   - 验证 `/mailbox` 当前 room ledger 的 multi-select `Batch Queue`、batch acknowledge / comment / complete、selection auto-clear 与 inbox summary sync
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-queue -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md`
+  - 验证 `workspace.governance.escalationSla.queue` 会把 active handoff 与 blocked inbox signal 收成正式 queue truth，并在 `/mailbox` 与 `/agents` 同源镜像
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-route -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-route.md`
   - 验证 governed route suggestion 会按当前 room truth 自动填充 source/target、聚焦 active handoff，并在缺少 QA target 时显式 blocked
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-route -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-autocreate.md`
