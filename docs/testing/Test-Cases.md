@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.22
+**版本:** 1.23
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1150,3 +1150,18 @@
   5. 先收口 primary room，再收口 secondary room，确认 rollup 会先减一，再回退到 baseline hot-room 数量。
 - 预期结果: cross-room escalation rollup 必须成为正式治理对象，而不是当前 queue 的附注。用户应该能从任一治理面立刻发现“别的 room 也在冒烟”，同时 closeout 后 rollup 要沿同一份 handoff truth 自动清退。
 - 业务结论: 2026 年 4 月 11 日 `TKT-93` 已把 governance escalation room rollup 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-rollup.md` 已记录 `baseline -> primary blocked + secondary active -> primary cleared -> baseline restored` 的 Windows Chrome 有头 walkthrough，同时 `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store -run "TestMailboxLifecycleHydratesWorkspaceGovernance" -count=1'`、`bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/api -run "TestStateRouteExposesGovernanceSnapshot|TestMailboxLifecycleUpdatesGovernanceSnapshot" -count=1'`、`pnpm verify:web`、`node --check scripts/headed-governance-escalation-rollup.mjs` 与 `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-queue -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md` 已锁住 store/API contract、前端构建与相邻 queue 回归，因此这条 cross-room governance rollup 用例当前转为 `Pass`。
+
+## TC-083 Mailbox Governed Batch Policy
+
+- 业务目标: 确认 batch queue 不只会批量 closeout，而是会围 governed handoff 读取正式 routing policy，并支持 `Batch Complete + Auto-Advance` 把下一棒拉起来。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: workspace 已启用 dev-team governance；当前 room 存在至少两条 governed handoff；QA lane 已映射到真实默认 Agent；当前会话具备 `run.execute` 权限。
+- 测试步骤:
+  1. 通过正式 create contract 创建两条 `kind=governed` 的 reviewer handoff，确认 `/mailbox` 能读到 governed selection。
+  2. 选中这两条 open governed handoff，确认 `Governed Batch Policy` 先显示 `watch`，提示当前 selection 还不能 bulk auto-advance。
+  3. 对 selection 先做 batch `acknowledged`，确认 policy 状态切到 `ready`。
+  4. 执行 `Batch Complete + Auto-Advance`，确认两条源 handoff 顺序完成并保留同一份 closeout note。
+  5. 验证系统只物化一条 reviewer -> QA followup handoff，selection 自动清空，routing policy 把 followup 标成新的 active suggestion。
+- 预期结果: governed batch policy 必须成为正式产品面，而不是单卡 `Complete + Auto-Advance` 的孤立快捷方式。用户应能一眼分辨“当前 selection 是否可 bulk auto-advance”，并在 bulk closeout 后看到唯一的 next-lane followup。
+- 业务结论: 2026 年 4 月 11 日 `TKT-94` 已把 mailbox governed batch policy 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-policy.md` 已记录 `requested -> acknowledged -> batch complete + auto-advance -> reviewer -> QA followup` 的 Windows Chrome 有头 walkthrough，同时 `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/api -run "TestMailboxRoutesCreateAndListLiveTruth|TestMailboxRoutesAdvanceLifecycleAndGuardrails" -count=1'`、`pnpm verify:web`、`node --check scripts/headed-mailbox-batch-policy.mjs` 与 `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md` 已锁住 create contract、前端构建、新功能 walkthrough 与相邻 batch queue 回归，因此这条 governed bulk auto-advance 用例当前转为 `Pass`。

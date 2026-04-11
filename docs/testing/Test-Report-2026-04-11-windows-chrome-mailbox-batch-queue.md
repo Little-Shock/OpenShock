@@ -5,7 +5,7 @@
 - Test Case: `TC-080`
 - Scope: mailbox multi-select batch queue, sequential bulk ack/comment/complete, open queue clear-down
 - Command: `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
-- Artifacts Dir: `/tmp/openshock-tkt91-mailbox-batch-3p7LWO`
+- Artifacts Dir: `/tmp/openshock-tkt91-mailbox-batch-ntV8Tz`
 
 ## Results
 
@@ -16,8 +16,8 @@
 
 ## Screenshots
 
-- mailbox-batch-requested: /tmp/openshock-tkt91-mailbox-batch-3p7LWO/screenshots/01-mailbox-batch-requested.png
-- mailbox-batch-selected: /tmp/openshock-tkt91-mailbox-batch-3p7LWO/screenshots/02-mailbox-batch-selected.png
-- mailbox-batch-acknowledged: /tmp/openshock-tkt91-mailbox-batch-3p7LWO/screenshots/03-mailbox-batch-acknowledged.png
-- mailbox-batch-comment: /tmp/openshock-tkt91-mailbox-batch-3p7LWO/screenshots/04-mailbox-batch-comment.png
-- mailbox-batch-completed: /tmp/openshock-tkt91-mailbox-batch-3p7LWO/screenshots/05-mailbox-batch-completed.png
+- mailbox-batch-requested: /tmp/openshock-tkt91-mailbox-batch-ntV8Tz/screenshots/01-mailbox-batch-requested.png
+- mailbox-batch-selected: /tmp/openshock-tkt91-mailbox-batch-ntV8Tz/screenshots/02-mailbox-batch-selected.png
+- mailbox-batch-acknowledged: /tmp/openshock-tkt91-mailbox-batch-ntV8Tz/screenshots/03-mailbox-batch-acknowledged.png
+- mailbox-batch-comment: /tmp/openshock-tkt91-mailbox-batch-ntV8Tz/screenshots/04-mailbox-batch-comment.png
+- mailbox-batch-completed: /tmp/openshock-tkt91-mailbox-batch-ntV8Tz/screenshots/05-mailbox-batch-completed.png

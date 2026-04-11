@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.24
+**版本:** 1.25
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -26,7 +26,7 @@
 1. 已经站住的前端壳、onboarding、mailbox、profile、persistence 不再反复假装“未完成”；后续票只围剩余 GAP 开。
 2. 当前主线已经吸收 PR conversation、usage/quota、identity recovery、restricted sandbox、delivery gate 和 configurable topology；下一批不再重复补旧口，而是继续往更深治理和体验收尾推进。
 3. 聊天、Room、Inbox、Topic、Run 的真相仍高于 Board；Board 继续只做 planning mirror。
-4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace）、PR detail collaboration thread + inline thread actions、mailbox 当前 room ledger 的 multi-select batch queue、workspace governance escalation queue mirror，以及 cross-room escalation rollup；下一批继续前滚到 policy-based batch orchestration 与更深跨 room 治理编排。
+4. 多 Agent 协作当前已经收进 SLA / routing / aggregation、formal comment、governed next-route default、one-click auto-create、governed auto-advance、delivery closeout backlink、delivery delegation signal、delegated closeout handoff auto-create、delegated closeout lifecycle sync、delivery delegation automation / auto-complete policy、delegated closeout response orchestration、retry attempt truth、parent surface context preservation、child response context sync、child response timeline sync、parent response timeline sync、room main-trace sync（含 blocked response trace）、PR detail collaboration thread + inline thread actions、mailbox 当前 room ledger 的 multi-select batch queue、governed batch policy auto-advance、workspace governance escalation queue mirror，以及 cross-room escalation rollup；下一批继续前滚到更深跨 room 治理编排。
 5. 长期记忆 provider、后台整理、外部编排和更重的多 Agent 自治策略进入下一批长期 backlog。
 
 ### Frontend Batch Merge Gate
@@ -1385,6 +1385,30 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-queue -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md`
 - Checklist: `CHK-21`
 - Test Cases: `TC-082`
+
+## TKT-94 Mailbox Governed Batch Policy
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 `/mailbox` 的 batch queue 从“能批量 closeout”推进到“能按治理 policy 批量续下一棒”，让 pure governed selection 直接做 bulk `Complete + Auto-Advance`。
+- 范围:
+  - create handoff `kind=governed` contract
+  - `/mailbox` `Governed Batch Policy` 面板
+  - bulk `completed + continueGovernedRoute` orchestration
+  - Windows Chrome walkthrough + batch queue regression
+- 依赖: `TKT-64` `TKT-91`
+- Done When:
+  - `Create Governed Handoff` 会把 `kind=governed` 写进正式 mailbox contract，而不是落成 manual handoff
+  - pure governed selection 会显示正式 policy 状态，并在可 complete 时开放 `Batch Complete + Auto-Advance`
+  - bulk closeout 后只会物化一条 next-lane followup handoff，selection 自动清空，routing policy 聚焦到 followup
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/api -run "TestMailboxRoutesCreateAndListLiveTruth|TestMailboxRoutesAdvanceLifecycleAndGuardrails" -count=1'`
+  - `pnpm verify:web`
+  - `node --check scripts/headed-mailbox-batch-policy.mjs`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-policy -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-policy.md`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-083`
 
 ---
 

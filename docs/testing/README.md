@@ -14,6 +14,8 @@
   - `TKT-63` 的 Windows Chrome 有头报告，覆盖 `create -> source comment -> blocked -> target comment -> acknowledged -> completed` 的双边 mailbox 通信链路
 - [Test Report 2026-04-11 Windows Chrome Mailbox Batch Queue](./Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md)
   - `TKT-91` 的 Windows Chrome 有头报告，覆盖 `/mailbox` 当前 room ledger 的 multi-select `Batch Queue`、batch `acknowledged / comment / completed`、selection auto-clear 与 inbox summary sync
+- [Test Report 2026-04-11 Windows Chrome Mailbox Batch Policy](./Test-Report-2026-04-11-windows-chrome-mailbox-batch-policy.md)
+  - `TKT-94` 的 Windows Chrome 有头报告，覆盖 governed batch policy、`Batch Complete + Auto-Advance`、followup handoff auto-create 与 batch queue regression
 - [Test Report 2026-04-11 Windows Chrome Governance Escalation Queue](./Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md)
   - `TKT-92` 的 Windows Chrome 有头报告，覆盖 `workspace.governance.escalationSla.queue` 在 `/mailbox` 与 `/agents` 的同源镜像、blocked inbox escalation 与 queue clear-down
 - [Test Report 2026-04-11 Windows Chrome Governance Escalation Rollup](./Test-Report-2026-04-11-windows-chrome-governance-escalation-rollup.md)
@@ -213,6 +215,8 @@
   - 验证 mailbox 的 source / target formal comment、blocked note guard、blocked-tone preservation 与 lifecycle closeout 回放
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
   - 验证 `/mailbox` 当前 room ledger 的 multi-select `Batch Queue`、batch acknowledge / comment / complete、selection auto-clear 与 inbox summary sync
+- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-policy -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-policy.md`
+  - 验证 `Create Governed Handoff` 会保留 `kind=governed`，pure governed selection 可 `Batch Complete + Auto-Advance`，并自动物化单条 followup handoff
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-queue -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md`
   - 验证 `workspace.governance.escalationSla.queue` 会把 active handoff 与 blocked inbox signal 收成正式 queue truth，并在 `/mailbox` 与 `/agents` 同源镜像
 - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-rollup -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-rollup.md`
