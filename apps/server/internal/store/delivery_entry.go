@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -111,6 +112,7 @@ func buildPullRequestDeliveryDelegation(
 		result.HandoffHref = mailboxInboxHref(handoff.ID, handoff.RoomID)
 		result.HandoffStatus = handoff.Status
 		result.ResponseAttemptCount = responseAttemptCount
+		result.Communication = buildPullRequestDeliveryDelegationCommunication(snapshot.Mailbox, *handoff)
 		responseSummary := deliveryDelegationResponseSummary(handoff.Status, responseHandoff, responseAttemptCount)
 		if responseHandoff != nil {
 			result.ResponseHandoffID = responseHandoff.ID
@@ -226,6 +228,69 @@ func buildPullRequestDeliveryDelegation(
 	return result
 }
 
+func buildPullRequestDeliveryDelegationCommunication(
+	mailbox []AgentHandoff,
+	parent AgentHandoff,
+) []PullRequestDeliveryCommunicationEntry {
+	type communicationSource struct {
+		handoff AgentHandoff
+		label   string
+	}
+
+	sources := []communicationSource{{
+		handoff: parent,
+		label:   "Parent Closeout",
+	}}
+	responseHandoffs := listDeliveryDelegationResponseHandoffs(mailbox, parent.ID)
+	for index, handoff := range responseHandoffs {
+		sources = append(sources, communicationSource{
+			handoff: handoff,
+			label:   fmt.Sprintf("Unblock Reply x%d", index+1),
+		})
+	}
+
+	entries := make([]PullRequestDeliveryCommunicationEntry, 0, len(parent.Messages))
+	for _, source := range sources {
+		messages := append([]MailboxMessage(nil), source.handoff.Messages...)
+		sort.SliceStable(messages, func(left, right int) bool {
+			if compareDeliveryCommunicationTimestamp(messages[left].CreatedAt, messages[right].CreatedAt) == 0 {
+				return messages[left].ID < messages[right].ID
+			}
+			return compareDeliveryCommunicationTimestamp(messages[left].CreatedAt, messages[right].CreatedAt) < 0
+		})
+		for _, message := range messages {
+			summary := strings.TrimSpace(message.Body)
+			if summary == "" {
+				summary = defaultString(strings.TrimSpace(source.handoff.Summary), "当前 formal collaboration entry 正在整理中。")
+			}
+			entries = append(entries, PullRequestDeliveryCommunicationEntry{
+				ID:            message.ID,
+				HandoffID:     source.handoff.ID,
+				HandoffKind:   source.handoff.Kind,
+				HandoffLabel:  source.label,
+				HandoffTitle:  source.handoff.Title,
+				HandoffStatus: source.handoff.Status,
+				MessageKind:   normalizeDeliveryDelegationCommunicationKind(message.Kind),
+				Actor:         defaultString(strings.TrimSpace(message.AuthorName), "System"),
+				Summary:       summary,
+				CreatedAt:     message.CreatedAt,
+				Href:          mailboxInboxHref(source.handoff.ID, source.handoff.RoomID),
+			})
+		}
+	}
+
+	sort.SliceStable(entries, func(left, right int) bool {
+		if compareDeliveryCommunicationTimestamp(entries[left].CreatedAt, entries[right].CreatedAt) == 0 {
+			if entries[left].HandoffID == entries[right].HandoffID {
+				return entries[left].ID < entries[right].ID
+			}
+			return entries[left].HandoffID < entries[right].HandoffID
+		}
+		return compareDeliveryCommunicationTimestamp(entries[left].CreatedAt, entries[right].CreatedAt) < 0
+	})
+	return entries
+}
+
 func resolvePullRequestDeliveryDelegationTarget(snapshot State) (governanceTemplateLaneDefinition, string, bool, bool) {
 	topology := deliveryDelegationTopology(snapshot)
 	for _, lane := range topology {
@@ -327,6 +392,27 @@ func findLatestDeliveryDelegationResponseHandoff(mailbox []AgentHandoff, parentH
 	return nil, attemptCount
 }
 
+func listDeliveryDelegationResponseHandoffs(mailbox []AgentHandoff, parentHandoffID string) []AgentHandoff {
+	handoffs := make([]AgentHandoff, 0)
+	for index := range mailbox {
+		handoff := mailbox[index]
+		if handoff.Kind != handoffKindDeliveryReply {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(handoff.ParentHandoffID), strings.TrimSpace(parentHandoffID)) {
+			continue
+		}
+		handoffs = append(handoffs, handoff)
+	}
+	sort.SliceStable(handoffs, func(left, right int) bool {
+		if compareDeliveryCommunicationTimestamp(handoffs[left].RequestedAt, handoffs[right].RequestedAt) == 0 {
+			return handoffs[left].ID < handoffs[right].ID
+		}
+		return compareDeliveryCommunicationTimestamp(handoffs[left].RequestedAt, handoffs[right].RequestedAt) < 0
+	})
+	return handoffs
+}
+
 func countDeliveryDelegationResponseHandoffs(mailbox []AgentHandoff, parentHandoffID string) int {
 	count := 0
 	for index := range mailbox {
@@ -339,6 +425,50 @@ func countDeliveryDelegationResponseHandoffs(mailbox []AgentHandoff, parentHando
 		}
 	}
 	return count
+}
+
+func normalizeDeliveryDelegationCommunicationKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "complete":
+		return "completed"
+	default:
+		return strings.TrimSpace(kind)
+	}
+}
+
+func compareDeliveryCommunicationTimestamp(left, right string) int {
+	leftTime, leftOK := parseDeliveryCommunicationTimestamp(left)
+	rightTime, rightOK := parseDeliveryCommunicationTimestamp(right)
+	switch {
+	case leftOK && rightOK:
+		if leftTime.Equal(rightTime) {
+			return 0
+		}
+		if leftTime.Before(rightTime) {
+			return -1
+		}
+		return 1
+	case strings.TrimSpace(left) == strings.TrimSpace(right):
+		return 0
+	case strings.TrimSpace(left) < strings.TrimSpace(right):
+		return -1
+	default:
+		return 1
+	}
+}
+
+func parseDeliveryCommunicationTimestamp(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, false
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+		return parsed, true
+	}
+	if parsed, err := time.Parse(mailboxEventTimestampLayout, trimmed); err == nil {
+		return parsed, true
+	}
+	return time.Time{}, false
 }
 
 func deliveryDelegationResponseSummary(parentStatus string, handoff *AgentHandoff, attemptCount int) string {

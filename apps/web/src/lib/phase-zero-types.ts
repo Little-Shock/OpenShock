@@ -916,6 +916,21 @@ export type PullRequestDeliveryDelegation = {
   responseHandoffId?: string;
   responseHandoffHref?: string;
   responseHandoffStatus?: HandoffStatus;
+  communication?: PullRequestDeliveryCommunicationEntry[];
+};
+
+export type PullRequestDeliveryCommunicationEntry = {
+  id: string;
+  handoffId: string;
+  handoffKind: string;
+  handoffLabel: string;
+  handoffTitle: string;
+  handoffStatus: HandoffStatus;
+  messageKind: string;
+  actor: string;
+  summary: string;
+  createdAt: string;
+  href?: string;
 };
 
 export type PullRequestDeliveryHandoffNote = {

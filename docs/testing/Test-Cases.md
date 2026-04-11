@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.17
+**版本:** 1.18
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1072,3 +1072,19 @@
   5. 回到 room context，确认 active agent / machine 的 room drill-in 仍保持可用。
 - 预期结果: profile 入口不再散落在右栏 summary 或独立列表页里。用户在任何主工作面都能从同一套壳层 footer 进入当前人物 / 机器 profile，同时不破坏 room context 的既有 drill-in。
 - 业务结论: 2026 年 4 月 11 日 `TKT-88` 已把 shell-level profile hub 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-shell-profile-hub.md` 已记录 `Profile Hub -> human -> machine -> agent -> room context regression` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web` 已锁住壳层类型、构建与 live truth hygiene，因此这条 shell profile-entry 用例当前转为 `Pass`。
+
+## TC-078 PR Detail Delivery Collaboration Thread
+
+- 业务目标: 确认 PR detail 已把 parent `delivery-closeout` 与 child `delivery-reply` 的正式沟通收成同一条 `Delivery Collaboration Thread`，而不是只靠一段 delegation summary 字串拼接。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: final lane closeout 已自动创建 delegated closeout handoff；parent 被 `blocked` 后，会自动生成 child `delivery-reply`。
+- 测试步骤:
+  1. 使用 `formal-handoff` delivery policy，让 final QA closeout 自动生成 delegated closeout handoff。
+  2. 将 parent delegated closeout 标记为 `blocked`，打开 `/pull-requests/pr-runtime-18`。
+  3. 确认 `Delivery Collaboration Thread` 先后出现 `Parent Closeout request -> blocker -> Unblock Reply x1 request` 三条 thread entry。
+  4. 让 child `delivery-reply` 追加 source comment、完成 unblock response，并让 parent 重新 `acknowledged`。
+  5. 刷新 PR detail，确认 thread 继续出现 child formal comment、parent resume 以及 child `parent-progress`，且顺序保持 `parent blocker -> child comment -> parent resume -> child parent-progress`。
+  6. 点击任一 thread entry 的回链按钮，确认能 deep-link 回对应 Mailbox handoff。
+- 预期结果: PR detail 不应再只把跨 Agent closeout 压成一段不断被覆盖的摘要。用户必须能在同一屏直接回放 parent / child 两条 ledger 的 request、blocker、formal comment、resume 与 progress，并能一跳回到对应 Mailbox 上下文。
+- 业务结论: 2026 年 4 月 11 日 `TKT-89` 已把 unified delivery collaboration thread 收进正式产品面。当前 `docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-communication-thread.md` 已记录 `parent request -> blocker -> child request -> child comment -> parent resume -> child parent-progress` 的 Windows Chrome 有头 walkthrough，同时 `pnpm verify:web`、`go test ./internal/store -run "TestDeliveryDelegationCommunicationThreadAggregatesParentAndReplyMessages" -count=1` 与 `go test ./internal/api -run "TestDeliveryDelegationCommunicationThreadRoute" -count=1` 已锁住 store/API contract、前端 type/build 与 chronological thread truth，因此这条 PR detail collaboration-thread 用例当前转为 `Pass`。

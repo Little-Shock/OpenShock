@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.19
+**版本:** 1.20
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -1261,6 +1261,30 @@
   - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-profile-surface -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-shell-profile-hub.md`
 - Checklist: `CHK-16`
 - Test Cases: `TC-077`
+
+## TKT-89 PR Detail Delivery Collaboration Thread
+
+- 状态: `done`
+- 优先级: `P1`
+- 目标: 把 parent `delivery-closeout` 与 child `delivery-reply` 的 formal request / blocker / comment / progress 收成同一条 PR detail timeline，不再只剩一段不断被覆盖的 delegation summary。
+- 范围:
+  - `PullRequestDeliveryDelegation.communication` contract
+  - parent / child mailbox message aggregation
+  - PR detail `Delivery Collaboration Thread` 面板
+  - chronological ordering with precise mailbox event timestamps
+  - Windows Chrome walkthrough + report
+- 依赖: `TKT-76` `TKT-80` `TKT-85`
+- Done When:
+  - PR detail 会新增 `Delivery Collaboration Thread`
+  - parent closeout 与 child reply 的 formal request / blocker / comment / progress 会按真实时间顺序同屏显示
+  - 每条 thread entry 都能 deep-link 回对应 Mailbox handoff，而不是只停在 PR summary
+- 最新证据:
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/store -run "TestDeliveryDelegationCommunicationThreadAggregatesParentAndReplyMessages" -count=1'`
+  - `bash -lc 'cd apps/server && ../../scripts/go.sh test ./internal/api -run "TestDeliveryDelegationCommunicationThreadRoute" -count=1'`
+  - `pnpm verify:web`
+  - `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-communication-thread -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-communication-thread.md`
+- Checklist: `CHK-21`
+- Test Cases: `TC-078`
 
 ---
 

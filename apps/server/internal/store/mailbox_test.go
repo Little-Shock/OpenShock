@@ -1545,6 +1545,167 @@ func TestDeliveryDelegationBlockedResponseSyncsIntoParentRoomTrace(t *testing.T)
 	}
 }
 
+func TestDeliveryDelegationCommunicationThreadAggregatesParentAndReplyMessages(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	topology := defaultWorkspaceGovernanceTopology("dev-team")
+	topology[len(topology)-1].DefaultAgent = "Memory Clerk"
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Governance: &WorkspaceGovernanceConfigInput{
+			TeamTopology: topology,
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "把 developer lane 正式交给 reviewer",
+		Summary:     "当前 exact-head context 已整理，交给 reviewer 接住下一棒。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+	if _, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-claude-review-runner",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged reviewer) error = %v", err)
+	}
+	reviewerClosedState, _, err := s.AdvanceHandoff(handoff.ID, MailboxUpdateInput{
+		Action:                "completed",
+		ActingAgentID:         "agent-claude-review-runner",
+		Note:                  "review 已完成，直接把 QA 接力拉起来。",
+		ContinueGovernedRoute: true,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(completed reviewer continue) error = %v", err)
+	}
+	qaHandoff := reviewerClosedState.Mailbox[0]
+
+	if _, _, err := s.AdvanceHandoff(qaHandoff.ID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: "agent-memory-clerk",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged qa) error = %v", err)
+	}
+	if _, _, err := s.AdvanceHandoff(qaHandoff.ID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: "agent-memory-clerk",
+		Note:          "QA 验证完成，可以进入 PR delivery closeout。",
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(completed qa) error = %v", err)
+	}
+
+	initialDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || initialDetail.Delivery.Delegation.HandoffID == "" {
+		t.Fatalf("PullRequestDetail() = %#v, want auto-created delivery delegation handoff", initialDetail)
+	}
+	if len(initialDetail.Delivery.Delegation.Communication) != 1 {
+		t.Fatalf("initial communication = %#v, want initial parent closeout request", initialDetail.Delivery.Delegation.Communication)
+	}
+	if initialDetail.Delivery.Delegation.Communication[0].HandoffLabel != "Parent Closeout" ||
+		initialDetail.Delivery.Delegation.Communication[0].MessageKind != "request" {
+		t.Fatalf("initial communication entry = %#v, want parent request entry", initialDetail.Delivery.Delegation.Communication[0])
+	}
+
+	delegatedHandoffID := initialDetail.Delivery.Delegation.HandoffID
+	delegatedHandoff := findHandoffByID(s.Snapshot().Mailbox, delegatedHandoffID)
+	if delegatedHandoff == nil {
+		t.Fatalf("delegated handoff %q missing from mailbox", delegatedHandoffID)
+	}
+
+	blockNote := "需要先确认最终 release 文案，再继续 closeout。"
+	if _, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "blocked",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+		Note:          blockNote,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(blocked delegated closeout) error = %v", err)
+	}
+	blockedDetail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok || blockedDetail.Delivery.Delegation.ResponseHandoffID == "" {
+		t.Fatalf("blocked detail = %#v, want response handoff", blockedDetail)
+	}
+	responseHandoffID := blockedDetail.Delivery.Delegation.ResponseHandoffID
+
+	sourceComment := "source 说明：release receipt checklist 正在补。"
+	if _, _, err := s.AdvanceHandoff(responseHandoffID, MailboxUpdateInput{
+		Action:        "comment",
+		ActingAgentID: delegatedHandoff.FromAgentID,
+		Note:          sourceComment,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(comment response handoff) error = %v", err)
+	}
+	if _, _, err := s.AdvanceHandoff(responseHandoffID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: delegatedHandoff.FromAgentID,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged response handoff) error = %v", err)
+	}
+	responseCompleteNote := "release receipt checklist 已补齐，请重新接住 delivery closeout。"
+	if _, _, err := s.AdvanceHandoff(responseHandoffID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: delegatedHandoff.FromAgentID,
+		Note:          responseCompleteNote,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(completed response handoff) error = %v", err)
+	}
+	if _, _, err := s.AdvanceHandoff(delegatedHandoffID, MailboxUpdateInput{
+		Action:        "acknowledged",
+		ActingAgentID: delegatedHandoff.ToAgentID,
+	}); err != nil {
+		t.Fatalf("AdvanceHandoff(acknowledged delegated closeout) error = %v", err)
+	}
+
+	detail, ok := s.PullRequestDetail("pr-runtime-18")
+	if !ok {
+		t.Fatalf("PullRequestDetail() missing runtime PR detail")
+	}
+	communication := detail.Delivery.Delegation.Communication
+	if len(communication) < 8 {
+		t.Fatalf("communication = %#v, want unified parent + reply timeline", communication)
+	}
+
+	blockedIndex := -1
+	replyRequestIndex := -1
+	replyCommentIndex := -1
+	parentResumeIndex := -1
+	replyProgressIndex := -1
+	for index, entry := range communication {
+		switch {
+		case entry.HandoffLabel == "Parent Closeout" && entry.MessageKind == "blocked" && strings.Contains(entry.Summary, blockNote):
+			blockedIndex = index
+		case entry.HandoffLabel == "Unblock Reply x1" && entry.MessageKind == "request":
+			replyRequestIndex = index
+			if !strings.Contains(entry.Href, responseHandoffID) {
+				t.Fatalf("reply request entry = %#v, want child mailbox href", entry)
+			}
+		case entry.HandoffLabel == "Unblock Reply x1" && entry.MessageKind == "comment" && strings.Contains(entry.Summary, sourceComment):
+			replyCommentIndex = index
+		case entry.HandoffLabel == "Parent Closeout" && entry.MessageKind == "ack":
+			parentResumeIndex = index
+		case entry.HandoffLabel == "Unblock Reply x1" && entry.MessageKind == "parent-progress" && strings.Contains(entry.Summary, "已重新 acknowledge 主 closeout"):
+			replyProgressIndex = index
+		}
+	}
+
+	if blockedIndex == -1 || replyRequestIndex == -1 || replyCommentIndex == -1 || parentResumeIndex == -1 || replyProgressIndex == -1 {
+		t.Fatalf("communication = %#v, want blocked/request/comment/parent-resume/parent-progress entries", communication)
+	}
+	if !(blockedIndex < replyRequestIndex && replyRequestIndex < replyCommentIndex && replyCommentIndex < parentResumeIndex && parentResumeIndex < replyProgressIndex) {
+		t.Fatalf("communication order = %#v, want chronological parent->reply->parent sync thread", communication)
+	}
+}
+
 func TestDeliveryDelegationSignalOnlyPolicySkipsAutoCreatedHandoff(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "state.json")

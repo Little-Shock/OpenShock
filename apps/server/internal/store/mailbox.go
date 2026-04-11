@@ -31,7 +31,12 @@ const (
 	handoffKindGoverned         = "governed"
 	handoffKindDeliveryCloseout = "delivery-closeout"
 	handoffKindDeliveryReply    = "delivery-reply"
+	mailboxEventTimestampLayout = "2006-01-02T15:04:05.000000000Z07:00"
 )
+
+func mailboxEventTimestamp(now time.Time) string {
+	return now.UTC().Format(mailboxEventTimestampLayout)
+}
 
 type MailboxCreateInput struct {
 	RoomID          string
@@ -141,7 +146,7 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 
 	now := time.Now()
 	nowClock := shortClock()
-	updatedAt := now.UTC().Format(time.RFC3339)
+	updatedAt := mailboxEventTimestamp(now)
 	presentation := handoffActionPresentation(*handoff, actingAgent, action, note)
 	presentation = s.decorateDeliveryDelegationParentPresentationLocked(*handoff, presentation)
 
@@ -248,7 +253,7 @@ func (s *Store) createHandoffLocked(input MailboxCreateInput) (AgentHandoff, err
 
 	now := time.Now()
 	nowClock := shortClock()
-	createdAt := now.UTC().Format(time.RFC3339)
+	createdAt := mailboxEventTimestamp(now)
 	handoffID := fmt.Sprintf("handoff-%d", now.UnixNano())
 	inboxItemID := fmt.Sprintf("inbox-handoff-%d", now.UnixNano())
 	handoffKind := normalizeHandoffKind(input.Kind)

@@ -26,6 +26,7 @@ const supportedModes = new Set([
   "delegate-response",
   "delegate-retry",
   "delegate-response-comment-sync",
+  "delegate-communication-thread",
   "delegate-resume",
   "delegate-visibility",
   "delegate-resume-parent",
@@ -61,6 +62,7 @@ const evidencePrefixByMode = {
   "delegate-response": "openshock-tkt74-governed-route-",
   "delegate-retry": "openshock-tkt75-governed-route-",
   "delegate-response-comment-sync": "openshock-tkt76-governed-route-",
+  "delegate-communication-thread": "openshock-tkt89-governed-route-",
   "delegate-resume": "openshock-tkt77-governed-route-",
   "delegate-visibility": "openshock-tkt78-governed-route-",
   "delegate-resume-parent": "openshock-tkt79-governed-route-",
@@ -388,6 +390,7 @@ try {
     runMode === "delegate-response" ||
     runMode === "delegate-retry" ||
     runMode === "delegate-response-comment-sync" ||
+    runMode === "delegate-communication-thread" ||
     runMode === "delegate-resume" ||
     runMode === "delegate-visibility" ||
     runMode === "delegate-resume-parent" ||
@@ -499,6 +502,7 @@ try {
     runMode === "delegate-response" ||
     runMode === "delegate-retry" ||
     runMode === "delegate-response-comment-sync" ||
+    runMode === "delegate-communication-thread" ||
     runMode === "delegate-resume" ||
     runMode === "delegate-visibility" ||
     runMode === "delegate-resume-parent" ||
@@ -557,6 +561,7 @@ try {
       runMode === "delegate-response" ||
       runMode === "delegate-retry" ||
       runMode === "delegate-response-comment-sync" ||
+      runMode === "delegate-communication-thread" ||
       runMode === "delegate-resume" ||
       runMode === "delegate-visibility" ||
 	      runMode === "delegate-resume-parent" ||
@@ -578,6 +583,7 @@ try {
 	      await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${followup.id}`, { waitUntil: "load" });
 	      if (
 	        runMode === "delegate-history-sync" ||
+	        runMode === "delegate-communication-thread" ||
 	        runMode === "delegate-room-trace" ||
 	        runMode === "delegate-room-trace-blocked"
 	      ) {
@@ -642,6 +648,7 @@ try {
         runMode === "delegate-response" ||
         runMode === "delegate-retry" ||
         runMode === "delegate-response-comment-sync" ||
+        runMode === "delegate-communication-thread" ||
         runMode === "delegate-resume" ||
         runMode === "delegate-visibility" ||
         runMode === "delegate-resume-parent" ||
@@ -763,6 +770,7 @@ try {
           runMode === "delegate-response" ||
           runMode === "delegate-retry" ||
           runMode === "delegate-response-comment-sync" ||
+          runMode === "delegate-communication-thread" ||
           runMode === "delegate-resume" ||
           runMode === "delegate-visibility" ||
           runMode === "delegate-resume-parent" ||
@@ -1215,6 +1223,130 @@ try {
               "- `delivery-reply` response handoff 上的 source formal comment 现在会同步回 PR detail `Delivery Delegation` summary，而不是只留在 response ledger 本身 -> PASS",
               "- related inbox signal 也会跟着写回最新 response formal comment，说明二级 unblock response 沟通已经进入单一 delivery contract -> PASS",
               "- source / target comment sync 过程中 response handoff 继续维持 `reply requested`，comment 不会偷偷把 response lifecycle 改坏 -> PASS",
+            ];
+          } else if (runMode === "delegate-communication-thread") {
+            const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
+            await page.getByTestId(`mailbox-note-${delegatedHandoffID}`).fill(blockNote);
+            await page.getByTestId(`mailbox-action-blocked-${delegatedHandoffID}`).click();
+            await page.waitForFunction(
+              (handoffId) =>
+                document.querySelector(`[data-testid="mailbox-status-${handoffId}"]`)?.textContent?.trim() === "blocked",
+              delegatedHandoffID
+            );
+
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.waitForFunction(() => {
+              return document.querySelector('[data-testid="delivery-communication-count"]')?.textContent?.trim() === "3";
+            });
+            const requestedThreadEntries = await page
+              .locator('[data-testid^="delivery-communication-entry-"]')
+              .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() ?? ""));
+            assert(requestedThreadEntries.length === 3, "communication thread should show parent request, parent blocker, and child request");
+            assert(
+              requestedThreadEntries[0]?.includes("Parent Closeout") && requestedThreadEntries[0]?.includes("request"),
+              "communication thread should start with the parent closeout request"
+            );
+            assert(
+              requestedThreadEntries[1]?.includes("Parent Closeout") && requestedThreadEntries[1]?.includes(blockNote),
+              "communication thread should keep the parent blocker in chronological order"
+            );
+            assert(
+              requestedThreadEntries[2]?.includes("Unblock Reply x1") && requestedThreadEntries[2]?.includes("request"),
+              "communication thread should append the child unblock request after the parent blocker"
+            );
+            await capture(page, "pull-request-delivery-collaboration-thread-requested");
+
+            const responseHandoffHref = await page.getByTestId("delivery-delegation-response-open").getAttribute("href");
+            assert(responseHandoffHref, "response handoff link should expose href");
+            const responseURL = new URL(responseHandoffHref, webURL);
+            const responseHandoffID = responseURL.searchParams.get("handoffId");
+            assert(responseHandoffID, "response handoff href should include handoffId");
+            const responseHandoff = await waitForMailboxWhere(
+              serverURL,
+              (item) => item.id === responseHandoffID,
+              "response handoff missing during communication thread run"
+            );
+
+            const sourceComment = "source 说明：release receipt checklist 正在补。";
+            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "comment",
+                actingAgentId: responseHandoff.toAgentId,
+                note: sourceComment,
+              }),
+            });
+            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "acknowledged",
+                actingAgentId: responseHandoff.toAgentId,
+              }),
+            });
+	            await fetchJSON(`${serverURL}/v1/mailbox/${responseHandoffID}`, {
+	              method: "POST",
+	              body: JSON.stringify({
+	                action: "completed",
+	                actingAgentId: responseHandoff.toAgentId,
+	                note: "release receipt checklist 已补齐，请重新接住 delivery closeout。",
+	              }),
+	            });
+	            const delegatedParent = await waitForMailboxWhere(
+	              serverURL,
+	              (item) => item.id === delegatedHandoffID,
+	              "delegated closeout missing during communication thread run"
+	            );
+	            await fetchJSON(`${serverURL}/v1/mailbox/${delegatedHandoffID}`, {
+	              method: "POST",
+	              body: JSON.stringify({
+	                action: "acknowledged",
+	                actingAgentId: delegatedParent.toAgentId,
+	              }),
+	            });
+
+            await page.goto(`${webURL}/pull-requests/pr-runtime-18`, { waitUntil: "load" });
+            await page.waitForFunction(() => {
+              return Number(document.querySelector('[data-testid="delivery-communication-count"]')?.textContent?.trim() ?? "0") >= 8;
+            });
+            const finalThreadEntries = await page
+              .locator('[data-testid^="delivery-communication-entry-"]')
+              .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() ?? ""));
+            const blockedIndex = finalThreadEntries.findIndex(
+              (text) => text.includes("Parent Closeout") && text.includes(blockNote)
+            );
+            const replyCommentIndex = finalThreadEntries.findIndex(
+              (text) => text.includes("Unblock Reply x1") && text.includes(sourceComment)
+            );
+            const parentAckIndex = finalThreadEntries.findIndex(
+              (text) => text.includes("Parent Closeout") && text.includes("已确认接住")
+            );
+            const parentProgressIndex = finalThreadEntries.findIndex(
+              (text) => text.includes("Unblock Reply x1") && text.includes("已重新 acknowledge 主 closeout")
+            );
+            assert(
+              blockedIndex !== -1 &&
+                replyCommentIndex !== -1 &&
+                parentAckIndex !== -1 &&
+                parentProgressIndex !== -1,
+              "communication thread should include parent blocker, child comment, parent resume, and child parent-progress"
+            );
+            assert(
+              blockedIndex < replyCommentIndex &&
+                replyCommentIndex < parentAckIndex &&
+                parentAckIndex < parentProgressIndex,
+              "communication thread should stay chronological across parent and child ledgers"
+            );
+            await capture(page, "pull-request-delivery-collaboration-thread-resumed");
+
+            reportTitle = "# 2026-04-11 Governed Mailbox Delivery Collaboration Thread Report";
+            reportCommand = `${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-governed-mailbox-delegate-communication-thread -- --report ${path.relative(projectRoot, reportPath)}`;
+            reportTicket = "TKT-89";
+            reportTestCase = "TC-078";
+            reportScope = "PR detail unified delivery collaboration thread, parent closeout chronology, child reply progress sync";
+            resultLines = [
+              "- PR detail 新增 `Delivery Collaboration Thread`，在父级 delegated closeout blocked 后会先后展示 `Parent Closeout request -> blocker -> Unblock Reply x1 request`，证明 parent / child 沟通已经进入单一时间线 -> PASS",
+              "- child `delivery-reply` 的 source comment、response completion，以及 parent 重新 acknowledge 后回写给 child 的 `parent-progress`，现在都会一起出现在同一条 PR detail thread 中，而不是散落在多个卡片摘要里 -> PASS",
+              "- 浏览器里读取到的 thread DOM 顺序保持 `parent blocker -> child comment -> parent resume -> child parent-progress`，说明这条 timeline 是按真实发生顺序收口，而不是静态分组拼接 -> PASS",
             ];
           } else if (runMode === "delegate-resume") {
             const blockNote = "需要先确认最终 release 文案，再继续 closeout。";
@@ -2396,6 +2528,8 @@ try {
           // report metadata already set inside the delegate-retry branch above
         } else if (runMode === "delegate-response-comment-sync") {
           // report metadata already set inside the delegate-response-comment-sync branch above
+        } else if (runMode === "delegate-communication-thread") {
+          // report metadata already set inside the delegate-communication-thread branch above
         } else if (runMode === "delegate-resume") {
           // report metadata already set inside the delegate-resume branch above
         } else if (runMode === "delegate-visibility") {

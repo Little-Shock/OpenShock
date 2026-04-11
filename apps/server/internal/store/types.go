@@ -1014,19 +1014,34 @@ type PullRequestDeliveryTemplate struct {
 }
 
 type PullRequestDeliveryDelegation struct {
-	Status                string `json:"status"`
-	TargetLane            string `json:"targetLane,omitempty"`
-	TargetAgent           string `json:"targetAgent,omitempty"`
-	Summary               string `json:"summary"`
-	Href                  string `json:"href,omitempty"`
-	InboxItemID           string `json:"inboxItemId,omitempty"`
-	HandoffID             string `json:"handoffId,omitempty"`
-	HandoffHref           string `json:"handoffHref,omitempty"`
-	HandoffStatus         string `json:"handoffStatus,omitempty"`
-	ResponseAttemptCount  int    `json:"responseAttemptCount,omitempty"`
-	ResponseHandoffID     string `json:"responseHandoffId,omitempty"`
-	ResponseHandoffHref   string `json:"responseHandoffHref,omitempty"`
-	ResponseHandoffStatus string `json:"responseHandoffStatus,omitempty"`
+	Status                string                                  `json:"status"`
+	TargetLane            string                                  `json:"targetLane,omitempty"`
+	TargetAgent           string                                  `json:"targetAgent,omitempty"`
+	Summary               string                                  `json:"summary"`
+	Href                  string                                  `json:"href,omitempty"`
+	InboxItemID           string                                  `json:"inboxItemId,omitempty"`
+	HandoffID             string                                  `json:"handoffId,omitempty"`
+	HandoffHref           string                                  `json:"handoffHref,omitempty"`
+	HandoffStatus         string                                  `json:"handoffStatus,omitempty"`
+	ResponseAttemptCount  int                                     `json:"responseAttemptCount,omitempty"`
+	ResponseHandoffID     string                                  `json:"responseHandoffId,omitempty"`
+	ResponseHandoffHref   string                                  `json:"responseHandoffHref,omitempty"`
+	ResponseHandoffStatus string                                  `json:"responseHandoffStatus,omitempty"`
+	Communication         []PullRequestDeliveryCommunicationEntry `json:"communication,omitempty"`
+}
+
+type PullRequestDeliveryCommunicationEntry struct {
+	ID            string `json:"id"`
+	HandoffID     string `json:"handoffId"`
+	HandoffKind   string `json:"handoffKind"`
+	HandoffLabel  string `json:"handoffLabel"`
+	HandoffTitle  string `json:"handoffTitle"`
+	HandoffStatus string `json:"handoffStatus"`
+	MessageKind   string `json:"messageKind"`
+	Actor         string `json:"actor"`
+	Summary       string `json:"summary"`
+	CreatedAt     string `json:"createdAt"`
+	Href          string `json:"href,omitempty"`
 }
 
 type PullRequestDeliveryHandoffNote struct {

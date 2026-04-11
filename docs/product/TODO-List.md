@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.11
+**版本:** 1.12
 **更新日期:** 2026 年 4 月 11 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -120,10 +120,12 @@
   - child `delivery-reply` 如果自己再次 `blocked`，Room 主消息流现在也会显式追加 `[Mailbox Sync]` 阻塞叙事；房间里可以直接看到 unblock 链本身又被卡住，不再只剩乐观的 comment / completion sync。
 - `GAP-57 / TKT-88`
   - shell footer 现在新增固定 `Profile Hub`；当前 `Human / Machine / Agent` 会作为 app.slock.ai 式壳层入口常驻，并一跳进入统一 profile surface，不再要求用户绕到右栏 summary 或独立列表页。
+- `GAP-58 / TKT-89`
+  - PR detail 现在新增统一 `Delivery Collaboration Thread`；parent `delivery-closeout` 与 child `delivery-reply` 的 request / blocker / formal comment / response progress / parent-progress 会按真实时间顺序同屏回放，并能直接 deep-link 回对应 Mailbox handoff。
 
 ### 当前必须先收的 GAP
 
-当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”“能不能自动创建 delegated closeout handoff”“能不能把 delegated lifecycle / latest comment 回写到 PR contract”“能不能把 delivery delegation policy 做成正式配置 / auto-complete 策略”“能不能把 blocked delegated closeout 物化成 response handoff”“能不能把第二轮 retry attempt 显式收成产品真相”“能不能把 response handoff formal comment 回写到统一 delivery contract”“能不能把 response progress 回推父级 delegated handoff / inbox / next action”“能不能把 parent/child response orchestration 直接做进 mailbox shell”“能不能从 child ledger 直接恢复 parent closeout”“能不能把 parent 恢复后的 reply 历史继续留在统一 delivery contract”“能不能让 child ledger 直接看见 parent 最终有没有被接住”“能不能把 parent 自己的 mailbox/run context 也保住 response history”“能不能让 child ledger 的正文与 child inbox signal 一起跟上 parent 真相”“能不能让 child ledger 时间线和 latest formal comment 也跟上 parent follow-through”“能不能让 parent 自己的 timeline 也完整回放 child response 轨迹”或“能不能把这些关键 child response sync 也写进 Room 主消息流”，而是更深的 agent-to-agent communication 与跨 Agent closeout 编排。
+当前需要优先收的已不再是“能不能配 topology”“能不能正式对话”“能不能给下一棒默认路由”“能不能一键起单”“能不能自动续下一棒”“能不能把 final lane 接回 delivery entry”“能不能显式给出 delivery delegate”“能不能自动创建 delegated closeout handoff”“能不能把 delegated lifecycle / latest comment 回写到 PR contract”“能不能把 delivery delegation policy 做成正式配置 / auto-complete 策略”“能不能把 blocked delegated closeout 物化成 response handoff”“能不能把第二轮 retry attempt 显式收成产品真相”“能不能把 response handoff formal comment 回写到统一 delivery contract”“能不能把 response progress 回推父级 delegated handoff / inbox / next action”“能不能把 parent/child response orchestration 直接做进 mailbox shell”“能不能从 child ledger 直接恢复 parent closeout”“能不能把 parent 恢复后的 reply 历史继续留在统一 delivery contract”“能不能让 child ledger 直接看见 parent 最终有没有被接住”“能不能把 parent 自己的 mailbox/run context 也保住 response history”“能不能让 child ledger 的正文与 child inbox signal 一起跟上 parent 真相”“能不能让 child ledger 时间线和 latest formal comment 也跟上 parent follow-through”“能不能让 parent 自己的 timeline 也完整回放 child response 轨迹”“能不能把这些关键 child response sync 也写进 Room 主消息流”或“能不能把 parent / child formal communication 拉平成 PR detail 上可回放的统一 thread”，而是更深的 agent-to-agent communication action surface 与跨 Agent closeout 编排。
 
 ---
 

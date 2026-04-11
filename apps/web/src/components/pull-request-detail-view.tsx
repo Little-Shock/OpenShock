@@ -6,6 +6,7 @@ import { OpenShockShell } from "@/components/open-shock-shell";
 import { Panel } from "@/components/phase-zero-views";
 import type {
   PullRequestConversationEntry,
+  PullRequestDeliveryCommunicationEntry,
   PullRequestDeliveryDelegation,
   PullRequestDeliveryEntry,
   PullRequestDeliveryEvidence,
@@ -89,6 +90,24 @@ function deliveryStatusTone(status: PullRequestDeliveryEntry["status"]) {
     default:
       return "bg-[var(--shock-pink)] text-white";
   }
+}
+
+function compactTimestamp(value?: string) {
+  if (!value) {
+    return "刚刚";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value.replace("T", " ").replace(/\.\d+Z$/, " UTC").replace("Z", " UTC");
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(parsed);
 }
 
 function deliveryPanelTone(status: PullRequestDeliveryEntry["status"]) {
@@ -183,6 +202,48 @@ function delegationResponseStatusTone(status?: PullRequestDeliveryDelegation["re
       return "bg-[var(--shock-yellow)]";
     case "requested":
       return "bg-white";
+    default:
+      return "bg-white";
+  }
+}
+
+function delegationCommunicationKindLabel(kind: PullRequestDeliveryCommunicationEntry["messageKind"]) {
+  switch (kind) {
+    case "request":
+      return "request";
+    case "ack":
+      return "acknowledged";
+    case "blocked":
+      return "blocked";
+    case "comment":
+      return "formal comment";
+    case "completed":
+      return "completed";
+    case "response-progress":
+      return "response sync";
+    case "parent-progress":
+      return "parent sync";
+    default:
+      return kind;
+  }
+}
+
+function delegationCommunicationKindTone(kind: PullRequestDeliveryCommunicationEntry["messageKind"]) {
+  switch (kind) {
+    case "request":
+      return "bg-white";
+    case "ack":
+      return "bg-[var(--shock-lime)]";
+    case "blocked":
+      return "bg-[var(--shock-pink)] text-white";
+    case "comment":
+      return "bg-[var(--shock-yellow)]";
+    case "completed":
+      return "bg-[var(--shock-purple)] text-white";
+    case "response-progress":
+      return "bg-[var(--shock-yellow)]";
+    case "parent-progress":
+      return "bg-[var(--shock-lime)]";
     default:
       return "bg-white";
   }
@@ -335,6 +396,51 @@ function DeliveryEvidenceCard({ item }: { item: PullRequestDeliveryEvidence }) {
           className="mt-4 inline-flex border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
         >
           Open Evidence
+        </Link>
+      ) : null}
+    </article>
+  );
+}
+
+function DeliveryCommunicationCard({ entry }: { entry: PullRequestDeliveryCommunicationEntry }) {
+  return (
+    <article
+      data-testid={`delivery-communication-entry-${entry.id}`}
+      className="rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[var(--shock-shadow-sm)]"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+          {entry.handoffLabel}
+        </span>
+        <span
+          className={cn(
+            "border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+            delegationCommunicationKindTone(entry.messageKind)
+          )}
+        >
+          {delegationCommunicationKindLabel(entry.messageKind)}
+        </span>
+        <span
+          className={cn(
+            "border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+            delegationHandoffStatusTone(entry.handoffStatus)
+          )}
+        >
+          {delegationHandoffStatusLabel(entry.handoffStatus)}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-[10px] text-[color:rgba(24,20,14,0.56)]">
+        <span>{entry.actor}</span>
+        <span>{compactTimestamp(entry.createdAt)}</span>
+      </div>
+      <p className="mt-3 font-display text-[18px] font-bold leading-6">{entry.handoffTitle}</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{entry.summary}</p>
+      {entry.href ? (
+        <Link
+          href={entry.href}
+          className="mt-4 inline-flex border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px]"
+        >
+          Open Mailbox Handoff
         </Link>
       ) : null}
     </article>
@@ -598,6 +704,34 @@ export function PullRequestDetailView({
                         Open Unblock Reply
                       </Link>
                     ) : null}
+                  </div>
+                </Panel>
+
+                <Panel tone="white">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                        Delivery Collaboration Thread
+                      </p>
+                      <p className="mt-2 font-display text-[22px] font-bold">Parent Closeout / Unblock Reply Timeline</p>
+                    </div>
+                    <span className="border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
+                      <span data-testid="delivery-communication-count">
+                        {detail.delivery.delegation.communication?.length ?? 0}
+                      </span>{" "}
+                      entries
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {detail.delivery.delegation.communication?.length ? (
+                      detail.delivery.delegation.communication.map((entry) => (
+                        <DeliveryCommunicationCard key={entry.id} entry={entry} />
+                      ))
+                    ) : (
+                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                        当前还没有 formal delivery collaboration thread；一旦 delegated closeout / unblock reply 起单，这里会按时间顺序回放 parent 与 child 的正式沟通。
+                      </p>
+                    )}
                   </div>
                 </Panel>
 
