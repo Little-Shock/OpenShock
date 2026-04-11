@@ -114,6 +114,20 @@ function governanceTone(status: string): "lime" | "yellow" | "pink" | "paper" | 
   }
 }
 
+function escalationQueueAgeLabel(entry: {
+  elapsedMinutes: number;
+  thresholdMinutes: number;
+  timeLabel?: string;
+}) {
+  if (entry.elapsedMinutes > 0) {
+    return `${entry.elapsedMinutes} / ${entry.thresholdMinutes} min`;
+  }
+  if (entry.timeLabel?.trim()) {
+    return entry.timeLabel;
+  }
+  return `${entry.thresholdMinutes} min SLA`;
+}
+
 function plannerQueueStatusLabel(status: string) {
   switch (status) {
     case "queued":
@@ -597,6 +611,8 @@ function PlannerQueueCard({ item }: { item: PlannerQueueItem }) {
 }
 
 function GovernanceReplaySurface({ governance }: { governance: WorkspaceGovernanceSnapshot }) {
+  const escalationQueue = governance.escalationSla.queue ?? [];
+
   return (
     <Panel tone="lime">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -763,13 +779,63 @@ function GovernanceReplaySurface({ governance }: { governance: WorkspaceGovernan
               <div className="space-y-3">
                 <Panel tone={governanceTone(governance.escalationSla.status)} className="!p-3.5">
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">escalation sla</p>
-                  <p className="mt-2 font-display text-[22px] font-bold leading-7">{governance.escalationSla.timeoutMinutes} min / {governance.escalationSla.retryBudget} retry</p>
+                  <p className="mt-2 font-display text-[22px] font-bold leading-7">
+                    {governance.escalationSla.timeoutMinutes} min / {governance.escalationSla.retryBudget} retry
+                  </p>
                   <p className="mt-2 text-sm leading-6">{governance.escalationSla.summary}</p>
                   {governance.escalationSla.nextEscalation ? (
                     <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
                       next: {governance.escalationSla.nextEscalation}
                     </p>
                   ) : null}
+                  <div className="mt-3 space-y-2">
+                    {escalationQueue.length === 0 ? (
+                      <p className="text-sm leading-6 opacity-70">当前没有 active escalation queue。</p>
+                    ) : (
+                      escalationQueue.map((entry) => (
+                        <div
+                          key={entry.id}
+                          data-testid={`orchestration-governance-escalation-entry-${entry.id}`}
+                          className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-display text-lg font-semibold">{entry.label}</p>
+                              <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
+                                {entry.source}
+                                {entry.owner ? ` · ${entry.owner}` : ""} · {escalationQueueAgeLabel(entry)}
+                              </p>
+                            </div>
+                            <span
+                              data-testid={`orchestration-governance-escalation-status-${entry.id}`}
+                              className={cn(
+                                "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]",
+                                governanceTone(entry.status) === "pink"
+                                  ? "bg-[var(--shock-pink)] text-white"
+                                  : governanceTone(entry.status) === "lime"
+                                    ? "bg-[var(--shock-lime)]"
+                                    : governanceTone(entry.status) === "yellow"
+                                      ? "bg-[var(--shock-yellow)]"
+                                      : "bg-white"
+                              )}
+                            >
+                              {governanceStatusLabel(entry.status)}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm leading-6">{entry.summary}</p>
+                          <p className="mt-2 text-sm leading-6 opacity-70">{entry.nextStep}</p>
+                          {entry.href ? (
+                            <Link
+                              href={entry.href}
+                              className="mt-3 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            >
+                              Open Escalation
+                            </Link>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </Panel>
                 <Panel tone={governanceTone(governance.notificationPolicy.status)} className="!p-3.5">
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">notification policy</p>

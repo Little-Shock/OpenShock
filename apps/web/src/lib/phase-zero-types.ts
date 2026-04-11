@@ -213,6 +213,21 @@ export type WorkspaceGovernanceEscalationSLA = {
   activeEscalations: number;
   breachedEscalations: number;
   nextEscalation?: string;
+  queue?: WorkspaceGovernanceEscalationQueueEntry[];
+};
+
+export type WorkspaceGovernanceEscalationQueueEntry = {
+  id: string;
+  label: string;
+  status: string;
+  source: string;
+  owner?: string;
+  summary: string;
+  nextStep: string;
+  href?: string;
+  timeLabel?: string;
+  elapsedMinutes: number;
+  thresholdMinutes: number;
 };
 
 export type WorkspaceGovernanceNotificationPolicy = {

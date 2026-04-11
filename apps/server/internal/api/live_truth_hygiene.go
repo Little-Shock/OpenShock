@@ -447,6 +447,16 @@ func sanitizeWorkspaceSuggestedHandoff(item store.WorkspaceGovernanceSuggestedHa
 func sanitizeWorkspaceEscalationSLA(item store.WorkspaceGovernanceEscalationSLA) store.WorkspaceGovernanceEscalationSLA {
 	item.Summary = sanitizeDisplayText(item.Summary, "当前 escalation SLA 正在整理中。")
 	item.NextEscalation = sanitizeDisplayText(item.NextEscalation, "")
+	for index := range item.Queue {
+		item.Queue[index].Label = sanitizeDisplayText(item.Queue[index].Label, "未命名 escalation")
+		item.Queue[index].Status = sanitizeDisplayText(item.Queue[index].Status, "pending")
+		item.Queue[index].Source = sanitizeDisplayText(item.Queue[index].Source, "governance")
+		item.Queue[index].Owner = sanitizeDisplayText(item.Queue[index].Owner, "")
+		item.Queue[index].Summary = sanitizeDisplayText(item.Queue[index].Summary, "当前 escalation 条目正在整理中。")
+		item.Queue[index].NextStep = sanitizeDisplayText(item.Queue[index].NextStep, "当前 escalation 下一步正在整理中。")
+		item.Queue[index].Href = sanitizeDisplayText(item.Queue[index].Href, "")
+		item.Queue[index].TimeLabel = sanitizeDisplayText(item.Queue[index].TimeLabel, "")
+	}
 	return item
 }
 

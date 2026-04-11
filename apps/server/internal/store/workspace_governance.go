@@ -707,13 +707,52 @@ func buildGovernanceEscalationSLA(template governanceTemplateDefinition, focus g
 	activeEscalations := len(focus.BlockedInbox)
 	breachedEscalations := 0
 	nextEscalation := template.EscalationChannel
+	queue := make([]WorkspaceGovernanceEscalationQueueEntry, 0, len(focus.BlockedInbox)+1)
 
 	if focus.LatestHandoff != nil && focus.LatestHandoff.Status != "completed" {
 		activeEscalations++
-		if governanceMinutesSince(focus.LatestHandoff.UpdatedAt) > timeoutMinutes {
+		elapsedMinutes := governanceMinutesSince(focus.LatestHandoff.UpdatedAt)
+		queueStatus := "active"
+		nextStep := fmt.Sprintf("在 %d 分钟 SLA 内继续围当前 handoff ledger 推进；超时后升级到 %s。", timeoutMinutes, template.EscalationChannel)
+		if focus.LatestHandoff.Status == "blocked" {
+			queueStatus = "blocked"
+			nextStep = fmt.Sprintf("当前 handoff 已 blocked；请尽快按 %s 决定 unblock / reroute。", template.EscalationChannel)
+		}
+		if elapsedMinutes > timeoutMinutes {
 			breachedEscalations++
+			queueStatus = "blocked"
+			nextStep = fmt.Sprintf("当前 handoff 已超时；立即经 %s 升级。", template.EscalationChannel)
 			nextEscalation = fmt.Sprintf("%s overdue; escalate via %s", focus.LatestHandoff.ID, template.EscalationChannel)
 		}
+		queue = append(queue, WorkspaceGovernanceEscalationQueueEntry{
+			ID:               fmt.Sprintf("handoff:%s", focus.LatestHandoff.ID),
+			Label:            fmt.Sprintf("%s -> %s", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent),
+			Status:           queueStatus,
+			Source:           "mailbox handoff",
+			Owner:            focus.LatestHandoff.ToAgent,
+			Summary:          focus.LatestHandoff.LastAction,
+			NextStep:         nextStep,
+			Href:             mailboxInboxHref(focus.LatestHandoff.ID, focus.LatestHandoff.RoomID),
+			TimeLabel:        focus.LatestHandoff.UpdatedAt,
+			ElapsedMinutes:   elapsedMinutes,
+			ThresholdMinutes: timeoutMinutes,
+		})
+	}
+
+	for _, item := range focus.BlockedInbox {
+		queue = append(queue, WorkspaceGovernanceEscalationQueueEntry{
+			ID:               fmt.Sprintf("inbox:%s", item.ID),
+			Label:            item.Title,
+			Status:           "blocked",
+			Source:           "inbox blocker",
+			Owner:            item.Room,
+			Summary:          item.Summary,
+			NextStep:         fmt.Sprintf("%s；按 %s 决定 unblock / reroute。", defaultString(item.Action, "打开 blocked signal"), template.EscalationChannel),
+			Href:             defaultString(item.Href, "/inbox"),
+			TimeLabel:        item.Time,
+			ElapsedMinutes:   0,
+			ThresholdMinutes: timeoutMinutes,
+		})
 	}
 
 	status := "ready"
@@ -735,6 +774,7 @@ func buildGovernanceEscalationSLA(template governanceTemplateDefinition, focus g
 		ActiveEscalations:   activeEscalations,
 		BreachedEscalations: breachedEscalations,
 		NextEscalation:      nextEscalation,
+		Queue:               queue,
 	}
 }
 

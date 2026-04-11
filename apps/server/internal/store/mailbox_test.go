@@ -335,6 +335,10 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	if nextState.Workspace.Governance.Stats.OpenHandoffs != 1 {
 		t.Fatalf("governance stats = %#v, want 1 open handoff", nextState.Workspace.Governance.Stats)
 	}
+	if len(nextState.Workspace.Governance.EscalationSLA.Queue) == 0 ||
+		nextState.Workspace.Governance.EscalationSLA.Queue[0].Source != "mailbox handoff" {
+		t.Fatalf("escalation queue after create = %#v, want mailbox handoff entry", nextState.Workspace.Governance.EscalationSLA)
+	}
 	handoffStep := findGovernanceStep(nextState.Workspace.Governance.Walkthrough, "handoff")
 	if handoffStep == nil || handoffStep.Status != "active" {
 		t.Fatalf("handoff step = %#v, want active handoff walkthrough", handoffStep)
@@ -350,6 +354,9 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	}
 	if blockedState.Workspace.Governance.Stats.BlockedEscalations == 0 {
 		t.Fatalf("blocked governance stats = %#v, want blocked escalation count", blockedState.Workspace.Governance.Stats)
+	}
+	if findEscalationQueueEntryBySource(blockedState.Workspace.Governance.EscalationSLA.Queue, "inbox blocker") == nil {
+		t.Fatalf("blocked escalation queue = %#v, want inbox blocker entry", blockedState.Workspace.Governance.EscalationSLA.Queue)
 	}
 	reviewerLane := findGovernanceLane(blockedState.Workspace.Governance.TeamTopology, "reviewer")
 	if reviewerLane == nil || reviewerLane.Status != "blocked" {
@@ -2059,6 +2066,18 @@ func findGovernanceLane(items []WorkspaceGovernanceLane, laneID string) *Workspa
 func findGovernanceStep(items []WorkspaceGovernanceWalkthrough, stepID string) *WorkspaceGovernanceWalkthrough {
 	for index := range items {
 		if items[index].ID == stepID {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func findEscalationQueueEntryBySource(
+	items []WorkspaceGovernanceEscalationQueueEntry,
+	source string,
+) *WorkspaceGovernanceEscalationQueueEntry {
+	for index := range items {
+		if items[index].Source == source {
 			return &items[index]
 		}
 	}

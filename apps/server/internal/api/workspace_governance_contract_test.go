@@ -61,6 +61,10 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	if afterCreate.Workspace.Governance.Stats.OpenHandoffs != 1 {
 		t.Fatalf("governance stats after create = %#v, want 1 open handoff", afterCreate.Workspace.Governance.Stats)
 	}
+	if len(afterCreate.Workspace.Governance.EscalationSLA.Queue) == 0 ||
+		afterCreate.Workspace.Governance.EscalationSLA.Queue[0].Source != "mailbox handoff" {
+		t.Fatalf("escalation queue after create = %#v, want mailbox handoff entry", afterCreate.Workspace.Governance.EscalationSLA)
+	}
 	if afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "active" ||
 		afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff.HandoffID != handoff.ID {
 		t.Fatalf("governed handoff after create = %#v, want active suggestion focused on current handoff", afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
@@ -84,6 +88,9 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	}
 	if afterBlocked.Workspace.Governance.Stats.BlockedEscalations == 0 {
 		t.Fatalf("blocked governance stats = %#v, want blocked escalation count", afterBlocked.Workspace.Governance.Stats)
+	}
+	if findEscalationQueueEntryBySource(afterBlocked.Workspace.Governance.EscalationSLA.Queue, "inbox blocker") == nil {
+		t.Fatalf("blocked escalation queue = %#v, want inbox blocker entry", afterBlocked.Workspace.Governance.EscalationSLA.Queue)
 	}
 
 	ackResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
@@ -146,6 +153,18 @@ func findGovernanceLane(items []store.WorkspaceGovernanceLane, laneID string) *s
 func findGovernanceWalkthroughStep(items []store.WorkspaceGovernanceWalkthrough, stepID string) *store.WorkspaceGovernanceWalkthrough {
 	for index := range items {
 		if items[index].ID == stepID {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func findEscalationQueueEntryBySource(
+	items []store.WorkspaceGovernanceEscalationQueueEntry,
+	source string,
+) *store.WorkspaceGovernanceEscalationQueueEntry {
+	for index := range items {
+		if items[index].Source == source {
 			return &items[index]
 		}
 	}

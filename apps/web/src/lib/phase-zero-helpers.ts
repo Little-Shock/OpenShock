@@ -210,6 +210,7 @@ function sanitizeWorkspaceGovernance(
       activeEscalations: 0,
       breachedEscalations: 0,
       nextEscalation: "",
+      queue: [],
     },
     notificationPolicy: {
       status: "",
@@ -375,6 +376,32 @@ function sanitizeWorkspaceGovernance(
       ...safeGovernance.escalationSla,
       summary: sanitizeDisplayText(safeGovernance.escalationSla?.summary, "当前 escalation SLA 正在整理中。"),
       nextEscalation: sanitizeDisplayText(safeGovernance.escalationSla?.nextEscalation ?? "", ""),
+      queue: (safeGovernance.escalationSla?.queue ?? []).map((entry) => {
+        const safeEntry = entry ?? {
+          id: "",
+          label: "",
+          status: "",
+          source: "",
+          owner: "",
+          summary: "",
+          nextStep: "",
+          href: "",
+          timeLabel: "",
+          elapsedMinutes: 0,
+          thresholdMinutes: 0,
+        };
+        return {
+          ...safeEntry,
+          label: sanitizeDisplayText(safeEntry.label, "未命名 escalation"),
+          status: sanitizeDisplayText(safeEntry.status, "pending"),
+          source: sanitizeDisplayText(safeEntry.source, "governance"),
+          owner: sanitizeDisplayText(safeEntry.owner ?? "", ""),
+          summary: sanitizeDisplayText(safeEntry.summary, "当前 escalation 条目正在整理中。"),
+          nextStep: sanitizeDisplayText(safeEntry.nextStep, "当前 escalation 下一步正在整理中。"),
+          href: sanitizeDisplayText(safeEntry.href ?? "", ""),
+          timeLabel: sanitizeDisplayText(safeEntry.timeLabel ?? "", ""),
+        };
+      }),
     },
     notificationPolicy: {
       ...safeGovernance.notificationPolicy,

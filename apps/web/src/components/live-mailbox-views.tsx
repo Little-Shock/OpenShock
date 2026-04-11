@@ -199,6 +199,20 @@ function governanceTone(status: string): "lime" | "yellow" | "pink" | "paper" | 
   }
 }
 
+function escalationQueueAgeLabel(entry: {
+  elapsedMinutes: number;
+  thresholdMinutes: number;
+  timeLabel?: string;
+}) {
+  if (entry.elapsedMinutes > 0) {
+    return `${entry.elapsedMinutes} / ${entry.thresholdMinutes} min`;
+  }
+  if (entry.timeLabel?.trim()) {
+    return entry.timeLabel;
+  }
+  return `${entry.thresholdMinutes} min SLA`;
+}
+
 function governedCloseoutLabel(href: string) {
   return href.startsWith("/pull-requests/") ? "Open Delivery Entry" : "Review Closeout";
 }
@@ -274,6 +288,7 @@ export function LiveMailboxPageContent() {
   const selectedMailboxHandoffs = mailboxForRoom.filter((handoff) => selectedMailboxIds.includes(handoff.id));
   const batchActions = commonBatchActions(selectedMailboxHandoffs);
   const governance = state.workspace.governance;
+  const escalationQueue = governance.escalationSla.queue ?? [];
   const governedSuggestion = governance.routingPolicy.suggestedHandoff;
   const governedRouteKey = [
     governedSuggestion.status,
@@ -706,6 +721,88 @@ export function LiveMailboxPageContent() {
                       {source}
                     </span>
                   ))}
+                </div>
+              </Panel>
+
+              <Panel tone={governanceTone(governance.escalationSla.status)}>
+                <div
+                  data-testid="mailbox-governance-escalation-queue"
+                  className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                        escalation queue
+                      </p>
+                      <p className="mt-2 font-display text-2xl font-bold">当前治理升级队列</p>
+                      <p className="mt-3 text-sm leading-6">{governance.escalationSla.summary}</p>
+                    </div>
+                    <span
+                      data-testid="mailbox-governance-escalation-count"
+                      className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+                    >
+                      {escalationQueue.length} items
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {escalationQueue.length === 0 ? (
+                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                        当前没有 active escalation；新的 blocked / overdue handoff 会直接排进这里。
+                      </p>
+                    ) : (
+                      escalationQueue.map((entry) => (
+                        <div
+                          key={entry.id}
+                          data-testid={`mailbox-governance-escalation-entry-${entry.id}`}
+                          className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="font-display text-lg font-semibold">{entry.label}</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+                                  {entry.source}
+                                </span>
+                                {entry.owner ? (
+                                  <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+                                    {entry.owner}
+                                  </span>
+                                ) : null}
+                                <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+                                  {escalationQueueAgeLabel(entry)}
+                                </span>
+                              </div>
+                            </div>
+                            <span
+                              data-testid={`mailbox-governance-escalation-status-${entry.id}`}
+                              className={cn(
+                                "rounded-full border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]",
+                                governanceTone(entry.status) === "pink"
+                                  ? "bg-[var(--shock-pink)] text-white"
+                                  : governanceTone(entry.status) === "lime"
+                                    ? "bg-[var(--shock-lime)]"
+                                    : governanceTone(entry.status) === "yellow"
+                                      ? "bg-[var(--shock-yellow)]"
+                                      : "bg-white"
+                              )}
+                            >
+                              {governanceStatusLabel(entry.status)}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-6">{entry.summary}</p>
+                          <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{entry.nextStep}</p>
+                          {entry.href ? (
+                            <Link
+                              href={entry.href}
+                              className="mt-3 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            >
+                              Open Escalation
+                            </Link>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </Panel>
 

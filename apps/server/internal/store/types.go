@@ -207,6 +207,21 @@ type WorkspaceGovernanceEscalationSLA struct {
 	ActiveEscalations   int    `json:"activeEscalations"`
 	BreachedEscalations int    `json:"breachedEscalations"`
 	NextEscalation      string `json:"nextEscalation,omitempty"`
+	Queue               []WorkspaceGovernanceEscalationQueueEntry `json:"queue,omitempty"`
+}
+
+type WorkspaceGovernanceEscalationQueueEntry struct {
+	ID               string `json:"id"`
+	Label            string `json:"label"`
+	Status           string `json:"status"`
+	Source           string `json:"source"`
+	Owner            string `json:"owner,omitempty"`
+	Summary          string `json:"summary"`
+	NextStep         string `json:"nextStep"`
+	Href             string `json:"href,omitempty"`
+	TimeLabel        string `json:"timeLabel,omitempty"`
+	ElapsedMinutes   int    `json:"elapsedMinutes"`
+	ThresholdMinutes int    `json:"thresholdMinutes"`
 }
 
 type WorkspaceGovernanceNotificationPolicy struct {
