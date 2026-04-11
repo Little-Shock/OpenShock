@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentOperator } from "@/components/operator-provider";
 import { submitAction } from "@/lib/api";
@@ -19,42 +19,51 @@ export function WorkspaceRepoBinding({
   bindings,
 }: WorkspaceRepoBindingProps) {
   const router = useRouter();
-  const { operatorName } = useCurrentOperator();
+  const { operatorName, sessionToken } = useCurrentOperator();
   const defaultBinding = bindings.find((binding) => binding.isDefault);
   const [repoPath, setRepoPath] = useState(defaultBinding?.repoPath ?? "");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isPending) {
+      return;
+    }
 
-    startTransition(async () => {
-      try {
-        const response = (await submitAction({
-          actorType: "member",
-          actorId: operatorName,
-          actionType: "Workspace.bind_repo",
-          targetType: "workspace",
-          targetId: workspaceId,
-          idempotencyKey: `workspace-bind-repo-${workspaceId}-${Date.now()}`,
-          payload: {
-            repoPath,
-            makeDefault: true,
-          },
-        })) as { resultMessage?: string };
-
+    setIsPending(true);
+    void submitAction(
+      {
+        actorType: "member",
+        actorId: operatorName,
+        actionType: "Workspace.bind_repo",
+        targetType: "workspace",
+        targetId: workspaceId,
+        idempotencyKey: `workspace-bind-repo-${workspaceId}-${Date.now()}`,
+        payload: {
+          repoPath,
+          makeDefault: true,
+        },
+      },
+      { sessionToken },
+    )
+      .then((rawResponse) => {
+        const response = rawResponse as { resultMessage?: string };
         setFeedback(response.resultMessage ?? "Workspace repo binding updated.");
         router.refresh();
         setOpen(false);
-      } catch (error) {
+      })
+      .catch((error) => {
         setFeedback(
           error instanceof Error
             ? error.message
             : "Failed to update workspace repo binding.",
         );
-      }
-    });
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   return (

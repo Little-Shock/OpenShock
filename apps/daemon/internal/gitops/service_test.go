@@ -86,6 +86,33 @@ func TestMergeConflictReturnsConflictAndAborts(t *testing.T) {
 	}
 }
 
+func TestMergeBranchCreatesMissingSourceBranchFromTarget(t *testing.T) {
+	repoPath := newGitFixtureRepo(t)
+	service := New()
+	ctx := context.Background()
+
+	if err := service.CreateBranch(ctx, repoPath, "main", "issue-101/integration"); err != nil {
+		t.Fatalf("create integration branch failed: %v", err)
+	}
+
+	result, err := service.MergeBranch(ctx, repoPath, "issue-101/task-empty", "issue-101/integration")
+	if err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+	if result.Status != MergeStatusSucceeded {
+		t.Fatalf("expected merge success, got %q", result.Status)
+	}
+
+	currentBranch := strings.TrimSpace(mustGit(t, repoPath, "branch", "--show-current"))
+	if currentBranch != "issue-101/integration" {
+		t.Fatalf("expected to stay on integration branch, got %q", currentBranch)
+	}
+
+	if _, err := runGit(ctx, repoPath, "rev-parse", "--verify", "issue-101/task-empty"); err != nil {
+		t.Fatalf("expected missing source branch to be created, got %v", err)
+	}
+}
+
 func TestCommitAllCommitsDirtyWorkingTree(t *testing.T) {
 	repoPath := newGitFixtureRepo(t)
 	service := New()
@@ -118,6 +145,35 @@ func TestCommitAllSkipsCleanWorkingTree(t *testing.T) {
 	}
 	if committed {
 		t.Fatal("expected clean working tree to skip commit")
+	}
+}
+
+func TestRestoreWorktreeDiscardsDirtyChanges(t *testing.T) {
+	repoPath := newGitFixtureRepo(t)
+	service := New()
+	ctx := context.Background()
+
+	writeFile(t, filepath.Join(repoPath, "README.md"), "dirty change\n")
+	writeFile(t, filepath.Join(repoPath, "scratch.txt"), "temp file\n")
+
+	if err := service.RestoreWorktree(ctx, repoPath); err != nil {
+		t.Fatalf("restore worktree returned error: %v", err)
+	}
+
+	statusOutput := mustGit(t, repoPath, "status", "--short")
+	if strings.TrimSpace(statusOutput) != "" {
+		t.Fatalf("expected clean repo after restore, got %q", statusOutput)
+	}
+
+	content, err := os.ReadFile(filepath.Join(repoPath, "README.md"))
+	if err != nil {
+		t.Fatalf("failed to read README after restore: %v", err)
+	}
+	if strings.TrimSpace(string(content)) != "seed" {
+		t.Fatalf("expected README to reset to HEAD, got %q", string(content))
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected scratch file to be removed, got err=%v", err)
 	}
 }
 

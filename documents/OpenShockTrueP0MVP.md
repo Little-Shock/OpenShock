@@ -2,7 +2,7 @@
 
 **版本:** 0.2  
 **版本日期:** 2026 年 4 月 5 日  
-**关联文档:** [OpenShockPRD.md](./OpenShockPRD.md), [OpenShockPhase0MVP.md](./OpenShockPhase0MVP.md)
+**关联文档:** [OpenShockPRD.md](./OpenShockPRD.md), [OpenShockTrueP0TechnicalDesign.md](./OpenShockTrueP0TechnicalDesign.md)
 
 ---
 

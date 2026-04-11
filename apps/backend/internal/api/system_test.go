@@ -5,14 +5,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"openshock/backend/internal/core"
 	"openshock/backend/internal/store"
+	"openshock/backend/internal/testsupport/scenario"
 )
 
 func TestFirstRoundWorkflowE2E(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	if err := backingStore.BindWorkspaceRepo("ws_01", "/tmp/openshock-demo-repo", "openshock-demo-repo", true); err != nil {
 		t.Fatalf("bind workspace repo returned error: %v", err)
 	}
@@ -225,7 +227,7 @@ func TestFirstRoundWorkflowE2E(t *testing.T) {
 }
 
 func TestTaskStatusSetActionUpdatesIssueDetail(t *testing.T) {
-	server := httptest.NewServer(New(store.NewMemoryStore()).Handler())
+	server := httptest.NewServer(New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot())).Handler())
 	defer server.Close()
 
 	client := server.Client()
@@ -252,7 +254,7 @@ func TestTaskStatusSetActionUpdatesIssueDetail(t *testing.T) {
 }
 
 func TestRoomCreateActionCreatesDiscussionRoom(t *testing.T) {
-	server := httptest.NewServer(New(store.NewMemoryStore()).Handler())
+	server := httptest.NewServer(New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot())).Handler())
 	defer server.Close()
 
 	client := server.Client()
@@ -288,7 +290,11 @@ func submitAction(t *testing.T, client *http.Client, baseURL string, req core.Ac
 	t.Helper()
 
 	var resp core.ActionResponse
-	doJSON(t, client, http.MethodPost, baseURL+"/api/v1/actions", req, &resp)
+	headers := map[string]string{}
+	if strings.EqualFold(strings.TrimSpace(req.ActorType), "member") {
+		headers[sessionHeaderName] = ensureMemberSessionToken(t, client, baseURL, req.ActorID)
+	}
+	doJSONWithHeaders(t, client, http.MethodPost, baseURL+"/api/v1/actions", req, headers, &resp)
 	return resp
 }
 
@@ -467,6 +473,11 @@ func getInbox(t *testing.T, client *http.Client, baseURL string) core.InboxRespo
 
 func doJSON(t *testing.T, client *http.Client, method, url string, payload any, out any) {
 	t.Helper()
+	doJSONWithHeaders(t, client, method, url, payload, nil, out)
+}
+
+func doJSONWithHeaders(t *testing.T, client *http.Client, method, url string, payload any, headers map[string]string, out any) {
+	t.Helper()
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -478,6 +489,9 @@ func doJSON(t *testing.T, client *http.Client, method, url string, payload any, 
 		t.Fatalf("failed to build request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -490,6 +504,63 @@ func doJSON(t *testing.T, client *http.Client, method, url string, payload any, 
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
+}
+
+func ensureMemberSessionToken(t *testing.T, client *http.Client, baseURL, actorID string) string {
+	t.Helper()
+
+	displayName := strings.TrimSpace(actorID)
+	if displayName == "" {
+		displayName = "member"
+	}
+	username := strings.ToLower(strings.ReplaceAll(displayName, " ", "_"))
+	password := "password123"
+
+	if token, ok := tryAuthToken(t, client, http.MethodPost, baseURL+"/api/v1/auth/login", core.AuthLoginRequest{
+		Username: username,
+		Password: password,
+	}); ok {
+		return token
+	}
+	if token, ok := tryAuthToken(t, client, http.MethodPost, baseURL+"/api/v1/auth/register", core.AuthRegisterRequest{
+		Username:    username,
+		DisplayName: displayName,
+		Password:    password,
+	}); ok {
+		return token
+	}
+
+	t.Fatalf("failed to resolve auth session for actor %q", actorID)
+	return ""
+}
+
+func tryAuthToken(t *testing.T, client *http.Client, method, url string, payload any) (string, bool) {
+	t.Helper()
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to encode auth payload: %v", err)
+	}
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to build auth request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("auth request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", false
+	}
+
+	var parsed core.AuthTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		t.Fatalf("failed to decode auth response: %v", err)
+	}
+	return parsed.SessionToken, parsed.SessionToken != ""
 }
 
 func countRunStatus(runs []core.Run, status string) int {

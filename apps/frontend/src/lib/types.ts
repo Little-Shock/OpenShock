@@ -5,6 +5,15 @@ export type Workspace = {
   defaultRepoBindingId?: string;
 };
 
+export type WorkspacesResponse = {
+  workspaces: Workspace[];
+  currentWorkspaceId: string;
+};
+
+export type WorkspaceResponse = {
+  workspace: Workspace;
+};
+
 export type WorkspaceRepoBinding = {
   id: string;
   workspaceId: string;
@@ -17,7 +26,8 @@ export type WorkspaceRepoBinding = {
 export type RoomSummary = {
   id: string;
   issueId?: string;
-  kind: "issue" | "discussion";
+  directAgentId?: string;
+  kind: "issue" | "discussion" | "direct_message";
   title: string;
   unreadCount: number;
 };
@@ -43,8 +53,33 @@ export type Issue = IssueSummary & {
 export type Agent = {
   id: string;
   name: string;
-  role: string;
-  status: string;
+  prompt: string;
+};
+
+export type AgentsResponse = {
+  agents: Agent[];
+};
+
+export type AgentMutationResponse = {
+  agent: Agent;
+};
+
+export type AgentDetailResponse = {
+  workspace: Workspace;
+  agent: Agent;
+  rooms: RoomSummary[];
+  messages: Message[];
+  agentSessions: AgentSession[];
+  agentTurns: AgentTurn[];
+  agentTurnOutputChunks: AgentTurnOutputChunk[];
+  agentTurnToolCalls: AgentTurnToolCall[];
+  agentWaits: AgentWait[];
+  handoffRecords: HandoffRecord[];
+};
+
+export type AgentDeleteResponse = {
+  deleted: boolean;
+  agentId: string;
 };
 
 export type Runtime = {
@@ -79,7 +114,9 @@ export type AgentSession = {
   id: string;
   roomId: string;
   agentId: string;
+  joinedRoom?: boolean;
   providerThreadId?: string;
+  appServerThreadId?: string;
   status: string;
   lastMessageId?: string;
   currentTurnId?: string;
@@ -96,6 +133,25 @@ export type AgentTurn = {
   intentType: string;
   wakeupMode?: string;
   eventFrame: EventFrame;
+  status: string;
+  createdAt: string;
+};
+
+export type AgentTurnOutputChunk = {
+  id: string;
+  turnId: string;
+  sequence: number;
+  stream: string;
+  content: string;
+  createdAt: string;
+};
+
+export type AgentTurnToolCall = {
+  id: string;
+  turnId: string;
+  sequence: number;
+  toolName: string;
+  arguments?: string;
   status: string;
   createdAt: string;
 };
@@ -214,6 +270,7 @@ export type BootstrapResponse = {
   defaultRoomId: string;
   defaultIssueId: string;
   rooms: RoomSummary[];
+  directRooms: RoomSummary[];
   agents: Agent[];
   runtimes: Runtime[];
   issueSummaries: IssueSummary[];
@@ -226,6 +283,8 @@ export type RoomDetailResponse = {
   messages: Message[];
   agentSessions: AgentSession[];
   agentTurns: AgentTurn[];
+  agentTurnOutputChunks: AgentTurnOutputChunk[];
+  agentTurnToolCalls: AgentTurnToolCall[];
   agentWaits: AgentWait[];
   handoffRecords: HandoffRecord[];
   issue?: Issue;
@@ -246,6 +305,8 @@ export type IssueDetailResponse = {
   messages: Message[];
   agentSessions: AgentSession[];
   agentTurns: AgentTurn[];
+  agentTurnOutputChunks: AgentTurnOutputChunk[];
+  agentTurnToolCalls: AgentTurnToolCall[];
   agentWaits: AgentWait[];
   handoffRecords: HandoffRecord[];
   tasks: Task[];
@@ -287,4 +348,40 @@ export type ActionResponse = {
   resultCode: string;
   resultMessage: string;
   affectedEntities: ActionEntity[];
+};
+
+export type Member = {
+  id: string;
+  username: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AuthSession = {
+  id: string;
+  memberId: string;
+  activeWorkspaceId?: string;
+  createdAt: string;
+  lastSeenAt: string;
+};
+
+export type AuthTokenResponse = {
+  sessionToken: string;
+  session: AuthSession;
+  member: Member;
+};
+
+export type AuthSessionStateResponse = {
+  authenticated: boolean;
+  session?: AuthSession;
+  member?: Member;
+};
+
+export type AuthLogoutResponse = {
+  loggedOut: boolean;
+};
+
+export type AuthProfileResponse = {
+  member: Member;
 };

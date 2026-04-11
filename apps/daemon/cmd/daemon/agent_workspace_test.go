@@ -95,10 +95,10 @@ func TestPrepareAgentWorkspaceCreatesPersistentFilesAndReusesDirectory(t *testin
 	if err != nil {
 		t.Fatalf("failed to read current turn file: %v", err)
 	}
-	if !strings.Contains(string(currentTurn), "Wakeup mode: clarification_followup") {
+	if !strings.Contains(string(currentTurn), "唤醒模式：clarification_followup") {
 		t.Fatalf("expected CURRENT_TURN.md to describe latest wakeup mode, got %q", string(currentTurn))
 	}
-	if !strings.Contains(string(currentTurn), "## Reply Contract") {
+	if !strings.Contains(string(currentTurn), "## 回复契约") {
 		t.Fatalf("expected CURRENT_TURN.md to include reply contract, got %q", string(currentTurn))
 	}
 
@@ -106,7 +106,7 @@ func TestPrepareAgentWorkspaceCreatesPersistentFilesAndReusesDirectory(t *testin
 	if err != nil {
 		t.Fatalf("failed to read room context note: %v", err)
 	}
-	if !strings.Contains(string(roomContext), "Wakeup mode: clarification_followup") {
+	if !strings.Contains(string(roomContext), "唤醒模式：clarification_followup") {
 		t.Fatalf("expected room context note to refresh wakeup mode, got %q", string(roomContext))
 	}
 
@@ -122,14 +122,28 @@ func TestPrepareAgentWorkspaceCreatesPersistentFilesAndReusesDirectory(t *testin
 		t.Fatalf("failed to read work log: %v", err)
 	}
 	for _, expected := range []string{
-		"# OpenShock Agent Work Log",
+		"# OpenShock Agent 工作日志",
 		"turn_completed",
-		"- Turn ID: turn_002",
-		"- Wakeup mode: clarification_followup",
-		"- Reply kind: message",
+		"- 回合 ID：turn_002",
+		"- 唤醒模式：clarification_followup",
+		"- 回复类型：message",
 	} {
 		if !strings.Contains(string(workLog), expected) {
 			t.Fatalf("expected work log to contain %q, got %q", expected, string(workLog))
 		}
+	}
+
+	if _, err := readAppServerThreadID(dir); err == nil {
+		t.Fatal("expected no app-server thread id before it is written")
+	}
+	if err := writeAppServerThreadID(dir, "thread_appserver_001"); err != nil {
+		t.Fatalf("writeAppServerThreadID returned error: %v", err)
+	}
+	threadID, err := readAppServerThreadID(dir)
+	if err != nil {
+		t.Fatalf("readAppServerThreadID returned error: %v", err)
+	}
+	if threadID != "thread_appserver_001" {
+		t.Fatalf("expected persisted app-server thread id, got %q", threadID)
 	}
 }

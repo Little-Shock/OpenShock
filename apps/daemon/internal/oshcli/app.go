@@ -130,7 +130,7 @@ func (a *App) runRoom(ctx context.Context, args []string, stdout, stderr io.Writ
 
 func (a *App) runTask(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: openshock task <create|assign|status|mark-ready> ...")
+		fmt.Fprintln(stderr, "usage: openshock task <create|claim|assign|status|mark-ready> ...")
 		return 2
 	}
 
@@ -158,12 +158,40 @@ func (a *App) runTask(ctx context.Context, args []string, stdout, stderr io.Writ
 			"Task.create",
 			"issue",
 			*issueID,
-			*idempotencyKey,
+			a.defaultIdempotencyKey(*idempotencyKey, "task-create", *issueID),
 			map[string]any{
 				"title":           *title,
 				"description":     *description,
 				"assigneeAgentId": *assigneeAgentID,
 			},
+		)
+		if err != nil {
+			fmt.Fprintln(stderr, err.Error())
+			return 2
+		}
+		return a.submit(ctx, *baseURL, req, stdout, stderr)
+	case "claim":
+		fs := flag.NewFlagSet("task claim", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+
+		baseURL := fs.String("api-base-url", defaultAPIBaseURL(), "OpenShock backend base URL")
+		taskID := fs.String("task", "", "Task id")
+		actorType := fs.String("actor-type", "agent", "Actor type")
+		actorID := fs.String("actor-id", "", "Actor id")
+		idempotencyKey := fs.String("idempotency-key", "", "Idempotency key")
+
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+
+		req, err := buildActionRequest(
+			*actorType,
+			*actorID,
+			"Task.assign",
+			"task",
+			*taskID,
+			a.defaultIdempotencyKey(*idempotencyKey, "task-claim", *taskID),
+			map[string]any{"agentId": *actorID},
 		)
 		if err != nil {
 			fmt.Fprintln(stderr, err.Error())
@@ -191,7 +219,7 @@ func (a *App) runTask(ctx context.Context, args []string, stdout, stderr io.Writ
 			"Task.assign",
 			"task",
 			*taskID,
-			*idempotencyKey,
+			a.defaultIdempotencyKey(*idempotencyKey, "task-assign", *taskID),
 			map[string]any{"agentId": *agentID},
 		)
 		if err != nil {
@@ -286,7 +314,15 @@ func (a *App) runRun(ctx context.Context, args []string, stdout, stderr io.Write
 		return 2
 	}
 
-	req, err := buildActionRequest(*actorType, *actorID, "Run.create", "task", *taskID, *idempotencyKey, map[string]any{})
+	req, err := buildActionRequest(
+		*actorType,
+		*actorID,
+		"Run.create",
+		"task",
+		*taskID,
+		a.defaultIdempotencyKey(*idempotencyKey, "run-create", *taskID),
+		map[string]any{},
+	)
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 2
@@ -295,30 +331,72 @@ func (a *App) runRun(ctx context.Context, args []string, stdout, stderr io.Write
 }
 
 func (a *App) runGit(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "request-merge" {
-		fmt.Fprintln(stderr, "usage: openshock git request-merge ...")
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: openshock git <request-merge|approve-merge> ...")
 		return 2
 	}
 
-	fs := flag.NewFlagSet("git request-merge", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	switch args[0] {
+	case "request-merge":
+		fs := flag.NewFlagSet("git request-merge", flag.ContinueOnError)
+		fs.SetOutput(stderr)
 
-	baseURL := fs.String("api-base-url", defaultAPIBaseURL(), "OpenShock backend base URL")
-	taskID := fs.String("task", "", "Task id")
-	actorType := fs.String("actor-type", "agent", "Actor type")
-	actorID := fs.String("actor-id", "", "Actor id")
-	idempotencyKey := fs.String("idempotency-key", "", "Idempotency key")
+		baseURL := fs.String("api-base-url", defaultAPIBaseURL(), "OpenShock backend base URL")
+		taskID := fs.String("task", "", "Task id")
+		actorType := fs.String("actor-type", "agent", "Actor type")
+		actorID := fs.String("actor-id", "", "Actor id")
+		idempotencyKey := fs.String("idempotency-key", "", "Idempotency key")
 
-	if err := fs.Parse(args[1:]); err != nil {
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+
+		req, err := buildActionRequest(
+			*actorType,
+			*actorID,
+			"GitIntegration.merge.request",
+			"task",
+			*taskID,
+			a.defaultIdempotencyKey(*idempotencyKey, "merge-request", *taskID),
+			map[string]any{},
+		)
+		if err != nil {
+			fmt.Fprintln(stderr, err.Error())
+			return 2
+		}
+		return a.submit(ctx, *baseURL, req, stdout, stderr)
+	case "approve-merge":
+		fs := flag.NewFlagSet("git approve-merge", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+
+		baseURL := fs.String("api-base-url", defaultAPIBaseURL(), "OpenShock backend base URL")
+		taskID := fs.String("task", "", "Task id")
+		actorType := fs.String("actor-type", "agent", "Actor type")
+		actorID := fs.String("actor-id", "", "Actor id")
+		idempotencyKey := fs.String("idempotency-key", "", "Idempotency key")
+
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+
+		req, err := buildActionRequest(
+			*actorType,
+			*actorID,
+			"GitIntegration.merge.approve",
+			"task",
+			*taskID,
+			a.defaultIdempotencyKey(*idempotencyKey, "merge-approve", *taskID),
+			map[string]any{},
+		)
+		if err != nil {
+			fmt.Fprintln(stderr, err.Error())
+			return 2
+		}
+		return a.submit(ctx, *baseURL, req, stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unsupported git command %q\n", args[0])
 		return 2
 	}
-
-	req, err := buildActionRequest(*actorType, *actorID, "GitIntegration.merge.request", "task", *taskID, *idempotencyKey, map[string]any{})
-	if err != nil {
-		fmt.Fprintln(stderr, err.Error())
-		return 2
-	}
-	return a.submit(ctx, *baseURL, req, stdout, stderr)
 }
 
 func (a *App) runDelivery(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -340,7 +418,15 @@ func (a *App) runDelivery(ctx context.Context, args []string, stdout, stderr io.
 		return 2
 	}
 
-	req, err := buildActionRequest(*actorType, *actorID, "DeliveryPR.create.request", "issue", *issueID, *idempotencyKey, map[string]any{})
+	req, err := buildActionRequest(
+		*actorType,
+		*actorID,
+		"DeliveryPR.create.request",
+		"issue",
+		*issueID,
+		a.defaultIdempotencyKey(*idempotencyKey, "delivery-request", *issueID),
+		map[string]any{},
+	)
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 2

@@ -116,6 +116,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeHeartbeatResponse"
+  /api/v1/agent-turns/claim:
+    post:
+      summary: Claim the next queued agent turn for a runtime
+      operationId: claimAgentTurn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentTurnClaimRequest"
+      responses:
+        "200":
+          description: Agent turn claim result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnClaimResponse"
+  /api/v1/agent-turns/{turnId}/events:
+    post:
+      summary: Ingest a daemon agent turn event
+      operationId: ingestAgentTurnEvent
+      parameters:
+        - name: turnId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentTurnEventRequest"
+      responses:
+        "200":
+          description: Agent turn event accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnEventResponse"
+  /api/v1/agent-turns/{turnId}/complete:
+    post:
+      summary: Complete an agent turn after daemon execution
+      operationId: completeAgentTurn
+      parameters:
+        - name: turnId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentTurnCompleteRequest"
+      responses:
+        "200":
+          description: Agent turn completion accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnCompleteResponse"
   /api/v1/runs/claim:
     post:
       summary: Claim the next queued run for a runtime
@@ -252,6 +315,12 @@ components:
         - room
         - channel
         - messages
+        - agentSessions
+        - agentTurns
+        - agentTurnOutputChunks
+        - agentTurnToolCalls
+        - agentWaits
+        - handoffRecords
         - tasks
         - runs
         - runOutputChunks
@@ -270,6 +339,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Message"
+        agentSessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentSession"
+        agentTurns:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentTurn"
+        agentTurnOutputChunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentTurnOutputChunk"
+        agentTurnToolCalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentTurnToolCall"
+        agentWaits:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentWait"
+        handoffRecords:
+          type: array
+          items:
+            $ref: "#/components/schemas/HandoffRecord"
         tasks:
           type: array
           items:
@@ -400,9 +493,69 @@ components:
           type: string
     RuntimeHeartbeatResponse:
       type: object
-      required: [runtimeId, status]
+      required: [runtimeId, status, activeSlots]
       properties:
         runtimeId:
+          type: string
+        status:
+          type: string
+        activeSlots:
+          type: integer
+        lastHeartbeatAt:
+          type: string
+    AgentTurnClaimRequest:
+      type: object
+      required: [runtimeId]
+      properties:
+        runtimeId:
+          type: string
+    AgentTurnClaimResponse:
+      type: object
+      required: [claimed]
+      properties:
+        claimed:
+          type: boolean
+        agentTurn:
+          oneOf:
+            - $ref: "#/components/schemas/AgentTurnExecution"
+            - type: "null"
+    AgentTurnCompleteRequest:
+      type: object
+      required: [runtimeId]
+      properties:
+        runtimeId:
+          type: string
+        resultMessageId:
+          type: string
+    AgentTurnCompleteResponse:
+      type: object
+      required: [agentTurnId, status]
+      properties:
+        agentTurnId:
+          type: string
+        status:
+          type: string
+    AgentTurnEventRequest:
+      type: object
+      required: [runtimeId, eventType]
+      properties:
+        runtimeId:
+          type: string
+        eventType:
+          type: string
+          enum: [output, tool_call]
+        message:
+          type: string
+        stream:
+          type: string
+          enum: [stdout, stderr]
+        toolCall:
+          $ref: "#/components/schemas/ToolCallInput"
+    AgentTurnEventResponse:
+      type: object
+      required: [agentTurnId, status]
+      properties:
+        agentTurnId:
           type: string
         status:
           type: string
@@ -547,19 +700,17 @@ components:
               type: string
     Agent:
       type: object
-      required: [id, name, role, status]
+      required: [id, name, prompt]
       properties:
         id:
           type: string
         name:
           type: string
-        role:
-          type: string
-        status:
+        prompt:
           type: string
     Runtime:
       type: object
-      required: [id, name, status, provider]
+      required: [id, name, status, provider, slotCount, activeSlots]
       properties:
         id:
           type: string
@@ -568,6 +719,12 @@ components:
         status:
           type: string
         provider:
+          type: string
+        slotCount:
+          type: integer
+        activeSlots:
+          type: integer
+        lastHeartbeatAt:
           type: string
     Message:
       type: object
@@ -582,6 +739,138 @@ components:
         body:
           type: string
         kind:
+          type: string
+        createdAt:
+          type: string
+    EventFrame:
+      type: object
+      required: [currentTarget, sourceTarget, sourceMessageId]
+      properties:
+        currentTarget:
+          type: string
+        sourceTarget:
+          type: string
+        sourceMessageId:
+          type: string
+        requestedBy:
+          type: string
+        relatedIssueId:
+          type: string
+        relatedTaskId:
+          type: string
+        recentMessagesSummary:
+          type: string
+        expectedAction:
+          type: string
+        contextSummary:
+          type: string
+    AgentSession:
+      type: object
+      required: [id, roomId, agentId, status, updatedAt]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        agentId:
+          type: string
+        providerThreadId:
+          type: string
+        status:
+          type: string
+        lastMessageId:
+          type: string
+        currentTurnId:
+          type: string
+        updatedAt:
+          type: string
+    AgentTurn:
+      type: object
+      required: [id, sessionId, roomId, agentId, sequence, triggerMessageId, intentType, eventFrame, status, createdAt]
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        roomId:
+          type: string
+        agentId:
+          type: string
+        runtimeId:
+          type: string
+        sequence:
+          type: integer
+        triggerMessageId:
+          type: string
+        intentType:
+          type: string
+        wakeupMode:
+          type: string
+        eventFrame:
+          $ref: "#/components/schemas/EventFrame"
+        status:
+          type: string
+        createdAt:
+          type: string
+    AgentTurnExecution:
+      type: object
+      required: [turn, session, room, triggerMessage, messages]
+      properties:
+        turn:
+          $ref: "#/components/schemas/AgentTurn"
+        session:
+          $ref: "#/components/schemas/AgentSession"
+        room:
+          $ref: "#/components/schemas/RoomSummary"
+        agentName:
+          type: string
+        instruction:
+          type: string
+        triggerMessage:
+          $ref: "#/components/schemas/Message"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+    AgentWait:
+      type: object
+      required: [id, sessionId, roomId, agentId, blockingMessageId, status, createdAt]
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        roomId:
+          type: string
+        agentId:
+          type: string
+        blockingMessageId:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        resolvedAt:
+          type: string
+    HandoffRecord:
+      type: object
+      required: [id, roomId, fromSessionId, fromAgentId, toAgentId, triggerMessageId, status, createdAt]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        fromSessionId:
+          type: string
+        fromAgentId:
+          type: string
+        toAgentId:
+          type: string
+        triggerMessageId:
+          type: string
+        status:
+          type: string
+        acceptedTurnId:
           type: string
         createdAt:
           type: string
@@ -656,6 +945,40 @@ components:
         id:
           type: string
         runId:
+          type: string
+        sequence:
+          type: integer
+        toolName:
+          type: string
+        arguments:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+    AgentTurnOutputChunk:
+      type: object
+      required: [id, turnId, sequence, stream, content, createdAt]
+      properties:
+        id:
+          type: string
+        turnId:
+          type: string
+        sequence:
+          type: integer
+        stream:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+    AgentTurnToolCall:
+      type: object
+      required: [id, turnId, sequence, toolName, status, createdAt]
+      properties:
+        id:
+          type: string
+        turnId:
           type: string
         sequence:
           type: integer

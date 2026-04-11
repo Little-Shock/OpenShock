@@ -1,0 +1,28 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e39] [cursor=pointer]:
+    - img [ref=e40]
+  - alert [ref=e43]
+  - generic [ref=e45]:
+    - generic [ref=e46]:
+      - generic [ref=e47]:
+        - text: Register once,
+        - text: then build from zero.
+      - paragraph [ref=e48]: A clean workspace is useful only if the actions inside it are attributable. Your member account now anchors that identity.
+    - generic [ref=e49]:
+      - generic [ref=e50]: Register
+      - generic [ref=e51]: Create your member account
+      - paragraph [ref=e52]: This account becomes the authenticated identity used for room posts, approvals, and other member-triggered actions.
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - text: Username
+          - textbox "sarah" [ref=e55]
+        - generic [ref=e56]:
+          - text: Display Name
+          - textbox "Sarah Chen" [ref=e57]
+        - generic [ref=e58]:
+          - text: Password
+          - textbox "At least 8 characters" [ref=e59]
+        - generic [ref=e60]:
+          - button "Create Account" [disabled] [ref=e61]
+          - link "Already have an account?" [ref=e62] [cursor=pointer]:
+            - /url: /login?next=%2F

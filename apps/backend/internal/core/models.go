@@ -7,6 +7,23 @@ type Workspace struct {
 	DefaultRepoBindingID string                 `json:"defaultRepoBindingId,omitempty"`
 }
 
+type WorkspaceListResponse struct {
+	Workspaces         []Workspace `json:"workspaces"`
+	CurrentWorkspaceID string      `json:"currentWorkspaceId"`
+}
+
+type WorkspaceResponse struct {
+	Workspace Workspace `json:"workspace"`
+}
+
+type WorkspaceCreateRequest struct {
+	Name string `json:"name"`
+}
+
+type WorkspaceSwitchRequest struct {
+	WorkspaceID string `json:"workspaceId"`
+}
+
 type WorkspaceRepoBinding struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspaceId"`
@@ -17,11 +34,13 @@ type WorkspaceRepoBinding struct {
 }
 
 type RoomSummary struct {
-	ID          string `json:"id"`
-	IssueID     string `json:"issueId,omitempty"`
-	Kind        string `json:"kind"`
-	Title       string `json:"title"`
-	UnreadCount int    `json:"unreadCount"`
+	WorkspaceID   string `json:"workspaceId,omitempty"`
+	ID            string `json:"id"`
+	IssueID       string `json:"issueId,omitempty"`
+	DirectAgentID string `json:"directAgentId,omitempty"`
+	Kind          string `json:"kind"`
+	Title         string `json:"title"`
+	UnreadCount   int    `json:"unreadCount"`
 }
 
 type RoomChannel struct {
@@ -31,32 +50,73 @@ type RoomChannel struct {
 }
 
 type IssueSummary struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
 }
 
 type Issue struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Status   string `json:"status"`
-	Priority string `json:"priority"`
-	Summary  string `json:"summary"`
-	RepoPath string `json:"repoPath,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	Priority    string `json:"priority"`
+	Summary     string `json:"summary"`
+	RepoPath    string `json:"repoPath,omitempty"`
 }
 
 type Agent struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
-	Role   string `json:"role"`
-	Status string `json:"status"`
+	Prompt string `json:"prompt"`
+}
+
+type AgentListResponse struct {
+	Agents []Agent `json:"agents"`
+}
+
+type AgentResponse struct {
+	Agent Agent `json:"agent"`
+}
+
+type AgentDetailResponse struct {
+	Workspace             Workspace              `json:"workspace"`
+	Agent                 Agent                  `json:"agent"`
+	Rooms                 []RoomSummary          `json:"rooms"`
+	Messages              []Message              `json:"messages"`
+	AgentSessions         []AgentSession         `json:"agentSessions"`
+	AgentTurns            []AgentTurn            `json:"agentTurns"`
+	AgentTurnOutputChunks []AgentTurnOutputChunk `json:"agentTurnOutputChunks"`
+	AgentTurnToolCalls    []AgentTurnToolCall    `json:"agentTurnToolCalls"`
+	AgentWaits            []AgentWait            `json:"agentWaits"`
+	HandoffRecords        []HandoffRecord        `json:"handoffRecords"`
+}
+
+type AgentDeleteResponse struct {
+	Deleted bool   `json:"deleted"`
+	AgentID string `json:"agentId"`
+}
+
+type AgentCreateRequest struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Prompt string `json:"prompt"`
+}
+
+type AgentUpdateRequest struct {
+	Name   string `json:"name"`
+	Prompt string `json:"prompt"`
 }
 
 type Runtime struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Provider string `json:"provider"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	Provider        string `json:"provider"`
+	SlotCount       int    `json:"slotCount"`
+	ActiveSlots     int    `json:"activeSlots"`
+	LastHeartbeatAt string `json:"lastHeartbeatAt,omitempty"`
 }
 
 type RegisterRuntimeRequest struct {
@@ -75,8 +135,61 @@ type RuntimeHeartbeatRequest struct {
 }
 
 type RuntimeHeartbeatResponse struct {
-	RuntimeID string `json:"runtimeId"`
-	Status    string `json:"status"`
+	RuntimeID       string `json:"runtimeId"`
+	Status          string `json:"status"`
+	ActiveSlots     int    `json:"activeSlots"`
+	LastHeartbeatAt string `json:"lastHeartbeatAt,omitempty"`
+}
+
+type Member struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+}
+
+type AuthSession struct {
+	ID                string `json:"id"`
+	MemberID          string `json:"memberId"`
+	ActiveWorkspaceID string `json:"activeWorkspaceId,omitempty"`
+	CreatedAt         string `json:"createdAt"`
+	LastSeenAt        string `json:"lastSeenAt"`
+}
+
+type AuthRegisterRequest struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	Password    string `json:"password"`
+}
+
+type AuthLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type AuthTokenResponse struct {
+	SessionToken string      `json:"sessionToken"`
+	Session      AuthSession `json:"session"`
+	Member       Member      `json:"member"`
+}
+
+type AuthSessionStateResponse struct {
+	Authenticated bool         `json:"authenticated"`
+	Session       *AuthSession `json:"session,omitempty"`
+	Member        *Member      `json:"member,omitempty"`
+}
+
+type AuthLogoutResponse struct {
+	LoggedOut bool `json:"loggedOut"`
+}
+
+type AuthProfileUpdateRequest struct {
+	DisplayName string `json:"displayName"`
+}
+
+type AuthProfileResponse struct {
+	Member Member `json:"member"`
 }
 
 type Message struct {
@@ -101,14 +214,16 @@ type EventFrame struct {
 }
 
 type AgentSession struct {
-	ID               string `json:"id"`
-	RoomID           string `json:"roomId"`
-	AgentID          string `json:"agentId"`
-	ProviderThreadID string `json:"providerThreadId,omitempty"`
-	Status           string `json:"status"`
-	LastMessageID    string `json:"lastMessageId,omitempty"`
-	CurrentTurnID    string `json:"currentTurnId,omitempty"`
-	UpdatedAt        string `json:"updatedAt"`
+	ID                string `json:"id"`
+	RoomID            string `json:"roomId"`
+	AgentID           string `json:"agentId"`
+	JoinedRoom        bool   `json:"joinedRoom,omitempty"`
+	ProviderThreadID  string `json:"providerThreadId,omitempty"`
+	AppServerThreadID string `json:"appServerThreadId,omitempty"`
+	Status            string `json:"status"`
+	LastMessageID     string `json:"lastMessageId,omitempty"`
+	CurrentTurnID     string `json:"currentTurnId,omitempty"`
+	UpdatedAt         string `json:"updatedAt"`
 }
 
 type AgentTurn struct {
@@ -116,6 +231,7 @@ type AgentTurn struct {
 	SessionID        string     `json:"sessionId"`
 	RoomID           string     `json:"roomId"`
 	AgentID          string     `json:"agentId"`
+	RuntimeID        string     `json:"runtimeId,omitempty"`
 	Sequence         int        `json:"sequence"`
 	TriggerMessageID string     `json:"triggerMessageId"`
 	IntentType       string     `json:"intentType"`
@@ -126,11 +242,52 @@ type AgentTurn struct {
 }
 
 type AgentTurnExecution struct {
-	Turn           AgentTurn    `json:"turn"`
-	Session        AgentSession `json:"session"`
-	Room           RoomSummary  `json:"room"`
-	TriggerMessage Message      `json:"triggerMessage"`
-	Messages       []Message    `json:"messages"`
+	Turn              AgentTurn          `json:"turn"`
+	Session           AgentSession       `json:"session"`
+	Room              RoomSummary        `json:"room"`
+	AgentName         string             `json:"agentName,omitempty"`
+	AgentPrompt       string             `json:"agentPrompt,omitempty"`
+	Issue             *Issue             `json:"issue,omitempty"`
+	Tasks             []Task             `json:"tasks,omitempty"`
+	Runs              []Run              `json:"runs,omitempty"`
+	MergeAttempts     []MergeAttempt     `json:"mergeAttempts,omitempty"`
+	IntegrationBranch *IntegrationBranch `json:"integrationBranch,omitempty"`
+	DeliveryPR        *DeliveryPR        `json:"deliveryPr,omitempty"`
+	Instruction       string             `json:"instruction,omitempty"`
+	TriggerMessage    Message            `json:"triggerMessage"`
+	Messages          []Message          `json:"messages"`
+}
+
+type AgentTurnEventRequest struct {
+	RuntimeID string         `json:"runtimeId"`
+	EventType string         `json:"eventType"`
+	Message   string         `json:"message,omitempty"`
+	Stream    string         `json:"stream,omitempty"`
+	ToolCall  *ToolCallInput `json:"toolCall,omitempty"`
+}
+
+type AgentTurnEventResponse struct {
+	AgentTurnID string `json:"agentTurnId"`
+	Status      string `json:"status"`
+}
+
+type AgentTurnOutputChunk struct {
+	ID        string `json:"id"`
+	TurnID    string `json:"turnId"`
+	Sequence  int    `json:"sequence"`
+	Stream    string `json:"stream"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type AgentTurnToolCall struct {
+	ID        string `json:"id"`
+	TurnID    string `json:"turnId"`
+	Sequence  int    `json:"sequence"`
+	ToolName  string `json:"toolName"`
+	Arguments string `json:"arguments,omitempty"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
 }
 
 type AgentWait struct {
@@ -157,6 +314,7 @@ type HandoffRecord struct {
 }
 
 type Task struct {
+	WorkspaceID     string `json:"workspaceId,omitempty"`
 	ID              string `json:"id"`
 	IssueID         string `json:"issueId"`
 	Title           string `json:"title"`
@@ -168,6 +326,7 @@ type Task struct {
 }
 
 type Run struct {
+	WorkspaceID   string `json:"workspaceId,omitempty"`
 	ID            string `json:"id"`
 	TaskID        string `json:"taskId"`
 	AgentID       string `json:"agentId"`
@@ -187,8 +346,9 @@ type RunClaimRequest struct {
 }
 
 type RunClaimResponse struct {
-	Claimed bool `json:"claimed"`
-	Run     *Run `json:"run"`
+	Claimed      bool          `json:"claimed"`
+	Run          *Run          `json:"run"`
+	AgentSession *AgentSession `json:"agentSession,omitempty"`
 }
 
 type RunEventRequest struct {
@@ -231,6 +391,7 @@ type ToolCall struct {
 }
 
 type MergeAttempt struct {
+	WorkspaceID   string `json:"workspaceId,omitempty"`
 	ID            string `json:"id"`
 	IssueID       string `json:"issueId"`
 	TaskID        string `json:"taskId"`
@@ -273,8 +434,9 @@ type AgentTurnClaimResponse struct {
 }
 
 type AgentTurnCompleteRequest struct {
-	RuntimeID       string `json:"runtimeId"`
-	ResultMessageID string `json:"resultMessageId,omitempty"`
+	RuntimeID         string `json:"runtimeId"`
+	ResultMessageID   string `json:"resultMessageId,omitempty"`
+	AppServerThreadID string `json:"appServerThreadId,omitempty"`
 }
 
 type AgentTurnCompleteResponse struct {
@@ -283,6 +445,7 @@ type AgentTurnCompleteResponse struct {
 }
 
 type IntegrationBranch struct {
+	WorkspaceID   string   `json:"workspaceId,omitempty"`
 	ID            string   `json:"id"`
 	IssueID       string   `json:"issueId"`
 	Name          string   `json:"name"`
@@ -291,6 +454,7 @@ type IntegrationBranch struct {
 }
 
 type DeliveryPR struct {
+	WorkspaceID  string `json:"workspaceId,omitempty"`
 	ID           string `json:"id"`
 	IssueID      string `json:"issueId"`
 	Title        string `json:"title"`
@@ -313,6 +477,7 @@ type RepoWebhookResponse struct {
 }
 
 type InboxItem struct {
+	WorkspaceID       string `json:"workspaceId,omitempty"`
 	ID                string `json:"id"`
 	Title             string `json:"title"`
 	Kind              string `json:"kind"`
@@ -328,47 +493,52 @@ type BootstrapResponse struct {
 	DefaultRoomID  string         `json:"defaultRoomId"`
 	DefaultIssueID string         `json:"defaultIssueId"`
 	Rooms          []RoomSummary  `json:"rooms"`
+	DirectRooms    []RoomSummary  `json:"directRooms"`
 	Agents         []Agent        `json:"agents"`
 	Runtimes       []Runtime      `json:"runtimes"`
 	IssueSummaries []IssueSummary `json:"issueSummaries"`
 }
 
 type RoomDetailResponse struct {
-	Workspace         Workspace          `json:"workspace"`
-	Room              RoomSummary        `json:"room"`
-	Channel           RoomChannel        `json:"channel"`
-	Messages          []Message          `json:"messages"`
-	AgentSessions     []AgentSession     `json:"agentSessions"`
-	AgentTurns        []AgentTurn        `json:"agentTurns"`
-	AgentWaits        []AgentWait        `json:"agentWaits"`
-	HandoffRecords    []HandoffRecord    `json:"handoffRecords"`
-	Issue             *Issue             `json:"issue,omitempty"`
-	Tasks             []Task             `json:"tasks"`
-	Runs              []Run              `json:"runs"`
-	RunOutputChunks   []RunOutputChunk   `json:"runOutputChunks"`
-	ToolCalls         []ToolCall         `json:"toolCalls"`
-	MergeAttempts     []MergeAttempt     `json:"mergeAttempts"`
-	IntegrationBranch *IntegrationBranch `json:"integrationBranch,omitempty"`
-	DeliveryPR        *DeliveryPR        `json:"deliveryPr"`
+	Workspace             Workspace              `json:"workspace"`
+	Room                  RoomSummary            `json:"room"`
+	Channel               RoomChannel            `json:"channel"`
+	Messages              []Message              `json:"messages"`
+	AgentSessions         []AgentSession         `json:"agentSessions"`
+	AgentTurns            []AgentTurn            `json:"agentTurns"`
+	AgentTurnOutputChunks []AgentTurnOutputChunk `json:"agentTurnOutputChunks"`
+	AgentTurnToolCalls    []AgentTurnToolCall    `json:"agentTurnToolCalls"`
+	AgentWaits            []AgentWait            `json:"agentWaits"`
+	HandoffRecords        []HandoffRecord        `json:"handoffRecords"`
+	Issue                 *Issue                 `json:"issue,omitempty"`
+	Tasks                 []Task                 `json:"tasks"`
+	Runs                  []Run                  `json:"runs"`
+	RunOutputChunks       []RunOutputChunk       `json:"runOutputChunks"`
+	ToolCalls             []ToolCall             `json:"toolCalls"`
+	MergeAttempts         []MergeAttempt         `json:"mergeAttempts"`
+	IntegrationBranch     *IntegrationBranch     `json:"integrationBranch,omitempty"`
+	DeliveryPR            *DeliveryPR            `json:"deliveryPr"`
 }
 
 type IssueDetailResponse struct {
-	Workspace         Workspace         `json:"workspace"`
-	Issue             Issue             `json:"issue"`
-	Room              RoomSummary       `json:"room"`
-	Channel           RoomChannel       `json:"channel"`
-	Messages          []Message         `json:"messages"`
-	AgentSessions     []AgentSession    `json:"agentSessions"`
-	AgentTurns        []AgentTurn       `json:"agentTurns"`
-	AgentWaits        []AgentWait       `json:"agentWaits"`
-	HandoffRecords    []HandoffRecord   `json:"handoffRecords"`
-	Tasks             []Task            `json:"tasks"`
-	Runs              []Run             `json:"runs"`
-	RunOutputChunks   []RunOutputChunk  `json:"runOutputChunks"`
-	ToolCalls         []ToolCall        `json:"toolCalls"`
-	MergeAttempts     []MergeAttempt    `json:"mergeAttempts"`
-	IntegrationBranch IntegrationBranch `json:"integrationBranch"`
-	DeliveryPR        *DeliveryPR       `json:"deliveryPr"`
+	Workspace             Workspace              `json:"workspace"`
+	Issue                 Issue                  `json:"issue"`
+	Room                  RoomSummary            `json:"room"`
+	Channel               RoomChannel            `json:"channel"`
+	Messages              []Message              `json:"messages"`
+	AgentSessions         []AgentSession         `json:"agentSessions"`
+	AgentTurns            []AgentTurn            `json:"agentTurns"`
+	AgentTurnOutputChunks []AgentTurnOutputChunk `json:"agentTurnOutputChunks"`
+	AgentTurnToolCalls    []AgentTurnToolCall    `json:"agentTurnToolCalls"`
+	AgentWaits            []AgentWait            `json:"agentWaits"`
+	HandoffRecords        []HandoffRecord        `json:"handoffRecords"`
+	Tasks                 []Task                 `json:"tasks"`
+	Runs                  []Run                  `json:"runs"`
+	RunOutputChunks       []RunOutputChunk       `json:"runOutputChunks"`
+	ToolCalls             []ToolCall             `json:"toolCalls"`
+	MergeAttempts         []MergeAttempt         `json:"mergeAttempts"`
+	IntegrationBranch     IntegrationBranch      `json:"integrationBranch"`
+	DeliveryPR            *DeliveryPR            `json:"deliveryPr"`
 }
 
 type TaskBoardResponse struct {

@@ -1,0 +1,227 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "id": "TC-001",
+      "status": "PASS",
+      "detail": "landing page renders"
+    },
+    {
+      "id": "TC-002",
+      "status": "PASS",
+      "detail": "login page renders"
+    },
+    {
+      "id": "TC-003",
+      "status": "PASS",
+      "detail": "register page renders"
+    },
+    {
+      "id": "TC-004",
+      "status": "PASS",
+      "detail": "registration enters authenticated state"
+    },
+    {
+      "id": "TC-006",
+      "status": "PASS",
+      "detail": "first-run empty state visible"
+    },
+    {
+      "id": "TC-007",
+      "status": "FAIL",
+      "detail": "settings shows repo/runtime areas"
+    },
+    {
+      "id": "TC-008",
+      "status": "PASS",
+      "detail": "online runtime visible"
+    },
+    {
+      "id": "TC-009",
+      "status": "PASS",
+      "detail": "workspace repo binding displayed"
+    },
+    {
+      "id": "TC-010",
+      "status": "PASS",
+      "detail": "sidebar room list updates"
+    },
+    {
+      "id": "TC-011",
+      "status": "PASS",
+      "detail": "discussion room creation navigates correctly"
+    },
+    {
+      "id": "TC-014",
+      "status": "PASS",
+      "detail": "member message appended to timeline"
+    },
+    {
+      "id": "TC-015",
+      "status": "PASS",
+      "detail": "agent turns=2, sessions=2"
+    },
+    {
+      "id": "TC-016",
+      "status": "PASS",
+      "detail": "default agent responses=0, turns=2"
+    },
+    {
+      "id": "TC-012",
+      "status": "PASS",
+      "detail": "issue room opened at http://localhost:3000/rooms/room_002"
+    },
+    {
+      "id": "TC-013",
+      "status": "FAIL",
+      "detail": "issue context panel sections render"
+    },
+    {
+      "id": "TC-017",
+      "status": "PASS",
+      "detail": "task A created in issue room"
+    },
+    {
+      "id": "TC-018",
+      "status": "PASS",
+      "detail": "task B created with alternate assignee attempt"
+    },
+    {
+      "id": "TC-018",
+      "status": "PASS",
+      "detail": "taskA=agent_lead taskB=agent_systems"
+    },
+    {
+      "id": "TC-019",
+      "status": "PASS",
+      "detail": "task A status=in_progress"
+    },
+    {
+      "id": "TC-020",
+      "status": "PASS",
+      "detail": "board groups display tasks"
+    },
+    {
+      "id": "TC-021",
+      "status": "PASS",
+      "detail": "queue run action submitted from board"
+    },
+    {
+      "id": "TC-026",
+      "status": "PASS",
+      "detail": "ready for integration action accessible"
+    },
+    {
+      "id": "TC-027",
+      "status": "PASS",
+      "detail": "request merge action accessible"
+    },
+    {
+      "id": "TC-021",
+      "status": "PASS",
+      "detail": "runs=1"
+    },
+    {
+      "id": "TC-022",
+      "status": "PASS",
+      "detail": "run statuses=queued"
+    },
+    {
+      "id": "TC-025",
+      "status": "PASS",
+      "detail": "room exposes run/task observability"
+    },
+    {
+      "id": "TC-030",
+      "status": "FAIL",
+      "detail": "inbox items=2"
+    },
+    {
+      "id": "TC-031",
+      "status": "PASS",
+      "detail": "actionable inbox=2"
+    },
+    {
+      "id": "TC-028",
+      "status": "PASS",
+      "detail": "merge approval depends on merge request state"
+    },
+    {
+      "id": "TC-023",
+      "status": "BLOCKED",
+      "detail": "run approval depends on run state"
+    },
+    {
+      "id": "TC-024",
+      "status": "PARTIAL",
+      "detail": "cancel path depends on active run"
+    },
+    {
+      "id": "TC-032",
+      "status": "PASS",
+      "detail": "profile shows authenticated member"
+    },
+    {
+      "id": "TC-033",
+      "status": "PASS",
+      "detail": "display name update persisted"
+    },
+    {
+      "id": "TC-034",
+      "status": "PASS",
+      "detail": "sign out returns to login"
+    },
+    {
+      "id": "TC-035",
+      "status": "PASS",
+      "detail": "protected routes redirect to login"
+    },
+    {
+      "id": "TC-005",
+      "status": "PASS",
+      "detail": "existing member login succeeds"
+    },
+    {
+      "id": "TC-036",
+      "status": "PASS",
+      "detail": "reload reflects latest persisted room state"
+    },
+    {
+      "id": "TC-037",
+      "status": "PASS",
+      "detail": "pre-round bootstrap was verified empty before creating any rooms"
+    },
+    {
+      "id": "TC-038",
+      "status": "PASS",
+      "detail": "board/inbox/settings/profile reuse ShellFrame visual shell and navigation pattern"
+    },
+    {
+      "id": "TC-029",
+      "status": "PARTIAL",
+      "detail": "delivery action exists but readiness not reached in round 1"
+    }
+  ],
+  "bugs": [
+    {
+      "id": "BUG-R1-004",
+      "tc": "TC-025",
+      "title": "存在 run 记录但 room UI 可观测信息弱",
+      "detail": "后端已有 run，但房间右侧任务视图未向用户清晰展示 run 状态流。",
+      "severity": "medium"
+    }
+  ],
+  "artifacts": [
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-01-landing.png",
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-02-first-run.png",
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-03-settings-bound.png",
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-04-discussion-room.png",
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-05-issue-room.png",
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-06-board.png",
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-07-inbox.png",
+    "/Users/feifantong/code/OpenShockSwarm/output/playwright/r1-08-profile.png"
+  ],
+  "discussionRoomUrl": "http://localhost:3000/rooms/room_001",
+  "issueRoomUrl": "http://localhost:3000/rooms/room_002",
+  "sessionTokenPresent": true
+}

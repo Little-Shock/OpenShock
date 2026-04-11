@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentOperator } from "@/components/operator-provider";
 import { submitAction } from "@/lib/api";
@@ -41,35 +41,46 @@ export function TaskStatusControl({
   status,
 }: TaskStatusControlProps) {
   const router = useRouter();
-  const { operatorName } = useCurrentOperator();
+  const { operatorName, sessionToken } = useCurrentOperator();
   const [draftStatus, setDraftStatus] = useState(status);
   const [editing, setEditing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
   const editable = EDITABLE_TASK_STATUSES.some((item) => item.value === status);
 
   function submitStatus(nextStatus: string) {
-    startTransition(async () => {
-      try {
-        const response = (await submitAction({
-          actorType: "member",
-          actorId: operatorName,
-          actionType: "Task.status.set",
-          targetType: "task",
-          targetId: taskId,
-          idempotencyKey: `task-status-${taskId}-${nextStatus}-${Date.now()}`,
-          payload: { status: nextStatus },
-        })) as { resultMessage: string };
+    if (isPending) {
+      return;
+    }
+
+    setIsPending(true);
+    void submitAction(
+      {
+        actorType: "member",
+        actorId: operatorName,
+        actionType: "Task.status.set",
+        targetType: "task",
+        targetId: taskId,
+        idempotencyKey: `task-status-${taskId}-${nextStatus}-${Date.now()}`,
+        payload: { status: nextStatus },
+      },
+      { sessionToken },
+    )
+      .then((rawResponse) => {
+        const response = rawResponse as { resultMessage: string };
         setFeedback(`${taskTitle}: ${response.resultMessage}`);
         setEditing(false);
         router.refresh();
-      } catch (error) {
+      })
+      .catch((error) => {
         setFeedback(
           error instanceof Error ? error.message : "Failed to update task status.",
         );
-      }
-    });
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   return (

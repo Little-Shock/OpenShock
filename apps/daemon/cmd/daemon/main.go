@@ -2,34 +2,44 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"openshock/daemon/internal/acp"
 	"openshock/daemon/internal/client"
 	"openshock/daemon/internal/gitops"
-	"openshock/daemon/internal/provider/codex"
+	"openshock/daemon/internal/provider"
 )
 
 func main() {
 	var agentWorkspacesDir string
 	var (
-		baseURL   = flag.String("api-base-url", envOr("OPENSHOCK_API_BASE_URL", "http://localhost:8080"), "OpenShock backend base URL")
-		name      = flag.String("name", envOr("OPENSHOCK_RUNTIME_NAME", "Local Daemon"), "Runtime display name")
-		provider  = flag.String("provider", envOr("OPENSHOCK_PROVIDER", "codex"), "Execution provider")
-		slotCount = flag.Int("slots", 2, "Available execution slots")
-		once      = flag.Bool("once", false, "Run one register/claim/report cycle and exit")
+		baseURL         = flag.String("api-base-url", envOr("OPENSHOCK_API_BASE_URL", "http://localhost:8080"), "OpenShock backend base URL")
+		name            = flag.String("name", envOr("OPENSHOCK_RUNTIME_NAME", "Local Daemon"), "Runtime display name")
+		runtimeProvider = flag.String("provider", envOr("OPENSHOCK_PROVIDER", "codex"), "Execution provider label reported to the backend")
+		codexMode       = flag.String("codex-mode", envOr("OPENSHOCK_CODEX_MODE", codexModeAuto), "Codex execution mode: exec, app-server, or auto")
+		codexSandbox    = flag.String("codex-sandbox", envOr("OPENSHOCK_CODEX_SANDBOX", "danger-full-access"), "Codex sandbox mode for agent turns and runs")
+		codexHome       = flag.String("codex-home", envOr("OPENSHOCK_CODEX_HOME", defaultCodexHome()), "Dedicated CODEX_HOME used by the daemon")
+		slotCount       = flag.Int("slots", 2, "Available execution slots")
+		turnTimeout     = flag.Duration("codex-turn-timeout", durationEnvOr("OPENSHOCK_CODEX_TURN_TIMEOUT", 10*time.Minute), "Timeout per Codex execution")
+		once            = flag.Bool("once", false, "Run one register/claim/report cycle and exit")
 	)
 	agentWorkspaceDefault := envOr("OPENSHOCK_AGENT_SESSION_ROOT", envOr("OPENSHOCK_AGENT_WORKSPACES_DIR", defaultAgentWorkspaceRoot()))
 	flag.StringVar(&agentWorkspacesDir, "agent-session-root", agentWorkspaceDefault, "Root directory for persistent agent session workspaces")
 	flag.StringVar(&agentWorkspacesDir, "agent-workspaces-dir", agentWorkspaceDefault, "Deprecated alias for --agent-session-root")
 	flag.Parse()
+
 	if err := os.Setenv("OPENSHOCK_API_BASE_URL", *baseURL); err != nil {
 		log.Printf("failed to export OPENSHOCK_API_BASE_URL: %v", err)
 	}
@@ -37,331 +47,606 @@ func main() {
 		log.Printf("failed to prepare openshock cli: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	api := client.New(*baseURL)
 	gitService := gitops.New()
-	codexExecutor := codex.NewExecutor()
 	codexBin := envOr("OPENSHOCK_CODEX_BIN", "codex")
 
 	runtimeResp, err := api.RegisterRuntime(ctx, client.RegisterRuntimeRequest{
 		Name:      *name,
-		Provider:  *provider,
+		Provider:  *runtimeProvider,
 		SlotCount: *slotCount,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("registered runtime %s (%s)", runtimeResp.Runtime.ID, runtimeResp.Runtime.Name)
+	log.Printf("registered runtime %s (%s) slots=%d", runtimeResp.Runtime.ID, runtimeResp.Runtime.Name, runtimeResp.Runtime.SlotCount)
 
-	heartbeat := func() {
-		if _, err := api.HeartbeatRuntime(ctx, runtimeResp.Runtime.ID, client.RuntimeHeartbeatRequest{Status: "online"}); err != nil {
-			log.Printf("heartbeat failed: %v", err)
-		}
-	}
+	startHeartbeatLoop(ctx, api, runtimeResp.Runtime.ID)
 
-	agentTurnCycle := func() {
-		heartbeat()
-		claim, err := api.ClaimAgentTurn(ctx, runtimeResp.Runtime.ID)
-		if err != nil {
-			if client.IsHTTPStatus(err, 404) {
-				return
-			}
-			log.Printf("agent turn claim failed: %v", err)
-			return
-		}
-		if !claim.Claimed || claim.AgentTurn == nil {
-			log.Printf("no queued agent turns available")
-			return
-		}
-
-		log.Printf("claimed agent turn %s for agent %s in room %s", claim.AgentTurn.Turn.ID, claim.AgentTurn.Turn.AgentID, claim.AgentTurn.Turn.RoomID)
-
-		workspaceDir, err := prepareAgentWorkspace(agentWorkspacesDir, *claim.AgentTurn)
-		if err != nil {
-			log.Printf("failed to prepare agent workspace: %v", err)
-			return
-		}
-		log.Printf("prepared agent workspace %s for session %s", workspaceDir, claim.AgentTurn.Session.ID)
-		if logErr := appendAgentWorkspaceLog(workspaceDir, "turn_started", *claim.AgentTurn, agentTurnReply{}, nil); logErr != nil {
-			log.Printf("failed to append agent workspace start log for turn %s: %v", claim.AgentTurn.Turn.ID, logErr)
-		}
-
-		result, err := codexExecutor.Execute(ctx, codex.ExecuteRequest{
-			RepoPath:     workspaceDir,
-			Instruction:  buildAgentTurnInstruction(*claim.AgentTurn),
-			CodexBinPath: codexBin,
-		}, nil)
-
-		reply := parseAgentTurnReply(result.LastMessage)
-		body := reply.Body
-		kind := reply.Kind
-		if err != nil {
-			log.Printf("agent turn %s execution failed: %v", claim.AgentTurn.Turn.ID, err)
-			body = summarizeFailure(result.RawOutput, err)
-			kind = "blocked"
-		}
-		resultMessageID := ""
-		if kind == "no_response" {
-			body = ""
-		} else {
-			if body == "" {
-				body = "收到，我先看一下。"
-			}
-
-			actionResp, submitErr := api.SubmitAction(ctx, client.ActionRequest{
-				ActorType:      "agent",
-				ActorID:        claim.AgentTurn.Turn.AgentID,
-				ActionType:     "RoomMessage.post",
-				TargetType:     "room",
-				TargetID:       claim.AgentTurn.Turn.RoomID,
-				IdempotencyKey: "agent-turn-" + claim.AgentTurn.Turn.ID,
-				Payload: map[string]any{
-					"body": body,
-					"kind": kind,
-				},
-			})
-			if submitErr != nil {
-				_ = appendAgentWorkspaceLog(workspaceDir, "reply_post_failed", *claim.AgentTurn, agentTurnReply{Kind: kind, Body: body}, submitErr)
-				log.Printf("failed to post agent turn reply: %v", submitErr)
-				return
-			}
-			resultMessageID = actionEntityID(actionResp, "message")
-		}
-
-		if _, err := api.CompleteAgentTurn(ctx, claim.AgentTurn.Turn.ID, client.AgentTurnCompleteRequest{
-			RuntimeID:       runtimeResp.Runtime.ID,
-			ResultMessageID: resultMessageID,
-		}); err != nil {
-			_ = appendAgentWorkspaceLog(workspaceDir, "turn_complete_failed", *claim.AgentTurn, agentTurnReply{Kind: kind, Body: body}, err)
-			log.Printf("failed to complete agent turn %s: %v", claim.AgentTurn.Turn.ID, err)
-			return
-		}
-		if logErr := appendAgentWorkspaceLog(workspaceDir, "turn_completed", *claim.AgentTurn, agentTurnReply{Kind: kind, Body: body}, err); logErr != nil {
-			log.Printf("failed to append agent workspace log for turn %s: %v", claim.AgentTurn.Turn.ID, logErr)
-		}
-
-		log.Printf("completed agent turn %s", claim.AgentTurn.Turn.ID)
-	}
-
-	runCycle := func() {
-		heartbeat()
-		claim, err := api.ClaimRun(ctx, runtimeResp.Runtime.ID)
-		if err != nil {
-			log.Printf("claim failed: %v", err)
-			return
-		}
-		if !claim.Claimed || claim.Run == nil {
-			log.Printf("no queued runs available")
-			return
-		}
-
-		log.Printf("claimed run %s for task %s", claim.Run.ID, claim.Run.TaskID)
-
-		if _, err := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-			RuntimeID:     runtimeResp.Runtime.ID,
-			EventType:     "started",
-			OutputPreview: "daemon started execution",
-		}); err != nil {
-			log.Printf("failed to post started event: %v", err)
-			return
-		}
-
-		if strings.TrimSpace(claim.Run.RepoPath) == "" {
-			if _, err := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-				RuntimeID:     runtimeResp.Runtime.ID,
-				EventType:     "failed",
-				OutputPreview: "run is missing repoPath",
-			}); err != nil {
-				log.Printf("failed to post failed event: %v", err)
-			}
-			return
-		}
-		if strings.TrimSpace(claim.Run.BranchName) == "" || strings.TrimSpace(claim.Run.BaseBranch) == "" {
-			if _, err := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-				RuntimeID:     runtimeResp.Runtime.ID,
-				EventType:     "failed",
-				OutputPreview: "run is missing branch metadata",
-			}); err != nil {
-				log.Printf("failed to post failed event: %v", err)
-			}
-			return
-		}
-		if err := gitService.EnsureBranch(ctx, claim.Run.RepoPath, claim.Run.BaseBranch, claim.Run.BranchName); err != nil {
-			if _, postErr := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-				RuntimeID:     runtimeResp.Runtime.ID,
-				EventType:     "failed",
-				OutputPreview: summarizeMergeOutput(err.Error()),
-			}); postErr != nil {
-				log.Printf("failed to post branch-prepare failure: %v", postErr)
-			}
-			return
-		}
-
-		result, err := codexExecutor.Execute(ctx, codex.ExecuteRequest{
-			RepoPath:     claim.Run.RepoPath,
-			Instruction:  claim.Run.Instruction,
-			CodexBinPath: codexBin,
-		}, func(event acp.Event) error {
-			switch event.Kind {
-			case acp.EventStdoutChunk:
-				if strings.TrimSpace(event.Content) == "" {
-					return nil
-				}
-				_, err := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-					RuntimeID:     runtimeResp.Runtime.ID,
-					EventType:     "output",
-					OutputPreview: summarizeMergeOutput(event.Content),
-					Message:       event.Content,
-					Stream:        "stdout",
-				})
-				return err
-			case acp.EventStderrChunk:
-				if strings.TrimSpace(event.Content) == "" {
-					return nil
-				}
-				_, err := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-					RuntimeID:     runtimeResp.Runtime.ID,
-					EventType:     "output",
-					OutputPreview: summarizeMergeOutput(event.Content),
-					Message:       event.Content,
-					Stream:        "stderr",
-				})
-				return err
-			case acp.EventToolCall:
-				if event.ToolCall == nil || strings.TrimSpace(event.ToolCall.ToolName) == "" {
-					return nil
-				}
-				_, err := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-					RuntimeID: runtimeResp.Runtime.ID,
-					EventType: "tool_call",
-					ToolCall: &client.ToolCallInput{
-						ToolName:  event.ToolCall.ToolName,
-						Arguments: event.ToolCall.Arguments,
-						Status:    event.ToolCall.Status,
-					},
-				})
-				return err
-			case acp.EventCompleted:
-				return nil
-			default:
-				return nil
-			}
-		})
-		if err != nil {
-			log.Printf("run %s execution failed: %v", claim.Run.ID, err)
-			if _, postErr := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-				RuntimeID:     runtimeResp.Runtime.ID,
-				EventType:     "failed",
-				OutputPreview: summarizeFailure(result.RawOutput, err),
-			}); postErr != nil {
-				log.Printf("failed to post codex failure: %v", postErr)
-			}
-			return
-		}
-		if _, err := gitService.CommitAll(ctx, claim.Run.RepoPath, buildRunCommitMessage(*claim.Run)); err != nil {
-			if _, postErr := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-				RuntimeID:     runtimeResp.Runtime.ID,
-				EventType:     "failed",
-				OutputPreview: summarizeFailure("", err),
-			}); postErr != nil {
-				log.Printf("failed to post git commit failure: %v", postErr)
-			}
-			return
-		}
-
-		if _, err := api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
-			RuntimeID:     runtimeResp.Runtime.ID,
-			EventType:     "completed",
-			OutputPreview: summarizeMergeOutput(result.LastMessage),
-		}); err != nil {
-			log.Printf("failed to post completed event: %v", err)
-			return
-		}
-
-		log.Printf("completed run %s on branch %s", claim.Run.ID, claim.Run.BranchName)
-	}
-
-	mergeCycle := func() {
-		heartbeat()
-		claim, err := api.ClaimMerge(ctx, runtimeResp.Runtime.ID)
-		if err != nil {
-			log.Printf("merge claim failed: %v", err)
-			return
-		}
-		if !claim.Claimed || claim.MergeAttempt == nil {
-			log.Printf("no queued merge attempts available")
-			return
-		}
-
-		log.Printf("claimed merge attempt %s for task %s", claim.MergeAttempt.ID, claim.MergeAttempt.TaskID)
-
-		if _, err := api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
-			RuntimeID:     runtimeResp.Runtime.ID,
-			EventType:     "started",
-			ResultSummary: "daemon started merge execution",
-		}); err != nil {
-			log.Printf("failed to post merge started event: %v", err)
-			return
-		}
-
-		if strings.TrimSpace(claim.MergeAttempt.RepoPath) == "" {
-			if _, err := api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
-				RuntimeID:     runtimeResp.Runtime.ID,
-				EventType:     "failed",
-				ResultSummary: "merge attempt is missing repoPath",
-			}); err != nil {
-				log.Printf("failed to post merge failed event: %v", err)
-			}
-			return
-		}
-
-		result, err := gitService.MergeBranch(ctx, claim.MergeAttempt.RepoPath, claim.MergeAttempt.SourceBranch, claim.MergeAttempt.TargetBranch)
-		if err != nil {
-			if _, postErr := api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
-				RuntimeID:     runtimeResp.Runtime.ID,
-				EventType:     "failed",
-				ResultSummary: summarizeMergeOutput(err.Error()),
-			}); postErr != nil {
-				log.Printf("failed to post merge failed event: %v", postErr)
-			}
-			return
-		}
-
-		eventType := "failed"
-		switch result.Status {
-		case gitops.MergeStatusSucceeded:
-			eventType = "succeeded"
-		case gitops.MergeStatusConflicted:
-			eventType = "conflicted"
-		}
-		if _, err := api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
-			RuntimeID:     runtimeResp.Runtime.ID,
-			EventType:     eventType,
-			ResultSummary: summarizeMergeOutput(result.Output),
-		}); err != nil {
-			log.Printf("failed to post merge %s event: %v", eventType, err)
-			return
-		}
-
-		log.Printf("completed merge attempt %s with status %s", claim.MergeAttempt.ID, eventType)
+	workerCount := *slotCount
+	if workerCount < 1 {
+		workerCount = 1
 	}
 
 	if *once {
-		agentTurnCycle()
-		runCycle()
-		mergeCycle()
+		workerHome := workerCodexHome(*codexHome, 1)
+		executor, activeMode, err := newExecutionProvider(*codexMode, providerFactoryOptions{
+			CodexBinPath: codexBin,
+			CodexHome:    workerHome,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer executor.Close()
+		log.Printf("daemon execution mode %s", activeMode)
+
+		worker := daemonWorker{
+			id:                 1,
+			api:                api,
+			gitService:         gitService,
+			executor:           executor,
+			runtimeID:          runtimeResp.Runtime.ID,
+			codexBin:           codexBin,
+			codexSandbox:       *codexSandbox,
+			codexHomeRoot:      *codexHome,
+			codexHome:          workerHome,
+			agentWorkspacesDir: agentWorkspacesDir,
+			executionTimeout:   *turnTimeout,
+		}
+		worker.runOnce(ctx)
 		return
 	}
 
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	var wg sync.WaitGroup
+	for workerID := 1; workerID <= workerCount; workerID++ {
+		workerHome := workerCodexHome(*codexHome, workerID)
+		executor, activeMode, err := newExecutionProvider(*codexMode, providerFactoryOptions{
+			CodexBinPath: codexBin,
+			CodexHome:    workerHome,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("worker %d execution mode %s", workerID, activeMode)
 
-	for {
-		agentTurnCycle()
-		runCycle()
-		mergeCycle()
-		<-ticker.C
+		worker := daemonWorker{
+			id:                 workerID,
+			api:                api,
+			gitService:         gitService,
+			executor:           executor,
+			runtimeID:          runtimeResp.Runtime.ID,
+			codexBin:           codexBin,
+			codexSandbox:       *codexSandbox,
+			codexHomeRoot:      *codexHome,
+			codexHome:          workerHome,
+			agentWorkspacesDir: agentWorkspacesDir,
+			executionTimeout:   *turnTimeout,
+		}
+
+		wg.Add(1)
+		go func(executor provider.Executor, worker daemonWorker) {
+			defer wg.Done()
+			defer executor.Close()
+			worker.runLoop(ctx)
+		}(executor, worker)
 	}
+
+	<-ctx.Done()
+	wg.Wait()
+}
+
+type daemonWorker struct {
+	id                 int
+	api                *client.Client
+	gitService         *gitops.Service
+	executor           provider.Executor
+	runtimeID          string
+	codexBin           string
+	codexSandbox       string
+	codexHomeRoot      string
+	codexHome          string
+	agentWorkspacesDir string
+	executionTimeout   time.Duration
+}
+
+func (w daemonWorker) runLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if worked := w.runOne(ctx); worked {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+func (w daemonWorker) runOnce(ctx context.Context) {
+	_ = w.processAgentTurn(ctx)
+	_ = w.processRun(ctx)
+	_ = w.processMerge(ctx)
+}
+
+func (w daemonWorker) runOne(ctx context.Context) bool {
+	if w.processAgentTurn(ctx) {
+		return true
+	}
+	if w.processRun(ctx) {
+		return true
+	}
+	return w.processMerge(ctx)
+}
+
+func (w daemonWorker) processAgentTurn(ctx context.Context) bool {
+	claim, err := w.api.ClaimAgentTurn(ctx, w.runtimeID)
+	if err != nil {
+		if !client.IsHTTPStatus(err, 404) {
+			log.Printf("worker %d agent turn claim failed: %v", w.id, err)
+		}
+		return false
+	}
+	if !claim.Claimed || claim.AgentTurn == nil {
+		return false
+	}
+
+	log.Printf("worker %d claimed agent turn %s for agent %s in room %s", w.id, claim.AgentTurn.Turn.ID, claim.AgentTurn.Turn.AgentID, claim.AgentTurn.Turn.RoomID)
+
+	workspaceDir, err := prepareAgentWorkspace(w.agentWorkspacesDir, *claim.AgentTurn)
+	if err != nil {
+		log.Printf("worker %d failed to prepare agent workspace: %v", w.id, err)
+		return true
+	}
+	if logErr := appendAgentWorkspaceLog(workspaceDir, "turn_started", *claim.AgentTurn, agentTurnReply{}, nil); logErr != nil {
+		log.Printf("worker %d failed to append agent workspace start log for turn %s: %v", w.id, claim.AgentTurn.Turn.ID, logErr)
+	}
+
+	resumeThreadID := strings.TrimSpace(claim.AgentTurn.Session.AppServerThreadID)
+	if resumeThreadID == "" {
+		resumeThreadID, _ = readAppServerThreadID(workspaceDir)
+	}
+	executionCodexHome := prepareSessionCodexHome(w.codexHomeRoot, claim.AgentTurn.Session)
+	result, execErr := w.execute(ctx, provider.ExecuteRequest{
+		RepoPath:       workspaceDir,
+		Instruction:    claim.AgentTurn.Instruction,
+		CodexBinPath:   w.codexBin,
+		SandboxMode:    w.codexSandbox,
+		CodexHome:      executionCodexHome,
+		ExecutionKind:  "agent_turn",
+		SessionKey:     claim.AgentTurn.Session.ID,
+		ResumeThreadID: resumeThreadID,
+	}, func(event acp.Event) error {
+		switch event.Kind {
+		case acp.EventStdoutChunk:
+			if strings.TrimSpace(event.Content) == "" {
+				return nil
+			}
+			stream := strings.TrimSpace(event.Stream)
+			if stream == "" {
+				stream = "stdout"
+			}
+			_, err := w.api.PostAgentTurnEvent(ctx, claim.AgentTurn.Turn.ID, client.AgentTurnEventRequest{
+				RuntimeID: w.runtimeID,
+				EventType: "output",
+				Message:   event.Content,
+				Stream:    stream,
+			})
+			return err
+		case acp.EventStderrChunk:
+			if strings.TrimSpace(event.Content) == "" {
+				return nil
+			}
+			_, err := w.api.PostAgentTurnEvent(ctx, claim.AgentTurn.Turn.ID, client.AgentTurnEventRequest{
+				RuntimeID: w.runtimeID,
+				EventType: "output",
+				Message:   event.Content,
+				Stream:    "stderr",
+			})
+			return err
+		case acp.EventToolCall:
+			if event.ToolCall == nil || strings.TrimSpace(event.ToolCall.ToolName) == "" {
+				return nil
+			}
+			_, err := w.api.PostAgentTurnEvent(ctx, claim.AgentTurn.Turn.ID, client.AgentTurnEventRequest{
+				RuntimeID: w.runtimeID,
+				EventType: "tool_call",
+				ToolCall: &client.ToolCallInput{
+					ToolName:  event.ToolCall.ToolName,
+					Arguments: event.ToolCall.Arguments,
+					Status:    event.ToolCall.Status,
+				},
+			})
+			return err
+		default:
+			return nil
+		}
+	})
+	if strings.TrimSpace(result.ProviderThreadID) != "" {
+		if err := writeAppServerThreadID(workspaceDir, result.ProviderThreadID); err != nil {
+			log.Printf("worker %d failed to persist app-server thread id for turn %s: %v", w.id, claim.AgentTurn.Turn.ID, err)
+		}
+	}
+
+	reply := parseAgentTurnReply(result.LastMessage)
+	body := reply.Body
+	kind := reply.Kind
+	if execErr != nil {
+		log.Printf("worker %d agent turn %s execution failed: %v", w.id, claim.AgentTurn.Turn.ID, execErr)
+		body = summarizeFailure(result.RawOutput, execErr)
+		kind = "blocked"
+	}
+
+	resultMessageID := ""
+	if kind != "no_response" {
+		if body == "" {
+			body = "收到，我先看一下。"
+		}
+		actionResp, submitErr := w.api.SubmitAction(ctx, client.ActionRequest{
+			ActorType:      "agent",
+			ActorID:        claim.AgentTurn.Turn.AgentID,
+			ActionType:     "RoomMessage.post",
+			TargetType:     "room",
+			TargetID:       claim.AgentTurn.Turn.RoomID,
+			IdempotencyKey: "agent-turn-" + claim.AgentTurn.Turn.ID,
+			Payload: map[string]any{
+				"body": body,
+				"kind": kind,
+			},
+		})
+		if submitErr != nil {
+			_ = appendAgentWorkspaceLog(workspaceDir, "reply_post_failed", *claim.AgentTurn, agentTurnReply{Kind: kind, Body: body}, submitErr)
+			log.Printf("worker %d failed to post agent turn reply: %v", w.id, submitErr)
+			return true
+		}
+		resultMessageID = actionEntityID(actionResp, "message")
+	}
+
+	if _, err := w.api.CompleteAgentTurn(ctx, claim.AgentTurn.Turn.ID, client.AgentTurnCompleteRequest{
+		RuntimeID:         w.runtimeID,
+		ResultMessageID:   resultMessageID,
+		AppServerThreadID: strings.TrimSpace(result.ProviderThreadID),
+	}); err != nil {
+		_ = appendAgentWorkspaceLog(workspaceDir, "turn_complete_failed", *claim.AgentTurn, agentTurnReply{Kind: kind, Body: body}, err)
+		log.Printf("worker %d failed to complete agent turn %s: %v", w.id, claim.AgentTurn.Turn.ID, err)
+		return true
+	}
+	if logErr := appendAgentWorkspaceLog(workspaceDir, "turn_completed", *claim.AgentTurn, agentTurnReply{Kind: kind, Body: body}, execErr); logErr != nil {
+		log.Printf("worker %d failed to append agent workspace completion log for turn %s: %v", w.id, claim.AgentTurn.Turn.ID, logErr)
+	}
+	log.Printf("worker %d completed agent turn %s", w.id, claim.AgentTurn.Turn.ID)
+	return true
+}
+
+func (w daemonWorker) processRun(ctx context.Context) bool {
+	claim, err := w.api.ClaimRun(ctx, w.runtimeID)
+	if err != nil {
+		if !client.IsHTTPStatus(err, 404) {
+			log.Printf("worker %d run claim failed: %v", w.id, err)
+		}
+		return false
+	}
+	if !claim.Claimed || claim.Run == nil {
+		return false
+	}
+
+	log.Printf("worker %d claimed run %s for task %s", w.id, claim.Run.ID, claim.Run.TaskID)
+	if _, err := w.api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
+		RuntimeID:     w.runtimeID,
+		EventType:     "started",
+		OutputPreview: "daemon started execution",
+	}); err != nil {
+		log.Printf("worker %d failed to post run started event: %v", w.id, err)
+		return true
+	}
+
+	if strings.TrimSpace(claim.Run.RepoPath) == "" {
+		w.failRun(ctx, claim.Run.ID, "run is missing repoPath")
+		return true
+	}
+	if strings.TrimSpace(claim.Run.BranchName) == "" || strings.TrimSpace(claim.Run.BaseBranch) == "" {
+		w.failRun(ctx, claim.Run.ID, "run is missing branch metadata")
+		return true
+	}
+	if err := w.gitService.EnsureBranch(ctx, claim.Run.RepoPath, claim.Run.BaseBranch, claim.Run.BranchName); err != nil {
+		w.failRun(ctx, claim.Run.ID, summarizeMergeOutput(err.Error()))
+		return true
+	}
+
+	runCodexHome := w.codexHome
+	runSessionKey := claim.Run.ID
+	runResumeThreadID := ""
+	runSessionWorkspaceDir := ""
+	if claim.AgentSession != nil {
+		runSessionKey = claim.AgentSession.ID
+		runCodexHome = prepareSessionCodexHome(w.codexHomeRoot, *claim.AgentSession)
+		if dir, err := ensureAgentSessionWorkspace(w.agentWorkspacesDir, *claim.AgentSession); err != nil {
+			log.Printf("worker %d failed to ensure agent session workspace for run %s: %v", w.id, claim.Run.ID, err)
+		} else {
+			runSessionWorkspaceDir = dir
+			runResumeThreadID = strings.TrimSpace(claim.AgentSession.AppServerThreadID)
+			if runResumeThreadID == "" {
+				runResumeThreadID, _ = readAppServerThreadID(dir)
+			}
+		}
+	}
+
+	result, execErr := w.execute(ctx, provider.ExecuteRequest{
+		RepoPath:       claim.Run.RepoPath,
+		Instruction:    claim.Run.Instruction,
+		CodexBinPath:   w.codexBin,
+		SandboxMode:    w.codexSandbox,
+		CodexHome:      runCodexHome,
+		ExecutionKind:  "run",
+		SessionKey:     runSessionKey,
+		ResumeThreadID: runResumeThreadID,
+	}, func(event acp.Event) error {
+		switch event.Kind {
+		case acp.EventStdoutChunk:
+			if strings.TrimSpace(event.Content) == "" {
+				return nil
+			}
+			stream := strings.TrimSpace(event.Stream)
+			if stream == "" {
+				stream = "stdout"
+			}
+			_, err := w.api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
+				RuntimeID:     w.runtimeID,
+				EventType:     "output",
+				OutputPreview: summarizeMergeOutput(event.Content),
+				Message:       event.Content,
+				Stream:        stream,
+			})
+			return err
+		case acp.EventStderrChunk:
+			if strings.TrimSpace(event.Content) == "" {
+				return nil
+			}
+			_, err := w.api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
+				RuntimeID:     w.runtimeID,
+				EventType:     "output",
+				OutputPreview: summarizeMergeOutput(event.Content),
+				Message:       event.Content,
+				Stream:        "stderr",
+			})
+			return err
+		case acp.EventToolCall:
+			if event.ToolCall == nil || strings.TrimSpace(event.ToolCall.ToolName) == "" {
+				return nil
+			}
+			_, err := w.api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
+				RuntimeID: w.runtimeID,
+				EventType: "tool_call",
+				ToolCall: &client.ToolCallInput{
+					ToolName:  event.ToolCall.ToolName,
+					Arguments: event.ToolCall.Arguments,
+					Status:    event.ToolCall.Status,
+				},
+			})
+			return err
+		default:
+			return nil
+		}
+	})
+	if runSessionWorkspaceDir != "" && strings.TrimSpace(result.ProviderThreadID) != "" {
+		if err := writeAppServerThreadID(runSessionWorkspaceDir, result.ProviderThreadID); err != nil {
+			log.Printf("worker %d failed to persist app-server thread id for run %s: %v", w.id, claim.Run.ID, err)
+		}
+	}
+	if execErr != nil {
+		log.Printf("worker %d run %s execution failed: %v", w.id, claim.Run.ID, execErr)
+		w.failRun(ctx, claim.Run.ID, summarizeFailure(result.RawOutput, execErr))
+		return true
+	}
+	if _, err := w.gitService.CommitAll(ctx, claim.Run.RepoPath, buildRunCommitMessage(*claim.Run)); err != nil {
+		w.failRun(ctx, claim.Run.ID, summarizeFailure("", err))
+		return true
+	}
+	if _, err := w.api.PostRunEvent(ctx, claim.Run.ID, client.RunEventRequest{
+		RuntimeID:     w.runtimeID,
+		EventType:     "completed",
+		OutputPreview: summarizeMergeOutput(result.LastMessage),
+	}); err != nil {
+		log.Printf("worker %d failed to post run completed event: %v", w.id, err)
+	}
+	log.Printf("worker %d completed run %s on branch %s", w.id, claim.Run.ID, claim.Run.BranchName)
+	return true
+}
+
+func (w daemonWorker) processMerge(ctx context.Context) bool {
+	claim, err := w.api.ClaimMerge(ctx, w.runtimeID)
+	if err != nil {
+		if !client.IsHTTPStatus(err, 404) {
+			log.Printf("worker %d merge claim failed: %v", w.id, err)
+		}
+		return false
+	}
+	if !claim.Claimed || claim.MergeAttempt == nil {
+		return false
+	}
+
+	log.Printf("worker %d claimed merge attempt %s for task %s", w.id, claim.MergeAttempt.ID, claim.MergeAttempt.TaskID)
+	if _, err := w.api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
+		RuntimeID:     w.runtimeID,
+		EventType:     "started",
+		ResultSummary: "daemon started merge execution",
+	}); err != nil {
+		log.Printf("worker %d failed to post merge started event: %v", w.id, err)
+		return true
+	}
+	if strings.TrimSpace(claim.MergeAttempt.RepoPath) == "" {
+		if _, err := w.api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
+			RuntimeID:     w.runtimeID,
+			EventType:     "failed",
+			ResultSummary: "merge attempt is missing repoPath",
+		}); err != nil {
+			log.Printf("worker %d failed to post merge failed event: %v", w.id, err)
+		}
+		return true
+	}
+
+	result, err := w.gitService.MergeBranch(ctx, claim.MergeAttempt.RepoPath, claim.MergeAttempt.SourceBranch, claim.MergeAttempt.TargetBranch)
+	if err != nil {
+		if _, postErr := w.api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
+			RuntimeID:     w.runtimeID,
+			EventType:     "failed",
+			ResultSummary: summarizeMergeOutput(err.Error()),
+		}); postErr != nil {
+			log.Printf("worker %d failed to post merge failure: %v", w.id, postErr)
+		}
+		return true
+	}
+
+	eventType := "failed"
+	switch result.Status {
+	case gitops.MergeStatusSucceeded:
+		eventType = "succeeded"
+	case gitops.MergeStatusConflicted:
+		eventType = "conflicted"
+	}
+	if _, err := w.api.PostMergeEvent(ctx, claim.MergeAttempt.ID, client.MergeEventRequest{
+		RuntimeID:     w.runtimeID,
+		EventType:     eventType,
+		ResultSummary: summarizeMergeOutput(result.Output),
+	}); err != nil {
+		log.Printf("worker %d failed to post merge %s event: %v", w.id, eventType, err)
+		return true
+	}
+	log.Printf("worker %d completed merge attempt %s with status %s", w.id, claim.MergeAttempt.ID, eventType)
+	return true
+}
+
+func (w daemonWorker) execute(ctx context.Context, req provider.ExecuteRequest, handle func(acp.Event) error) (provider.ExecuteResult, error) {
+	if w.executionTimeout <= 0 {
+		return w.executor.Execute(ctx, req, handle)
+	}
+	execCtx, cancel := context.WithTimeout(ctx, w.executionTimeout)
+	defer cancel()
+	return w.executor.Execute(execCtx, req, handle)
+}
+
+func (w daemonWorker) failRun(ctx context.Context, runID, summary string) {
+	if _, err := w.api.PostRunEvent(ctx, runID, client.RunEventRequest{
+		RuntimeID:     w.runtimeID,
+		EventType:     "failed",
+		OutputPreview: summary,
+	}); err != nil {
+		log.Printf("worker %d failed to post run failure for %s: %v", w.id, runID, err)
+	}
+}
+
+func startHeartbeatLoop(ctx context.Context, api *client.Client, runtimeID string) {
+	if _, err := api.HeartbeatRuntime(ctx, runtimeID, client.RuntimeHeartbeatRequest{Status: "online"}); err != nil {
+		log.Printf("heartbeat failed: %v", err)
+	}
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := api.HeartbeatRuntime(ctx, runtimeID, client.RuntimeHeartbeatRequest{Status: "online"}); err != nil && !errors.Is(err, context.Canceled) {
+					log.Printf("heartbeat failed: %v", err)
+				}
+			}
+		}
+	}()
+}
+
+func defaultCodexHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), "openshock-codex-home")
+	}
+	return filepath.Join(home, ".openshock-codex-home")
+}
+
+func workerCodexHome(base string, workerID int) string {
+	trimmed := strings.TrimSpace(base)
+	if trimmed == "" {
+		trimmed = defaultCodexHome()
+	}
+	path := filepath.Join(trimmed, fmt.Sprintf("worker-%02d", workerID))
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return trimmed
+	}
+	return path
+}
+
+func codexHomeForAgentSession(base string, session client.AgentSession) string {
+	trimmed := strings.TrimSpace(base)
+	if trimmed == "" {
+		trimmed = defaultCodexHome()
+	}
+	path := filepath.Join(trimmed, "sessions", sanitizeWorkspaceName(workspaceSessionKey(session)))
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return trimmed
+	}
+	return path
+}
+
+func prepareSessionCodexHome(base string, session client.AgentSession) string {
+	path := codexHomeForAgentSession(base, session)
+	if path == "" {
+		return path
+	}
+	if err := syncCodexHomeFiles(base, path); err != nil {
+		log.Printf("failed to sync session codex home %s: %v", path, err)
+	}
+	return path
+}
+
+func syncCodexHomeFiles(base, target string) error {
+	sourceRoot := strings.TrimSpace(base)
+	if sourceRoot == "" {
+		sourceRoot = defaultCodexHome()
+	}
+	targetRoot := strings.TrimSpace(target)
+	if targetRoot == "" || targetRoot == sourceRoot {
+		return nil
+	}
+	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
+		return err
+	}
+	for _, name := range []string{"config.toml", "auth.json"} {
+		if err := copyCodexHomeFile(filepath.Join(sourceRoot, name), filepath.Join(targetRoot, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyCodexHomeFile(source, target string) error {
+	data, err := os.ReadFile(source)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return os.WriteFile(target, data, 0o600)
+}
+
+func durationEnvOr(key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func envOr(key, fallback string) string {
@@ -488,97 +773,6 @@ func summarizeFailure(rawOutput string, err error) string {
 	return summarizeMergeOutput(err.Error())
 }
 
-func buildAgentTurnInstruction(execution client.AgentTurnExecution) string {
-	var builder strings.Builder
-	builder.WriteString("You are participating inside OpenShock as a visible agent in the current conversation.\n")
-	builder.WriteString("Lifecycle:\n")
-	builder.WriteString("- This is a single daemon-driven turn. Complete all work for this turn before stopping.\n")
-	builder.WriteString("- This workspace persists across turns for the same OpenShock agent session.\n")
-	builder.WriteString("- The daemon will wake you again on a future turn when later room activity targets this session.\n")
-	builder.WriteString("Workspace contract:\n")
-	builder.WriteString("- Read MEMORY.md first before deep reasoning.\n")
-	builder.WriteString("- Read CURRENT_TURN.md for this turn's exact trigger and reply contract.\n")
-	builder.WriteString("- Use notes/room-context.md for durable room context and notes/work-log.md for recent turn history.\n")
-	builder.WriteString("- SESSION.json is available if you need the raw session envelope.\n")
-	builder.WriteString("- If you learn durable context that should survive to the next turn, update MEMORY.md before you stop.\n")
-	builder.WriteString("Your only visible output channel in this turn is the structured reply format below.\n")
-	builder.WriteString("Reply in concise Chinese.\n")
-	builder.WriteString("Messages with or without @mention use the same reasoning flow. @mention is only a stronger explicit signal in the input context, not a separate workflow.\n")
-	builder.WriteString("Wakeup mode: ")
-	builder.WriteString(normalizedWakeupMode(execution))
-	builder.WriteString(".\n")
-	builder.WriteString("Wakeup reason: ")
-	builder.WriteString(describeWakeupMode(execution))
-	builder.WriteString("\n")
-	builder.WriteString("Mode-specific first step:\n")
-	builder.WriteString(buildWakeupModeGuidance(execution))
-	builder.WriteString("Decision order:\n")
-	builder.WriteString("1. First decide whether this message needs your reply.\n")
-	builder.WriteString("2. If you reply, the first visible response must be natural language, like a teammate speaking in chat.\n")
-	builder.WriteString("3. If the turn is actionable, acknowledge ownership or the next step naturally in the first sentence.\n")
-	builder.WriteString("4. Use the wakeup mode to decide whether you are answering a fresh message, resuming an earlier clarification, or taking over a handoff.\n")
-	builder.WriteString("5. While replying, also analyze whether the conversation should later converge into a task. Do not default to task-taking, task-assignment, task-creation, or workflow wording.\n")
-	builder.WriteString("Reply contract:\n")
-	builder.WriteString("Return exactly this format:\n")
-	builder.WriteString("KIND: <message|clarification_request|handoff|summary|no_response>\n")
-	builder.WriteString("BODY:\n")
-	builder.WriteString("<your message>\n")
-	builder.WriteString("Use message for an ordinary conversational reply.\n")
-	builder.WriteString("If you choose clarification_request, ask only the blocking question.\n")
-	builder.WriteString("If you choose handoff, mention the target agent in BODY with @agent_id.\n")
-	builder.WriteString("Use summary only for a concise wrap-up or status note after understanding the context.\n")
-	builder.WriteString("Use no_response only when this visible message does not need a reply from you.\n")
-	builder.WriteString("Do not mention internal implementation details.\n")
-	builder.WriteString("Current target and trigger:\n")
-	builder.WriteString("Signal summary: ")
-	builder.WriteString(describeTurnSignal(execution))
-	builder.WriteString("\n")
-	builder.WriteString("Visible target: ")
-	if target := strings.TrimSpace(execution.Turn.EventFrame.CurrentTarget); target != "" {
-		builder.WriteString(target)
-	} else {
-		builder.WriteString("room:")
-		builder.WriteString(execution.Turn.RoomID)
-	}
-	builder.WriteString("\n")
-	builder.WriteString("Room title: ")
-	builder.WriteString(execution.Room.Title)
-	builder.WriteString("\n")
-	builder.WriteString("Current agent: ")
-	builder.WriteString(execution.Turn.AgentID)
-	builder.WriteString("\n")
-	if mentions := extractMentionSignals(execution.TriggerMessage.Body); len(mentions) > 0 {
-		builder.WriteString("Mention signals in trigger: ")
-		builder.WriteString(strings.Join(mentions, ", "))
-		builder.WriteString("\n")
-	}
-	if summary := strings.TrimSpace(execution.Turn.EventFrame.ContextSummary); summary != "" {
-		builder.WriteString("Context summary: ")
-		builder.WriteString(summary)
-		builder.WriteString("\n")
-	}
-	if summary := strings.TrimSpace(execution.Turn.EventFrame.RecentMessagesSummary); summary != "" {
-		builder.WriteString("Recent summary: ")
-		builder.WriteString(summary)
-		builder.WriteString("\n")
-	}
-	builder.WriteString("Trigger message:\n")
-	builder.WriteString(execution.TriggerMessage.ActorName)
-	builder.WriteString(": ")
-	builder.WriteString(execution.TriggerMessage.Body)
-	builder.WriteString("\n\nRecent room context:\n")
-	for _, message := range execution.Messages {
-		builder.WriteString("- ")
-		builder.WriteString(message.ActorName)
-		builder.WriteString(" [")
-		builder.WriteString(message.Kind)
-		builder.WriteString("]: ")
-		builder.WriteString(message.Body)
-		builder.WriteString("\n")
-	}
-	return builder.String()
-}
-
 type agentTurnReply struct {
 	Kind string
 	Body string
@@ -629,51 +823,12 @@ func normalizedWakeupMode(execution client.AgentTurnExecution) string {
 	}
 }
 
-func describeWakeupMode(execution client.AgentTurnExecution) string {
-	switch normalizedWakeupMode(execution) {
-	case "clarification_followup":
-		return "the human is replying after your earlier blocking clarification request"
-	case "handoff_response":
-		return "another agent explicitly asked you to take over or continue the thread"
-	default:
-		if mentions := extractMentionSignals(execution.TriggerMessage.Body); len(mentions) > 0 {
-			return "a direct visible room message with explicit mention signal"
-		}
-		return "a direct visible room message that may or may not need a visible reply"
-	}
-}
-
-func buildWakeupModeGuidance(execution client.AgentTurnExecution) string {
-	switch normalizedWakeupMode(execution) {
-	case "clarification_followup":
-		return "- Treat the trigger as new information answering an earlier blocker.\n- Do not repeat the old blocker unless it still remains unresolved.\n"
-	case "handoff_response":
-		return "- Start from the assumption that takeover is expected.\n- Reply with concrete ownership, next step, or the real blocker preventing takeover.\n"
-	default:
-		return "- First decide whether a visible reply is needed at all.\n- If it is actionable, acknowledge ownership or next step naturally before deeper detail.\n"
-	}
-}
-
 func normalizeAgentReplyKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "message", "clarification_request", "handoff", "summary", "no_response":
 		return strings.ToLower(strings.TrimSpace(kind))
 	default:
 		return ""
-	}
-}
-
-func describeTurnSignal(execution client.AgentTurnExecution) string {
-	switch normalizedWakeupMode(execution) {
-	case "clarification_followup":
-		return "human follow-up after an earlier clarification"
-	case "handoff_response":
-		return "another agent explicitly asked you to take over"
-	default:
-		if mentions := extractMentionSignals(execution.TriggerMessage.Body); len(mentions) > 0 {
-			return "ordinary visible message with explicit mention signal"
-		}
-		return "ordinary visible room message"
 	}
 }
 

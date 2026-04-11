@@ -1,7 +1,9 @@
-import { ProfilePage } from "@/components/profile-page";
+import { redirect } from "next/navigation";
+import { requireAuthenticatedMember } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfileRoutePage() {
-  return <ProfilePage />;
+  await requireAuthenticatedMember("/settings");
+  redirect("/settings");
 }

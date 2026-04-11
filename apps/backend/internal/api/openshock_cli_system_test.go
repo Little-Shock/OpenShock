@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"openshock/backend/internal/store"
+	"openshock/backend/internal/testsupport/scenario"
 )
 
 func TestOpenShockCLICreatesTaskAndRoomMessage(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	server := httptest.NewServer(New(backingStore).Handler())
 	defer server.Close()
 
@@ -72,7 +73,7 @@ func TestOpenShockCLICreatesTaskAndRoomMessage(t *testing.T) {
 }
 
 func TestOpenShockCLIDrivesRunAndMergeRequest(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	if err := backingStore.BindWorkspaceRepo("ws_01", "/tmp/openshock-demo-repo", "openshock-demo-repo", true); err != nil {
 		t.Fatalf("bind workspace repo returned error: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestOpenShockCLIDrivesRunAndMergeRequest(t *testing.T) {
 }
 
 func TestOpenShockCLIUpdatesTaskStatus(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	server := httptest.NewServer(New(backingStore).Handler())
 	defer server.Close()
 

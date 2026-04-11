@@ -5,6 +5,7 @@ import (
 
 	"openshock/backend/internal/core"
 	"openshock/backend/internal/store"
+	"openshock/backend/internal/testsupport/scenario"
 )
 
 func bindGatewayWorkspaceRepo(t *testing.T, s *store.MemoryStore) string {
@@ -17,8 +18,20 @@ func bindGatewayWorkspaceRepo(t *testing.T, s *store.MemoryStore) string {
 	return repoPath
 }
 
+func mustCreateGatewayTestAgent(t *testing.T, s *store.MemoryStore, agentID string) {
+	t.Helper()
+
+	name := agentID
+	if agentID == "agent_shell" {
+		name = "Shell_Runner"
+	}
+	if _, err := s.CreateAgent(agentID, name, "test fixture prompt"); err != nil {
+		t.Fatalf("create test agent returned error: %v", err)
+	}
+}
+
 func TestSubmitCreatesTask(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	resp, err := gateway.Submit(core.ActionRequest{
@@ -46,7 +59,7 @@ func TestSubmitCreatesTask(t *testing.T) {
 }
 
 func TestSubmitCreatesIssue(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	resp, err := gateway.Submit(core.ActionRequest{
@@ -71,7 +84,7 @@ func TestSubmitCreatesIssue(t *testing.T) {
 }
 
 func TestSubmitCreatesDiscussionRoom(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	resp, err := gateway.Submit(core.ActionRequest{
@@ -98,8 +111,75 @@ func TestSubmitCreatesDiscussionRoom(t *testing.T) {
 	}
 }
 
-func TestSubmitBindsWorkspaceRepo(t *testing.T) {
+func TestSubmitAddsAgentToRoom(t *testing.T) {
 	s := store.NewMemoryStore()
+	mustCreateGatewayTestAgent(t, s, "agent_shell")
+	gateway := NewGateway(s)
+
+	resp, err := gateway.Submit(core.ActionRequest{
+		ActorType:      "member",
+		ActorID:        "Sarah",
+		ActionType:     "RoomAgent.add",
+		TargetType:     "room",
+		TargetID:       "room_001",
+		IdempotencyKey: "room-agent-add-1",
+		Payload: map[string]any{
+			"agentId": "agent_shell",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit returned error: %v", err)
+	}
+	if resp.ResultCode != "room_agent_joined" {
+		t.Fatalf("expected room_agent_joined result code, got %q", resp.ResultCode)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 1 || detail.AgentSessions[0].AgentID != "agent_shell" {
+		t.Fatalf("expected joined agent session, got %#v", detail.AgentSessions)
+	}
+}
+
+func TestSubmitRemovesAgentFromRoom(t *testing.T) {
+	s := store.NewMemoryStore()
+	mustCreateGatewayTestAgent(t, s, "agent_shell")
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add agent to room returned error: %v", err)
+	}
+	gateway := NewGateway(s)
+
+	resp, err := gateway.Submit(core.ActionRequest{
+		ActorType:      "member",
+		ActorID:        "Sarah",
+		ActionType:     "RoomAgent.remove",
+		TargetType:     "room",
+		TargetID:       "room_001",
+		IdempotencyKey: "room-agent-remove-1",
+		Payload: map[string]any{
+			"agentId": "agent_shell",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit returned error: %v", err)
+	}
+	if resp.ResultCode != "room_agent_removed" {
+		t.Fatalf("expected room_agent_removed result code, got %q", resp.ResultCode)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 1 || detail.AgentSessions[0].JoinedRoom {
+		t.Fatalf("expected room session to remain but leave joined state, got %#v", detail.AgentSessions)
+	}
+}
+
+func TestSubmitBindsWorkspaceRepo(t *testing.T) {
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	resp, err := gateway.Submit(core.ActionRequest{
@@ -133,7 +213,7 @@ func TestSubmitBindsWorkspaceRepo(t *testing.T) {
 }
 
 func TestSubmitRejectsIssueRepoBinding(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	_, err := gateway.Submit(core.ActionRequest{
@@ -153,7 +233,7 @@ func TestSubmitRejectsIssueRepoBinding(t *testing.T) {
 }
 
 func TestSubmitSetsTaskStatus(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	resp, err := gateway.Submit(core.ActionRequest{
@@ -190,7 +270,7 @@ func TestSubmitSetsTaskStatus(t *testing.T) {
 }
 
 func TestSubmitMergeRequestRequiresApproval(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	resp, err := gateway.Submit(core.ActionRequest{
@@ -211,7 +291,7 @@ func TestSubmitMergeRequestRequiresApproval(t *testing.T) {
 }
 
 func TestSubmitUsesIdempotencyKey(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	req := core.ActionRequest{
@@ -256,7 +336,7 @@ func TestSubmitUsesIdempotencyKey(t *testing.T) {
 }
 
 func TestSubmitCreatesDeliveryPR(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 	bindGatewayWorkspaceRepo(t, s)
 
@@ -312,7 +392,7 @@ func TestSubmitCreatesDeliveryPR(t *testing.T) {
 }
 
 func TestSubmitApprovesMerge(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 	bindGatewayWorkspaceRepo(t, s)
 
@@ -338,7 +418,7 @@ func TestSubmitApprovesMerge(t *testing.T) {
 }
 
 func TestSubmitRejectsMissingIdempotencyKey(t *testing.T) {
-	s := store.NewMemoryStore()
+	s := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	gateway := NewGateway(s)
 
 	_, err := gateway.Submit(core.ActionRequest{

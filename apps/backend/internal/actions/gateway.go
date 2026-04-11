@@ -14,11 +14,13 @@ type Store interface {
 	NextActionID() string
 	LookupActionResult(idempotencyKey string) (core.ActionResponse, bool)
 	SaveActionResult(idempotencyKey string, resp core.ActionResponse)
-	PostRoomMessage(targetID, actorType, actorName, kind, body string) core.ActionResponse
-	CreateIssue(title, summary, priority string) core.ActionResponse
-	CreateDiscussionRoom(title, summary string) core.ActionResponse
+	PostRoomMessage(targetID, actorType, actorName, kind, body string) (core.ActionResponse, error)
+	CreateIssueInWorkspace(workspaceID, title, summary, priority string) core.ActionResponse
+	CreateDiscussionRoomInWorkspace(workspaceID, title, summary string) core.ActionResponse
 	BindWorkspaceRepoAction(workspaceID, repoPath, label string, makeDefault bool, actorID string) (core.ActionResponse, error)
-	CreateTask(issueID, title, description, assigneeAgentID string) core.ActionResponse
+	AddAgentToRoom(targetID, agentID, actorID string) (core.ActionResponse, error)
+	RemoveAgentFromRoom(targetID, agentID, actorID string) (core.ActionResponse, error)
+	CreateTask(issueID, title, description, assigneeAgentID string) (core.ActionResponse, error)
 	AssignTask(taskID, agentID string) (core.ActionResponse, error)
 	SetTaskStatus(taskID, status, actorID string) (core.ActionResponse, error)
 	MarkTaskReadyForIntegration(taskID string) (core.ActionResponse, error)
@@ -63,7 +65,7 @@ func (g *Gateway) Submit(req core.ActionRequest) (core.ActionResponse, error) {
 		if strings.TrimSpace(priority) == "" {
 			priority = "medium"
 		}
-		resp = g.store.CreateIssue(title, summary, priority)
+		resp = g.store.CreateIssueInWorkspace(req.TargetID, title, summary, priority)
 	case "Room.create":
 		title, _ := req.Payload["title"].(string)
 		summary, _ := req.Payload["summary"].(string)
@@ -78,7 +80,7 @@ func (g *Gateway) Submit(req core.ActionRequest) (core.ActionResponse, error) {
 		if normalizedKind != "discussion" {
 			return core.ActionResponse{}, fmt.Errorf("%w: issue rooms must be created via Issue.create", ErrInvalidAction)
 		}
-		resp = g.store.CreateDiscussionRoom(title, summary)
+		resp = g.store.CreateDiscussionRoomInWorkspace(req.TargetID, title, summary)
 	case "Workspace.bind_repo":
 		repoPath, _ := req.Payload["repoPath"].(string)
 		label, _ := req.Payload["label"].(string)
@@ -95,7 +97,19 @@ func (g *Gateway) Submit(req core.ActionRequest) (core.ActionResponse, error) {
 		if strings.TrimSpace(body) == "" {
 			return core.ActionResponse{}, fmt.Errorf("%w: body is required", ErrInvalidAction)
 		}
-		resp = g.store.PostRoomMessage(req.TargetID, req.ActorType, req.ActorID, kind, body)
+		resp, err = g.store.PostRoomMessage(req.TargetID, req.ActorType, req.ActorID, kind, body)
+	case "RoomAgent.add":
+		agentID, _ := req.Payload["agentId"].(string)
+		if strings.TrimSpace(agentID) == "" {
+			return core.ActionResponse{}, fmt.Errorf("%w: agentId is required", ErrInvalidAction)
+		}
+		resp, err = g.store.AddAgentToRoom(req.TargetID, agentID, req.ActorID)
+	case "RoomAgent.remove":
+		agentID, _ := req.Payload["agentId"].(string)
+		if strings.TrimSpace(agentID) == "" {
+			return core.ActionResponse{}, fmt.Errorf("%w: agentId is required", ErrInvalidAction)
+		}
+		resp, err = g.store.RemoveAgentFromRoom(req.TargetID, agentID, req.ActorID)
 	case "Task.create":
 		title, _ := req.Payload["title"].(string)
 		description, _ := req.Payload["description"].(string)
@@ -103,7 +117,7 @@ func (g *Gateway) Submit(req core.ActionRequest) (core.ActionResponse, error) {
 		if strings.TrimSpace(title) == "" {
 			return core.ActionResponse{}, fmt.Errorf("%w: title is required", ErrInvalidAction)
 		}
-		resp = g.store.CreateTask(req.TargetID, title, description, assignee)
+		resp, err = g.store.CreateTask(req.TargetID, title, description, assignee)
 	case "Task.assign":
 		agentID, _ := req.Payload["agentId"].(string)
 		if strings.TrimSpace(agentID) == "" {

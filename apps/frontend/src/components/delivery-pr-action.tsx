@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentOperator } from "@/components/operator-provider";
 import { submitAction } from "@/lib/api";
@@ -18,38 +18,44 @@ export function DeliveryPRAction({
   existingDeliveryPRId,
 }: DeliveryPRActionProps) {
   const router = useRouter();
-  const { operatorName } = useCurrentOperator();
+  const { operatorName, sessionToken } = useCurrentOperator();
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
   const canCreate =
     integrationStatus === "ready_for_delivery" && !existingDeliveryPRId;
 
   function handleCreate() {
-    if (!canCreate) {
+    if (!canCreate || isPending) {
       return;
     }
 
-    startTransition(async () => {
-      try {
-        const response = (await submitAction({
-          actorType: "member",
-          actorId: operatorName,
-          actionType: "DeliveryPR.create.request",
-          targetType: "issue",
-          targetId: issueId,
-          idempotencyKey: `delivery-pr-${issueId}-${Date.now()}`,
-          payload: {},
-        })) as { resultMessage: string };
-
+    setIsPending(true);
+    void submitAction(
+      {
+        actorType: "member",
+        actorId: operatorName,
+        actionType: "DeliveryPR.create.request",
+        targetType: "issue",
+        targetId: issueId,
+        idempotencyKey: `delivery-pr-${issueId}-${Date.now()}`,
+        payload: {},
+      },
+      { sessionToken },
+    )
+      .then((rawResponse) => {
+        const response = rawResponse as { resultMessage: string };
         setFeedback(response.resultMessage);
         router.refresh();
-      } catch (error) {
+      })
+      .catch((error) => {
         setFeedback(
           error instanceof Error ? error.message : "Failed to create delivery PR.",
         );
-      }
-    });
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   return (

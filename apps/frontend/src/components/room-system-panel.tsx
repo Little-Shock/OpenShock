@@ -31,20 +31,6 @@ function metricCard(label: string, value: number, hint: string) {
   );
 }
 
-function runtimeBadgeTone(status: string): BadgeTone {
-  switch (status) {
-    case "online":
-      return "green";
-    case "busy":
-      return "blue";
-    case "offline":
-    case "failed":
-      return "orange";
-    default:
-      return "neutral";
-  }
-}
-
 function sessionBadgeTone(status: string): BadgeTone {
   switch (status) {
     case "responding":
@@ -54,7 +40,7 @@ function sessionBadgeTone(status: string): BadgeTone {
     case "resolved":
     case "accepted":
       return "green";
-    case "waiting_human":
+    case "waiting_reply":
     case "handoff_requested":
     case "blocked":
       return "orange";
@@ -80,13 +66,16 @@ export function RoomSystemPanel({
   handoffs,
   messageCount,
 }: RoomSystemPanelProps) {
+  const activeSessions = sessions
+    .filter((session) => session.status !== "idle")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const onlineRuntimes = runtimes.filter((runtime) => runtime.status === "online");
   const busyRuntimes = runtimes.filter((runtime) => runtime.status === "busy");
   const queuedTurns = turns.filter((turn) => turn.status === "queued");
   const claimedTurns = turns.filter((turn) => turn.status === "claimed");
   const respondingSessions = sessions.filter((session) => session.status === "responding");
-  const waitingHuman = waits
-    .filter((wait) => wait.status === "waiting_human")
+  const waitingReply = waits
+    .filter((wait) => wait.status === "waiting_reply")
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const openHandoffs = handoffs
     .filter((handoff) => handoff.status !== "accepted")
@@ -100,8 +89,6 @@ export function RoomSystemPanel({
     }
   }
 
-  const orderedSessions = [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-
   return (
     <section className="space-y-2.5">
       <div className="px-0.5">
@@ -113,7 +100,7 @@ export function RoomSystemPanel({
           {metricCard("Messages", messageCount, "chat events in this room")}
           {metricCard("Sessions", sessions.length, "agent contexts live here")}
           {metricCard("Queued Turns", queuedTurns.length, "waiting for daemon claim")}
-          {metricCard("Waiting Human", waitingHuman.length, "blocked on room input")}
+          {metricCard("Waiting Reply", waitingReply.length, "blocked on room input")}
         </div>
 
         <div className="mt-2.5 space-y-1.5 border-t border-[var(--border)] pt-2.5">
@@ -140,45 +127,14 @@ export function RoomSystemPanel({
 
       <Card className="rounded-[12px] px-3 py-2.5">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <Eyebrow>Daemon Runtimes</Eyebrow>
-          <Badge tone={busyRuntimes.length > 0 ? "blue" : "green"}>
-            {busyRuntimes.length > 0 ? `${busyRuntimes.length} busy` : "all available"}
-          </Badge>
-        </div>
-        <div className="space-y-1.5">
-          {runtimes.length > 0 ? (
-            runtimes.map((runtime) => (
-              <div
-                key={runtime.id}
-                className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-white px-2.5 py-2"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-medium">{runtime.name}</div>
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-black/45">
-                    {runtime.provider} · {runtime.id}
-                  </div>
-                </div>
-                <Badge tone={runtimeBadgeTone(runtime.status)}>
-                  {formatStatusLabel(runtime.status)}
-                </Badge>
-              </div>
-            ))
-          ) : (
-            <p className="text-[12px] text-black/55">No runtimes registered yet.</p>
-          )}
-        </div>
-      </Card>
-
-      <Card className="rounded-[12px] px-3 py-2.5">
-        <div className="mb-2 flex items-center justify-between gap-2">
           <Eyebrow>Session Flow</Eyebrow>
-          <Badge tone="dark">{orderedSessions.length}</Badge>
+          <Badge tone="dark">{activeSessions.length}</Badge>
         </div>
-        {orderedSessions.length === 0 ? (
-          <p className="text-[12px] text-black/55">No agent sessions in this room yet.</p>
+        {activeSessions.length === 0 ? (
+          <p className="text-[12px] text-black/55">No active agent sessions in this room yet.</p>
         ) : (
           <div className="space-y-1.5">
-            {orderedSessions.map((session) => {
+            {activeSessions.map((session) => {
               const turn = latestTurns.get(session.id);
 
               return (
@@ -221,23 +177,23 @@ export function RoomSystemPanel({
         )}
       </Card>
 
-      {waitingHuman.length > 0 || openHandoffs.length > 0 ? (
+      {waitingReply.length > 0 || openHandoffs.length > 0 ? (
         <Card className="rounded-[12px] px-3 py-2.5">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <Eyebrow>Attention Queue</Eyebrow>
-            <Badge tone="orange">
-              {waitingHuman.length + openHandoffs.length} open
-            </Badge>
-          </div>
+              <Eyebrow>Attention Queue</Eyebrow>
+              <Badge tone="orange">
+              {waitingReply.length + openHandoffs.length} open
+              </Badge>
+            </div>
           <div className="space-y-1.5">
-            {waitingHuman.map((wait) => (
+            {waitingReply.map((wait) => (
               <div
                 key={wait.id}
                 className="rounded-[10px] border border-[var(--border)] bg-white px-2.5 py-2"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[12px] font-medium">
-                    {agentName(wait.agentId, agents)} waiting for human
+                    {agentName(wait.agentId, agents)} waiting for room reply
                   </div>
                   <Badge tone="orange">wait</Badge>
                 </div>

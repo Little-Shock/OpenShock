@@ -1,10 +1,13 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"openshock/backend/internal/core"
+	"openshock/backend/internal/testsupport/scenario"
 )
 
 func bindDefaultWorkspaceRepo(t *testing.T, s *MemoryStore) string {
@@ -17,8 +20,249 @@ func bindDefaultWorkspaceRepo(t *testing.T, s *MemoryStore) string {
 	return repoPath
 }
 
-func TestCreateIssueCreatesRoomAndIntegrationBranch(t *testing.T) {
+func mustPostRoomMessage(t *testing.T, s *MemoryStore, targetID, actorType, actorName, kind, body string) core.ActionResponse {
+	t.Helper()
+
+	resp, err := s.PostRoomMessage(targetID, actorType, actorName, kind, body)
+	if err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+	return resp
+}
+
+func mustCreateTestAgents(t *testing.T, s *MemoryStore, agentIDs ...string) {
+	t.Helper()
+
+	for _, agentID := range agentIDs {
+		name := agentID
+		switch agentID {
+		case "agent_shell":
+			name = "Shell_Runner"
+		case "agent_guardian":
+			name = "Guardian_Bot"
+		case "agent_systems":
+			name = "Systems-Agent-01"
+		case "agent_lead":
+			name = "Lead_Architect"
+		}
+
+		if _, err := s.CreateAgent(agentID, name, "test fixture prompt"); err != nil {
+			t.Fatalf("create test agent %s returned error: %v", agentID, err)
+		}
+	}
+}
+
+func TestNewEmptyMemoryStoreStartsWithDefaultWorkspaceDiscussionRooms(t *testing.T) {
 	s := NewMemoryStore()
+
+	bootstrap := s.Bootstrap()
+	if bootstrap.DefaultRoomID != "room_001" {
+		t.Fatalf("expected default room id room_001, got %q", bootstrap.DefaultRoomID)
+	}
+	if bootstrap.DefaultIssueID != "" {
+		t.Fatalf("expected empty default issue id, got %q", bootstrap.DefaultIssueID)
+	}
+	if len(bootstrap.Rooms) != 2 {
+		t.Fatalf("expected exactly two default discussion rooms, got %#v", bootstrap.Rooms)
+	}
+	expectedTitles := map[string]string{
+		"room_001": "all",
+		"room_002": "annoucement",
+	}
+	for _, room := range bootstrap.Rooms {
+		if room.Kind != "discussion" {
+			t.Fatalf("expected default room to be discussion, got %#v", room)
+		}
+		if expectedTitles[room.ID] != room.Title {
+			t.Fatalf("expected room %s title %q, got %#v", room.ID, expectedTitles[room.ID], room)
+		}
+	}
+	if len(bootstrap.IssueSummaries) != 0 {
+		t.Fatalf("expected no seeded issues, got %#v", bootstrap.IssueSummaries)
+	}
+	if len(bootstrap.Runtimes) != 0 {
+		t.Fatalf("expected no seeded runtimes, got %#v", bootstrap.Runtimes)
+	}
+	if len(bootstrap.Agents) != 0 {
+		t.Fatalf("expected no default agents, got %#v", bootstrap.Agents)
+	}
+	if len(bootstrap.Workspace.RepoBindings) != 0 {
+		t.Fatalf("expected no repo bindings, got %#v", bootstrap.Workspace.RepoBindings)
+	}
+
+	roomDetail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("expected default room detail to resolve: %v", err)
+	}
+	if len(roomDetail.Messages) != 1 {
+		t.Fatalf("expected seeded default room message, got %#v", roomDetail.Messages)
+	}
+}
+
+func TestNewMemoryStoreStartsWithoutAgentsOrDirectRooms(t *testing.T) {
+	s := NewMemoryStore()
+
+	bootstrap := s.Bootstrap()
+	if len(bootstrap.Agents) != 0 {
+		t.Fatalf("expected app store to start without default agents, got %#v", bootstrap.Agents)
+	}
+	if len(bootstrap.DirectRooms) != 0 {
+		t.Fatalf("expected app store to start without direct rooms, got %#v", bootstrap.DirectRooms)
+	}
+	if len(bootstrap.Rooms) != 2 {
+		t.Fatalf("expected app store to keep the two default discussion rooms, got %#v", bootstrap.Rooms)
+	}
+}
+
+func TestCreateWorkspaceCreatesScopedDefaultRooms(t *testing.T) {
+	s := NewMemoryStore()
+
+	workspace, err := s.CreateWorkspace("Beta Ops")
+	if err != nil {
+		t.Fatalf("create workspace returned error: %v", err)
+	}
+
+	bootstrap := s.BootstrapForWorkspace(workspace.ID)
+	if bootstrap.Workspace.ID != workspace.ID || bootstrap.Workspace.Name != "Beta Ops" {
+		t.Fatalf("expected created workspace in bootstrap, got %#v", bootstrap.Workspace)
+	}
+	if len(bootstrap.Rooms) != 2 {
+		t.Fatalf("expected exactly two default rooms in new workspace, got %#v", bootstrap.Rooms)
+	}
+	if bootstrap.DefaultRoomID == "" {
+		t.Fatal("expected new workspace to have a default room")
+	}
+	if bootstrap.DefaultIssueID != "" {
+		t.Fatalf("expected new workspace to start without issues, got %q", bootstrap.DefaultIssueID)
+	}
+	for _, room := range bootstrap.Rooms {
+		if room.WorkspaceID != workspace.ID {
+			t.Fatalf("expected room to belong to created workspace, got %#v", room)
+		}
+	}
+
+	original := s.Bootstrap()
+	if original.Workspace.ID == workspace.ID {
+		t.Fatalf("expected default bootstrap to remain on original workspace, got %#v", original.Workspace)
+	}
+}
+
+func TestNewMemoryStoreIncludesDirectRoomsForWorkspaceAgents(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	bootstrap := s.Bootstrap()
+	if len(bootstrap.DirectRooms) != len(bootstrap.Agents) {
+		t.Fatalf("expected one direct room per agent, got directRooms=%d agents=%d", len(bootstrap.DirectRooms), len(bootstrap.Agents))
+	}
+
+	roomsByAgentID := make(map[string]core.RoomSummary, len(bootstrap.DirectRooms))
+	for _, room := range bootstrap.DirectRooms {
+		if room.Kind != "direct_message" {
+			t.Fatalf("expected direct room kind direct_message, got %#v", room)
+		}
+		if room.DirectAgentID == "" {
+			t.Fatalf("expected direct room to keep directAgentId, got %#v", room)
+		}
+		roomsByAgentID[room.DirectAgentID] = room
+	}
+
+	for _, agent := range bootstrap.Agents {
+		room, ok := roomsByAgentID[agent.ID]
+		if !ok {
+			t.Fatalf("expected direct room for agent %s", agent.ID)
+		}
+		if room.Title != agent.Name {
+			t.Fatalf("expected direct room title %q for agent %s, got %#v", agent.Name, agent.ID, room)
+		}
+	}
+}
+
+func TestDirectMessageRoomQueuesTurnForItsAssignedAgent(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	bootstrap := s.Bootstrap()
+	var directRoom core.RoomSummary
+	found := false
+	for _, room := range bootstrap.DirectRooms {
+		if room.DirectAgentID == "agent_shell" {
+			directRoom = room
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected a direct room for agent_shell")
+	}
+
+	mustPostRoomMessage(t, s, directRoom.ID, "member", "Sarah", "message", "Please review this in private.")
+
+	detail, err := s.RoomDetail(directRoom.ID)
+	if err != nil {
+		t.Fatalf("expected direct room detail to resolve: %v", err)
+	}
+	if len(detail.AgentTurns) != 1 {
+		t.Fatalf("expected one queued turn in direct room, got %#v", detail.AgentTurns)
+	}
+	if detail.AgentTurns[0].AgentID != "agent_shell" {
+		t.Fatalf("expected direct room turn to target agent_shell, got %#v", detail.AgentTurns[0])
+	}
+	if detail.AgentTurns[0].WakeupMode != "direct_message" {
+		t.Fatalf("expected direct_message wakeup mode, got %#v", detail.AgentTurns[0])
+	}
+}
+
+func TestBootstrapUnreadCountsTrackRoomReadStatePerSession(t *testing.T) {
+	s := NewMemoryStore()
+
+	auth, err := s.RegisterMember("sarah", "Sarah", "password123")
+	if err != nil {
+		t.Fatalf("register member returned error: %v", err)
+	}
+
+	before := s.BootstrapForWorkspaceAndSession(auth.Session.ActiveWorkspaceID, auth.Session.ID)
+	roomUnread := map[string]int{}
+	for _, room := range before.Rooms {
+		roomUnread[room.ID] = room.UnreadCount
+	}
+	if roomUnread["room_001"] != 1 || roomUnread["room_002"] != 1 {
+		t.Fatalf("expected both seeded rooms to start unread, got %#v", before.Rooms)
+	}
+
+	detail, err := s.RoomDetailForWorkspaceAndSession(auth.Session.ActiveWorkspaceID, "room_001", auth.Session.ID)
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if detail.Room.UnreadCount != 0 {
+		t.Fatalf("expected active room to be marked read in detail response, got %#v", detail.Room)
+	}
+
+	after := s.BootstrapForWorkspaceAndSession(auth.Session.ActiveWorkspaceID, auth.Session.ID)
+	roomUnread = map[string]int{}
+	for _, room := range after.Rooms {
+		roomUnread[room.ID] = room.UnreadCount
+	}
+	if roomUnread["room_001"] != 0 {
+		t.Fatalf("expected room_001 to become read, got %#v", after.Rooms)
+	}
+	if roomUnread["room_002"] != 1 {
+		t.Fatalf("expected room_002 unread count to remain unchanged, got %#v", after.Rooms)
+	}
+
+	if _, err := s.PostRoomMessage("room_001", "agent", "agent_shell", "message", "这里有新的更新。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+	afterNewMessage := s.BootstrapForWorkspaceAndSession(auth.Session.ActiveWorkspaceID, auth.Session.ID)
+	roomUnread = map[string]int{}
+	for _, room := range afterNewMessage.Rooms {
+		roomUnread[room.ID] = room.UnreadCount
+	}
+	if roomUnread["room_001"] != 1 {
+		t.Fatalf("expected room_001 to become unread again after a new message, got %#v", afterNewMessage.Rooms)
+	}
+}
+
+func TestCreateIssueCreatesRoomAndIntegrationBranch(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	before := s.Bootstrap()
 	resp := s.CreateIssue("Investigate flaky merge queue", "Queue stalls under high churn.", "high")
@@ -45,7 +289,7 @@ func TestCreateIssueCreatesRoomAndIntegrationBranch(t *testing.T) {
 }
 
 func TestCreateDiscussionRoomCreatesChatOnlyRoom(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	before := s.Bootstrap()
 	resp := s.CreateDiscussionRoom("Architecture", "Track cross-cutting architecture decisions here.")
@@ -80,7 +324,7 @@ func TestCreateDiscussionRoomCreatesChatOnlyRoom(t *testing.T) {
 }
 
 func TestBootstrapSeedsDiscussionRooms(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	bootstrap := s.Bootstrap()
 	if bootstrap.DefaultRoomID != "room_001" {
@@ -100,8 +344,54 @@ func TestBootstrapSeedsDiscussionRooms(t *testing.T) {
 	}
 }
 
+func TestAgentCatalogCRUD(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	created, err := s.CreateAgent(
+		"agent_research",
+		"Research Partner",
+		"会先整理问题背景、已有结论和不确定项，再把信息压缩成结构化判断，适合承担调研和分析型任务。",
+	)
+	if err != nil {
+		t.Fatalf("create agent returned error: %v", err)
+	}
+	if created.ID != "agent_research" || created.Prompt == "" {
+		t.Fatalf("unexpected created agent payload: %#v", created)
+	}
+
+	updated, err := s.UpdateAgent(
+		created.ID,
+		"Research Partner",
+		"更新后的 agent prompt 应该被完整保留，便于在前端以多行方式展示和编辑。",
+	)
+	if err != nil {
+		t.Fatalf("update agent returned error: %v", err)
+	}
+	if updated.Prompt != "更新后的 agent prompt 应该被完整保留，便于在前端以多行方式展示和编辑。" {
+		t.Fatalf("unexpected updated agent payload: %#v", updated)
+	}
+
+	if err := s.DeleteAgent(created.ID); err != nil {
+		t.Fatalf("delete agent returned error: %v", err)
+	}
+
+	for _, agent := range s.Agents() {
+		if agent.ID == created.ID {
+			t.Fatalf("expected deleted agent to be absent, got %#v", agent)
+		}
+	}
+}
+
+func TestDeleteAgentRejectsReferencedAgents(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	if err := s.DeleteAgent("agent_shell"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected conflict when deleting referenced agent, got %v", err)
+	}
+}
+
 func TestRoomDetailForDiscussionRoomHasChatOnly(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	detail, err := s.RoomDetail("room_002")
 	if err != nil {
@@ -121,8 +411,114 @@ func TestRoomDetailForDiscussionRoomHasChatOnly(t *testing.T) {
 	}
 }
 
-func TestBindWorkspaceRepoHydratesIssueAndRoomDetail(t *testing.T) {
+func TestAddAgentToRoomCreatesIdleSessionAndSystemMessage(t *testing.T) {
 	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell")
+
+	resp, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah")
+	if err != nil {
+		t.Fatalf("add agent to room returned error: %v", err)
+	}
+	if resp.ResultCode != "room_agent_joined" {
+		t.Fatalf("expected room_agent_joined, got %#v", resp)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 1 {
+		t.Fatalf("expected one room agent session, got %#v", detail.AgentSessions)
+	}
+	if detail.AgentSessions[0].AgentID != "agent_shell" || detail.AgentSessions[0].Status != "idle" || !detail.AgentSessions[0].JoinedRoom {
+		t.Fatalf("expected idle room agent session, got %#v", detail.AgentSessions[0])
+	}
+	lastMessage := detail.Messages[len(detail.Messages)-1]
+	if !strings.Contains(lastMessage.Body, "added Shell_Runner to this room") {
+		t.Fatalf("expected system join message, got %#v", lastMessage)
+	}
+}
+
+func TestAddAgentToRoomIsIdempotentForExistingSession(t *testing.T) {
+	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell")
+
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("first add agent to room returned error: %v", err)
+	}
+	resp, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah")
+	if err != nil {
+		t.Fatalf("second add agent to room returned error: %v", err)
+	}
+	if resp.ResultCode != "room_agent_already_joined" {
+		t.Fatalf("expected room_agent_already_joined, got %#v", resp)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 1 {
+		t.Fatalf("expected one room agent session after repeat join, got %#v", detail.AgentSessions)
+	}
+	if !detail.AgentSessions[0].JoinedRoom {
+		t.Fatalf("expected repeated join to preserve joined room membership, got %#v", detail.AgentSessions[0])
+	}
+	if len(detail.Messages) != 2 {
+		t.Fatalf("expected only one additional system join message, got %#v", detail.Messages)
+	}
+}
+
+func TestRemoveAgentFromRoomDeletesJoinedSessionAndAppendsSystemMessage(t *testing.T) {
+	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell")
+
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add agent to room returned error: %v", err)
+	}
+
+	resp, err := s.RemoveAgentFromRoom("room_001", "agent_shell", "Sarah")
+	if err != nil {
+		t.Fatalf("remove agent from room returned error: %v", err)
+	}
+	if resp.ResultCode != "room_agent_removed" {
+		t.Fatalf("expected room_agent_removed, got %#v", resp)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 1 {
+		t.Fatalf("expected room session history to remain available, got %#v", detail.AgentSessions)
+	}
+	if detail.AgentSessions[0].JoinedRoom {
+		t.Fatalf("expected room agent membership to be removed, got %#v", detail.AgentSessions[0])
+	}
+	lastMessage := detail.Messages[len(detail.Messages)-1]
+	if !strings.Contains(lastMessage.Body, "removed Shell_Runner from this room") {
+		t.Fatalf("expected system remove message, got %#v", lastMessage)
+	}
+}
+
+func TestRemoveAgentFromRoomRejectsActiveSession(t *testing.T) {
+	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell")
+
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add agent to room returned error: %v", err)
+	}
+	if _, err := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先处理一下这个问题。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+
+	if _, err := s.RemoveAgentFromRoom("room_001", "agent_shell", "Sarah"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected conflict when removing active room agent, got %v", err)
+	}
+}
+
+func TestBindWorkspaceRepoHydratesIssueAndRoomDetail(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	err := s.BindWorkspaceRepo("ws_01", "/tmp/openshock-demo-repo", "openshock-demo-repo", true)
 	if err != nil {
@@ -150,9 +546,9 @@ func TestBindWorkspaceRepoHydratesIssueAndRoomDetail(t *testing.T) {
 }
 
 func TestRoomInstructionMessageCreatesAgentTurn(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	resp := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell please review the roadmap draft and reply with a plan.")
+	resp := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell please review the roadmap draft and reply with a plan.")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room_message_posted result code, got %#v", resp)
 	}
@@ -205,10 +601,10 @@ func TestRoomInstructionMessageCreatesAgentTurn(t *testing.T) {
 	}
 }
 
-func TestRoomPlainHumanMessageWithoutMentionCreatesVisibleMessageTurn(t *testing.T) {
-	s := NewMemoryStore()
+func TestRoomPlainParticipantMessageWithoutMentionCreatesVisibleMessageTurn(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	resp := s.PostRoomMessage("room_001", "member", "Sarah", "message", "有人吗？我想确认一下这里下一步怎么推进。")
+	resp := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "有人吗？我想确认一下这里下一步怎么推进。")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room_message_posted result code, got %#v", resp)
 	}
@@ -237,10 +633,10 @@ func TestRoomPlainHumanMessageWithoutMentionCreatesVisibleMessageTurn(t *testing
 	}
 }
 
-func TestRoomPlainHumanStatusMessageWithoutMentionCreatesVisibleMessageTurn(t *testing.T) {
-	s := NewMemoryStore()
+func TestRoomPlainParticipantStatusMessageWithoutMentionCreatesVisibleMessageTurn(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	resp := s.PostRoomMessage("room_001", "member", "Sarah", "message", "我刚把文档同步好了。")
+	resp := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "我刚把文档同步好了。")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room_message_posted result code, got %#v", resp)
 	}
@@ -258,9 +654,9 @@ func TestRoomPlainHumanStatusMessageWithoutMentionCreatesVisibleMessageTurn(t *t
 }
 
 func TestRoomPlainInstructionWithoutMentionCreatesVisibleMessageTurn(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	resp := s.PostRoomMessage("room_001", "member", "Sarah", "instruction", "有人在看这个房间吗？")
+	resp := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "instruction", "有人在看这个房间吗？")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room_message_posted result code, got %#v", resp)
 	}
@@ -277,10 +673,10 @@ func TestRoomPlainInstructionWithoutMentionCreatesVisibleMessageTurn(t *testing.
 	}
 }
 
-func TestRoomPlainHumanMessageWithMentionPrefersMentionedAgent(t *testing.T) {
-	s := NewMemoryStore()
+func TestRoomPlainParticipantMessageWithMentionPrefersMentionedAgent(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	resp := s.PostRoomMessage("room_001", "member", "Sarah", "message", "有人吗？ @agent_shell 请直接接一下。")
+	resp := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "有人吗？ @agent_shell 请直接接一下。")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room_message_posted result code, got %#v", resp)
 	}
@@ -297,10 +693,80 @@ func TestRoomPlainHumanMessageWithMentionPrefersMentionedAgent(t *testing.T) {
 	}
 }
 
-func TestAgentPlainMessageWithoutMentionDoesNotCreateVisibleMessageTurn(t *testing.T) {
+func TestJoinedRoomAgentsAllReceiveVisibleMessageTurns(t *testing.T) {
 	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell", "agent_guardian")
 
-	resp := s.PostRoomMessage("room_001", "agent", "agent_shell", "message", "我先同步一下当前进度。")
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add first room agent returned error: %v", err)
+	}
+	if _, err := s.AddAgentToRoom("room_001", "agent_guardian", "Sarah"); err != nil {
+		t.Fatalf("add second room agent returned error: %v", err)
+	}
+
+	resp := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell 麻烦同步一下下一步。")
+	if resp.ResultCode != "room_message_posted" {
+		t.Fatalf("expected room_message_posted result code, got %#v", resp)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 2 {
+		t.Fatalf("expected two room agent sessions, got %#v", detail.AgentSessions)
+	}
+	if len(detail.AgentTurns) != 2 {
+		t.Fatalf("expected both joined room agents to receive visible turns, got %#v", detail.AgentTurns)
+	}
+
+	turnsByAgentID := make(map[string]core.AgentTurn, len(detail.AgentTurns))
+	for _, turn := range detail.AgentTurns {
+		turnsByAgentID[turn.AgentID] = turn
+	}
+	for _, agentID := range []string{"agent_shell", "agent_guardian"} {
+		turn, ok := turnsByAgentID[agentID]
+		if !ok {
+			t.Fatalf("expected joined agent %s to receive a turn, got %#v", agentID, detail.AgentTurns)
+		}
+		if turn.IntentType != "visible_message_response" || turn.Status != "queued" {
+			t.Fatalf("expected visible queued turn for %s, got %#v", agentID, turn)
+		}
+	}
+}
+
+func TestJoinedRoomAgentsSeeAgentAuthoredVisibleMessages(t *testing.T) {
+	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell", "agent_guardian")
+
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add first room agent returned error: %v", err)
+	}
+	if _, err := s.AddAgentToRoom("room_001", "agent_guardian", "Sarah"); err != nil {
+		t.Fatalf("add second room agent returned error: %v", err)
+	}
+
+	resp := mustPostRoomMessage(t, s, "room_001", "agent", "agent_shell", "message", "我先同步一下当前进度。")
+	if resp.ResultCode != "room_message_posted" {
+		t.Fatalf("expected room_message_posted result code, got %#v", resp)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentTurns) != 1 {
+		t.Fatalf("expected only the other joined room agent to receive a turn, got %#v", detail.AgentTurns)
+	}
+	if detail.AgentTurns[0].AgentID != "agent_guardian" || detail.AgentTurns[0].IntentType != "visible_message_response" {
+		t.Fatalf("expected agent-authored room message to wake the other joined agent, got %#v", detail.AgentTurns[0])
+	}
+}
+
+func TestAgentPlainMessageWithoutJoinedRoomAgentsDoesNotCreateVisibleMessageTurn(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	resp := mustPostRoomMessage(t, s, "room_001", "agent", "agent_shell", "message", "我先同步一下当前进度。")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room_message_posted result code, got %#v", resp)
 	}
@@ -315,9 +781,9 @@ func TestAgentPlainMessageWithoutMentionDoesNotCreateVisibleMessageTurn(t *testi
 }
 
 func TestIssueDetailIncludesAgentObservabilityForIssueRoom(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	resp := s.PostRoomMessage("issue_101", "member", "Sarah", "message", "@agent_shell please review the issue thread and respond.")
+	resp := mustPostRoomMessage(t, s, "issue_101", "member", "Sarah", "message", "@agent_shell please review the issue thread and respond.")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room message post result, got %#v", resp)
 	}
@@ -338,9 +804,9 @@ func TestIssueDetailIncludesAgentObservabilityForIssueRoom(t *testing.T) {
 }
 
 func TestRoomExplicitInstructionKindCreatesAgentTurn(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	resp := s.PostRoomMessage("room_001", "member", "Sarah", "instruction", "@agent_shell please review the roadmap draft and reply with a plan.")
+	resp := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "instruction", "@agent_shell please review the roadmap draft and reply with a plan.")
 	if resp.ResultCode != "room_message_posted" {
 		t.Fatalf("expected room_message_posted result code, got %#v", resp)
 	}
@@ -365,21 +831,21 @@ func TestRoomExplicitInstructionKindCreatesAgentTurn(t *testing.T) {
 }
 
 func TestAgentClarificationInstructionRequeuesTurn(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	initial := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先看一下这个问题。")
+	initial := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell 请先看一下这个问题。")
 	if initial.ResultCode != "room_message_posted" {
 		t.Fatalf("expected initial message to succeed, got %#v", initial)
 	}
 
-	agentReply := s.PostRoomMessage("room_001", "agent", "agent_shell", "clarification_request", "我需要先确认是否允许改动 billing guard。")
+	agentReply := mustPostRoomMessage(t, s, "room_001", "agent", "agent_shell", "clarification_request", "我需要先确认是否允许改动 billing guard。")
 	if agentReply.ResultCode != "room_message_posted" {
 		t.Fatalf("expected clarification request to succeed, got %#v", agentReply)
 	}
 
-	followup := s.PostRoomMessage("room_001", "member", "Sarah", "instruction", "可以改 billing guard，继续。")
+	followup := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "instruction", "可以改 billing guard，继续。")
 	if followup.ResultCode != "room_message_posted" {
-		t.Fatalf("expected human followup to succeed, got %#v", followup)
+		t.Fatalf("expected participant followup to succeed, got %#v", followup)
 	}
 
 	detail, err := s.RoomDetail("room_001")
@@ -396,19 +862,19 @@ func TestAgentClarificationInstructionRequeuesTurn(t *testing.T) {
 		t.Fatalf("expected clarification_followup wakeup mode, got %#v", detail.AgentTurns[1])
 	}
 	if detail.AgentWaits[0].Status != "resolved" {
-		t.Fatalf("expected wait to resolve after human instruction reply, got %#v", detail.AgentWaits[0])
+		t.Fatalf("expected wait to resolve after participant instruction reply, got %#v", detail.AgentWaits[0])
 	}
 }
 
 func TestAgentClarificationRequestWaitsAndHumanReplyRequeuesTurn(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	initial := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先看一下这个问题。")
+	initial := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell 请先看一下这个问题。")
 	if initial.ResultCode != "room_message_posted" {
 		t.Fatalf("expected initial message to succeed, got %#v", initial)
 	}
 
-	agentReply := s.PostRoomMessage("room_001", "agent", "agent_shell", "clarification_request", "我需要先确认是否允许改动 billing guard。")
+	agentReply := mustPostRoomMessage(t, s, "room_001", "agent", "agent_shell", "clarification_request", "我需要先确认是否允许改动 billing guard。")
 	if agentReply.ResultCode != "room_message_posted" {
 		t.Fatalf("expected clarification request to succeed, got %#v", agentReply)
 	}
@@ -420,16 +886,16 @@ func TestAgentClarificationRequestWaitsAndHumanReplyRequeuesTurn(t *testing.T) {
 	if len(detail.AgentWaits) != 1 {
 		t.Fatalf("expected one agent wait, got %#v", detail.AgentWaits)
 	}
-	if detail.AgentWaits[0].Status != "waiting_human" {
-		t.Fatalf("expected waiting_human status, got %#v", detail.AgentWaits[0])
+	if detail.AgentWaits[0].Status != "waiting_reply" {
+		t.Fatalf("expected waiting_reply status, got %#v", detail.AgentWaits[0])
 	}
-	if detail.AgentSessions[0].Status != "waiting_human" {
-		t.Fatalf("expected session to wait for human, got %#v", detail.AgentSessions[0])
+	if detail.AgentSessions[0].Status != "waiting_reply" {
+		t.Fatalf("expected session to wait for a room reply, got %#v", detail.AgentSessions[0])
 	}
 
-	followup := s.PostRoomMessage("room_001", "member", "Sarah", "message", "可以改 billing guard，继续。")
+	followup := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "可以改 billing guard，继续。")
 	if followup.ResultCode != "room_message_posted" {
-		t.Fatalf("expected human followup to succeed, got %#v", followup)
+		t.Fatalf("expected participant followup to succeed, got %#v", followup)
 	}
 
 	detail, err = s.RoomDetail("room_001")
@@ -446,22 +912,22 @@ func TestAgentClarificationRequestWaitsAndHumanReplyRequeuesTurn(t *testing.T) {
 		t.Fatalf("expected clarification_followup wakeup mode, got %#v", detail.AgentTurns[1])
 	}
 	if detail.AgentWaits[0].Status != "resolved" {
-		t.Fatalf("expected wait to resolve after human reply, got %#v", detail.AgentWaits[0])
+		t.Fatalf("expected wait to resolve after room reply, got %#v", detail.AgentWaits[0])
 	}
 	if detail.AgentSessions[0].Status != "queued" {
-		t.Fatalf("expected session to requeue after human reply, got %#v", detail.AgentSessions[0])
+		t.Fatalf("expected session to requeue after room reply, got %#v", detail.AgentSessions[0])
 	}
 }
 
 func TestAgentHandoffCreatesTargetAgentTurn(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	initial := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 先看看这个问题，然后按需要分派。")
+	initial := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell 先看看这个问题，然后按需要分派。")
 	if initial.ResultCode != "room_message_posted" {
 		t.Fatalf("expected initial message to succeed, got %#v", initial)
 	}
 
-	handoff := s.PostRoomMessage("room_001", "agent", "agent_shell", "handoff", "@agent_guardian 这里需要你接手做风险评审。")
+	handoff := mustPostRoomMessage(t, s, "room_001", "agent", "agent_shell", "handoff", "@agent_guardian 这里需要你接手做风险评审。")
 	if handoff.ResultCode != "room_message_posted" {
 		t.Fatalf("expected handoff message to succeed, got %#v", handoff)
 	}
@@ -488,10 +954,13 @@ func TestAgentHandoffCreatesTargetAgentTurn(t *testing.T) {
 }
 
 func TestCompleteAgentTurnPreservesWaitingHumanSessionState(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先看一下这个问题。")
-	runtime := s.RegisterRuntime("Test Runtime", "codex", 1)
+	mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell 请先看一下这个问题。")
+	runtime, err := s.RegisterRuntime("Test Runtime", "codex", 1)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
 	execution, claimed, err := s.ClaimNextQueuedAgentTurn(runtime.ID)
 	if err != nil {
 		t.Fatalf("claim agent turn returned error: %v", err)
@@ -500,7 +969,7 @@ func TestCompleteAgentTurnPreservesWaitingHumanSessionState(t *testing.T) {
 		t.Fatal("expected queued agent turn to be claimed")
 	}
 
-	reply := s.PostRoomMessage("room_001", "agent", "agent_shell", "clarification_request", "请先确认是否可以动 billing guard。")
+	reply := mustPostRoomMessage(t, s, "room_001", "agent", "agent_shell", "clarification_request", "请先确认是否可以动 billing guard。")
 	messageID := ""
 	for _, entity := range reply.AffectedEntities {
 		if entity.Type == "message" {
@@ -512,7 +981,7 @@ func TestCompleteAgentTurnPreservesWaitingHumanSessionState(t *testing.T) {
 		t.Fatalf("expected clarification response to create message entity, got %#v", reply.AffectedEntities)
 	}
 
-	if _, err := s.CompleteAgentTurn(execution.Turn.ID, runtime.ID, messageID); err != nil {
+	if _, err := s.CompleteAgentTurn(execution.Turn.ID, runtime.ID, messageID, ""); err != nil {
 		t.Fatalf("complete agent turn returned error: %v", err)
 	}
 
@@ -520,16 +989,16 @@ func TestCompleteAgentTurnPreservesWaitingHumanSessionState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("room detail returned error: %v", err)
 	}
-	if len(detail.AgentSessions) != 1 || detail.AgentSessions[0].Status != "waiting_human" {
-		t.Fatalf("expected waiting_human session after completion, got %#v", detail.AgentSessions)
+	if len(detail.AgentSessions) != 1 || detail.AgentSessions[0].Status != "waiting_reply" {
+		t.Fatalf("expected waiting_reply session after completion, got %#v", detail.AgentSessions)
 	}
 }
 
 func TestClaimNextQueuedRun(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
-	run, claimed, err := s.ClaimNextQueuedRun("rt_local")
+	run, _, claimed, err := s.ClaimNextQueuedRun("rt_local")
 	if err != nil {
 		t.Fatalf("claim returned error: %v", err)
 	}
@@ -545,7 +1014,7 @@ func TestClaimNextQueuedRun(t *testing.T) {
 }
 
 func TestCreateRunRequiresWorkspaceDefaultRepo(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	if _, err := s.CreateRun("task_guard"); err == nil {
 		t.Fatal("expected create run to fail without a workspace default repo binding")
@@ -553,10 +1022,10 @@ func TestCreateRunRequiresWorkspaceDefaultRepo(t *testing.T) {
 }
 
 func TestIngestRunEventCompleted(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
-	_, claimed, err := s.ClaimNextQueuedRun("rt_local")
+	run, _, claimed, err := s.ClaimNextQueuedRun("rt_local")
 	if err != nil {
 		t.Fatalf("claim returned error: %v", err)
 	}
@@ -564,7 +1033,7 @@ func TestIngestRunEventCompleted(t *testing.T) {
 		t.Fatal("expected a queued run to be claimed")
 	}
 
-	run, err := s.IngestRunEvent("run_guard_01", "rt_local", "completed", "done", "", "", nil)
+	run, err = s.IngestRunEvent(run.ID, "rt_local", "completed", "done", "", "", nil)
 	if err != nil {
 		t.Fatalf("ingest returned error: %v", err)
 	}
@@ -577,10 +1046,10 @@ func TestIngestRunEventCompleted(t *testing.T) {
 }
 
 func TestRunOutputEventAppendsChunks(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
-	if _, claimed, err := s.ClaimNextQueuedRun("rt_local"); err != nil {
+	if _, _, claimed, err := s.ClaimNextQueuedRun("rt_local"); err != nil {
 		t.Fatalf("claim returned error: %v", err)
 	} else if !claimed {
 		t.Fatal("expected a queued run to be claimed")
@@ -611,10 +1080,10 @@ func TestRunOutputEventAppendsChunks(t *testing.T) {
 }
 
 func TestToolCallEventAppendsToolCalls(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
-	if _, claimed, err := s.ClaimNextQueuedRun("rt_local"); err != nil {
+	if _, _, claimed, err := s.ClaimNextQueuedRun("rt_local"); err != nil {
 		t.Fatalf("claim returned error: %v", err)
 	} else if !claimed {
 		t.Fatal("expected a queued run to be claimed")
@@ -654,8 +1123,342 @@ func TestToolCallEventAppendsToolCalls(t *testing.T) {
 	}
 }
 
-func TestSetTaskStatusUpdatesEditableTaskState(t *testing.T) {
+func TestAgentTurnOutputEventAppendsOutputChunks(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	if _, err := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先给我一个计划。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+
+	execution, claimed, err := s.ClaimNextQueuedAgentTurn("rt_local")
+	if err != nil {
+		t.Fatalf("claim returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected a queued agent turn to be claimed")
+	}
+	if execution.AgentName != "Shell_Runner" {
+		t.Fatalf("expected claimed turn to expose agent display name, got %#v", execution)
+	}
+	if execution.AgentPrompt == "" {
+		t.Fatalf("expected claimed turn to expose agent prompt, got %#v", execution)
+	}
+	if !strings.Contains(execution.Instruction, "你的稳定 OpenShock agent id 是 `agent_shell`。") {
+		t.Fatalf("expected claimed turn to expose backend-built instruction, got %#v", execution)
+	}
+	if !strings.Contains(execution.Instruction, execution.AgentPrompt) {
+		t.Fatalf("expected claimed turn to expose backend-built instruction, got %#v", execution)
+	}
+
+	if _, err := s.IngestAgentTurnEvent(execution.Turn.ID, "rt_local", "output", "first streamed output", "stdout", nil); err != nil {
+		t.Fatalf("first output event returned error: %v", err)
+	}
+	if _, err := s.IngestAgentTurnEvent(execution.Turn.ID, "rt_local", "output", "second streamed output", "stderr", nil); err != nil {
+		t.Fatalf("second output event returned error: %v", err)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentTurnOutputChunks) < 2 {
+		t.Fatalf("expected appended agent turn output chunks, got %#v", detail.AgentTurnOutputChunks)
+	}
+
+	lastTwo := detail.AgentTurnOutputChunks[len(detail.AgentTurnOutputChunks)-2:]
+	if lastTwo[0].Sequence != 1 || lastTwo[1].Sequence != 2 {
+		t.Fatalf("expected append-only chunk sequence 1,2 got %#v", lastTwo)
+	}
+	if lastTwo[1].Stream != "stderr" || lastTwo[1].Content != "second streamed output" {
+		t.Fatalf("unexpected agent turn output payload: %#v", lastTwo[1])
+	}
+}
+
+func TestAgentTurnToolCallEventAppendsToolCalls(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	if _, err := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先给我一个计划。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+
+	execution, claimed, err := s.ClaimNextQueuedAgentTurn("rt_local")
+	if err != nil {
+		t.Fatalf("claim returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected a queued agent turn to be claimed")
+	}
+
+	firstToolCall := &core.ToolCallInput{
+		ToolName:  "shell",
+		Arguments: `{"command":"git status"}`,
+		Status:    "completed",
+	}
+	secondToolCall := &core.ToolCallInput{
+		ToolName:  "openshock",
+		Arguments: `{"command":"task create"}`,
+		Status:    "completed",
+	}
+	if _, err := s.IngestAgentTurnEvent(execution.Turn.ID, "rt_local", "tool_call", "", "", firstToolCall); err != nil {
+		t.Fatalf("first tool call returned error: %v", err)
+	}
+	if _, err := s.IngestAgentTurnEvent(execution.Turn.ID, "rt_local", "tool_call", "", "", secondToolCall); err != nil {
+		t.Fatalf("second tool call returned error: %v", err)
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentTurnToolCalls) < 2 {
+		t.Fatalf("expected appended agent turn tool calls, got %#v", detail.AgentTurnToolCalls)
+	}
+
+	lastTwo := detail.AgentTurnToolCalls[len(detail.AgentTurnToolCalls)-2:]
+	if lastTwo[0].Sequence != 1 || lastTwo[1].Sequence != 2 {
+		t.Fatalf("expected append-only tool call sequence 1,2 got %#v", lastTwo)
+	}
+	if lastTwo[1].ToolName != "openshock" {
+		t.Fatalf("unexpected agent turn tool call payload: %#v", lastTwo[1])
+	}
+}
+
+func TestAgentTurnObservabilityRollsAfterRetentionWindow(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	if _, err := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先给我一个计划。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+
+	execution, claimed, err := s.ClaimNextQueuedAgentTurn("rt_local")
+	if err != nil {
+		t.Fatalf("claim returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected a queued agent turn to be claimed")
+	}
+
+	oldTimestamp := time.Now().UTC().Add(-agentTurnObservabilityRetention - time.Hour).Format(time.RFC3339)
+	s.agentTurnOutputChunks = append(s.agentTurnOutputChunks, core.AgentTurnOutputChunk{
+		ID:        "agent_turn_output_old",
+		TurnID:    execution.Turn.ID,
+		Sequence:  99,
+		Stream:    "stdout",
+		Content:   "old output",
+		CreatedAt: oldTimestamp,
+	})
+	s.agentTurnToolCalls = append(s.agentTurnToolCalls, core.AgentTurnToolCall{
+		ID:        "agent_turn_tool_call_old",
+		TurnID:    execution.Turn.ID,
+		Sequence:  99,
+		ToolName:  "shell",
+		Status:    "completed",
+		CreatedAt: oldTimestamp,
+	})
+
+	if _, err := s.IngestAgentTurnEvent(execution.Turn.ID, "rt_local", "output", "fresh output", "stdout", nil); err != nil {
+		t.Fatalf("fresh output event returned error: %v", err)
+	}
+
+	for _, chunk := range s.agentTurnOutputChunks {
+		if chunk.ID == "agent_turn_output_old" {
+			t.Fatalf("expected old output chunk to be pruned, got %#v", s.agentTurnOutputChunks)
+		}
+	}
+	for _, toolCall := range s.agentTurnToolCalls {
+		if toolCall.ID == "agent_turn_tool_call_old" {
+			t.Fatalf("expected old tool call to be pruned, got %#v", s.agentTurnToolCalls)
+		}
+	}
+}
+
+func TestClaimNextQueuedAgentTurnSerializesSessionClaims(t *testing.T) {
 	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell")
+	runtime, err := s.RegisterRuntime("Local Daemon", "codex", 2)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
+
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add room agent returned error: %v", err)
+	}
+	if _, err := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 先看第一条。"); err != nil {
+		t.Fatalf("post first room message returned error: %v", err)
+	}
+
+	firstExecution, claimed, err := s.ClaimNextQueuedAgentTurn(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim first turn returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected first agent turn to be claimed")
+	}
+
+	if _, err := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 再跟进第二条。"); err != nil {
+		t.Fatalf("post second room message returned error: %v", err)
+	}
+
+	if _, claimed, err := s.ClaimNextQueuedAgentTurn(runtime.ID); err != nil {
+		t.Fatalf("claim second turn while first is active returned error: %v", err)
+	} else if claimed {
+		t.Fatal("expected same session follow-up turn to wait until the active turn completes")
+	}
+
+	if _, err := s.CompleteAgentTurn(firstExecution.Turn.ID, runtime.ID, "", ""); err != nil {
+		t.Fatalf("complete first turn returned error: %v", err)
+	}
+
+	secondExecution, claimed, err := s.ClaimNextQueuedAgentTurn(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim second turn after completion returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected queued follow-up turn to be claimable after completion")
+	}
+	if secondExecution.Turn.TriggerMessageID == firstExecution.Turn.TriggerMessageID {
+		t.Fatalf("expected follow-up turn to target the newer message, got %#v", secondExecution.Turn)
+	}
+}
+
+func TestReconcileRuntimeHealthRequeuesClaimedAgentTurn(t *testing.T) {
+	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell")
+	runtime, err := s.RegisterRuntime("Local Daemon", "codex", 1)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
+
+	if _, err := s.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add room agent returned error: %v", err)
+	}
+	if _, err := s.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 看一下卡住恢复。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+
+	execution, claimed, err := s.ClaimNextQueuedAgentTurn(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim agent turn returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected agent turn to be claimed")
+	}
+
+	for i := range s.runtimes {
+		if s.runtimes[i].ID == runtime.ID {
+			s.runtimes[i].LastHeartbeatAt = time.Now().UTC().Add(-runtimeHeartbeatTTL - time.Second).Format(time.RFC3339)
+		}
+	}
+
+	detail, err := s.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentTurns) != 1 || detail.AgentTurns[0].Status != "queued" || detail.AgentTurns[0].RuntimeID != "" {
+		t.Fatalf("expected claimed turn to be requeued after stale heartbeat, got %#v", detail.AgentTurns)
+	}
+	if len(detail.AgentSessions) != 1 || detail.AgentSessions[0].Status != "queued" {
+		t.Fatalf("expected session to return to queued after stale heartbeat, got %#v", detail.AgentSessions)
+	}
+	if detail.AgentSessions[0].CurrentTurnID != execution.Turn.ID {
+		t.Fatalf("expected session current turn to stay on the requeued turn, got %#v", detail.AgentSessions[0])
+	}
+}
+
+func TestClaimNextQueuedRunReturnsExistingAgentSession(t *testing.T) {
+	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_guardian")
+	bindDefaultWorkspaceRepo(t, s)
+	runtime, err := s.RegisterRuntime("Local Daemon", "codex", 1)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
+
+	issueResp := s.CreateIssue("Run Session Issue", "verify run session reuse", "high")
+	issueID := issueResp.AffectedEntities[0].ID
+	if _, err := s.AddAgentToRoom(issueID, "agent_guardian", "Sarah"); err != nil {
+		t.Fatalf("add issue room agent returned error: %v", err)
+	}
+	taskResp, err := s.CreateTask(issueID, "Guard task", "exercise run session mapping", "agent_guardian")
+	if err != nil {
+		t.Fatalf("create task returned error: %v", err)
+	}
+	taskID := taskResp.AffectedEntities[0].ID
+	if _, err := s.CreateRun(taskID); err != nil {
+		t.Fatalf("create run returned error: %v", err)
+	}
+
+	run, agentSession, claimed, err := s.ClaimNextQueuedRun(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim run returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected run to be claimed")
+	}
+	if run.TaskID != taskID {
+		t.Fatalf("expected claimed run for %s, got %#v", taskID, run)
+	}
+	room, ok := s.findRoomByIssue(issueID)
+	if !ok {
+		t.Fatalf("expected room for issue %s", issueID)
+	}
+	if agentSession == nil || agentSession.AgentID != "agent_guardian" || agentSession.RoomID != room.ID {
+		t.Fatalf("expected existing issue agent session to be attached, got %#v", agentSession)
+	}
+}
+
+func TestClaimNextQueuedRunWaitsForActiveAgentSessionWork(t *testing.T) {
+	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_guardian")
+	bindDefaultWorkspaceRepo(t, s)
+	runtime, err := s.RegisterRuntime("Local Daemon", "codex", 2)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
+
+	issueResp := s.CreateIssue("Run Wait Issue", "serialize agent work", "high")
+	issueID := issueResp.AffectedEntities[0].ID
+	if _, err := s.AddAgentToRoom(issueID, "agent_guardian", "Sarah"); err != nil {
+		t.Fatalf("add issue room agent returned error: %v", err)
+	}
+	if _, err := s.PostRoomMessage(issueID, "member", "Sarah", "message", "@agent_guardian 先回房间消息。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+
+	turnExecution, claimed, err := s.ClaimNextQueuedAgentTurn(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim agent turn returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected room agent turn to be claimed")
+	}
+
+	taskResp, err := s.CreateTask(issueID, "Guard task", "serialize with room turn", "agent_guardian")
+	if err != nil {
+		t.Fatalf("create task returned error: %v", err)
+	}
+	taskID := taskResp.AffectedEntities[0].ID
+	if _, err := s.CreateRun(taskID); err != nil {
+		t.Fatalf("create run returned error: %v", err)
+	}
+	if _, _, claimed, err := s.ClaimNextQueuedRun(runtime.ID); err != nil {
+		t.Fatalf("claim run while agent turn is active returned error: %v", err)
+	} else if claimed {
+		t.Fatal("expected run to wait while the same agent session already has active Codex work")
+	}
+
+	if _, err := s.CompleteAgentTurn(turnExecution.Turn.ID, runtime.ID, "", ""); err != nil {
+		t.Fatalf("complete agent turn returned error: %v", err)
+	}
+	if _, _, claimed, err := s.ClaimNextQueuedRun(runtime.ID); err != nil {
+		t.Fatalf("claim run after agent turn completion returned error: %v", err)
+	} else if !claimed {
+		t.Fatal("expected run to become claimable after the agent session is free")
+	}
+}
+
+func TestSetTaskStatusUpdatesEditableTaskState(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	resp, err := s.SetTaskStatus("task_guard", "blocked", "Sarah")
 	if err != nil {
@@ -690,16 +1493,16 @@ func TestBuildRunInstructionIncludesTaskStatusCommands(t *testing.T) {
 	})
 
 	for _, expected := range []string{
-		"Task ID: task_guard",
-		"This is a single-run execution for the current task branch.",
-		"The OpenShock CLI is available as `openshock` during execution.",
-		"update the task to in_progress early",
+		"任务 ID：task_guard",
+		"这是当前任务分支的一次单次执行。",
+		"执行期间可使用 OpenShock CLI，命令名为 `openshock`。",
+		"尽早把任务状态更新为 `in_progress`",
 		"openshock task status set --task task_guard --status in_progress --actor-id agent_shell",
-		"Finish code changes and validation before stopping.",
+		"停止前要完成代码修改和验证。",
 		"openshock task status set --task task_guard --status blocked --actor-id agent_shell",
-		"If you are blocked, explain the real blocker in your final summary.",
+		"请在最终总结里清楚说明真实阻塞点。",
 		"openshock task mark-ready --task task_guard --actor-id agent_shell",
-		"Your final summary should include both the code changes and the verification you ran.",
+		"最终总结里需要同时包含代码改动和你实际执行过的验证。",
 	} {
 		if !strings.Contains(instruction, expected) {
 			t.Fatalf("expected instruction to contain %q, got:\n%s", expected, instruction)
@@ -707,10 +1510,66 @@ func TestBuildRunInstructionIncludesTaskStatusCommands(t *testing.T) {
 	}
 }
 
-func TestRegisterRuntime(t *testing.T) {
-	s := NewMemoryStore()
+func TestPostRoomMessageRejectsUnknownTarget(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
-	runtime := s.RegisterRuntime("Daemon Runner", "codex", 2)
+	if _, err := s.PostRoomMessage("room_missing", "member", "Sarah", "message", "有人吗？"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown room target, got %v", err)
+	}
+}
+
+func TestClaimNextQueuedAgentTurnSkipsInvalidTurnAndClaimsNextValid(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell 先看这个损坏 turn。")
+	s.agentTurns[0].RoomID = "room_missing"
+
+	second := mustPostRoomMessage(t, s, "room_001", "member", "Sarah", "message", "@agent_shell 再处理这个有效 turn。")
+	validMessageID := ""
+	for _, entity := range second.AffectedEntities {
+		if entity.Type == "message" {
+			validMessageID = entity.ID
+			break
+		}
+	}
+	if validMessageID == "" {
+		t.Fatalf("expected second message id, got %#v", second.AffectedEntities)
+	}
+
+	runtime, err := s.RegisterRuntime("Daemon Runner", "codex", 1)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
+	execution, claimed, err := s.ClaimNextQueuedAgentTurn(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim agent turn returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected a valid queued turn to still be claimable")
+	}
+	if execution.Turn.TriggerMessageID != validMessageID {
+		t.Fatalf("expected claim to skip invalid turn and select valid trigger %q, got %#v", validMessageID, execution.Turn)
+	}
+	if s.agentTurns[0].Status != "completed" {
+		t.Fatalf("expected invalid turn to be invalidated, got %#v", s.agentTurns[0])
+	}
+}
+
+func TestCreateTaskRejectsUnknownIssue(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	if _, err := s.CreateTask("issue_missing", "Write patch", "Handle missing issue validation.", "agent_shell"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown issue, got %v", err)
+	}
+}
+
+func TestRegisterRuntime(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	runtime, err := s.RegisterRuntime("Daemon Runner", "codex", 2)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
 	if runtime.ID == "" {
 		t.Fatal("expected runtime id to be assigned")
 	}
@@ -719,8 +1578,23 @@ func TestRegisterRuntime(t *testing.T) {
 	}
 }
 
+func TestRegisterRuntimeRejectsActiveDuplicateNameAndProvider(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
+
+	first, err := s.RegisterRuntime("Daemon Runner", "codex", 1)
+	if err != nil {
+		t.Fatalf("first register runtime returned error: %v", err)
+	}
+	if _, err := s.RegisterRuntime("Daemon Runner", "codex", 4); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict for active duplicate runtime, got %v", err)
+	}
+	if first.ID == "" {
+		t.Fatal("expected first runtime id to be assigned")
+	}
+}
+
 func TestRequestMergeCreatesInboxItem(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	resp, err := s.RequestMerge("task_guard")
 	if err != nil {
@@ -757,9 +1631,9 @@ func TestRequestMergeCreatesInboxItem(t *testing.T) {
 }
 
 func TestBlockedRunEventCreatesInboxItemAndMessage(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
-	_, claimed, err := s.ClaimNextQueuedRun("rt_local")
+	_, _, claimed, err := s.ClaimNextQueuedRun("rt_local")
 	if err != nil {
 		t.Fatalf("claim returned error: %v", err)
 	}
@@ -793,7 +1667,7 @@ func TestBlockedRunEventCreatesInboxItemAndMessage(t *testing.T) {
 }
 
 func TestStartedRunEventDoesNotAppendRoomMessage(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	beforeIssue, err := s.IssueDetail("issue_101")
@@ -815,7 +1689,7 @@ func TestStartedRunEventDoesNotAppendRoomMessage(t *testing.T) {
 }
 
 func TestCompletedRunEventDoesNotAppendRoomMessage(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	beforeIssue, err := s.IssueDetail("issue_101")
@@ -837,7 +1711,7 @@ func TestCompletedRunEventDoesNotAppendRoomMessage(t *testing.T) {
 }
 
 func TestApproveRunRequeuesAndClearsInbox(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	beforeInbox := len(s.Inbox().Items)
 	resp, err := s.ApproveRun("run_guard_01", "Sarah")
@@ -870,7 +1744,7 @@ func TestApproveRunRequeuesAndClearsInbox(t *testing.T) {
 }
 
 func TestCancelRunMarksTaskBlocked(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	resp, err := s.CancelRun("run_review_01", "Sarah")
 	if err != nil {
@@ -906,7 +1780,7 @@ func TestCancelRunMarksTaskBlocked(t *testing.T) {
 }
 
 func TestCreateDeliveryPRRequiresReadyIntegration(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	_, err := s.CreateDeliveryPR("issue_101", "Sarah")
 	if err == nil {
@@ -915,7 +1789,7 @@ func TestCreateDeliveryPRRequiresReadyIntegration(t *testing.T) {
 }
 
 func TestCreateDeliveryPRMovesIssueToReview(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {
@@ -987,7 +1861,7 @@ func TestCreateDeliveryPRMovesIssueToReview(t *testing.T) {
 }
 
 func TestRepoWebhookMergeMovesIssueDoneAndIsIdempotent(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {
@@ -1058,7 +1932,7 @@ func TestRepoWebhookMergeMovesIssueDoneAndIsIdempotent(t *testing.T) {
 }
 
 func TestMarkTaskReadyForIntegrationRequestsReview(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 
 	resp, err := s.MarkTaskReadyForIntegration("task_guard")
 	if err != nil {
@@ -1085,7 +1959,7 @@ func TestMarkTaskReadyForIntegrationRequestsReview(t *testing.T) {
 }
 
 func TestApproveMergeQueuesMergeAttempt(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {
@@ -1109,8 +1983,73 @@ func TestApproveMergeQueuesMergeAttempt(t *testing.T) {
 	}
 }
 
-func TestApproveMergeRequiresPendingApprovalRequest(t *testing.T) {
+func TestApproveMergePrefersLatestCompletedRunAsSource(t *testing.T) {
 	s := NewMemoryStore()
+	mustCreateTestAgents(t, s, "agent_shell")
+	bindDefaultWorkspaceRepo(t, s)
+	runtime, err := s.RegisterRuntime("Local Daemon", "codex", 1)
+	if err != nil {
+		t.Fatalf("register runtime returned error: %v", err)
+	}
+
+	issueResp := s.CreateIssue("Acceptance Issue", "source run selection", "high")
+	issueID := issueResp.AffectedEntities[0].ID
+	taskResp, err := s.CreateTask(issueID, "Acceptance Task", "verify merge source run", "agent_shell")
+	if err != nil {
+		t.Fatalf("create task returned error: %v", err)
+	}
+	taskID := taskResp.AffectedEntities[0].ID
+
+	if _, err := s.CreateRun(taskID); err != nil {
+		t.Fatalf("first create run returned error: %v", err)
+	}
+	if _, err := s.CreateRun(taskID); err != nil {
+		t.Fatalf("second create run returned error: %v", err)
+	}
+
+	runOne, _, claimed, err := s.ClaimNextQueuedRun(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim first run returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected first run to be claimed")
+	}
+	if _, err := s.IngestRunEvent(runOne.ID, runtime.ID, "completed", "completed", "", "", nil); err != nil {
+		t.Fatalf("complete first run returned error: %v", err)
+	}
+
+	runTwo, _, claimed, err := s.ClaimNextQueuedRun(runtime.ID)
+	if err != nil {
+		t.Fatalf("claim second run returned error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected second run to be claimed")
+	}
+	if _, err := s.IngestRunEvent(runTwo.ID, runtime.ID, "blocked", "blocked", "", "", nil); err != nil {
+		t.Fatalf("block second run returned error: %v", err)
+	}
+
+	if _, err := s.RequestMerge(taskID); err != nil {
+		t.Fatalf("request merge returned error: %v", err)
+	}
+	if _, err := s.ApproveMerge(taskID, "Sarah"); err != nil {
+		t.Fatalf("approve merge returned error: %v", err)
+	}
+
+	detail, err := s.IssueDetail(issueID)
+	if err != nil {
+		t.Fatalf("issue detail returned error: %v", err)
+	}
+	if len(detail.MergeAttempts) != 1 {
+		t.Fatalf("expected one merge attempt, got %#v", detail.MergeAttempts)
+	}
+	if detail.MergeAttempts[0].SourceRunID != runOne.ID {
+		t.Fatalf("expected merge to prefer completed run %s, got %s", runOne.ID, detail.MergeAttempts[0].SourceRunID)
+	}
+}
+
+func TestApproveMergeRequiresPendingApprovalRequest(t *testing.T) {
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.ApproveMerge("task_review", "Sarah"); err == nil {
@@ -1119,7 +2058,7 @@ func TestApproveMergeRequiresPendingApprovalRequest(t *testing.T) {
 }
 
 func TestRequestMergeRejectsIntegratedTask(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {
@@ -1146,7 +2085,7 @@ func TestRequestMergeRejectsIntegratedTask(t *testing.T) {
 }
 
 func TestMergeEventSucceededIntegratesTask(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {
@@ -1188,7 +2127,7 @@ func TestMergeEventSucceededIntegratesTask(t *testing.T) {
 }
 
 func TestMergeEventConflictBlocksTask(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {
@@ -1230,7 +2169,7 @@ func TestMergeEventConflictBlocksTask(t *testing.T) {
 }
 
 func TestStartedMergeEventDoesNotAppendRoomMessage(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {
@@ -1267,7 +2206,7 @@ func TestStartedMergeEventDoesNotAppendRoomMessage(t *testing.T) {
 }
 
 func TestSucceededMergeEventDoesNotAppendRoomMessage(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindDefaultWorkspaceRepo(t, s)
 
 	if _, err := s.RequestMerge("task_guard"); err != nil {

@@ -1,0 +1,19 @@
+任务 ID：{{ .TaskID }}
+任务标题：{{ .TaskTitle }}
+分支：{{ .BranchName }}
+{{- if .AssigneeAgentID }}
+Agent ID：{{ .AssigneeAgentID }}
+{{- end }}
+{{- if .Description }}
+任务描述：{{ .Description }}
+{{- end }}
+这是当前任务分支的一次单次执行。请完成工作、完成验证、总结结果，然后停止。
+请直接修改这个任务对应的工作树，并总结最终结果。
+执行期间可使用 OpenShock CLI，命令名为 `openshock`。
+一旦开始真正实施，请尽早把任务状态更新为 `in_progress`，不要等到最后。
+如果你已经在积极推进这个任务，可以执行：openshock task status set --task {{ .TaskID }} --status in_progress --actor-id {{ .ActorID }}
+你报告了进展，并不代表这次 run 已经完成。停止前要完成代码修改和验证。
+如果你被真实依赖或缺失上下文阻塞，请执行：openshock task status set --task {{ .TaskID }} --status blocked --actor-id {{ .ActorID }}
+如果被阻塞，请在最终总结里清楚说明真实阻塞点。
+当任务已经可以进入集成阶段时，请执行：openshock task mark-ready --task {{ .TaskID }} --actor-id {{ .ActorID }}
+最终总结里需要同时包含代码改动和你实际执行过的验证。

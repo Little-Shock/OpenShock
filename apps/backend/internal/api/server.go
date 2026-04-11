@@ -39,7 +39,16 @@ func newAPI(store *store.MemoryStore, hub *realtime.Hub) *API {
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", a.handleHealth)
+	mux.HandleFunc("/api/v1/auth/register", a.handleAuthRegister)
+	mux.HandleFunc("/api/v1/auth/login", a.handleAuthLogin)
+	mux.HandleFunc("/api/v1/auth/session", a.handleAuthSession)
+	mux.HandleFunc("/api/v1/auth/logout", a.handleAuthLogout)
+	mux.HandleFunc("/api/v1/auth/profile", a.handleAuthProfile)
+	mux.HandleFunc("/api/v1/workspaces", a.handleWorkspaces)
+	mux.HandleFunc("/api/v1/workspaces/current", a.handleCurrentWorkspace)
 	mux.HandleFunc("/api/v1/bootstrap", a.handleBootstrap)
+	mux.HandleFunc("/api/v1/agents", a.handleAgents)
+	mux.HandleFunc("/api/v1/agents/", a.handleAgentByID)
 	mux.HandleFunc("/api/v1/issues/", a.handleIssueDetail)
 	mux.HandleFunc("/api/v1/rooms/", a.handleRoomDetail)
 	mux.HandleFunc("/api/v1/task-board", a.handleTaskBoard)
@@ -62,12 +71,205 @@ func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (a *API) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
+	member, session, ok := a.memberFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "member session is required"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		_ = member
+		writeJSON(w, http.StatusOK, core.WorkspaceListResponse{
+			Workspaces:         a.store.Workspaces(),
+			CurrentWorkspaceID: session.ActiveWorkspaceID,
+		})
+	case http.MethodPost:
+		var req core.WorkspaceCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+			return
+		}
+		workspace, err := a.store.CreateWorkspace(req.Name)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, err := a.store.SetActiveWorkspaceForSession(sessionTokenFromRequest(r), workspace.ID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		a.publish("workspace.created", []string{fmt.Sprintf("workspace:%s", workspace.ID)}, map[string]any{
+			"actorId":     member.ID,
+			"workspaceId": workspace.ID,
+		})
+		writeJSON(w, http.StatusOK, core.WorkspaceResponse{Workspace: workspace})
+	default:
+		writeMethodNotAllowed(w)
+	}
+}
+
+func (a *API) handleCurrentWorkspace(w http.ResponseWriter, r *http.Request) {
+	_, _, ok := a.memberFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "member session is required"})
+		return
+	}
+	if r.Method != http.MethodPut {
+		writeMethodNotAllowed(w)
+		return
+	}
+
+	var req core.WorkspaceSwitchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+		return
+	}
+
+	if _, err := a.store.SetActiveWorkspaceForSession(sessionTokenFromRequest(r), req.WorkspaceID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, store.ErrUnauthorized) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "member session is required"})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	workspaceID := strings.TrimSpace(req.WorkspaceID)
+	a.publish("workspace.switched", []string{fmt.Sprintf("workspace:%s", workspaceID)}, map[string]any{
+		"workspaceId": workspaceID,
+	})
+	writeJSON(w, http.StatusOK, core.WorkspaceResponse{Workspace: a.store.BootstrapForWorkspace(workspaceID).Workspace})
+}
+
 func (a *API) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.store.Bootstrap())
+	_, session, ok := a.memberFromRequest(r)
+	if ok {
+		writeJSON(w, http.StatusOK, a.store.BootstrapForWorkspaceAndSession(session.ActiveWorkspaceID, session.ID))
+		return
+	}
+	writeJSON(w, http.StatusOK, a.store.BootstrapForWorkspace(a.workspaceIDFromRequest(r)))
+}
+
+func (a *API) handleAgents(w http.ResponseWriter, r *http.Request) {
+	member, _, ok := a.memberFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "member session is required"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		_ = member
+		writeJSON(w, http.StatusOK, core.AgentListResponse{Agents: a.store.Agents()})
+	case http.MethodPost:
+		var req core.AgentCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+			return
+		}
+
+		agent, err := a.store.CreateAgent(req.ID, req.Name, req.Prompt)
+		if err != nil {
+			code := http.StatusBadRequest
+			if errors.Is(err, store.ErrConflict) {
+				code = http.StatusConflict
+			}
+			writeJSON(w, code, map[string]string{"error": err.Error()})
+			return
+		}
+
+		a.publish("agent.created", []string{a.workspaceScopeForRequest(r)}, map[string]any{
+			"actorId":  member.ID,
+			"entityId": agent.ID,
+		})
+		writeJSON(w, http.StatusOK, core.AgentResponse{Agent: agent})
+	default:
+		writeMethodNotAllowed(w)
+	}
+}
+
+func (a *API) handleAgentByID(w http.ResponseWriter, r *http.Request) {
+	_, _, ok := a.memberFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "member session is required"})
+		return
+	}
+
+	agentID := strings.TrimPrefix(r.URL.Path, "/api/v1/agents/")
+	if agentID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		detail, err := a.store.AgentDetailForWorkspace(a.workspaceIDFromRequest(r), agentID)
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, detail)
+	case http.MethodPatch:
+		var req core.AgentUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+			return
+		}
+
+		agent, err := a.store.UpdateAgent(agentID, req.Name, req.Prompt)
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			code := http.StatusBadRequest
+			if errors.Is(err, store.ErrConflict) {
+				code = http.StatusConflict
+			}
+			writeJSON(w, code, map[string]string{"error": err.Error()})
+			return
+		}
+
+		a.publish("agent.updated", []string{a.workspaceScopeForRequest(r)}, map[string]any{
+			"entityId": agent.ID,
+		})
+		writeJSON(w, http.StatusOK, core.AgentResponse{Agent: agent})
+	case http.MethodDelete:
+		err := a.store.DeleteAgent(agentID)
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			code := http.StatusBadRequest
+			if errors.Is(err, store.ErrConflict) {
+				code = http.StatusConflict
+			}
+			writeJSON(w, code, map[string]string{"error": err.Error()})
+			return
+		}
+
+		a.publish("agent.deleted", []string{a.workspaceScopeForRequest(r)}, map[string]any{
+			"entityId": agentID,
+		})
+		writeJSON(w, http.StatusOK, core.AgentDeleteResponse{Deleted: true, AgentID: agentID})
+	default:
+		writeMethodNotAllowed(w)
+	}
 }
 
 func (a *API) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +284,7 @@ func (a *API) handleIssueDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := a.store.IssueDetail(issueID)
+	resp, err := a.store.IssueDetailForWorkspace(a.workspaceIDFromRequest(r), issueID)
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -107,7 +309,17 @@ func (a *API) handleRoomDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := a.store.RoomDetail(roomID)
+	_, session, ok := a.memberFromRequest(r)
+	workspaceID := a.workspaceIDFromRequest(r)
+	var (
+		resp core.RoomDetailResponse
+		err  error
+	)
+	if ok {
+		resp, err = a.store.RoomDetailForWorkspaceAndSession(workspaceID, roomID, session.ID)
+	} else {
+		resp, err = a.store.RoomDetailForWorkspace(workspaceID, roomID)
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -125,7 +337,7 @@ func (a *API) handleTaskBoard(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.store.TaskBoard())
+	writeJSON(w, http.StatusOK, a.store.TaskBoardForWorkspace(a.workspaceIDFromRequest(r)))
 }
 
 func (a *API) handleInbox(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +345,7 @@ func (a *API) handleInbox(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.store.Inbox())
+	writeJSON(w, http.StatusOK, a.store.InboxForWorkspace(a.workspaceIDFromRequest(r)))
 }
 
 func (a *API) handleActions(w http.ResponseWriter, r *http.Request) {
@@ -152,31 +364,46 @@ func (a *API) handleActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if replay, ok := a.store.LookupActionResult(req.IdempotencyKey); ok {
+	effectiveReq := req
+	if strings.EqualFold(strings.TrimSpace(effectiveReq.ActorType), "member") {
+		member, _, ok := a.memberFromRequest(r)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "member session is required"})
+			return
+		}
+		effectiveReq.ActorType = "member"
+		effectiveReq.ActorID = member.DisplayName
+	}
+
+	if replay, ok := a.store.LookupActionResult(effectiveReq.IdempotencyKey); ok {
 		writeJSON(w, http.StatusOK, replay)
 		return
 	}
 
-	resp, err := a.gateway.Submit(req)
+	resp, err := a.gateway.Submit(effectiveReq)
 	if err != nil {
 		code := http.StatusBadRequest
 		if errors.Is(err, store.ErrNotFound) {
 			code = http.StatusNotFound
+		} else if errors.Is(err, store.ErrUnauthorized) {
+			code = http.StatusUnauthorized
+		} else if errors.Is(err, store.ErrConflict) {
+			code = http.StatusConflict
 		}
 		writeJSON(w, code, map[string]string{"error": err.Error()})
 		return
 	}
 
-	a.publish("action.applied", a.scopesForAction(req, resp), map[string]any{
+	a.publish("action.applied", a.scopesForAction(effectiveReq, resp), map[string]any{
 		"actionId":      resp.ActionID,
-		"actionType":    req.ActionType,
-		"targetType":    req.TargetType,
-		"targetId":      req.TargetID,
+		"actionType":    effectiveReq.ActionType,
+		"targetType":    effectiveReq.TargetType,
+		"targetId":      effectiveReq.TargetID,
 		"status":        resp.Status,
 		"resultCode":    resp.ResultCode,
-		"actorType":     req.ActorType,
-		"actorId":       req.ActorID,
-		"issueId":       a.issueIDForAction(req, resp),
+		"actorType":     effectiveReq.ActorType,
+		"actorId":       effectiveReq.ActorID,
+		"issueId":       a.issueIDForAction(effectiveReq, resp),
 		"entityChanges": resp.AffectedEntities,
 	})
 
@@ -195,15 +422,25 @@ func (a *API) handleRegisterRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runtime := a.store.RegisterRuntime(req.Name, req.Provider, req.SlotCount)
+	runtime, err := a.store.RegisterRuntime(req.Name, req.Provider, req.SlotCount)
+	if err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	a.publish("runtime.registered", []string{
-		a.workspaceScope(),
+		a.workspaceScope(a.store.WorkspaceID()),
 		"runtime:all",
 		fmt.Sprintf("runtime:%s", runtime.ID),
 	}, map[string]any{
-		"runtimeId": runtime.ID,
-		"status":    runtime.Status,
-		"provider":  runtime.Provider,
+		"runtimeId":   runtime.ID,
+		"status":      runtime.Status,
+		"provider":    runtime.Provider,
+		"slotCount":   runtime.SlotCount,
+		"activeSlots": runtime.ActiveSlots,
 	})
 	writeJSON(w, http.StatusOK, core.RegisterRuntimeResponse{Runtime: runtime})
 }
@@ -241,17 +478,21 @@ func (a *API) handleRuntimeHeartbeat(w http.ResponseWriter, r *http.Request, run
 	}
 
 	a.publish("runtime.heartbeat", []string{
-		a.workspaceScope(),
+		a.workspaceScope(a.store.WorkspaceID()),
 		"runtime:all",
 		fmt.Sprintf("runtime:%s", runtime.ID),
 	}, map[string]any{
-		"runtimeId": runtime.ID,
-		"status":    runtime.Status,
+		"runtimeId":       runtime.ID,
+		"status":          runtime.Status,
+		"activeSlots":     runtime.ActiveSlots,
+		"lastHeartbeatAt": runtime.LastHeartbeatAt,
 	})
 
 	writeJSON(w, http.StatusOK, core.RuntimeHeartbeatResponse{
-		RuntimeID: runtime.ID,
-		Status:    runtime.Status,
+		RuntimeID:       runtime.ID,
+		Status:          runtime.Status,
+		ActiveSlots:     runtime.ActiveSlots,
+		LastHeartbeatAt: runtime.LastHeartbeatAt,
 	})
 }
 
@@ -281,7 +522,7 @@ func (a *API) handleClaimAgentTurn(w http.ResponseWriter, r *http.Request) {
 	if claimed {
 		response.AgentTurn = &turn
 		scopes := []string{
-			a.workspaceScope(),
+			a.workspaceScope(turn.Room.WorkspaceID),
 			fmt.Sprintf("room:%s", turn.Turn.RoomID),
 			"runtime:all",
 			fmt.Sprintf("runtime:%s", req.RuntimeID),
@@ -304,6 +545,11 @@ func (a *API) handleClaimAgentTurn(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleAgentTurnRoutes(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/agent-turns/")
+	if strings.HasSuffix(path, "/events") {
+		turnID := strings.TrimSuffix(path, "/events")
+		a.handleAgentTurnEvents(w, r, strings.TrimSuffix(turnID, "/"))
+		return
+	}
 	if strings.HasSuffix(path, "/complete") {
 		turnID := strings.TrimSuffix(path, "/complete")
 		a.handleCompleteAgentTurn(w, r, strings.TrimSuffix(turnID, "/"))
@@ -324,7 +570,7 @@ func (a *API) handleCompleteAgentTurn(w http.ResponseWriter, r *http.Request, tu
 		return
 	}
 
-	turn, err := a.store.CompleteAgentTurn(turnID, req.RuntimeID, req.ResultMessageID)
+	turn, err := a.store.CompleteAgentTurn(turnID, req.RuntimeID, req.ResultMessageID, req.AppServerThreadID)
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -335,7 +581,7 @@ func (a *API) handleCompleteAgentTurn(w http.ResponseWriter, r *http.Request, tu
 	}
 
 	scopes := []string{
-		a.workspaceScope(),
+		a.workspaceScopeForAgentTurn(turn.ID),
 		fmt.Sprintf("room:%s", turn.RoomID),
 		"runtime:all",
 		fmt.Sprintf("runtime:%s", req.RuntimeID),
@@ -360,6 +606,55 @@ func (a *API) handleCompleteAgentTurn(w http.ResponseWriter, r *http.Request, tu
 	})
 }
 
+func (a *API) handleAgentTurnEvents(w http.ResponseWriter, r *http.Request, turnID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+
+	var req core.AgentTurnEventRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+		return
+	}
+
+	turn, err := a.store.IngestAgentTurnEvent(turnID, req.RuntimeID, req.EventType, req.Message, req.Stream, req.ToolCall)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	scopes := []string{
+		a.workspaceScopeForAgentTurn(turn.ID),
+		fmt.Sprintf("room:%s", turn.RoomID),
+		"runtime:all",
+		fmt.Sprintf("runtime:%s", req.RuntimeID),
+		fmt.Sprintf("agent_turn:%s", turn.ID),
+	}
+	if issueID, ok := a.store.IssueIDForAgentTurn(turn.ID); ok {
+		scopes = append(scopes, fmt.Sprintf("issue:%s", issueID))
+	}
+	a.publish("agent_turn.event", scopes, map[string]any{
+		"agentTurnId": turn.ID,
+		"roomId":      turn.RoomID,
+		"agentId":     turn.AgentID,
+		"runtimeId":   req.RuntimeID,
+		"eventType":   req.EventType,
+		"hasOutput":   strings.TrimSpace(req.Message) != "",
+		"stream":      req.Stream,
+		"toolCall":    req.ToolCall != nil,
+	})
+
+	writeJSON(w, http.StatusOK, core.AgentTurnEventResponse{
+		AgentTurnID: turn.ID,
+		Status:      turn.Status,
+	})
+}
+
 func (a *API) handleClaimRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w)
@@ -372,7 +667,7 @@ func (a *API) handleClaimRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, claimed, err := a.store.ClaimNextQueuedRun(req.RuntimeID)
+	run, agentSession, claimed, err := a.store.ClaimNextQueuedRun(req.RuntimeID)
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -385,8 +680,9 @@ func (a *API) handleClaimRun(w http.ResponseWriter, r *http.Request) {
 	response := core.RunClaimResponse{Claimed: claimed}
 	if claimed {
 		response.Run = &run
+		response.AgentSession = agentSession
 		a.publish("run.claimed", []string{
-			a.workspaceScope(),
+			a.workspaceScope(run.WorkspaceID),
 			"board:default",
 			"runtime:all",
 			fmt.Sprintf("runtime:%s", req.RuntimeID),
@@ -442,7 +738,7 @@ func (a *API) handleClaimMerge(w http.ResponseWriter, r *http.Request) {
 	if claimed {
 		response.MergeAttempt = &mergeAttempt
 		a.publish("merge.claimed", []string{
-			a.workspaceScope(),
+			a.workspaceScope(mergeAttempt.WorkspaceID),
 			"board:default",
 			"runtime:all",
 			fmt.Sprintf("runtime:%s", req.RuntimeID),
@@ -493,7 +789,7 @@ func (a *API) handleRunEvents(w http.ResponseWriter, r *http.Request, runID stri
 	}
 
 	a.publish("run.updated", []string{
-		a.workspaceScope(),
+		a.workspaceScope(run.WorkspaceID),
 		"board:default",
 		"inbox:default",
 		"runtime:all",
@@ -542,7 +838,7 @@ func (a *API) handleMergeEvents(w http.ResponseWriter, r *http.Request, mergeAtt
 	}
 
 	a.publish("merge.updated", []string{
-		a.workspaceScope(),
+		a.workspaceScope(mergeAttempt.WorkspaceID),
 		"board:default",
 		"inbox:default",
 		"runtime:all",
@@ -588,8 +884,14 @@ func (a *API) handleRepoWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !resp.Replayed {
+		workspaceID := a.store.WorkspaceID()
+		if issueID, ok := a.store.IssueIDForDeliveryPR(resp.DeliveryPRID); ok {
+			if resolvedWorkspaceID, ok := a.store.WorkspaceIDForIssue(issueID); ok {
+				workspaceID = resolvedWorkspaceID
+			}
+		}
 		scopes := []string{
-			a.workspaceScope(),
+			a.workspaceScope(workspaceID),
 			"board:default",
 			"inbox:default",
 		}
@@ -684,13 +986,55 @@ func (a *API) publish(eventType string, scopes []string, payload map[string]any)
 	a.hub.Publish(eventType, scopes, payload)
 }
 
-func (a *API) workspaceScope() string {
-	return fmt.Sprintf("workspace:%s", a.store.WorkspaceID())
+func (a *API) workspaceScope(workspaceID string) string {
+	resolved := strings.TrimSpace(workspaceID)
+	if resolved == "" {
+		resolved = a.store.WorkspaceID()
+	}
+	return fmt.Sprintf("workspace:%s", resolved)
+}
+
+func (a *API) workspaceScopeForRequest(r *http.Request) string {
+	return a.workspaceScope(a.workspaceIDFromRequest(r))
+}
+
+func (a *API) workspaceIDForEntity(entityType, entityID string) (string, bool) {
+	switch entityType {
+	case "workspace":
+		return strings.TrimSpace(entityID), strings.TrimSpace(entityID) != ""
+	case "room":
+		return a.store.WorkspaceIDForRoom(entityID)
+	case "issue":
+		return a.store.WorkspaceIDForIssue(entityID)
+	case "task":
+		return a.store.WorkspaceIDForTask(entityID)
+	case "run":
+		return a.store.WorkspaceIDForRun(entityID)
+	case "merge_attempt":
+		return a.store.WorkspaceIDForMergeAttempt(entityID)
+	default:
+		return "", false
+	}
+}
+
+func (a *API) workspaceScopeForAgentTurn(turnID string) string {
+	if roomID, ok := a.store.RoomIDForAgentTurn(turnID); ok {
+		if workspaceID, ok := a.store.WorkspaceIDForRoom(roomID); ok {
+			return a.workspaceScope(workspaceID)
+		}
+	}
+	return a.workspaceScope(a.store.WorkspaceID())
 }
 
 func (a *API) scopesForAction(req core.ActionRequest, resp core.ActionResponse) []string {
+	workspaceID := strings.TrimSpace(req.TargetID)
+	if req.TargetType != "workspace" {
+		if resolved, ok := a.workspaceIDForEntity(req.TargetType, req.TargetID); ok {
+			workspaceID = resolved
+		}
+	}
 	scopes := map[string]struct{}{
-		a.workspaceScope(): {},
+		a.workspaceScope(workspaceID): {},
 	}
 
 	addEntityScopes := func(entityType, entityID string) {
@@ -701,26 +1045,41 @@ func (a *API) scopesForAction(req core.ActionRequest, resp core.ActionResponse) 
 
 		switch entityType {
 		case "workspace":
-			scopes[a.workspaceScope()] = struct{}{}
+			scopes[a.workspaceScope(entityID)] = struct{}{}
 		case "agent_session":
-			scopes[a.workspaceScope()] = struct{}{}
+			scopes[a.workspaceScope(workspaceID)] = struct{}{}
 		case "agent_turn":
 			scopes[fmt.Sprintf("agent_turn:%s", entityID)] = struct{}{}
 			if roomID, ok := a.store.RoomIDForAgentTurn(entityID); ok {
 				scopes[fmt.Sprintf("room:%s", roomID)] = struct{}{}
+				if roomWorkspaceID, ok := a.store.WorkspaceIDForRoom(roomID); ok {
+					scopes[a.workspaceScope(roomWorkspaceID)] = struct{}{}
+				}
 			}
 			if issueID, ok := a.store.IssueIDForAgentTurn(entityID); ok {
 				scopes[fmt.Sprintf("issue:%s", issueID)] = struct{}{}
+				if issueWorkspaceID, ok := a.store.WorkspaceIDForIssue(issueID); ok {
+					scopes[a.workspaceScope(issueWorkspaceID)] = struct{}{}
+				}
 			}
 		case "room":
 			scopes[fmt.Sprintf("room:%s", entityID)] = struct{}{}
+			if roomWorkspaceID, ok := a.store.WorkspaceIDForRoom(entityID); ok {
+				scopes[a.workspaceScope(roomWorkspaceID)] = struct{}{}
+			}
 		case "issue":
 			scopes[fmt.Sprintf("issue:%s", entityID)] = struct{}{}
+			if issueWorkspaceID, ok := a.store.WorkspaceIDForIssue(entityID); ok {
+				scopes[a.workspaceScope(issueWorkspaceID)] = struct{}{}
+			}
 		case "task":
 			scopes["board:default"] = struct{}{}
 			scopes[fmt.Sprintf("task:%s", entityID)] = struct{}{}
 			if issueID, ok := a.store.IssueIDForTask(entityID); ok {
 				scopes[fmt.Sprintf("issue:%s", issueID)] = struct{}{}
+			}
+			if taskWorkspaceID, ok := a.store.WorkspaceIDForTask(entityID); ok {
+				scopes[a.workspaceScope(taskWorkspaceID)] = struct{}{}
 			}
 		case "run":
 			scopes["board:default"] = struct{}{}
@@ -729,12 +1088,18 @@ func (a *API) scopesForAction(req core.ActionRequest, resp core.ActionResponse) 
 			if issueID, ok := a.store.IssueIDForRun(entityID); ok {
 				scopes[fmt.Sprintf("issue:%s", issueID)] = struct{}{}
 			}
+			if runWorkspaceID, ok := a.store.WorkspaceIDForRun(entityID); ok {
+				scopes[a.workspaceScope(runWorkspaceID)] = struct{}{}
+			}
 		case "merge_attempt":
 			scopes["board:default"] = struct{}{}
 			scopes["inbox:default"] = struct{}{}
 			scopes[fmt.Sprintf("merge:%s", entityID)] = struct{}{}
 			if issueID, ok := a.store.IssueIDForMergeAttempt(entityID); ok {
 				scopes[fmt.Sprintf("issue:%s", issueID)] = struct{}{}
+			}
+			if mergeWorkspaceID, ok := a.store.WorkspaceIDForMergeAttempt(entityID); ok {
+				scopes[a.workspaceScope(mergeWorkspaceID)] = struct{}{}
 			}
 		case "delivery_pr", "integration_branch":
 			scopes["board:default"] = struct{}{}
@@ -831,8 +1196,8 @@ func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, eventName, id st
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Last-Event-ID")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Last-Event-ID,Authorization,X-OpenShock-Session")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

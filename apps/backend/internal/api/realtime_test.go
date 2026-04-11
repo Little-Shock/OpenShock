@@ -13,6 +13,7 @@ import (
 
 	"openshock/backend/internal/realtime"
 	"openshock/backend/internal/store"
+	"openshock/backend/internal/testsupport/scenario"
 )
 
 type sseEvent struct {
@@ -22,7 +23,7 @@ type sseEvent struct {
 }
 
 func TestRealtimeEndpointStreamsActionUpdates(t *testing.T) {
-	server := httptest.NewServer(New(store.NewMemoryStore()).Handler())
+	server := httptest.NewServer(New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot())).Handler())
 	defer server.Close()
 
 	client := server.Client()
@@ -82,7 +83,7 @@ func TestRealtimeEndpointStreamsActionUpdates(t *testing.T) {
 }
 
 func TestRealtimeEndpointReplaysBufferedEvents(t *testing.T) {
-	api := newAPI(store.NewMemoryStore(), realtime.NewHub(8))
+	api := newAPI(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()), realtime.NewHub(8))
 	server := httptest.NewServer(api.Handler())
 	defer server.Close()
 
@@ -106,7 +107,7 @@ func TestRealtimeEndpointReplaysBufferedEvents(t *testing.T) {
 }
 
 func TestRealtimeEndpointSignalsResyncWhenHistoryGapExceeded(t *testing.T) {
-	api := newAPI(store.NewMemoryStore(), realtime.NewHub(2))
+	api := newAPI(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()), realtime.NewHub(2))
 	server := httptest.NewServer(api.Handler())
 	defer server.Close()
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentOperator } from "@/components/operator-provider";
 import { submitAction } from "@/lib/api";
@@ -23,7 +23,7 @@ export function TaskQuickCreate({
   onCreated,
 }: TaskQuickCreateProps) {
   const router = useRouter();
-  const { operatorName } = useCurrentOperator();
+  const { operatorName, sessionToken } = useCurrentOperator();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assigneeAgentId, setAssigneeAgentId] = useState(agents[0]?.id ?? "");
@@ -31,38 +31,47 @@ export function TaskQuickCreate({
     issueId ?? defaultIssueId ?? issueOptions[0]?.id ?? "",
   );
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
   const resolvedIssueId = issueId ?? selectedIssueId;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isPending) {
+      return;
+    }
 
-    startTransition(async () => {
-      try {
-        await submitAction({
-          actorType: "member",
-          actorId: operatorName,
-          actionType: "Task.create",
-          targetType: "issue",
-          targetId: resolvedIssueId,
-          idempotencyKey: `task-create-${Date.now()}`,
-          payload: {
-            title,
-            description,
-            assigneeAgentId,
-          },
-        });
+    setIsPending(true);
+    void submitAction(
+      {
+        actorType: "member",
+        actorId: operatorName,
+        actionType: "Task.create",
+        targetType: "issue",
+        targetId: resolvedIssueId,
+        idempotencyKey: `task-create-${Date.now()}`,
+        payload: {
+          title,
+          description,
+          assigneeAgentId,
+        },
+      },
+      { sessionToken },
+    )
+      .then(() => {
         setTitle("");
         setDescription("");
         setFeedback(null);
         router.refresh();
         onCreated?.();
-      } catch (error) {
+      })
+      .catch((error) => {
         setFeedback(
           error instanceof Error ? error.message : "Failed to create task.",
         );
-      }
-    });
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   return (
@@ -100,7 +109,7 @@ export function TaskQuickCreate({
         >
           {agents.map((agent) => (
             <option key={agent.id} value={agent.id}>
-              {agent.name} · {agent.role}
+              {agent.name}
             </option>
           ))}
         </select>

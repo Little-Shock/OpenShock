@@ -84,7 +84,7 @@ func TestClaimAgentTurn(t *testing.T) {
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"claimed":true,"agentTurn":{"turn":{"id":"turn_201","sessionId":"agent_session_201","roomId":"room_001","agentId":"agent_shell","sequence":1,"triggerMessageId":"msg_201","intentType":"visible_message_response","status":"claimed","createdAt":"2026-04-06T00:00:00Z"},"room":{"id":"room_001","kind":"discussion","title":"Announcements"},"triggerMessage":{"id":"msg_201","actorType":"member","actorName":"Sarah","body":"@agent_shell please reply","kind":"message","createdAt":"2026-04-06T00:00:00Z"},"messages":[]}}`))
+		_, _ = w.Write([]byte(`{"claimed":true,"agentTurn":{"turn":{"id":"turn_201","sessionId":"agent_session_201","roomId":"room_001","agentId":"agent_shell","sequence":1,"triggerMessageId":"msg_201","intentType":"visible_message_response","status":"claimed","createdAt":"2026-04-06T00:00:00Z"},"room":{"id":"room_001","kind":"discussion","title":"Announcements"},"agentName":"Shell_Runner","instruction":"server-built prompt","triggerMessage":{"id":"msg_201","actorType":"member","actorName":"Sarah","body":"@agent_shell please reply","kind":"message","createdAt":"2026-04-06T00:00:00Z"},"messages":[]}}`))
 	}))
 	defer server.Close()
 
@@ -95,6 +95,12 @@ func TestClaimAgentTurn(t *testing.T) {
 	}
 	if !resp.Claimed || resp.AgentTurn == nil || resp.AgentTurn.Turn.ID != "turn_201" {
 		t.Fatalf("unexpected agent turn claim response: %#v", resp)
+	}
+	if resp.AgentTurn.AgentName != "Shell_Runner" {
+		t.Fatalf("expected agent display name Shell_Runner, got %#v", resp.AgentTurn)
+	}
+	if resp.AgentTurn.Instruction != "server-built prompt" {
+		t.Fatalf("expected server-built instruction, got %#v", resp.AgentTurn)
 	}
 }
 

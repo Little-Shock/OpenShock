@@ -1,6 +1,8 @@
-export const DEFAULT_OPERATOR_NAME = "Sarah";
-export const OPERATOR_NAME_COOKIE = "openshock_operator_name";
+export const DEFAULT_OPERATOR_NAME = "Member";
 export const OPERATOR_NAME_STORAGE_KEY = "openshock.operator_name";
+export const OPERATOR_NAME_COOKIE = "openshock_operator_name";
+export const SESSION_TOKEN_COOKIE = "openshock_session_token";
+export const SESSION_TOKEN_STORAGE_KEY = "openshock.session_token";
 
 const OPERATOR_NAME_MAX_LENGTH = 48;
 
@@ -18,3 +20,14 @@ export function buildOperatorCookieValue(value: string) {
   return `${OPERATOR_NAME_COOKIE}=${encodeURIComponent(normalizeOperatorName(value))}; path=/; max-age=31536000; samesite=lax`;
 }
 
+export function buildSessionTokenCookieValue(value: string) {
+  return `${SESSION_TOKEN_COOKIE}=${encodeURIComponent(value.trim())}; path=/; max-age=2592000; samesite=lax`;
+}
+
+export function clearOperatorCookieValue() {
+  return `${OPERATOR_NAME_COOKIE}=; path=/; max-age=0; samesite=lax`;
+}
+
+export function clearSessionTokenCookieValue() {
+  return `${SESSION_TOKEN_COOKIE}=; path=/; max-age=0; samesite=lax`;
+}

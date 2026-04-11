@@ -68,6 +68,12 @@ func (c *Client) CompleteAgentTurn(ctx context.Context, turnID string, req Agent
 	return resp, err
 }
 
+func (c *Client) PostAgentTurnEvent(ctx context.Context, turnID string, req AgentTurnEventRequest) (AgentTurnEventResponse, error) {
+	var resp AgentTurnEventResponse
+	err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/agent-turns/%s/events", turnID), req, &resp)
+	return resp, err
+}
+
 func (c *Client) ClaimRun(ctx context.Context, runtimeID string) (RunClaimResponse, error) {
 	var resp RunClaimResponse
 	err := c.doJSON(ctx, http.MethodPost, "/api/v1/runs/claim", RunClaimRequest{RuntimeID: runtimeID}, &resp)

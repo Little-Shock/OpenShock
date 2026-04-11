@@ -41,6 +41,10 @@ func (s *Service) EnsureBranch(ctx context.Context, repoPath, baseRef, branchNam
 		return errors.New("repoPath, baseRef, and branchName are required")
 	}
 
+	if err := s.RestoreWorktree(ctx, repoPath); err != nil {
+		return err
+	}
+
 	if _, err := runGit(ctx, repoPath, "rev-parse", "--verify", baseRef); err != nil {
 		if baseRef != "main" {
 			if err := s.CreateBranch(ctx, repoPath, "main", baseRef); err != nil {
@@ -59,6 +63,20 @@ func (s *Service) EnsureBranch(ctx context.Context, repoPath, baseRef, branchNam
 
 	_, err := runGit(ctx, repoPath, "checkout", branchName)
 	return err
+}
+
+func (s *Service) RestoreWorktree(ctx context.Context, repoPath string) error {
+	if strings.TrimSpace(repoPath) == "" {
+		return errors.New("repoPath is required")
+	}
+
+	if _, err := runGit(ctx, repoPath, "reset", "--hard", "HEAD"); err != nil {
+		return err
+	}
+	if _, err := runGit(ctx, repoPath, "clean", "-fd"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) CommitAll(ctx context.Context, repoPath, message string) (bool, error) {
@@ -86,6 +104,26 @@ func (s *Service) CommitAll(ctx context.Context, repoPath, message string) (bool
 func (s *Service) MergeBranch(ctx context.Context, repoPath, sourceBranch, targetBranch string) (MergeResult, error) {
 	if strings.TrimSpace(repoPath) == "" || strings.TrimSpace(sourceBranch) == "" || strings.TrimSpace(targetBranch) == "" {
 		return MergeResult{}, errors.New("repoPath, sourceBranch, and targetBranch are required")
+	}
+
+	if err := s.RestoreWorktree(ctx, repoPath); err != nil {
+		return MergeResult{}, err
+	}
+
+	if _, err := runGit(ctx, repoPath, "rev-parse", "--verify", targetBranch); err != nil {
+		if targetBranch != "main" {
+			if err := s.CreateBranch(ctx, repoPath, "main", targetBranch); err != nil {
+				return MergeResult{}, err
+			}
+		} else {
+			return MergeResult{}, err
+		}
+	}
+
+	if _, err := runGit(ctx, repoPath, "rev-parse", "--verify", sourceBranch); err != nil {
+		if err := s.CreateBranch(ctx, repoPath, targetBranch, sourceBranch); err != nil {
+			return MergeResult{}, err
+		}
 	}
 
 	if _, err := runGit(ctx, repoPath, "checkout", targetBranch); err != nil {

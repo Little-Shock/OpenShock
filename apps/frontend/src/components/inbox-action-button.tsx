@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentOperator } from "@/components/operator-provider";
 import { submitAction } from "@/lib/api";
@@ -26,9 +26,9 @@ function labelFor(item: InboxItem) {
 
 export function InboxActionButton({ item }: InboxActionButtonProps) {
   const router = useRouter();
-  const { operatorName } = useCurrentOperator();
+  const { operatorName, sessionToken } = useCurrentOperator();
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
   const actionable =
     Boolean(item.primaryActionType) &&
@@ -39,7 +39,13 @@ export function InboxActionButton({ item }: InboxActionButtonProps) {
       item.primaryActionType === "GitIntegration.merge.approve");
 
   function handleAction() {
-    if (!actionable || !item.primaryActionType || !item.relatedEntityType || !item.relatedEntityId) {
+    if (
+      !actionable ||
+      !item.primaryActionType ||
+      !item.relatedEntityType ||
+      !item.relatedEntityId ||
+      isPending
+    ) {
       return;
     }
 
@@ -47,25 +53,31 @@ export function InboxActionButton({ item }: InboxActionButtonProps) {
     const targetType = item.relatedEntityType;
     const targetId = item.relatedEntityId;
 
-    startTransition(async () => {
-      try {
-        await submitAction({
-          actorType: "member",
-          actorId: operatorName,
-          actionType,
-          targetType,
-          targetId,
-          idempotencyKey: `${actionType}-${targetId}-${Date.now()}`,
-          payload: {},
-        });
+    setIsPending(true);
+    void submitAction(
+      {
+        actorType: "member",
+        actorId: operatorName,
+        actionType,
+        targetType,
+        targetId,
+        idempotencyKey: `${actionType}-${targetId}-${Date.now()}`,
+        payload: {},
+      },
+      { sessionToken },
+    )
+      .then(() => {
         setFeedback("Decision applied.");
         router.refresh();
-      } catch (error) {
+      })
+      .catch((error) => {
         setFeedback(
           error instanceof Error ? error.message : "Failed to apply inbox action.",
         );
-      }
-    });
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   return (

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"openshock/backend/internal/store"
+	"openshock/backend/internal/testsupport/scenario"
 )
 
 func bindAPITestWorkspaceRepo(t *testing.T, s *store.MemoryStore) string {
@@ -35,8 +37,30 @@ func requestAPITestMerge(t *testing.T, api *API, taskID, idempotencyKey string) 
 	}
 }
 
+func memberSessionTokenForAPITest(t *testing.T, api *API, username, displayName string) string {
+	t.Helper()
+
+	resp, err := api.store.RegisterMember(username, displayName, "password123")
+	if err != nil {
+		t.Fatalf("register member returned error: %v", err)
+	}
+	return resp.SessionToken
+}
+
+func mustCreateAPITestAgent(t *testing.T, s *store.MemoryStore, agentID string) {
+	t.Helper()
+
+	name := agentID
+	if agentID == "agent_shell" {
+		name = "Shell_Runner"
+	}
+	if _, err := s.CreateAgent(agentID, name, "test fixture prompt"); err != nil {
+		t.Fatalf("create test agent returned error: %v", err)
+	}
+}
+
 func TestBootstrapHandler(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
 	rec := httptest.NewRecorder()
 
@@ -57,8 +81,159 @@ func TestBootstrapHandler(t *testing.T) {
 	}
 }
 
-func TestActionEndpointCreatesMessage(t *testing.T) {
+func TestWorkspaceLifecycleSwitchesBootstrapScope(t *testing.T) {
 	api := New(store.NewMemoryStore())
+	token := memberSessionTokenForAPITest(t, api, "workspace_owner", "Workspace Owner")
+
+	createBody := []byte(`{"name":"Beta Ops"}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set(sessionHeaderName, token)
+	createRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("expected workspace create 200, got %d with body %s", createRec.Code, createRec.Body.String())
+	}
+
+	var createPayload struct {
+		Workspace struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"workspace"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("invalid create workspace response: %v", err)
+	}
+	if createPayload.Workspace.ID == "" || createPayload.Workspace.Name != "Beta Ops" {
+		t.Fatalf("unexpected created workspace payload: %#v", createPayload.Workspace)
+	}
+
+	switchReq := httptest.NewRequest(http.MethodPut, "/api/v1/workspaces/current", bytes.NewReader([]byte(`{"workspaceId":"`+createPayload.Workspace.ID+`"}`)))
+	switchReq.Header.Set("Content-Type", "application/json")
+	switchReq.Header.Set(sessionHeaderName, token)
+	switchRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(switchRec, switchReq)
+
+	if switchRec.Code != http.StatusOK {
+		t.Fatalf("expected workspace switch 200, got %d with body %s", switchRec.Code, switchRec.Body.String())
+	}
+
+	bootstrapReq := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	bootstrapReq.Header.Set(sessionHeaderName, token)
+	bootstrapRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(bootstrapRec, bootstrapReq)
+
+	if bootstrapRec.Code != http.StatusOK {
+		t.Fatalf("expected workspace-scoped bootstrap 200, got %d with body %s", bootstrapRec.Code, bootstrapRec.Body.String())
+	}
+
+	var bootstrapPayload struct {
+		Workspace struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"workspace"`
+		DefaultIssueID string `json:"defaultIssueId"`
+		Rooms          []struct {
+			ID          string `json:"id"`
+			WorkspaceID string `json:"workspaceId"`
+			Title       string `json:"title"`
+		} `json:"rooms"`
+	}
+	if err := json.Unmarshal(bootstrapRec.Body.Bytes(), &bootstrapPayload); err != nil {
+		t.Fatalf("invalid bootstrap response: %v", err)
+	}
+	if bootstrapPayload.Workspace.ID != createPayload.Workspace.ID {
+		t.Fatalf("expected switched workspace bootstrap, got %#v", bootstrapPayload.Workspace)
+	}
+	if bootstrapPayload.DefaultIssueID != "" {
+		t.Fatalf("expected empty workspace to have no default issue, got %q", bootstrapPayload.DefaultIssueID)
+	}
+	if len(bootstrapPayload.Rooms) != 2 {
+		t.Fatalf("expected two default rooms after switch, got %#v", bootstrapPayload.Rooms)
+	}
+	for _, room := range bootstrapPayload.Rooms {
+		if room.WorkspaceID != createPayload.Workspace.ID {
+			t.Fatalf("expected room to be scoped to switched workspace, got %#v", room)
+		}
+	}
+}
+
+func TestBootstrapAndRoomDetailTrackReadStateForSession(t *testing.T) {
+	api := New(store.NewMemoryStore())
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
+
+	bootstrapReq := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	bootstrapReq.Header.Set(sessionHeaderName, token)
+	bootstrapRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(bootstrapRec, bootstrapReq)
+
+	if bootstrapRec.Code != http.StatusOK {
+		t.Fatalf("expected bootstrap 200, got %d with body %s", bootstrapRec.Code, bootstrapRec.Body.String())
+	}
+
+	var bootstrapPayload struct {
+		Rooms []struct {
+			ID          string `json:"id"`
+			UnreadCount int    `json:"unreadCount"`
+		} `json:"rooms"`
+	}
+	if err := json.Unmarshal(bootstrapRec.Body.Bytes(), &bootstrapPayload); err != nil {
+		t.Fatalf("invalid bootstrap json response: %v", err)
+	}
+	initialUnread := map[string]int{}
+	for _, room := range bootstrapPayload.Rooms {
+		initialUnread[room.ID] = room.UnreadCount
+	}
+	if initialUnread["room_001"] != 1 {
+		t.Fatalf("expected room_001 to start unread, got %#v", bootstrapPayload.Rooms)
+	}
+
+	roomReq := httptest.NewRequest(http.MethodGet, "/api/v1/rooms/room_001", nil)
+	roomReq.Header.Set(sessionHeaderName, token)
+	roomRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(roomRec, roomReq)
+
+	if roomRec.Code != http.StatusOK {
+		t.Fatalf("expected room detail 200, got %d with body %s", roomRec.Code, roomRec.Body.String())
+	}
+
+	var roomPayload struct {
+		Room struct {
+			ID          string `json:"id"`
+			UnreadCount int    `json:"unreadCount"`
+		} `json:"room"`
+	}
+	if err := json.Unmarshal(roomRec.Body.Bytes(), &roomPayload); err != nil {
+		t.Fatalf("invalid room detail json response: %v", err)
+	}
+	if roomPayload.Room.UnreadCount != 0 {
+		t.Fatalf("expected opened room to be marked read, got %#v", roomPayload.Room)
+	}
+
+	bootstrapAfterReq := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	bootstrapAfterReq.Header.Set(sessionHeaderName, token)
+	bootstrapAfterRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(bootstrapAfterRec, bootstrapAfterReq)
+
+	if bootstrapAfterRec.Code != http.StatusOK {
+		t.Fatalf("expected second bootstrap 200, got %d with body %s", bootstrapAfterRec.Code, bootstrapAfterRec.Body.String())
+	}
+
+	if err := json.Unmarshal(bootstrapAfterRec.Body.Bytes(), &bootstrapPayload); err != nil {
+		t.Fatalf("invalid second bootstrap json response: %v", err)
+	}
+	finalUnread := map[string]int{}
+	for _, room := range bootstrapPayload.Rooms {
+		finalUnread[room.ID] = room.UnreadCount
+	}
+	if finalUnread["room_001"] != 0 {
+		t.Fatalf("expected room_001 unread count to clear after opening it, got %#v", bootstrapPayload.Rooms)
+	}
+}
+
+func TestActionEndpointCreatesMessage(t *testing.T) {
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
 	body := []byte(`{"actorType":"agent","actorId":"agent_lead","actionType":"RoomMessage.post","targetType":"issue","targetId":"issue_101","idempotencyKey":"message-1","payload":{"body":"Need owner input on the guard branch."}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -79,10 +254,12 @@ func TestActionEndpointCreatesMessage(t *testing.T) {
 }
 
 func TestActionEndpointCreatesDiscussionRoom(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"Room.create","targetType":"workspace","targetId":"ws_01","idempotencyKey":"room-create-1","payload":{"kind":"discussion","title":"Architecture","summary":"Cross-cutting design discussion."}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 
 	api.Handler().ServeHTTP(rec, req)
@@ -118,10 +295,12 @@ func TestActionEndpointCreatesDiscussionRoom(t *testing.T) {
 }
 
 func TestActionEndpointCreatesAgentTurnFromMention(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"message-turn-1","payload":{"body":"@agent_shell please prepare a plan"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 
 	api.Handler().ServeHTTP(rec, req)
@@ -139,11 +318,66 @@ func TestActionEndpointCreatesAgentTurnFromMention(t *testing.T) {
 	}
 }
 
-func TestActionEndpointRejectsIssueRepoBinding(t *testing.T) {
+func TestActionEndpointAddsAgentToRoom(t *testing.T) {
 	api := New(store.NewMemoryStore())
+	mustCreateAPITestAgent(t, api.store, "agent_shell")
+	token := memberSessionTokenForAPITest(t, api, "sarah_room_join", "Sarah")
+	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomAgent.add","targetType":"room","targetId":"room_001","idempotencyKey":"room-agent-add-api-1","payload":{"agentId":"agent_shell"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
+	rec := httptest.NewRecorder()
+
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %s", rec.Code, rec.Body.String())
+	}
+
+	detail, err := api.store.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 1 || detail.AgentSessions[0].AgentID != "agent_shell" {
+		t.Fatalf("expected joined room agent session, got %#v", detail.AgentSessions)
+	}
+}
+
+func TestActionEndpointRemovesAgentFromRoom(t *testing.T) {
+	api := New(store.NewMemoryStore())
+	mustCreateAPITestAgent(t, api.store, "agent_shell")
+	if _, err := api.store.AddAgentToRoom("room_001", "agent_shell", "Sarah"); err != nil {
+		t.Fatalf("add agent to room returned error: %v", err)
+	}
+	token := memberSessionTokenForAPITest(t, api, "sarah_room_remove", "Sarah")
+	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomAgent.remove","targetType":"room","targetId":"room_001","idempotencyKey":"room-agent-remove-api-1","payload":{"agentId":"agent_shell"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
+	rec := httptest.NewRecorder()
+
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %s", rec.Code, rec.Body.String())
+	}
+
+	detail, err := api.store.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	if len(detail.AgentSessions) != 1 || detail.AgentSessions[0].JoinedRoom {
+		t.Fatalf("expected room session to remain but leave joined state, got %#v", detail.AgentSessions)
+	}
+}
+
+func TestActionEndpointRejectsIssueRepoBinding(t *testing.T) {
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"Issue.bind_repo","targetType":"issue","targetId":"issue_101","idempotencyKey":"issue-bind-repo-removed-api","payload":{"repoPath":"/tmp/openshock-demo-repo"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 
 	api.Handler().ServeHTTP(rec, req)
@@ -154,10 +388,12 @@ func TestActionEndpointRejectsIssueRepoBinding(t *testing.T) {
 }
 
 func TestActionEndpointCreatesAgentTurnFromInstructionKind(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"message-turn-2","payload":{"kind":"instruction","body":"@agent_shell please prepare a plan"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 
 	api.Handler().ServeHTTP(rec, req)
@@ -180,10 +416,12 @@ func TestActionEndpointCreatesAgentTurnFromInstructionKind(t *testing.T) {
 }
 
 func TestActionEndpointCreatesAgentTurnFromPlainHumanMessageWithoutMention(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"message-turn-default-1","payload":{"body":"有人吗？我想确认一下这里下一步怎么推进。"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 
 	api.Handler().ServeHTTP(rec, req)
@@ -205,10 +443,12 @@ func TestActionEndpointCreatesAgentTurnFromPlainHumanMessageWithoutMention(t *te
 }
 
 func TestActionEndpointCreatesVisibleMessageTurnForNeutralPlainMessage(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"message-turn-default-2","payload":{"body":"我刚把文档同步好了。"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 
 	api.Handler().ServeHTTP(rec, req)
@@ -230,10 +470,12 @@ func TestActionEndpointCreatesVisibleMessageTurnForNeutralPlainMessage(t *testin
 }
 
 func TestActionEndpointCreatesVisibleMessageTurnFromInstructionWithoutMention(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"message-turn-default-2","payload":{"kind":"instruction","body":"有人在看这个房间吗？"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 
 	api.Handler().ServeHTTP(rec, req)
@@ -255,7 +497,7 @@ func TestActionEndpointCreatesVisibleMessageTurnFromInstructionWithoutMention(t 
 }
 
 func TestActionEndpointAgentPlainMessageDoesNotCreateVisibleMessageTurn(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
 	body := []byte(`{"actorType":"agent","actorId":"agent_shell","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"message-turn-default-3","payload":{"body":"我先同步一下当前进度。"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -277,7 +519,7 @@ func TestActionEndpointAgentPlainMessageDoesNotCreateVisibleMessageTurn(t *testi
 }
 
 func TestIssueDetailReturns404(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/issues/issue_missing", nil)
 	rec := httptest.NewRecorder()
 
@@ -289,7 +531,7 @@ func TestIssueDetailReturns404(t *testing.T) {
 }
 
 func TestRoomDetailReturnsDiscussionRoom(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/rooms/room_002", nil)
 	rec := httptest.NewRecorder()
 
@@ -323,7 +565,7 @@ func TestRoomDetailReturnsDiscussionRoom(t *testing.T) {
 }
 
 func TestRegisterRuntimeEndpoint(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
 	body := []byte(`{"name":"Daemon Runner","provider":"codex","slotCount":2}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtimes/register", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -337,10 +579,12 @@ func TestRegisterRuntimeEndpoint(t *testing.T) {
 
 	var payload struct {
 		Runtime struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Status   string `json:"status"`
-			Provider string `json:"provider"`
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Status      string `json:"status"`
+			Provider    string `json:"provider"`
+			SlotCount   int    `json:"slotCount"`
+			ActiveSlots int    `json:"activeSlots"`
 		} `json:"runtime"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -349,10 +593,13 @@ func TestRegisterRuntimeEndpoint(t *testing.T) {
 	if payload.Runtime.Name != "Daemon Runner" {
 		t.Fatalf("expected registered runtime name, got %#v", payload.Runtime.Name)
 	}
+	if payload.Runtime.SlotCount != 2 || payload.Runtime.ActiveSlots != 0 {
+		t.Fatalf("expected slot metadata in runtime response, got %#v", payload.Runtime)
+	}
 }
 
 func TestClaimRunEndpoint(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindAPITestWorkspaceRepo(t, backingStore)
 	api := New(backingStore)
 	body := []byte(`{"runtimeId":"rt_local"}`)
@@ -394,7 +641,7 @@ func TestClaimRunEndpoint(t *testing.T) {
 }
 
 func TestRunEventEndpointUpdatesRun(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindAPITestWorkspaceRepo(t, backingStore)
 	api := New(backingStore)
 	claimBody := []byte(`{"runtimeId":"rt_local"}`)
@@ -403,8 +650,20 @@ func TestRunEventEndpointUpdatesRun(t *testing.T) {
 	claimRec := httptest.NewRecorder()
 	api.Handler().ServeHTTP(claimRec, claimReq)
 
+	var claimPayload struct {
+		Run *struct {
+			ID string `json:"id"`
+		} `json:"run"`
+	}
+	if err := json.Unmarshal(claimRec.Body.Bytes(), &claimPayload); err != nil {
+		t.Fatalf("invalid claim response: %v", err)
+	}
+	if claimPayload.Run == nil || claimPayload.Run.ID == "" {
+		t.Fatalf("expected claimed run id, got %s", claimRec.Body.String())
+	}
+
 	body := []byte(`{"runtimeId":"rt_local","eventType":"completed","outputPreview":"Guard patch applied cleanly."}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs/run_guard_01/events", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs/"+claimPayload.Run.ID+"/events", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -427,7 +686,7 @@ func TestRunEventEndpointUpdatesRun(t *testing.T) {
 }
 
 func TestRunToolCallEventEndpointUpdatesRun(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindAPITestWorkspaceRepo(t, backingStore)
 	api := New(backingStore)
 	claimBody := []byte(`{"runtimeId":"rt_local"}`)
@@ -462,14 +721,60 @@ func TestRunToolCallEventEndpointUpdatesRun(t *testing.T) {
 	}
 }
 
+func TestAgentTurnEventEndpointUpdatesTurnObservability(t *testing.T) {
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
+	api := New(backingStore)
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
+
+	messageBody := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"agent-turn-event-1","payload":{"body":"@agent_shell 请先准备一个计划"}}`)
+	messageReq := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(messageBody))
+	messageReq.Header.Set("Content-Type", "application/json")
+	messageReq.Header.Set(sessionHeaderName, token)
+	messageRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(messageRec, messageReq)
+
+	claimBody := []byte(`{"runtimeId":"rt_local"}`)
+	claimReq := httptest.NewRequest(http.MethodPost, "/api/v1/agent-turns/claim", bytes.NewReader(claimBody))
+	claimReq.Header.Set("Content-Type", "application/json")
+	claimRec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(claimRec, claimReq)
+
+	body := []byte(`{"runtimeId":"rt_local","eventType":"tool_call","toolCall":{"toolName":"shell","arguments":"{\"command\":\"git status\"}","status":"completed"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agent-turns/turn_101/events", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d with body %s", rec.Code, rec.Body.String())
+	}
+
+	detail, err := api.store.RoomDetail("room_001")
+	if err != nil {
+		t.Fatalf("room detail returned error: %v", err)
+	}
+	found := false
+	for _, toolCall := range detail.AgentTurnToolCalls {
+		if toolCall.TurnID == "turn_101" && toolCall.ToolName == "shell" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected agent turn tool call to be recorded, got %#v", detail.AgentTurnToolCalls)
+	}
+}
+
 func TestClaimMergeEndpoint(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindAPITestWorkspaceRepo(t, backingStore)
 	api := New(backingStore)
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	requestAPITestMerge(t, api, "task_guard", "merge-request-claim")
 	mergeBody := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"GitIntegration.merge.approve","targetType":"task","targetId":"task_guard","idempotencyKey":"merge-approve-claim","payload":{}}`)
 	mergeReq := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(mergeBody))
 	mergeReq.Header.Set("Content-Type", "application/json")
+	mergeReq.Header.Set(sessionHeaderName, token)
 	mergeRec := httptest.NewRecorder()
 	api.Handler().ServeHTTP(mergeRec, mergeReq)
 
@@ -504,11 +809,13 @@ func TestClaimMergeEndpoint(t *testing.T) {
 }
 
 func TestClaimAgentTurnEndpoint(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 
-	messageBody := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"room","targetId":"room_001","idempotencyKey":"turn-claim-1","payload":{"body":"@agent_shell please prepare a plan"}}`)
+	messageBody := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"issue","targetId":"issue_101","idempotencyKey":"turn-claim-1","payload":{"body":"@agent_shell please prepare a plan"}}`)
 	messageReq := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(messageBody))
 	messageReq.Header.Set("Content-Type", "application/json")
+	messageReq.Header.Set(sessionHeaderName, token)
 	messageRec := httptest.NewRecorder()
 	api.Handler().ServeHTTP(messageRec, messageReq)
 
@@ -526,7 +833,10 @@ func TestClaimAgentTurnEndpoint(t *testing.T) {
 	var payload struct {
 		Claimed   bool `json:"claimed"`
 		AgentTurn *struct {
-			Session struct {
+			AgentName   string `json:"agentName"`
+			AgentPrompt string `json:"agentPrompt"`
+			Instruction string `json:"instruction"`
+			Session     struct {
 				ID               string `json:"id"`
 				ProviderThreadID string `json:"providerThreadId"`
 			} `json:"session"`
@@ -549,6 +859,21 @@ func TestClaimAgentTurnEndpoint(t *testing.T) {
 	if !payload.Claimed || payload.AgentTurn == nil || payload.AgentTurn.Turn.AgentID != "agent_shell" {
 		t.Fatalf("unexpected agent turn claim payload: %#v", payload)
 	}
+	if payload.AgentTurn.AgentName != "Shell_Runner" {
+		t.Fatalf("expected claimed turn to expose display name, got %#v", payload.AgentTurn)
+	}
+	if payload.AgentTurn.AgentPrompt == "" {
+		t.Fatalf("expected claimed turn to expose agent prompt, got %#v", payload.AgentTurn)
+	}
+	if !strings.Contains(payload.AgentTurn.Instruction, "你的稳定 OpenShock agent id 是 `agent_shell`。") {
+		t.Fatalf("expected claimed turn to expose server-built instruction, got %#v", payload.AgentTurn)
+	}
+	if !strings.Contains(payload.AgentTurn.Instruction, payload.AgentTurn.AgentPrompt) {
+		t.Fatalf("expected claimed turn to expose server-built instruction, got %#v", payload.AgentTurn)
+	}
+	if !strings.Contains(payload.AgentTurn.Instruction, "openshock task create --issue issue_101") {
+		t.Fatalf("expected claimed turn instruction to expose task workflow commands, got %#v", payload.AgentTurn)
+	}
 	if payload.AgentTurn.Session.ProviderThreadID == "" {
 		t.Fatalf("expected claimed agent turn to expose provider thread id, got %#v", payload.AgentTurn.Session)
 	}
@@ -564,11 +889,13 @@ func TestClaimAgentTurnEndpoint(t *testing.T) {
 }
 
 func TestIssueDetailEndpointIncludesAgentObservability(t *testing.T) {
-	api := New(store.NewMemoryStore())
+	api := New(store.NewMemoryStoreFromSnapshot(scenario.Snapshot()))
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 
 	body := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"RoomMessage.post","targetType":"issue","targetId":"issue_101","idempotencyKey":"issue-observability-1","payload":{"body":"@agent_shell please review the issue and reply"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sessionHeaderName, token)
 	rec := httptest.NewRecorder()
 	api.Handler().ServeHTTP(rec, req)
 
@@ -610,13 +937,15 @@ func TestIssueDetailEndpointIncludesAgentObservability(t *testing.T) {
 }
 
 func TestMergeEventEndpointUpdatesAttempt(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindAPITestWorkspaceRepo(t, backingStore)
 	api := New(backingStore)
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 	requestAPITestMerge(t, api, "task_guard", "merge-request-event")
 	mergeBody := []byte(`{"actorType":"member","actorId":"Sarah","actionType":"GitIntegration.merge.approve","targetType":"task","targetId":"task_guard","idempotencyKey":"merge-approve-event","payload":{}}`)
 	mergeReq := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(mergeBody))
 	mergeReq.Header.Set("Content-Type", "application/json")
+	mergeReq.Header.Set(sessionHeaderName, token)
 	mergeRec := httptest.NewRecorder()
 	api.Handler().ServeHTTP(mergeRec, mergeReq)
 
@@ -649,9 +978,10 @@ func TestMergeEventEndpointUpdatesAttempt(t *testing.T) {
 }
 
 func TestRepoWebhookEndpointUpdatesDeliveryPR(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	bindAPITestWorkspaceRepo(t, backingStore)
 	api := New(backingStore)
+	token := memberSessionTokenForAPITest(t, api, "sarah", "Sarah")
 
 	requestAPITestMerge(t, api, "task_guard", "repo-webhook-request-1")
 	requestAPITestMerge(t, api, "task_review", "repo-webhook-request-2")
@@ -661,6 +991,7 @@ func TestRepoWebhookEndpointUpdatesDeliveryPR(t *testing.T) {
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/actions", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(sessionHeaderName, token)
 		rec := httptest.NewRecorder()
 		api.Handler().ServeHTTP(rec, req)
 	}

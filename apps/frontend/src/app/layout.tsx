@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { OperatorProvider } from "@/components/operator-provider";
-import { getCurrentOperatorName } from "@/lib/operator-server";
+import { getServerAuthState } from "@/lib/auth-server";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,12 +13,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const operatorName = await getCurrentOperatorName();
+  const authState = await getServerAuthState();
 
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <OperatorProvider initialOperatorName={operatorName}>
+        <OperatorProvider
+          initialMember={authState.member}
+          initialSessionToken={authState.sessionToken}
+        >
           {children}
         </OperatorProvider>
       </body>

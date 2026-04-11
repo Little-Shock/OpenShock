@@ -1,0 +1,194 @@
+{
+  "user": {
+    "username": "acceptance_r3_user_393531",
+    "displayName": "Acceptance Round3",
+    "password": "password123"
+  },
+  "state": {
+    "round": 3,
+    "runtimeId": "rt_001",
+    "sessionToken": "df88bd9c2dc9985ff1dfb9d05990cdf35ccd8fed6bbc83e2",
+    "discussionRoomId": "room_001",
+    "issueRoomId": "room_002",
+    "issueId": "issue_001",
+    "taskA": "task_001",
+    "taskB": "task_002",
+    "runApproveId": "run_001",
+    "runCancelId": "run_002",
+    "runDaemonId": "run_003"
+  },
+  "results": [
+    {
+      "id": "TC-037",
+      "status": "PASS",
+      "detail": "空启动 bootstrap 无 seed 数据"
+    },
+    {
+      "id": "TC-001",
+      "status": "PASS",
+      "detail": "首页 landing 正常"
+    },
+    {
+      "id": "TC-002",
+      "status": "PASS",
+      "detail": "登录页可访问"
+    },
+    {
+      "id": "TC-003",
+      "status": "PASS",
+      "detail": "注册页可访问"
+    },
+    {
+      "id": "TC-035",
+      "status": "PASS",
+      "detail": "未登录访问受保护路由均跳转登录"
+    },
+    {
+      "id": "TC-004",
+      "status": "PASS",
+      "detail": "注册成功: acceptance_r3_user_393531"
+    },
+    {
+      "id": "TC-006",
+      "status": "PASS",
+      "detail": "已登录且无房间时进入 first-run"
+    },
+    {
+      "id": "TC-009",
+      "status": "PASS",
+      "detail": "workspace repo 绑定成功"
+    },
+    {
+      "id": "TC-007",
+      "status": "PASS",
+      "detail": "settings 可见 repo/runtime 区域"
+    },
+    {
+      "id": "TC-008",
+      "status": "PASS",
+      "detail": "runtime 在线状态可见"
+    },
+    {
+      "id": "TC-011",
+      "status": "PASS",
+      "detail": "discussion room 创建成功: room_001"
+    },
+    {
+      "id": "TC-010",
+      "status": "PASS",
+      "detail": "左侧 room 列表出现 discussion room"
+    },
+    {
+      "id": "TC-014",
+      "status": "PASS",
+      "detail": "成员普通消息可发送"
+    },
+    {
+      "id": "TC-016",
+      "status": "PASS",
+      "detail": "普通 human 消息触发默认 agent turn，共 1 个"
+    },
+    {
+      "id": "TC-015",
+      "status": "PASS",
+      "detail": "显式 @agent turn 已被 runtime 消费"
+    },
+    {
+      "id": "TC-025",
+      "status": "PASS",
+      "detail": "room 可见运行时与 session 可观测信息"
+    },
+    {
+      "id": "TC-012",
+      "status": "PASS",
+      "detail": "issue room 创建成功: issue_001"
+    },
+    {
+      "id": "TC-013",
+      "status": "PASS",
+      "detail": "issue room 右侧上下文完整"
+    },
+    {
+      "id": "TC-017",
+      "status": "PASS",
+      "detail": "issue room 可创建多个 task"
+    },
+    {
+      "id": "TC-018",
+      "status": "PASS",
+      "detail": "task 可分配不同 agent"
+    },
+    {
+      "id": "TC-019",
+      "status": "PASS",
+      "detail": "task 状态编辑生效"
+    },
+    {
+      "id": "TC-020",
+      "status": "PASS",
+      "detail": "board 按状态展示 task"
+    },
+    {
+      "id": "TC-021",
+      "status": "PASS",
+      "detail": "run 已创建: run_001"
+    },
+    {
+      "id": "TC-030",
+      "status": "PASS",
+      "detail": "run 审批项进入 inbox"
+    },
+    {
+      "id": "TC-031",
+      "status": "PASS",
+      "detail": "inbox 可执行主动作"
+    },
+    {
+      "id": "TC-023",
+      "status": "PASS",
+      "detail": "approval_required run 可 approve 并 requeue"
+    },
+    {
+      "id": "TC-024",
+      "status": "PASS",
+      "detail": "run 可被取消并停止推进"
+    },
+    {
+      "id": "TC-022",
+      "status": "PASS",
+      "detail": "daemon 已消费 queued run -> completed"
+    },
+    {
+      "id": "TC-026",
+      "status": "PASS",
+      "detail": "task 可 mark ready for integration"
+    },
+    {
+      "id": "TC-027",
+      "status": "PASS",
+      "detail": "Request Merge 产生 merge approval"
+    },
+    {
+      "id": "TC-028",
+      "status": "PASS",
+      "detail": "人类可 approve merge 并推进 integration"
+    },
+    {
+      "id": "TC-036",
+      "status": "PARTIAL",
+      "detail": "merge 后页面状态回流不够直观"
+    },
+    {
+      "id": "TC-029",
+      "status": "FAIL",
+      "detail": "未出现 Create Delivery PR / Delivery PR Open"
+    },
+    {
+      "id": "TC-032",
+      "status": "FAIL",
+      "detail": "profile 身份信息缺失"
+    }
+  ],
+  "bugs": [],
+  "fatal": "locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#operator-name')\u001b[22m\n\n    at /private/tmp/openshock-playwright/acceptance_round.mjs:632:40"
+}

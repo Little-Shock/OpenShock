@@ -12,10 +12,11 @@ import (
 	"net/http/httptest"
 
 	"openshock/backend/internal/store"
+	"openshock/backend/internal/testsupport/scenario"
 )
 
 func TestDaemonOnceCompletesQueuedRun(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	repoPath := newGitFixtureRepo(t)
 	if err := backingStore.BindWorkspaceRepo("ws_01", repoPath, "daemon-fixture", true); err != nil {
 		t.Fatalf("bind workspace repo returned error: %v", err)
@@ -107,7 +108,7 @@ func TestDaemonOnceCompletesQueuedRun(t *testing.T) {
 }
 
 func TestDaemonRunCanUpdateTaskStatusViaOpenShockCLI(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	repoPath := newGitFixtureRepo(t)
 	if err := backingStore.BindWorkspaceRepo("ws_01", repoPath, "daemon-fixture", true); err != nil {
 		t.Fatalf("bind workspace repo returned error: %v", err)
@@ -172,7 +173,7 @@ fi
 }
 
 func TestDaemonOnceCompletesQueuedMergeAttempt(t *testing.T) {
-	backingStore := store.NewMemoryStore()
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
 	repoPath := newGitFixtureRepo(t)
 	setupMergeFixtureBranches(t, repoPath)
 	if err := backingStore.BindWorkspaceRepo("ws_01", repoPath, "daemon-fixture", true); err != nil {
@@ -242,8 +243,10 @@ func TestDaemonOnceCompletesQueuedMergeAttempt(t *testing.T) {
 }
 
 func TestDaemonOnceCompletesQueuedAgentTurn(t *testing.T) {
-	backingStore := store.NewMemoryStore()
-	backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先理解这个目标, 然后给我一个简短计划。")
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
+	if _, err := backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 请先理解这个目标, 然后给我一个简短计划。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
 	server := httptest.NewServer(New(backingStore).Handler())
 	defer server.Close()
 
@@ -281,6 +284,12 @@ func TestDaemonOnceCompletesQueuedAgentTurn(t *testing.T) {
 	if len(detail.AgentTurns) != 1 || detail.AgentTurns[0].Status != "completed" {
 		t.Fatalf("expected completed agent turn, got %#v", detail.AgentTurns)
 	}
+	if len(detail.AgentTurnOutputChunks) == 0 {
+		t.Fatalf("expected daemon agent turn to append output chunks, got %#v\n\ndaemon output:\n%s", detail.AgentTurnOutputChunks, string(output))
+	}
+	if len(detail.AgentTurnToolCalls) == 0 {
+		t.Fatalf("expected daemon agent turn to append tool calls, got %#v\n\ndaemon output:\n%s", detail.AgentTurnToolCalls, string(output))
+	}
 
 	foundAgentReply := false
 	for _, message := range detail.Messages {
@@ -293,9 +302,113 @@ func TestDaemonOnceCompletesQueuedAgentTurn(t *testing.T) {
 	}
 }
 
+func TestDaemonAgentTurnCanDriveTaskAndMergeWorkflowViaOpenShockCLI(t *testing.T) {
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
+	repoPath := newGitFixtureRepo(t)
+	if err := backingStore.BindWorkspaceRepo("ws_01", repoPath, "daemon-fixture", true); err != nil {
+		t.Fatalf("bind workspace repo returned error: %v", err)
+	}
+	if _, err := backingStore.PostRoomMessage("issue_101", "member", "Sarah", "message", "@agent_shell 请把这个 issue 的任务往前推进：新建一个后续 task，认领 task_review，触发执行并推进合并。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
+
+	server := httptest.NewServer(New(backingStore).Handler())
+	defer server.Close()
+
+	daemonDir := daemonModuleDir(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fakeCodex := writeFakeCodexBinaryWithScript(t, "KIND: message\nBODY:\n我已经把任务流转往前推进了。", `
+if [ -f CURRENT_TURN.md ]; then
+  if ! openshock task create --issue issue_101 --title "Follow-up cleanup" --description "Coordinate the next integration-safe cleanup." --assignee-agent-id agent_guardian --actor-id agent_shell >/dev/null; then
+    exit 1
+  fi
+  if ! openshock task claim --task task_review --actor-id agent_shell >/dev/null; then
+    exit 1
+  fi
+  if ! openshock task status set --task task_review --status in_progress --actor-id agent_shell >/dev/null; then
+    exit 1
+  fi
+  if ! openshock run create --task task_review --actor-id agent_shell >/dev/null; then
+    exit 1
+  fi
+  if ! openshock git request-merge --task task_review --actor-id agent_shell >/dev/null; then
+    exit 1
+  fi
+  if ! openshock git approve-merge --task task_review --actor-id agent_guardian >/dev/null; then
+    exit 1
+  fi
+fi
+`)
+
+	cmd := exec.CommandContext(
+		ctx,
+		"go",
+		"run",
+		"./cmd/daemon",
+		"--once",
+		"--api-base-url",
+		server.URL,
+		"--name",
+		"E2E Agent Workflow Daemon",
+	)
+	cmd.Dir = daemonDir
+	cmd.Env = append(os.Environ(), "OPENSHOCK_CODEX_BIN="+fakeCodex)
+
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatalf("daemon timed out: %s", string(output))
+	}
+	if err != nil {
+		t.Fatalf("daemon command failed: %v\n%s", err, string(output))
+	}
+
+	detail, err := backingStore.IssueDetail("issue_101")
+	if err != nil {
+		t.Fatalf("issue detail returned error: %v", err)
+	}
+
+	createdTaskFound := false
+	taskReviewIntegrated := false
+	runCreated := false
+	mergeSucceeded := false
+	for _, task := range detail.Tasks {
+		if task.ID == "task_101" && task.Title == "Follow-up cleanup" && task.AssigneeAgentID == "agent_guardian" {
+			createdTaskFound = true
+		}
+		if task.ID == "task_review" && task.AssigneeAgentID == "agent_shell" && task.Status == "integrated" {
+			taskReviewIntegrated = true
+		}
+	}
+	for _, run := range detail.Runs {
+		if run.ID == "run_101" && run.TaskID == "task_review" {
+			runCreated = true
+		}
+	}
+	for _, attempt := range detail.MergeAttempts {
+		if attempt.TaskID == "task_review" && attempt.Status == "succeeded" {
+			mergeSucceeded = true
+		}
+	}
+	if !createdTaskFound {
+		t.Fatalf("expected agent turn to create a follow-up task, got %#v\n\ndaemon output:\n%s", detail.Tasks, string(output))
+	}
+	if !taskReviewIntegrated {
+		t.Fatalf("expected task_review to be claimed by agent_shell and merged to integrated, got %#v\n\ndaemon output:\n%s", detail.Tasks, string(output))
+	}
+	if !runCreated {
+		t.Fatalf("expected agent turn to create a new run for task_review, got %#v\n\ndaemon output:\n%s", detail.Runs, string(output))
+	}
+	if !mergeSucceeded {
+		t.Fatalf("expected agent turn to queue and complete a merge attempt for task_review, got %#v\n\ndaemon output:\n%s", detail.MergeAttempts, string(output))
+	}
+}
+
 func TestDaemonOnceCanCompleteQueuedAgentTurnWithoutPostingReply(t *testing.T) {
-	backingStore := store.NewMemoryStore()
-	backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell FYI，我刚把文档同步好了。")
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
+	if _, err := backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell FYI，我刚把文档同步好了。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
 
 	before, err := backingStore.RoomDetail("room_001")
 	if err != nil {
@@ -346,8 +459,10 @@ func TestDaemonOnceCanCompleteQueuedAgentTurnWithoutPostingReply(t *testing.T) {
 }
 
 func TestDaemonAgentTurnReusesPersistentWorkspace(t *testing.T) {
-	backingStore := store.NewMemoryStore()
-	backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 先看一下这个问题。")
+	backingStore := store.NewMemoryStoreFromSnapshot(scenario.Snapshot())
+	if _, err := backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 先看一下这个问题。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
 	server := httptest.NewServer(New(backingStore).Handler())
 	defer server.Close()
 
@@ -411,7 +526,9 @@ printf '%s\n' "memory touched" >> MEMORY.md
 		t.Fatalf("expected first turn snapshot to exist: %v", err)
 	}
 
-	backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 再继续往下看。")
+	if _, err := backingStore.PostRoomMessage("room_001", "member", "Sarah", "message", "@agent_shell 再继续往下看。"); err != nil {
+		t.Fatalf("post room message returned error: %v", err)
+	}
 	runOnce("E2E Agent Workspace Daemon 2")
 
 	secondDetail, err := backingStore.RoomDetail("room_001")
@@ -448,8 +565,8 @@ printf '%s\n' "memory touched" >> MEMORY.md
 	for _, expected := range []string{
 		"turn_started",
 		"turn_completed",
-		"- Turn ID: turn_101",
-		"- Turn ID: turn_102",
+		"- 回合 ID：turn_101",
+		"- 回合 ID：turn_102",
 	} {
 		if !strings.Contains(string(workLogBytes), expected) {
 			t.Fatalf("expected work log to contain %q, got %q", expected, string(workLogBytes))
@@ -460,7 +577,7 @@ printf '%s\n' "memory touched" >> MEMORY.md
 	if err != nil {
 		t.Fatalf("failed to read room-context note: %v", err)
 	}
-	if !strings.Contains(string(roomContextBytes), "Wakeup mode: direct_message") {
+	if !strings.Contains(string(roomContextBytes), "唤醒模式：direct_message") {
 		t.Fatalf("expected room-context note to describe wakeup mode, got %q", string(roomContextBytes))
 	}
 }

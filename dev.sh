@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${ROOT_DIR}/.dev-logs"
 
-WITH_DAEMON=0
+WITH_DAEMON=1
 SKIP_INSTALL=0
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 OPENSHOCK_API_ADDR="${OPENSHOCK_API_ADDR:-:8080}"
@@ -20,7 +20,8 @@ Usage: ./dev.sh [options]
 Start the local OpenShockSwarm development stack from the repository root.
 
 Options:
-  --with-daemon   Also start the daemon in continuous mode.
+  --with-daemon   Start the daemon in continuous mode. This is now the default.
+  --no-daemon     Start only backend and frontend.
   --skip-install  Skip frontend dependency installation when node_modules is missing.
   -h, --help      Show this help message.
 
@@ -30,7 +31,9 @@ Environment:
   OPENSHOCK_API_BASE_URL    Frontend/daemon API base URL. Default: http://localhost:8080
   OPENSHOCK_RUNTIME_NAME    Daemon runtime name when --with-daemon is used.
   OPENSHOCK_PROVIDER        Daemon provider when --with-daemon is used.
+  OPENSHOCK_CODEX_MODE      Daemon Codex mode: auto, app-server, exec. Default: auto
   OPENSHOCK_CODEX_BIN       Codex binary path when --with-daemon is used.
+  OPENSHOCK_CODEX_HOME      Dedicated CODEX_HOME for daemon app-server/exec sessions.
 EOF
 }
 
@@ -120,6 +123,9 @@ parse_args() {
       --with-daemon)
         WITH_DAEMON=1
         ;;
+      --no-daemon)
+        WITH_DAEMON=0
+        ;;
       --skip-install)
         SKIP_INSTALL=1
         ;;
@@ -144,6 +150,7 @@ require_cmd go
 require_cmd npm
 require_cmd pgrep
 require_cmd lsof
+require_cmd curl
 
 BACKEND_PORT="$(extract_port "$OPENSHOCK_API_ADDR" || true)"
 if [[ -z "$BACKEND_PORT" ]]; then
@@ -176,6 +183,12 @@ export OPENSHOCK_API_BASE_URL
 export NEXT_PUBLIC_API_BASE_URL="${NEXT_PUBLIC_API_BASE_URL:-$OPENSHOCK_API_BASE_URL}"
 
 start_service "backend" "${ROOT_DIR}/apps/backend" go run ./cmd/server
+for _ in {1..40}; do
+  if curl -sf "${OPENSHOCK_API_BASE_URL}/health" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.25
+done
 start_service "frontend" "${ROOT_DIR}/apps/frontend" npm run dev -- --port "$FRONTEND_PORT"
 
 if [[ "$WITH_DAEMON" == "1" ]]; then

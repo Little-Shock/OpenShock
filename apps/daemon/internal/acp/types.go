@@ -20,4 +20,5 @@ type Event struct {
 	Content     string
 	LastMessage string
 	ToolCall    *ToolCall
+	Stream      string
 }

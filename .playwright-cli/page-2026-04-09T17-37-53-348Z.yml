@@ -1,0 +1,94 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e39] [cursor=pointer]:
+    - img [ref=e40]
+  - alert [ref=e43]
+  - generic [ref=e64]:
+    - complementary [ref=e65]:
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - generic [ref=e69]: OpenShock
+          - generic [ref=e71]: OpenShock.ai
+        - generic [ref=e72]:
+          - button "Switch workspace" [ref=e74]:
+            - generic [ref=e75]:
+              - generic [ref=e76]: Workspace
+              - generic [ref=e77]: OpenShock.ai
+            - generic [ref=e78]: ▾
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - generic [ref=e81]: Rooms 0
+              - button "New Room" [ref=e82]
+            - generic [ref=e83]:
+              - generic [ref=e84]: No rooms yet. Create the first room to open a shared thread for people and agents.
+              - generic [ref=e85]:
+                - generic [ref=e86]: Discussion
+                - generic [ref=e88]: No discussion rooms yet.
+              - generic [ref=e89]:
+                - generic [ref=e90]: Issue Rooms
+                - generic [ref=e92]: No issue rooms yet.
+          - generic [ref=e93]:
+            - generic [ref=e94]: Navigate
+            - generic [ref=e95]:
+              - link "Task Board" [ref=e96] [cursor=pointer]:
+                - /url: /board
+                - generic [ref=e97]: Task Board
+              - link "Inbox" [ref=e98] [cursor=pointer]:
+                - /url: /inbox
+                - generic [ref=e99]: Inbox
+              - link "Personal Info" [ref=e100] [cursor=pointer]:
+                - /url: /profile
+                - generic [ref=e101]: Personal Info
+              - link "System Config" [ref=e102] [cursor=pointer]:
+                - /url: /settings
+                - generic [ref=e103]: System Config
+        - generic [ref=e105]:
+          - generic [ref=e106]: Active Agents
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - generic [ref=e109]: Lead_Architect
+              - generic [ref=e110]: active
+            - generic [ref=e111]:
+              - generic [ref=e112]: Systems-Agent-01
+              - generic [ref=e113]: active
+            - generic [ref=e114]:
+              - generic [ref=e115]: Guardian_Bot
+              - generic [ref=e116]: active
+    - generic [ref=e117]:
+      - main [ref=e118]:
+        - generic [ref=e119]:
+          - generic [ref=e121]: First Run Setup
+          - generic [ref=e123]: Workspace is empty. Create the first room and bind the default repo to start execution.
+        - generic [ref=e125]:
+          - generic [ref=e126]:
+            - generic [ref=e127]: Create First Room
+            - paragraph [ref=e128]: Start with a discussion room or create an issue room directly.
+            - generic [ref=e130]:
+              - generic [ref=e131]:
+                - button "Discussion" [ref=e132]
+                - button "Issue" [ref=e133]
+              - textbox "Discussion room title" [ref=e134]
+              - textbox "Optional opening summary for the room." [ref=e135]
+              - button "Create Room" [disabled] [ref=e137]
+          - generic [ref=e138]:
+            - generic [ref=e139]: Bind Workspace Repo
+            - paragraph [ref=e140]: Set one canonical repository path so runs, merge, and delivery share the same source.
+            - generic [ref=e143]:
+              - generic [ref=e144]:
+                - generic [ref=e146]:
+                  - generic [ref=e147]: Workspace execution repo
+                  - button "统一 issue、run、merge 和 delivery 的仓库入口。" [ref=e149]:
+                    - img [ref=e150]
+                - button "Bind Repo" [ref=e153]
+              - generic [ref=e155]: No repo is bound yet. Add one canonical workspace repo before execution.
+      - complementary [ref=e156]:
+        - generic [ref=e157]:
+          - generic [ref=e158]:
+            - generic [ref=e159]: Signed In
+            - generic [ref=e160]: Acceptance Round1
+            - generic [ref=e161]: "@acceptance_r1_user_1"
+          - generic [ref=e162]:
+            - generic [ref=e163]: Checklist
+            - generic [ref=e164]:
+              - generic [ref=e165]: 1. Create discussion or issue room
+              - generic [ref=e166]: 2. Bind default workspace repo
+              - generic [ref=e167]: 3. Post first member message

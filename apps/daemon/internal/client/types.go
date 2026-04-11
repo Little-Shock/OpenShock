@@ -1,10 +1,13 @@
 package client
 
 type Runtime struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Provider string `json:"provider"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	Provider        string `json:"provider"`
+	SlotCount       int    `json:"slotCount"`
+	ActiveSlots     int    `json:"activeSlots"`
+	LastHeartbeatAt string `json:"lastHeartbeatAt,omitempty"`
 }
 
 type ActionRequest struct {
@@ -46,8 +49,10 @@ type RuntimeHeartbeatRequest struct {
 }
 
 type RuntimeHeartbeatResponse struct {
-	RuntimeID string `json:"runtimeId"`
-	Status    string `json:"status"`
+	RuntimeID       string `json:"runtimeId"`
+	Status          string `json:"status"`
+	ActiveSlots     int    `json:"activeSlots"`
+	LastHeartbeatAt string `json:"lastHeartbeatAt,omitempty"`
 }
 
 type Message struct {
@@ -79,14 +84,15 @@ type RoomSummary struct {
 }
 
 type AgentSession struct {
-	ID               string `json:"id"`
-	RoomID           string `json:"roomId"`
-	AgentID          string `json:"agentId"`
-	ProviderThreadID string `json:"providerThreadId,omitempty"`
-	Status           string `json:"status"`
-	LastMessageID    string `json:"lastMessageId,omitempty"`
-	CurrentTurnID    string `json:"currentTurnId,omitempty"`
-	UpdatedAt        string `json:"updatedAt"`
+	ID                string `json:"id"`
+	RoomID            string `json:"roomId"`
+	AgentID           string `json:"agentId"`
+	ProviderThreadID  string `json:"providerThreadId,omitempty"`
+	AppServerThreadID string `json:"appServerThreadId,omitempty"`
+	Status            string `json:"status"`
+	LastMessageID     string `json:"lastMessageId,omitempty"`
+	CurrentTurnID     string `json:"currentTurnId,omitempty"`
+	UpdatedAt         string `json:"updatedAt"`
 }
 
 type AgentTurn struct {
@@ -94,6 +100,7 @@ type AgentTurn struct {
 	SessionID        string     `json:"sessionId"`
 	RoomID           string     `json:"roomId"`
 	AgentID          string     `json:"agentId"`
+	RuntimeID        string     `json:"runtimeId,omitempty"`
 	Sequence         int        `json:"sequence"`
 	TriggerMessageID string     `json:"triggerMessageId"`
 	IntentType       string     `json:"intentType"`
@@ -104,11 +111,20 @@ type AgentTurn struct {
 }
 
 type AgentTurnExecution struct {
-	Turn           AgentTurn    `json:"turn"`
-	Session        AgentSession `json:"session"`
-	Room           RoomSummary  `json:"room"`
-	TriggerMessage Message      `json:"triggerMessage"`
-	Messages       []Message    `json:"messages"`
+	Turn              AgentTurn          `json:"turn"`
+	Session           AgentSession       `json:"session"`
+	Room              RoomSummary        `json:"room"`
+	AgentName         string             `json:"agentName,omitempty"`
+	AgentPrompt       string             `json:"agentPrompt,omitempty"`
+	Issue             *Issue             `json:"issue,omitempty"`
+	Tasks             []Task             `json:"tasks,omitempty"`
+	Runs              []Run              `json:"runs,omitempty"`
+	MergeAttempts     []MergeAttempt     `json:"mergeAttempts,omitempty"`
+	IntegrationBranch *IntegrationBranch `json:"integrationBranch,omitempty"`
+	DeliveryPR        *DeliveryPR        `json:"deliveryPr,omitempty"`
+	Instruction       string             `json:"instruction,omitempty"`
+	TriggerMessage    Message            `json:"triggerMessage"`
+	Messages          []Message          `json:"messages"`
 }
 
 type AgentTurnClaimRequest struct {
@@ -121,8 +137,9 @@ type AgentTurnClaimResponse struct {
 }
 
 type AgentTurnCompleteRequest struct {
-	RuntimeID       string `json:"runtimeId"`
-	ResultMessageID string `json:"resultMessageId,omitempty"`
+	RuntimeID         string `json:"runtimeId"`
+	ResultMessageID   string `json:"resultMessageId,omitempty"`
+	AppServerThreadID string `json:"appServerThreadId,omitempty"`
 }
 
 type AgentTurnCompleteResponse struct {
@@ -130,7 +147,21 @@ type AgentTurnCompleteResponse struct {
 	Status      string `json:"status"`
 }
 
+type AgentTurnEventRequest struct {
+	RuntimeID string         `json:"runtimeId"`
+	EventType string         `json:"eventType"`
+	Message   string         `json:"message,omitempty"`
+	Stream    string         `json:"stream,omitempty"`
+	ToolCall  *ToolCallInput `json:"toolCall,omitempty"`
+}
+
+type AgentTurnEventResponse struct {
+	AgentTurnID string `json:"agentTurnId"`
+	Status      string `json:"status"`
+}
+
 type Run struct {
+	WorkspaceID   string `json:"workspaceId,omitempty"`
 	ID            string `json:"id"`
 	TaskID        string `json:"taskId"`
 	AgentID       string `json:"agentId"`
@@ -145,13 +176,36 @@ type Run struct {
 	OutputPreview string `json:"outputPreview"`
 }
 
+type Issue struct {
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	Priority    string `json:"priority"`
+	Summary     string `json:"summary"`
+	RepoPath    string `json:"repoPath,omitempty"`
+}
+
+type Task struct {
+	WorkspaceID     string `json:"workspaceId,omitempty"`
+	ID              string `json:"id"`
+	IssueID         string `json:"issueId"`
+	Title           string `json:"title"`
+	Description     string `json:"description,omitempty"`
+	Status          string `json:"status"`
+	AssigneeAgentID string `json:"assigneeAgentId"`
+	BranchName      string `json:"branchName"`
+	RunCount        int    `json:"runCount"`
+}
+
 type RunClaimRequest struct {
 	RuntimeID string `json:"runtimeId"`
 }
 
 type RunClaimResponse struct {
-	Claimed bool `json:"claimed"`
-	Run     *Run `json:"run"`
+	Claimed      bool          `json:"claimed"`
+	Run          *Run          `json:"run"`
+	AgentSession *AgentSession `json:"agentSession,omitempty"`
 }
 
 type RunEventRequest struct {
@@ -175,6 +229,7 @@ type ToolCallInput struct {
 }
 
 type MergeAttempt struct {
+	WorkspaceID   string `json:"workspaceId,omitempty"`
 	ID            string `json:"id"`
 	IssueID       string `json:"issueId"`
 	TaskID        string `json:"taskId"`
@@ -205,4 +260,23 @@ type MergeEventRequest struct {
 type MergeEventResponse struct {
 	MergeAttemptID string `json:"mergeAttemptId"`
 	Status         string `json:"status"`
+}
+
+type IntegrationBranch struct {
+	WorkspaceID   string   `json:"workspaceId,omitempty"`
+	ID            string   `json:"id"`
+	IssueID       string   `json:"issueId"`
+	Name          string   `json:"name"`
+	Status        string   `json:"status"`
+	MergedTaskIDs []string `json:"mergedTaskIds"`
+}
+
+type DeliveryPR struct {
+	WorkspaceID  string `json:"workspaceId,omitempty"`
+	ID           string `json:"id"`
+	IssueID      string `json:"issueId"`
+	Title        string `json:"title"`
+	Status       string `json:"status"`
+	ExternalPRID string `json:"externalPrId,omitempty"`
+	ExternalURL  string `json:"externalUrl,omitempty"`
 }

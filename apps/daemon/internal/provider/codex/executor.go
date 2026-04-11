@@ -12,18 +12,8 @@ import (
 	"sync"
 
 	"openshock/daemon/internal/acp"
+	"openshock/daemon/internal/provider"
 )
-
-type ExecuteRequest struct {
-	RepoPath     string
-	Instruction  string
-	CodexBinPath string
-}
-
-type ExecuteResult struct {
-	LastMessage string
-	RawOutput   string
-}
 
 type Executor struct{}
 
@@ -31,12 +21,12 @@ func NewExecutor() *Executor {
 	return &Executor{}
 }
 
-func (e *Executor) Execute(ctx context.Context, req ExecuteRequest, handle func(acp.Event) error) (ExecuteResult, error) {
+func (e *Executor) Execute(ctx context.Context, req provider.ExecuteRequest, handle func(acp.Event) error) (provider.ExecuteResult, error) {
 	if strings.TrimSpace(req.RepoPath) == "" {
-		return ExecuteResult{}, errors.New("repoPath is required")
+		return provider.ExecuteResult{}, errors.New("repoPath is required")
 	}
 	if strings.TrimSpace(req.Instruction) == "" {
-		return ExecuteResult{}, errors.New("instruction is required")
+		return provider.ExecuteResult{}, errors.New("instruction is required")
 	}
 
 	bin := strings.TrimSpace(req.CodexBinPath)
@@ -46,12 +36,15 @@ func (e *Executor) Execute(ctx context.Context, req ExecuteRequest, handle func(
 
 	outputFile := filepath.Join(req.RepoPath, ".openshock_codex_last_message.txt")
 	defer os.Remove(outputFile)
+	sandboxMode := strings.TrimSpace(req.SandboxMode)
+	if sandboxMode == "" {
+		sandboxMode = "danger-full-access"
+	}
 	args := []string{
 		"exec",
 		"--json",
 		"--skip-git-repo-check",
-		"--full-auto",
-		"--sandbox", "workspace-write",
+		"--sandbox", sandboxMode,
 		"-C", req.RepoPath,
 		"-o", outputFile,
 		req.Instruction,
@@ -60,18 +53,21 @@ func (e *Executor) Execute(ctx context.Context, req ExecuteRequest, handle func(
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.RepoPath
 	cmd.Env = append(os.Environ(), "OTEL_SDK_DISABLED=true")
+	if codexHome := strings.TrimSpace(req.CodexHome); codexHome != "" {
+		cmd.Env = append(cmd.Env, "CODEX_HOME="+codexHome)
+	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return ExecuteResult{}, err
+		return provider.ExecuteResult{}, err
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return ExecuteResult{}, err
+		return provider.ExecuteResult{}, err
 	}
 
 	if err := cmd.Start(); err != nil {
-		return ExecuteResult{}, err
+		return provider.ExecuteResult{}, err
 	}
 
 	var rawOutputMu sync.Mutex
@@ -125,8 +121,11 @@ func (e *Executor) Execute(ctx context.Context, req ExecuteRequest, handle func(
 		for scanner.Scan() {
 			line := scanner.Text()
 			appendRaw(line)
+			if isIgnorableCodexLogLine(line) {
+				continue
+			}
 			if handle != nil {
-				if err := handle(acp.Event{Kind: acp.EventStderrChunk, Content: line}); err != nil {
+				if err := handle(acp.Event{Kind: acp.EventStderrChunk, Content: line, Stream: "stderr"}); err != nil {
 					setErr(err)
 					return
 				}
@@ -141,7 +140,7 @@ func (e *Executor) Execute(ctx context.Context, req ExecuteRequest, handle func(
 	readErrMu.Lock()
 	defer readErrMu.Unlock()
 
-	result := ExecuteResult{
+	result := provider.ExecuteResult{
 		RawOutput: strings.TrimSpace(rawOutput.String()),
 	}
 	lastMessageBytes, err := os.ReadFile(outputFile)
@@ -163,6 +162,10 @@ func (e *Executor) Execute(ctx context.Context, req ExecuteRequest, handle func(
 	return result, nil
 }
 
+func (e *Executor) Close() error {
+	return nil
+}
+
 type codexJSONEvent struct {
 	Type        string          `json:"type"`
 	Content     string          `json:"content"`
@@ -180,6 +183,7 @@ type codexJSONEvent struct {
 type codexJSONItem struct {
 	ID               string `json:"id"`
 	Type             string `json:"type"`
+	Text             string `json:"text"`
 	Command          string `json:"command"`
 	AggregatedOutput string `json:"aggregated_output"`
 	Status           string `json:"status"`
@@ -199,14 +203,22 @@ func parseACPEvents(line string) []acp.Event {
 
 	var event codexJSONEvent
 	if err := json.Unmarshal([]byte(trimmed), &event); err != nil {
-		return []acp.Event{{Kind: acp.EventStdoutChunk, Content: trimmed}}
+		return nil
 	}
 
 	switch event.Type {
 	case "acp.stdout", "stdout", "output_text.delta", "response.output_text.delta":
-		return []acp.Event{{Kind: acp.EventStdoutChunk, Content: firstNonEmpty(event.Content, event.Text, event.Delta)}}
+		return []acp.Event{{
+			Kind:    acp.EventStdoutChunk,
+			Content: firstNonEmpty(event.Content, event.Text, event.Delta),
+			Stream:  "stdout",
+		}}
 	case "acp.stderr", "stderr":
-		return []acp.Event{{Kind: acp.EventStderrChunk, Content: firstNonEmpty(event.Content, event.Text, event.Delta)}}
+		return []acp.Event{{
+			Kind:    acp.EventStderrChunk,
+			Content: firstNonEmpty(event.Content, event.Text, event.Delta),
+			Stream:  "stderr",
+		}}
 	case "acp.tool_call", "tool_call":
 		return []acp.Event{{
 			Kind: acp.EventToolCall,
@@ -230,13 +242,13 @@ func parseACPEvents(line string) []acp.Event {
 		if message == "" {
 			return nil
 		}
-		return []acp.Event{{Kind: acp.EventStderrChunk, Content: message}}
+		return []acp.Event{{Kind: acp.EventStderrChunk, Content: message, Stream: "stderr"}}
 	default:
 		content := firstNonEmpty(event.Content, event.Text, event.Delta)
 		if content == "" {
 			return nil
 		}
-		return []acp.Event{{Kind: acp.EventStdoutChunk, Content: content}}
+		return []acp.Event{{Kind: acp.EventStdoutChunk, Content: content, Stream: "stdout"}}
 	}
 }
 
@@ -259,12 +271,36 @@ func normalizeScannerErr(err error) error {
 	return err
 }
 
+func isIgnorableCodexLogLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+	if trimmed == "Reading additional input from stdin..." {
+		return true
+	}
+	if strings.Contains(trimmed, " WARN codex_") || strings.Contains(trimmed, " INFO codex_") {
+		return true
+	}
+	return false
+}
+
 func parseACPItemEvent(item *codexJSONItem) []acp.Event {
 	if item == nil {
 		return nil
 	}
 
 	switch item.Type {
+	case "agent_message":
+		content := strings.TrimSpace(item.Text)
+		if content == "" {
+			return nil
+		}
+		return []acp.Event{{
+			Kind:    acp.EventStdoutChunk,
+			Content: content,
+			Stream:  "session",
+		}}
 	case "command_execution":
 		return []acp.Event{{
 			Kind: acp.EventToolCall,

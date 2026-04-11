@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentOperator } from "@/components/operator-provider";
 import { submitAction } from "@/lib/api";
@@ -23,40 +23,46 @@ export function RoomQuickCreate({
   onCreated,
 }: RoomQuickCreateProps) {
   const router = useRouter();
-  const { operatorName } = useCurrentOperator();
+  const { operatorName, sessionToken } = useCurrentOperator();
   const [kind, setKind] = useState<RoomKind>("discussion");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [priority, setPriority] = useState("medium");
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isPending) {
+      return;
+    }
 
-    startTransition(async () => {
-      try {
-        const response = (await submitAction({
-          actorType: "member",
-          actorId: operatorName,
-          actionType: kind === "issue" ? "Issue.create" : "Room.create",
-          targetType: "workspace",
-          targetId: workspaceId,
-          idempotencyKey: `${kind}-create-${Date.now()}`,
-          payload:
-            kind === "issue"
-              ? {
-                  title,
-                  summary,
-                  priority,
-                }
-              : {
-                  kind: "discussion",
-                  title,
-                  summary,
-                },
-        })) as ActionResponse;
-
+    setIsPending(true);
+    void submitAction(
+      {
+        actorType: "member",
+        actorId: operatorName,
+        actionType: kind === "issue" ? "Issue.create" : "Room.create",
+        targetType: "workspace",
+        targetId: workspaceId,
+        idempotencyKey: `${kind}-create-${Date.now()}`,
+        payload:
+          kind === "issue"
+            ? {
+                title,
+                summary,
+                priority,
+              }
+            : {
+                kind: "discussion",
+                title,
+                summary,
+              },
+      },
+      { sessionToken },
+    )
+      .then((rawResponse) => {
+        const response = rawResponse as ActionResponse;
         const roomId = roomIdFromResponse(response);
         setTitle("");
         setSummary("");
@@ -69,12 +75,15 @@ export function RoomQuickCreate({
           return;
         }
         onCreated?.("");
-      } catch (error) {
+      })
+      .catch((error) => {
         setFeedback(
           error instanceof Error ? error.message : "Failed to create room.",
         );
-      }
-    });
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   return (

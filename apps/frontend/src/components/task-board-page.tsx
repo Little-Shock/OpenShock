@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { InfoHint } from "@/components/ui/info-hint";
+import { getCurrentSessionToken } from "@/lib/operator-server";
 
 const STATUS_LABELS: Record<string, string> = {
   todo: "Todo",
@@ -43,8 +44,48 @@ function statusTone(status: string) {
   }
 }
 
+function MobileTaskCard({
+  task,
+  agentName,
+}: {
+  task: Task;
+  agentName: string;
+}) {
+  return (
+    <div className="rounded-[12px] border border-[var(--border)] bg-white px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="display-font text-[13px] font-black text-black/88">
+            {task.title}
+          </div>
+          <div className="mt-1 text-[11px] text-black/55">
+            {task.issueId.replace("_", "#")} · {agentName}
+          </div>
+        </div>
+        <Badge tone="dark">{task.id.replace("_", "#")}</Badge>
+      </div>
+      {task.description ? (
+        <p className="mt-2 text-[12px] leading-5 text-black/60">{task.description}</p>
+      ) : null}
+      <div className="mt-3">
+        <TaskActionStrip
+          taskId={task.id}
+          issueId={task.issueId}
+          taskTitle={task.title}
+          compact
+          showContextHint={false}
+        />
+      </div>
+    </div>
+  );
+}
+
 export async function TaskBoardPage() {
-  const [bootstrap, board] = await Promise.all([getBootstrap(), getTaskBoard()]);
+  const sessionToken = await getCurrentSessionToken();
+  const [bootstrap, board] = await Promise.all([
+    getBootstrap({ sessionToken }),
+    getTaskBoard({ sessionToken }),
+  ]);
   const groups = groupedTasks(board.tasks);
   const realtimeScopes = [`workspace:${bootstrap.workspace.id}`, "board:default"];
   const blockedCount = groups.blocked?.length ?? 0;
@@ -57,13 +98,29 @@ export async function TaskBoardPage() {
       workspaceId={bootstrap.workspace.id}
       workspaceName={bootstrap.workspace.name}
       rooms={bootstrap.rooms}
-      agents={bootstrap.agents}
+      directRooms={bootstrap.directRooms}
+      alignedTopRows
+      footerPanel={null}
+      rightRailWidthClass="md:grid-cols-[minmax(0,1fr)_360px]"
       activeRoute="/board"
       title="Task Board"
-      subtitle="Track task state by execution lane and move work toward integration."
+      headerMeta={
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+          <Badge tone="blue-soft">Execution Board</Badge>
+          <span className="shrink-0 text-[12px] font-medium text-black/58">
+            {board.tasks.length} tasks
+          </span>
+          <span className="shrink-0 text-[12px] font-medium text-black/52">
+            {activeIssueCount} active issues
+          </span>
+          <span className="truncate text-[13px] font-medium text-black/58">
+            Track task state by execution lane and move work toward integration.
+          </span>
+        </div>
+      }
       rightRail={
         <div className="space-y-3.5 p-3.5">
-          <Card className="rounded-[20px] px-3.5 py-3.5">
+          <Card className="rounded-[12px] px-3 py-2.5">
             <div className="mb-3 flex items-center justify-between gap-2">
               <Eyebrow>Task Actions</Eyebrow>
               <Badge tone="blue-soft">{bootstrap.issueSummaries.length} issues</Badge>
@@ -118,89 +175,109 @@ export async function TaskBoardPage() {
         </div>
       }
     >
-      <div className="space-y-3 p-4">
+      <div className="space-y-3 px-3 py-3">
         <LiveRefresh scopes={realtimeScopes} />
-        {board.columns.map((column) => {
-          const tasks = groups[column] ?? [];
+        <div className="mx-auto w-full max-w-5xl space-y-2.5">
+          {board.columns.map((column) => {
+            const tasks = groups[column] ?? [];
 
-          return (
-            <details
-              key={column}
-              open
-              className="group overflow-hidden rounded-[18px] border border-[var(--border)] bg-white"
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3 marker:hidden">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[10px] text-black/45 transition group-open:rotate-90">
-                    ▸
-                  </span>
-                  <Badge tone={statusTone(column)}>
-                    {STATUS_LABELS[column] ?? column.replaceAll("_", " ")}
-                  </Badge>
-                </div>
-                <Badge tone="blue-soft">{tasks.length}</Badge>
-              </summary>
-              <div className="overflow-x-auto">
-                <table className="min-w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-black/45">
-                      <th className="px-4 py-2.5">Task</th>
-                      <th className="px-4 py-2.5">Issue</th>
-                      <th className="px-4 py-2.5">Assignee</th>
-                      <th className="px-4 py-2.5">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+            return (
+              <details
+                key={column}
+                open
+                className="group overflow-hidden rounded-[12px] border border-[var(--border)] bg-white shadow-[0_4px_12px_rgba(31,35,41,0.04)]"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3 marker:hidden">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-[10px] text-black/45 transition group-open:rotate-90">
+                      ▸
+                    </span>
+                    <Badge tone={statusTone(column)}>
+                      {STATUS_LABELS[column] ?? column.replaceAll("_", " ")}
+                    </Badge>
+                  </div>
+                  <Badge tone="blue-soft">{tasks.length}</Badge>
+                </summary>
+                <div className="overflow-x-auto">
+                  <div className="space-y-2 p-3 md:hidden">
                     {tasks.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          className="px-4 py-6 text-[13px] text-black/50"
-                        >
-                          No tasks in this status.
-                        </td>
-                      </tr>
+                      <div className="rounded-[12px] border border-dashed border-[var(--border)] bg-white px-3 py-4 text-[13px] text-black/50">
+                        No tasks in this status.
+                      </div>
                     ) : (
                       tasks.map((task) => (
-                        <tr
+                        <MobileTaskCard
                           key={task.id}
-                          className="border-b border-[var(--border)] align-top last:border-b-0"
-                        >
-                          <td className="px-4 py-3.5">
-                            <div className="display-font text-[13px] font-black text-black/88">
-                              {task.title}
-                            </div>
-                            {task.description ? (
-                              <p className="mt-1 max-w-[34rem] text-[12px] leading-5 text-black/60">
-                                {task.description}
-                              </p>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <Badge tone="dark">{task.issueId.replace("_", "#")}</Badge>
-                          </td>
-                          <td className="px-4 py-3.5 text-[12px] text-black/70">
-                            {bootstrap.agents.find((agent) => agent.id === task.assigneeAgentId)?.name ??
-                              task.assigneeAgentId}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <TaskActionStrip
-                              taskId={task.id}
-                              issueId={task.issueId}
-                              taskTitle={task.title}
-                              compact
-                              showContextHint={false}
-                            />
-                          </td>
-                        </tr>
+                          task={task}
+                          agentName={
+                            bootstrap.agents.find((agent) => agent.id === task.assigneeAgentId)?.name ??
+                            task.assigneeAgentId
+                          }
+                        />
                       ))
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          );
-        })}
+                  </div>
+                  <table className="hidden min-w-full border-collapse md:table">
+                    <thead>
+                      <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-black/45">
+                        <th className="px-4 py-2.5">Task</th>
+                        <th className="px-4 py-2.5">Issue</th>
+                        <th className="px-4 py-2.5">Assignee</th>
+                        <th className="px-4 py-2.5">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tasks.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="px-4 py-6 text-[13px] text-black/50"
+                          >
+                            No tasks in this status.
+                          </td>
+                        </tr>
+                      ) : (
+                        tasks.map((task) => (
+                          <tr
+                            key={task.id}
+                            className="border-b border-[var(--border)] align-top last:border-b-0"
+                          >
+                            <td className="px-4 py-3.5">
+                              <div className="display-font text-[13px] font-black text-black/88">
+                                {task.title}
+                              </div>
+                              {task.description ? (
+                                <p className="mt-1 max-w-[34rem] text-[12px] leading-5 text-black/60">
+                                  {task.description}
+                                </p>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <Badge tone="dark">{task.issueId.replace("_", "#")}</Badge>
+                            </td>
+                            <td className="px-4 py-3.5 text-[12px] text-black/70">
+                              {bootstrap.agents.find((agent) => agent.id === task.assigneeAgentId)?.name ??
+                                task.assigneeAgentId}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <TaskActionStrip
+                                taskId={task.id}
+                                issueId={task.issueId}
+                                taskTitle={task.title}
+                                compact
+                                showContextHint={false}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            );
+          })}
+        </div>
       </div>
     </ShellFrame>
   );

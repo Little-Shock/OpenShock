@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getRealtimeEventsUrl } from "@/lib/api";
+import { useCurrentOperator } from "@/components/operator-provider";
 
 type LiveRefreshProps = {
   scopes?: string[];
@@ -14,8 +15,9 @@ export function LiveRefresh({
   refreshDelayMs = 600,
 }: LiveRefreshProps) {
   const router = useRouter();
+  const { sessionToken } = useCurrentOperator();
   const refreshTimerRef = useRef<number | null>(null);
-  const streamUrl = getRealtimeEventsUrl(scopes);
+  const streamUrl = getRealtimeEventsUrl(scopes, sessionToken);
 
   useEffect(() => {
     const source = new EventSource(streamUrl);

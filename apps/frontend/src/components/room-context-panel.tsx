@@ -1,20 +1,29 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { AgentObservabilitySurface } from "@/components/agent-observability-panel";
 import { AgentObservabilityDrawer } from "@/components/agent-observability-drawer";
+import { useCurrentOperator } from "@/components/operator-provider";
 import { DeliveryPRAction } from "@/components/delivery-pr-action";
+import { RoomAgentAddDialog } from "@/components/room-agent-add-dialog";
 import { RoomSystemPanel } from "@/components/room-system-panel";
+import { RunActionStrip } from "@/components/run-action-strip";
 import { TaskCreateDialog } from "@/components/task-create-dialog";
 import { TaskStatusControl } from "@/components/task-status-control";
+import { ActionMenu } from "@/components/ui/action-menu";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { InfoHint } from "@/components/ui/info-hint";
+import { submitAction } from "@/lib/api";
 import { WorkspaceRepoBinding } from "@/components/workspace-repo-binding";
 import type {
   Agent,
   AgentSession,
   AgentTurn,
+  AgentTurnOutputChunk,
+  AgentTurnToolCall,
   AgentWait,
   DeliveryPR,
   HandoffRecord,
@@ -27,12 +36,17 @@ import type {
 } from "@/lib/types";
 
 type RoomContextPanelProps = {
+  roomId: string;
+  roomKind: "issue" | "discussion" | "direct_message";
+  roomDirectAgentId?: string;
   workspace: Workspace;
   issue?: Issue;
   agents: Agent[];
   runtimes: Runtime[];
   sessions: AgentSession[];
   turns: AgentTurn[];
+  turnOutputChunks: AgentTurnOutputChunk[];
+  turnToolCalls: AgentTurnToolCall[];
   waits: AgentWait[];
   handoffs: HandoffRecord[];
   tasks: Task[];
@@ -42,7 +56,7 @@ type RoomContextPanelProps = {
   messageCount: number;
 };
 
-type RoomTab = "issue" | "tasks" | "system";
+type RoomTab = "overview" | "tasks" | "system";
 
 function statusTone(value: string): BadgeTone {
   switch (value) {
@@ -104,12 +118,17 @@ function TaskList({
 }
 
 export function RoomContextPanel({
+  roomId,
+  roomKind,
+  roomDirectAgentId,
   workspace,
   issue,
   agents,
   runtimes,
   sessions,
   turns,
+  turnOutputChunks,
+  turnToolCalls,
   waits,
   handoffs,
   tasks,
@@ -118,117 +137,248 @@ export function RoomContextPanel({
   deliveryPr,
   messageCount,
 }: RoomContextPanelProps) {
-  const tabOrder: RoomTab[] = issue ? ["issue", "tasks", "system"] : ["system"];
+  const router = useRouter();
+  const { operatorName, sessionToken } = useCurrentOperator();
+  const isDirectMessageRoom = roomKind === "direct_message";
+  const tabOrder: RoomTab[] = issue ? ["overview", "tasks", "system"] : ["overview", "system"];
   const [activeTab, setActiveTab] = useState<RoomTab>(tabOrder[0]);
+  const [openAgentId, setOpenAgentId] = useState<string | null>(null);
+  const [removingAgentId, setRemovingAgentId] = useState<string | null>(null);
+  const [roomAgentFeedback, setRoomAgentFeedback] = useState<string | null>(null);
   const defaultRepoBinding = workspace.repoBindings.find((binding) => binding.isDefault);
   const mergedCount = integrationBranch?.mergedTaskIds.length ?? 0;
   const mergeProgress = tasks.length > 0 ? Math.round((mergedCount / tasks.length) * 100) : 0;
   const activeRuns = runs.filter((run) =>
     ["queued", "running", "approval_required", "blocked"].includes(run.status),
   );
-  const roomAgentIdSet = new Set<string>();
+  const observabilityRefreshKey = [
+    roomId,
+    messageCount,
+    sessions.length,
+    turns.length,
+    turnOutputChunks.length,
+    turnToolCalls.length,
+    waits.length,
+    handoffs.length,
+  ].join(":");
+  const joinedAgentIds = Array.from(
+    new Set(sessions.filter((session) => session.joinedRoom).map((session) => session.agentId)),
+  );
+  const latestSessionByAgentId = new Map<string, AgentSession>();
   for (const session of sessions) {
-    roomAgentIdSet.add(session.agentId);
+    const previous = latestSessionByAgentId.get(session.agentId);
+    if (!previous || session.updatedAt > previous.updatedAt) {
+      latestSessionByAgentId.set(session.agentId, session);
+    }
   }
+  const turnCountByAgentId = new Map<string, number>();
   for (const turn of turns) {
-    roomAgentIdSet.add(turn.agentId);
+    turnCountByAgentId.set(turn.agentId, (turnCountByAgentId.get(turn.agentId) ?? 0) + 1);
   }
-  for (const wait of waits) {
-    roomAgentIdSet.add(wait.agentId);
-  }
-  for (const handoff of handoffs) {
-    roomAgentIdSet.add(handoff.fromAgentId);
-    roomAgentIdSet.add(handoff.toAgentId);
-  }
-  for (const task of tasks) {
-    if (task.assigneeAgentId) {
-      roomAgentIdSet.add(task.assigneeAgentId);
+  const tabLabel: Record<RoomTab, string> = {
+    overview: "overview",
+    tasks: "tasks",
+    system: "system",
+  };
+
+  async function handleRemoveAgent(agentId: string) {
+    if (removingAgentId) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Remove ${agentName(agentId, agents)} from this room?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setRemovingAgentId(agentId);
+    setRoomAgentFeedback(null);
+    try {
+      await submitAction(
+        {
+          actorType: "member",
+          actorId: operatorName,
+          actionType: "RoomAgent.remove",
+          targetType: "room",
+          targetId: roomId,
+          idempotencyKey: `room-agent-remove-${roomId}-${agentId}-${Date.now()}`,
+          payload: {
+            agentId,
+          },
+        },
+        { sessionToken },
+      );
+      router.refresh();
+    } catch (error) {
+      setRoomAgentFeedback(
+        error instanceof Error ? error.message : "Failed to remove agent from room.",
+      );
+    } finally {
+      setRemovingAgentId(null);
     }
   }
-  for (const run of runs) {
-    if (run.agentId) {
-      roomAgentIdSet.add(run.agentId);
-    }
-  }
-  const roomAgentIds = Array.from(roomAgentIdSet);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-[var(--border)] bg-white">
-        <div className="flex h-12 items-center px-3">
-          <Eyebrow className="text-black/50">Context</Eyebrow>
-        </div>
-        <div className="flex h-10 items-center gap-1.5 px-3">
-          {tabOrder.map((tab) => {
-            const active = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`control-pill transition ${
+      {tabOrder.length > 1 ? (
+        <div className="px-2.5 pt-2.5">
+          <div className="flex min-h-9 flex-wrap items-center gap-1.5">
+            {tabOrder.map((tab) => {
+              const active = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`control-pill transition ${
                   active
                     ? "bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]"
                     : "bg-[var(--surface-muted)] text-black/55 hover:bg-white"
                 }`}
               >
-                {tab}
-              </button>
-            );
-          })}
+                  {tabLabel[tab]}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
-        {activeTab === "issue" && issue ? (
+      <div
+        className={`min-h-0 flex-1 overflow-y-auto ${
+          tabOrder.length > 1 ? "px-2.5 pb-2.5 pt-2" : "p-2.5"
+        }`}
+      >
+        {activeTab === "overview" ? (
           <div className="space-y-2.5">
-            <Card className="rounded-[12px] px-3 py-2.5">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <Eyebrow>Issue</Eyebrow>
-                <Badge tone={statusTone(issue.status)}>{issue.status.replaceAll("_", " ")}</Badge>
-              </div>
-              <div className="display-font text-sm font-black">{issue.title}</div>
-              <p className="mt-1 text-[12px] leading-4.5 text-black/68">{issue.summary}</p>
-            </Card>
+            {issue ? (
+              <>
+                <Card className="rounded-[12px] px-3 py-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Eyebrow>Issue</Eyebrow>
+                    <Badge tone={statusTone(issue.status)}>{issue.status.replaceAll("_", " ")}</Badge>
+                  </div>
+                  <div className="display-font text-sm font-black">{issue.title}</div>
+                  <p className="mt-1 text-[12px] leading-4.5 text-black/68">{issue.summary}</p>
+                </Card>
 
-            <Card className="rounded-[12px] px-3 py-2.5">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <Eyebrow>Workspace Repo</Eyebrow>
-                <Badge tone={defaultRepoBinding ? "green" : "orange"}>
-                  {defaultRepoBinding ? "default" : "required"}
-                </Badge>
-              </div>
-              <WorkspaceRepoBinding workspaceId={workspace.id} bindings={workspace.repoBindings} />
-            </Card>
+                <Card className="rounded-[12px] px-3 py-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Eyebrow>Workspace Repo</Eyebrow>
+                    <Badge tone={defaultRepoBinding ? "green" : "orange"}>
+                      {defaultRepoBinding ? "default" : "required"}
+                    </Badge>
+                  </div>
+                  <WorkspaceRepoBinding workspaceId={workspace.id} bindings={workspace.repoBindings} />
+                </Card>
 
-            <Card className="rounded-[12px] px-3 py-2.5">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <Eyebrow>Integration</Eyebrow>
-                {integrationBranch ? (
-                  <Badge tone={statusTone(integrationBranch.status)}>
-                    {integrationBranch.status.replaceAll("_", " ")}
+                <Card className="rounded-[12px] px-3 py-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Eyebrow>Integration</Eyebrow>
+                    {integrationBranch ? (
+                      <Badge tone={statusTone(integrationBranch.status)}>
+                        {integrationBranch.status.replaceAll("_", " ")}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="display-font text-2xl font-black">{mergeProgress}%</div>
+                  <div className="mt-0.5 text-[12px] text-black/65">
+                    {mergedCount} / {tasks.length} tasks integrated
+                  </div>
+                </Card>
+
+                <Card className="rounded-[12px] px-3 py-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Eyebrow>Delivery</Eyebrow>
+                    <Badge tone={deliveryPr ? statusTone(deliveryPr.status) : "neutral"}>
+                      {deliveryPr ? deliveryPr.status.replaceAll("_", " ") : "not created"}
+                    </Badge>
+                  </div>
+                  <DeliveryPRAction
+                    issueId={issue.id}
+                    integrationStatus={integrationBranch?.status ?? "collecting"}
+                    existingDeliveryPRId={deliveryPr?.id ?? null}
+                  />
+                </Card>
+              </>
+            ) : null}
+
+            {isDirectMessageRoom ? (
+              roomDirectAgentId ? (
+                <div className="overflow-hidden rounded-[12px] border border-[var(--border)] bg-white">
+                  <AgentObservabilitySurface
+                    agentId={roomDirectAgentId}
+                    sessionToken={sessionToken}
+                    refreshKey={observabilityRefreshKey}
+                  />
+                </div>
+              ) : null
+            ) : (
+              <Card className="rounded-[12px] px-3 py-2.5">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <Eyebrow>Room Agents</Eyebrow>
+                  <Badge tone={joinedAgentIds.length > 0 ? "blue-soft" : "neutral"}>
+                    {joinedAgentIds.length} joined
                   </Badge>
+                </div>
+                {roomAgentFeedback ? (
+                  <div className="mb-3 rounded-[10px] border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-900">
+                    {roomAgentFeedback}
+                  </div>
                 ) : null}
-              </div>
-              <div className="display-font text-2xl font-black">{mergeProgress}%</div>
-              <div className="mt-0.5 text-[12px] text-black/65">
-                {mergedCount} / {tasks.length} tasks integrated
-              </div>
-            </Card>
+                {joinedAgentIds.length > 0 ? (
+                  <div className="mb-3 space-y-1.5">
+                    {joinedAgentIds.map((agentId) => {
+                      const latestSession = latestSessionByAgentId.get(agentId);
+                      const turnCount = turnCountByAgentId.get(agentId) ?? 0;
 
-            <Card className="rounded-[12px] px-3 py-2.5">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <Eyebrow>Delivery</Eyebrow>
-                <Badge tone={deliveryPr ? statusTone(deliveryPr.status) : "neutral"}>
-                  {deliveryPr ? deliveryPr.status.replaceAll("_", " ") : "not created"}
-                </Badge>
-              </div>
-              <DeliveryPRAction
-                issueId={issue.id}
-                integrationStatus={integrationBranch?.status ?? "collecting"}
-                existingDeliveryPRId={deliveryPr?.id ?? null}
-              />
-            </Card>
+                      return (
+                        <div
+                          key={agentId}
+                          className="flex w-full items-center justify-between gap-3 rounded-[10px] border border-[var(--border)] bg-white px-2.5 py-2"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setOpenAgentId(agentId)}
+                            className="min-w-0 flex-1 cursor-pointer rounded-[8px] px-1 py-1 text-left transition hover:bg-[var(--surface-muted)]"
+                          >
+                            <div className="truncate text-[12px] font-medium text-black/82 hover:text-[var(--accent-blue)]">
+                              {agentName(agentId, agents)}
+                            </div>
+                            <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-black/45">
+                              {(latestSession?.status ?? "idle").replaceAll("_", " ")} · {turnCount} turns
+                            </div>
+                          </button>
+                          <ActionMenu
+                            className="shrink-0"
+                            items={[
+                              {
+                                label: removingAgentId === agentId ? "Removing..." : "Remove",
+                                onSelect: () => {
+                                  void handleRemoveAgent(agentId);
+                                },
+                                disabled: removingAgentId === agentId,
+                              },
+                            ]}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mb-3 rounded-[10px] border border-[var(--border)] bg-white px-2.5 py-2 text-[12px] text-black/55">
+                    No joined agents yet.
+                  </div>
+                )}
+                <div className="flex items-center justify-start">
+                  <RoomAgentAddDialog
+                    roomId={roomId}
+                    agents={agents}
+                    joinedAgentIds={joinedAgentIds}
+                  />
+                </div>
+              </Card>
+            )}
           </div>
         ) : null}
 
@@ -292,15 +442,27 @@ export function RoomContextPanel({
                   runs.map((run) => (
                     <div
                       key={run.id}
-                      className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-white px-2.5 py-2"
+                      className="rounded-[10px] border border-[var(--border)] bg-white px-2.5 py-2"
                     >
-                      <div className="min-w-0">
-                        <div className="truncate text-[12px] font-medium">{run.title}</div>
-                        <div className="text-[10px] uppercase tracking-[0.12em] text-black/45">
-                          {run.id}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[12px] font-medium">{run.title}</div>
+                          <div className="text-[10px] uppercase tracking-[0.12em] text-black/45">
+                            {run.id}
+                          </div>
+                          {run.outputPreview ? (
+                            <p className="mt-1 line-clamp-2 text-[11px] leading-4.5 text-black/58">
+                              {run.outputPreview}
+                            </p>
+                          ) : null}
                         </div>
+                        <Badge tone={statusTone(run.status)}>{run.status.replaceAll("_", " ")}</Badge>
                       </div>
-                      <Badge tone={statusTone(run.status)}>{run.status.replaceAll("_", " ")}</Badge>
+                      <RunActionStrip
+                        runId={run.id}
+                        status={run.status}
+                        title={run.title}
+                      />
                     </div>
                   ))
                 ) : (
@@ -322,17 +484,15 @@ export function RoomContextPanel({
               handoffs={handoffs}
               messageCount={messageCount}
             />
-            <AgentObservabilityDrawer
-              agents={agents}
-              sessions={sessions}
-              turns={turns}
-              waits={waits}
-              handoffs={handoffs}
-              candidateAgentIds={roomAgentIds}
-            />
           </div>
         ) : null}
       </div>
+      <AgentObservabilityDrawer
+        sessionToken={sessionToken}
+        openAgentId={openAgentId}
+        onOpenAgentIdChange={setOpenAgentId}
+        refreshKey={observabilityRefreshKey}
+      />
     </div>
   );
 }

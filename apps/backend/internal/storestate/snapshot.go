@@ -1,0 +1,57 @@
+package storestate
+
+import "openshock/backend/internal/core"
+
+type MemoryStoreSnapshot struct {
+	Workspaces              []core.Workspace
+	DefaultWorkspaceID      string
+	DefaultRoomIDs          map[string]string
+	DefaultIssueIDs         map[string]string
+	Rooms                   []core.RoomSummary
+	Agents                  []core.Agent
+	Runtimes                []core.Runtime
+	Issues                  []core.Issue
+	MessagesByRoom          map[string][]core.Message
+	AgentSessions           []core.AgentSession
+	AgentTurns              []core.AgentTurn
+	AgentTurnOutputChunks   []core.AgentTurnOutputChunk
+	AgentTurnToolCalls      []core.AgentTurnToolCall
+	AgentWaits              []core.AgentWait
+	HandoffRecords          []core.HandoffRecord
+	Tasks                   []core.Task
+	Runs                    []core.Run
+	RunOutputChunks         []core.RunOutputChunk
+	ToolCalls               []core.ToolCall
+	MergeAttempts           []core.MergeAttempt
+	IntegrationBranches     []core.IntegrationBranch
+	DeliveryPRs             []core.DeliveryPR
+	InboxItems              []core.InboxItem
+	RepoWebhookEvents       map[string]core.RepoWebhookResponse
+	Members                 map[string]core.Member
+	MemberIDsByUsername     map[string]string
+	PasswordHashes          map[string]string
+	AuthSessions            map[string]core.AuthSession
+	RoomReadBySession       map[string]map[string]string
+	NextMessageID           int
+	NextTaskID              int
+	NextRunID               int
+	NextRunOutputID         int
+	NextToolCallID          int
+	NextMergeAttemptID      int
+	NextRuntimeID           int
+	NextIssueID             int
+	NextRoomID              int
+	NextInboxID             int
+	NextActionID            int
+	NextAgentSessionID      int
+	NextAgentTurnID         int
+	NextAgentTurnOutputID   int
+	NextAgentTurnToolCallID int
+	NextAgentWaitID         int
+	NextHandoffID           int
+	NextAgentID             int
+	NextWorkspaceRepoID     int
+	NextMemberID            int
+	NextAuthSessionID       int
+	ActionResults           map[string]core.ActionResponse
+}

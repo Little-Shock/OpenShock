@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentOperator } from "@/components/operator-provider";
 import { submitAction } from "@/lib/api";
@@ -22,33 +22,41 @@ export function TaskActionStrip({
   showContextHint = true,
 }: TaskActionStripProps) {
   const router = useRouter();
-  const { operatorName } = useCurrentOperator();
+  const { operatorName, sessionToken } = useCurrentOperator();
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
   function runAction(actionType: string) {
-    startTransition(async () => {
-      try {
-        const response = (await submitAction({
-          actorType: "member",
-          actorId: operatorName,
-          actionType,
-          targetType: "task",
-          targetId: taskId,
-          idempotencyKey: `${actionType}-${taskId}-${Date.now()}`,
-          payload: {},
-        })) as {
-          resultMessage: string;
-        };
+    if (isPending) {
+      return;
+    }
 
+    setIsPending(true);
+    void submitAction(
+      {
+        actorType: "member",
+        actorId: operatorName,
+        actionType,
+        targetType: "task",
+        targetId: taskId,
+        idempotencyKey: `${actionType}-${taskId}-${Date.now()}`,
+        payload: {},
+      },
+      { sessionToken },
+    )
+      .then((rawResponse) => {
+        const response = rawResponse as { resultMessage: string };
         setFeedback(`${taskTitle}: ${response.resultMessage}`);
         router.refresh();
-      } catch (error) {
+      })
+      .catch((error) => {
         setFeedback(
           error instanceof Error ? error.message : "Action request failed.",
         );
-      }
-    });
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   return (

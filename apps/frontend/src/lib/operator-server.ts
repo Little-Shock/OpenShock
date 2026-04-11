@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
-import { normalizeOperatorName, OPERATOR_NAME_COOKIE } from "@/lib/operator";
+import { SESSION_TOKEN_COOKIE } from "@/lib/operator";
 
-export async function getCurrentOperatorName() {
+export async function getCurrentSessionToken() {
   const cookieStore = await cookies();
-  return normalizeOperatorName(cookieStore.get(OPERATOR_NAME_COOKIE)?.value);
+  return cookieStore.get(SESSION_TOKEN_COOKIE)?.value?.trim() ?? "";
 }
-

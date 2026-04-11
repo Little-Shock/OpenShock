@@ -112,6 +112,35 @@ func TestTaskStatusSetBuildsActionRequest(t *testing.T) {
 	}
 }
 
+func TestTaskClaimBuildsAssignRequestForActor(t *testing.T) {
+	stub := &stubSubmitter{resp: client.ActionResponse{ActionID: "action_203b", Status: "completed"}}
+	app := &App{
+		newClient: func(string) actionSubmitter { return stub },
+		now:       func() time.Time { return time.Unix(0, 222333444) },
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := app.Run(context.Background(), []string{
+		"task", "claim",
+		"--task", "task_101",
+		"--actor-id", "agent_shell",
+	}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d with stderr %s", exitCode, stderr.String())
+	}
+	if stub.lastReq.ActionType != "Task.assign" || stub.lastReq.TargetID != "task_101" {
+		t.Fatalf("unexpected action request: %#v", stub.lastReq)
+	}
+	if stub.lastReq.Payload["agentId"] != "agent_shell" {
+		t.Fatalf("expected task claim to assign actor to self, got %#v", stub.lastReq.Payload)
+	}
+	if stub.lastReq.IdempotencyKey != "task-claim-task_101-222333444" {
+		t.Fatalf("expected generated idempotency key, got %q", stub.lastReq.IdempotencyKey)
+	}
+}
+
 func TestTaskMarkReadyBuildsActionRequest(t *testing.T) {
 	stub := &stubSubmitter{resp: client.ActionResponse{ActionID: "action_204", Status: "completed"}}
 	app := &App{
@@ -138,9 +167,11 @@ func TestTaskMarkReadyBuildsActionRequest(t *testing.T) {
 	}
 }
 
-func TestRunRequiresIdempotencyKey(t *testing.T) {
+func TestRunCreateBuildsDefaultIdempotencyKey(t *testing.T) {
+	stub := &stubSubmitter{resp: client.ActionResponse{ActionID: "action_205", Status: "completed"}}
 	app := &App{
-		newClient: func(string) actionSubmitter { return &stubSubmitter{} },
+		newClient: func(string) actionSubmitter { return stub },
+		now:       func() time.Time { return time.Unix(0, 555666777) },
 	}
 
 	var stdout bytes.Buffer
@@ -151,11 +182,40 @@ func TestRunRequiresIdempotencyKey(t *testing.T) {
 		"--actor-id", "agent_shell",
 	}, &stdout, &stderr)
 
-	if exitCode != 2 {
-		t.Fatalf("expected exit 2, got %d", exitCode)
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d with stderr %s", exitCode, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "idempotency-key is required") {
-		t.Fatalf("unexpected stderr: %s", stderr.String())
+	if stub.lastReq.ActionType != "Run.create" || stub.lastReq.TargetID != "task_101" {
+		t.Fatalf("unexpected action request: %#v", stub.lastReq)
+	}
+	if stub.lastReq.IdempotencyKey != "run-create-task_101-555666777" {
+		t.Fatalf("expected generated idempotency key, got %q", stub.lastReq.IdempotencyKey)
+	}
+}
+
+func TestGitApproveMergeBuildsActionRequest(t *testing.T) {
+	stub := &stubSubmitter{resp: client.ActionResponse{ActionID: "action_206", Status: "completed"}}
+	app := &App{
+		newClient: func(string) actionSubmitter { return stub },
+		now:       func() time.Time { return time.Unix(0, 888999000) },
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := app.Run(context.Background(), []string{
+		"git", "approve-merge",
+		"--task", "task_101",
+		"--actor-id", "agent_guardian",
+	}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d with stderr %s", exitCode, stderr.String())
+	}
+	if stub.lastReq.ActionType != "GitIntegration.merge.approve" || stub.lastReq.TargetID != "task_101" {
+		t.Fatalf("unexpected action request: %#v", stub.lastReq)
+	}
+	if stub.lastReq.IdempotencyKey != "merge-approve-task_101-888999000" {
+		t.Fatalf("expected generated idempotency key, got %q", stub.lastReq.IdempotencyKey)
 	}
 }
 
