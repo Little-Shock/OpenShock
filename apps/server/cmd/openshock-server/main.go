@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Larkspur-Wang/OpenShock/apps/server/internal/api"
+	githubsvc "github.com/Larkspur-Wang/OpenShock/apps/server/internal/github"
 	"github.com/Larkspur-Wang/OpenShock/apps/server/internal/store"
 )
 
@@ -25,6 +26,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	githubClient, err := githubsvc.NewEnvOverrideClient(githubsvc.NewService(nil))
+	if err != nil {
+		log.Fatal(err)
+	}
 	if changed, err := sanitizePersistedStateOnStartup(stateStore); err != nil {
 		log.Fatal(err)
 	} else if changed {
@@ -36,6 +41,7 @@ func main() {
 		DaemonURL:           daemonURL,
 		ActualLiveURL:       actualLiveURL,
 		WorkspaceRoot:       workspaceRoot,
+		GitHub:              githubClient,
 		GitHubWebhookSecret: githubWebhookSecret,
 	})
 

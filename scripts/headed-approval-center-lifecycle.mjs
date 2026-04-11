@@ -23,6 +23,19 @@ const reportPath = parsedArgs.reportPath ? path.resolve(projectRoot, parsedArgs.
 
 const screenshots = [];
 const processes = [];
+const fakeGitHubSyncResponses = JSON.stringify({
+  22: {
+    number: 22,
+    url: "https://github.com/Larkspur-Wang/OpenShock/pull/22",
+    title: "inbox: unify approval, blocked, and review cards",
+    state: "MERGED",
+    merged: true,
+    headRefName: "feat/inbox-decision-cards",
+    baseRefName: "main",
+    author: "Claude Review Runner",
+    updatedAt: "2026-04-11T00:00:00Z",
+  },
+});
 
 await mkdir(artifactsDir, { recursive: true });
 
@@ -184,6 +197,7 @@ async function startServices(runDir) {
       OPENSHOCK_SERVER_ADDR: `127.0.0.1:${serverPort}`,
       OPENSHOCK_WORKSPACE_ROOT: workspaceRoot,
       OPENSHOCK_STATE_FILE: statePath,
+      OPENSHOCK_FAKE_GITHUB_SYNC_RESPONSES: fakeGitHubSyncResponses,
     },
     logPath: path.join(logsDir, "server.log"),
   });

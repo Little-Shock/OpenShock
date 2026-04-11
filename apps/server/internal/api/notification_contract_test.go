@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	githubsvc "github.com/Larkspur-Wang/OpenShock/apps/server/internal/github"
@@ -303,6 +304,56 @@ func TestApprovalCenterLifecycleTracksInboxDecisions(t *testing.T) {
 	blockedSignal, ok := findApprovalSignal(center, "blocked")
 	if !ok || blockedSignal.Title != "PR #22 需要补充修改" || blockedSignal.RoomID != "room-inbox" || !blockedSignal.Unread {
 		t.Fatalf("review follow-up blocked signal malformed: %#v", blockedSignal)
+	}
+}
+
+func TestApprovalCenterRecentDedupesMergedDeliveryDelegationStatus(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+		GitHub: &fakeGitHubClient{
+			synced: map[int]githubsvc.PullRequest{
+				22: {
+					Number:      22,
+					URL:         "https://github.com/Larkspur-Wang/OpenShock/pull/22",
+					Title:       "inbox: unify approval, blocked, and review cards",
+					State:       "MERGED",
+					Merged:      true,
+					HeadRefName: "feat/inbox-decision-cards",
+					BaseRefName: "main",
+					Author:      "ClaudeReviewRunner",
+					UpdatedAt:   "2026-04-11T00:00:00Z",
+				},
+			},
+		},
+	}).Handler())
+	defer server.Close()
+
+	mustApplyInboxDecision(t, server.URL, "inbox-approval-runtime", "approved")
+	mustApplyInboxDecision(t, server.URL, "inbox-blocked-memory", "resolved")
+	mustApplyInboxDecision(t, server.URL, "inbox-review-copy", "changes_requested")
+
+	center := mustFetchApprovalCenter(t, server.URL)
+	if center.OpenCount != 0 || center.BlockedCount != 0 || center.ReviewCount != 0 {
+		t.Fatalf("merged review sync should empty approval signals: %#v", center)
+	}
+	if center.RecentCount != 4 {
+		t.Fatalf("recent count = %d, want 4 after merged review dedupe", center.RecentCount)
+	}
+	if !approvalRecentContains(center, "PR #22 已合并") {
+		t.Fatalf("recent lifecycle missing merged PR status: %#v", center.Recent)
+	}
+	for _, item := range center.Recent {
+		if strings.Contains(item.Title, "交付委托已完成") {
+			t.Fatalf("delivery delegation status should stay out of approval center recent: %#v", center.Recent)
+		}
 	}
 }
 

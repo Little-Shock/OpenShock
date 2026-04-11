@@ -237,7 +237,7 @@ try {
   await waitForPage(page, `${webURL}/memory`, "Memory Registry");
   await capture(page, "memory");
 
-  await waitForPage(page, `${webURL}/inbox`, "Approval Center");
+  await waitForPage(page, `${webURL}/inbox`, "Inbox");
   await capture(page, "inbox");
 
   await waitForPage(page, `${webURL}/board`, "Board");
@@ -259,7 +259,7 @@ try {
     "",
     "- `/chat/all`、`/setup`、`/issues`、`/memory`、`/inbox`、`/board`、`/rooms/room-runtime`、`/runs/run_runtime_01` 已在同一套 workspace shell 下完成有头浏览器走查 -> PASS",
     "- Work 模式现在会在左侧 `Chat / Work` 顶部切换上显示明确激活态，不再让 utility surface 像未激活副按钮 -> PASS",
-    "- 中栏背景已从纯白整块改回统一工作台底色，左栏与中栏之间不再出现突兀白缝；`setup / issues / memory / run` 的卡片密度也已收紧 -> PASS",
+    "- 中栏背景已从纯白整块改回统一工作台底色，左栏与中栏之间不再出现突兀白缝；`setup / issues / memory / run` 的卡片密度也已收紧，`/inbox` 顶栏也已收成更轻的 `Inbox / Mailbox` 语义 -> PASS",
     "- Board 仍保持次级 planning surface 位置，但 card 语言和 room / issue 回跳仍有继续压缩空间 -> GAP",
     "",
     "## Screenshots",

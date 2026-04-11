@@ -426,12 +426,16 @@ func inboxNotificationSignals(snapshot State) []notificationSignal {
 	signals := make([]notificationSignal, 0, len(snapshot.Inbox))
 	roomUnread := make(map[string]int, len(snapshot.Rooms))
 	roomUnreadByTitle := make(map[string]int, len(snapshot.Rooms))
+	mergedPullRequestStatusTitles := mergedPullRequestStatusTitles(snapshot)
 	for _, room := range snapshot.Rooms {
 		roomUnread[room.ID] = room.Unread
 		roomUnreadByTitle[room.Title] = room.Unread
 	}
 
 	for _, inboxItem := range snapshot.Inbox {
+		if suppressApprovalCenterStatusSignal(snapshot, inboxItem, mergedPullRequestStatusTitles) {
+			continue
+		}
 		templateID, templateLabel := notificationTemplateForInboxKind(inboxItem.Kind)
 		roomID, runID := parseInboxTargetIDs(inboxItem.Href)
 		unread := false
@@ -459,6 +463,39 @@ func inboxNotificationSignals(snapshot State) []notificationSignal {
 		})
 	}
 	return signals
+}
+
+func mergedPullRequestStatusTitles(snapshot State) map[string]bool {
+	titles := make(map[string]bool)
+	for _, pr := range snapshot.PullRequests {
+		if !strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
+			continue
+		}
+		title := strings.TrimSpace(fmt.Sprintf("%s 已合并", pr.Label))
+		if title != "已合并" {
+			titles[title] = true
+		}
+	}
+	return titles
+}
+
+func suppressApprovalCenterStatusSignal(snapshot State, inboxItem InboxItem, mergedPullRequestStatusTitles map[string]bool) bool {
+	if inboxItem.Kind != "status" || !strings.HasPrefix(inboxItem.ID, "inbox-delivery-delegation-") {
+		return false
+	}
+
+	pullRequestID := strings.TrimPrefix(inboxItem.ID, "inbox-delivery-delegation-")
+	if strings.TrimSpace(pullRequestID) == "" {
+		return false
+	}
+
+	for _, pr := range snapshot.PullRequests {
+		if pr.ID != pullRequestID || !strings.EqualFold(strings.TrimSpace(pr.Status), "merged") {
+			continue
+		}
+		return mergedPullRequestStatusTitles[strings.TrimSpace(fmt.Sprintf("%s 已合并", pr.Label))]
+	}
+	return false
 }
 
 func authNotificationSignals(snapshot State) []notificationSignal {

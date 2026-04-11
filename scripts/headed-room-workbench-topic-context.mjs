@@ -272,7 +272,7 @@ try {
 
   await page.locator('[data-testid="room-workbench-open-inbox"]').first().click();
   await waitForUrlIncludes(page, "/inbox");
-  await waitForVisible(page.locator("text=Approval Center"), "inbox did not open from room context link");
+  await waitForVisible(page.locator('[data-testid="approval-center-open-count"]'), "inbox did not open from room context link");
   await capture(page, "inbox-backlink");
   await page.goBack({ waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=context");

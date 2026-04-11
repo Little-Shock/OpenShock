@@ -212,24 +212,24 @@ function SetupCheckpointCard({
   active: boolean;
 }) {
   return (
-    <Panel tone={statusTone(active)} className="!p-3.5">
+    <Panel tone={statusTone(active)} className="!p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
             {active ? "已接通" : "待补全"}
           </p>
-          <h3 className="mt-1.5 font-display text-[24px] font-bold leading-7">{title}</h3>
+          <h3 className="mt-1.5 font-display text-[20px] font-bold leading-6">{title}</h3>
         </div>
         <span
           className={cn(
-            "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]",
+            "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em]",
             active ? "bg-[var(--shock-lime)]" : "bg-white"
           )}
         >
           {active ? "live" : "pending"}
         </span>
       </div>
-      <p className="mt-2.5 text-sm leading-6">{summary}</p>
+      <p className="mt-2 text-[13px] leading-5">{summary}</p>
     </Panel>
   );
 }
@@ -393,7 +393,7 @@ export function SetupFirstStartJourneyPanel() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">first-start bridge</p>
-          <h2 className="mt-2 font-display text-3xl font-bold">Setup 现在直接镜像同一条首次启动路径，不再默认你已经收平了 `/access`</h2>
+          <h2 className="mt-2 font-display text-[28px] font-bold leading-[1.15]">现在该做什么，直接在这里回答</h2>
         </div>
         <span
           data-testid="setup-first-start-next-route"
@@ -413,15 +413,15 @@ export function SetupFirstStartJourneyPanel() {
         <WorkspaceMetric label="launch route" value={journey.launchHref} testID="setup-first-start-launch-route" />
         <WorkspaceMetric label="onboarding" value={onboardingLabel} testID="setup-first-start-onboarding-status" />
       </div>
-      <div className="mt-5 grid gap-3 xl:grid-cols-3">
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {journey.steps.map((step) => (
-          <Panel key={step.id} tone={journeyTone(step.status)} className="!p-3.5">
+          <Panel key={step.id} tone={journeyTone(step.status)} className="!p-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-display text-2xl font-bold">{step.label}</p>
+                <p className="font-display text-[20px] font-bold leading-6">{step.label}</p>
                 <p
                   data-testid={`setup-first-start-step-${step.id}-summary`}
-                  className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]"
+                  className="mt-1.5 text-[13px] leading-5 text-[color:rgba(24,20,14,0.74)]"
                 >
                   {step.summary}
                 </p>
@@ -514,7 +514,7 @@ export function OnboardingStudioPanel() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">onboarding studio</p>
-          <h2 className="mt-2 font-display text-3xl font-bold">把模板选择、首次启动步骤和 bootstrap package 收成可恢复真值</h2>
+          <h2 className="mt-2 font-display text-[28px] font-bold leading-[1.15]">模板、进度和 bootstrap package 都收成可恢复真值</h2>
         </div>
         <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
           {valueOrPlaceholder(workspace.onboarding.status, "未开始")}
@@ -887,31 +887,26 @@ export function LiveSetupOverview() {
 
       <div className="space-y-3">
         <Panel tone="yellow" className="!p-3.5">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em]">工作区在线状态</p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.24em]">工作区在线状态</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                先看当前 repo、runtime、安装状态和 onboarding 恢复入口；更细的 quota / retention / usage 退到高级区。
+              </p>
+            </div>
+            <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+              {selectedRuntimeLabel} · {pairingStatusLabel(pairingStatus)}
+            </span>
+          </div>
           <dl className="mt-3 grid gap-2 sm:grid-cols-2">
             <WorkspaceMetric label="仓库" value={valueOrPlaceholder(workspace.repo, "当前未返回 repo")} />
             <WorkspaceMetric label="分支" value={valueOrPlaceholder(workspace.branch, "当前未返回 branch")} />
-            <WorkspaceMetric label="计划" value={valueOrPlaceholder(workspace.plan, "当前未返回 plan")} />
             <WorkspaceMetric label="Runtime" value={`${selectedRuntimeLabel} / ${pairingStatusLabel(pairingStatus)}`} />
             <WorkspaceMetric
               label="Shell"
               value={valueOrPlaceholder(selectedRuntimeTruth?.shell, "未返回")}
               testId="setup-selected-runtime-shell"
             />
-            <WorkspaceMetric label="下一条 Lane" value={assignedRuntimeLabel} />
-            <WorkspaceMetric label="调度策略" value={runtimeSchedulerStrategyLabel(scheduler.strategy)} />
-            <WorkspaceMetric label="心跳节奏" value={selectedHeartbeatCadence} />
-            <WorkspaceMetric
-              label="Quota"
-              value={formatQuotaCounter(workspace.quota?.usedAgents, workspace.quota?.maxAgents, "agents")}
-            />
-            <WorkspaceMetric
-              label="Room / Channel"
-              value={`${formatQuotaCounter(workspace.quota?.usedRooms, workspace.quota?.maxRooms, "rooms")} · ${formatQuotaCounter(workspace.quota?.usedChannels, workspace.quota?.maxChannels, "channels")}`}
-            />
-            <WorkspaceMetric label="保留期" value={formatRetentionSummary(workspace.quota)} />
-            <WorkspaceMetric label="Usage 窗口" value={formatWorkspaceUsageWindow(workspace.usage)} />
-            <WorkspaceMetric label="记忆" value={valueOrPlaceholder(workspace.memoryMode, "当前未返回 memory mode")} />
             <WorkspaceMetric label="模板" value={valueOrPlaceholder(workspace.onboarding.templateId, "未选模板")} testID="setup-onboarding-template" />
             <WorkspaceMetric label="Onboarding" value={valueOrPlaceholder(workspace.onboarding.status, "未声明")} testID="setup-onboarding-status" />
             <WorkspaceMetric label="恢复入口" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "未声明")} testID="setup-onboarding-resume-url" />
@@ -923,6 +918,28 @@ export function LiveSetupOverview() {
             {selectedRuntimeCLI ? `，CLI 为 ${selectedRuntimeCLI}` : ""}
             {selectedRuntimeInventory ? `，provider/model catalog 为 ${selectedRuntimeInventory}` : ""}。
           </p>
+          <details className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
+            <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
+              advanced workspace metrics
+            </summary>
+            <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+              <WorkspaceMetric label="计划" value={valueOrPlaceholder(workspace.plan, "当前未返回 plan")} />
+              <WorkspaceMetric label="下一条 Lane" value={assignedRuntimeLabel} />
+              <WorkspaceMetric label="调度策略" value={runtimeSchedulerStrategyLabel(scheduler.strategy)} />
+              <WorkspaceMetric label="心跳节奏" value={selectedHeartbeatCadence} />
+              <WorkspaceMetric
+                label="Quota"
+                value={formatQuotaCounter(workspace.quota?.usedAgents, workspace.quota?.maxAgents, "agents")}
+              />
+              <WorkspaceMetric
+                label="Room / Channel"
+                value={`${formatQuotaCounter(workspace.quota?.usedRooms, workspace.quota?.maxRooms, "rooms")} · ${formatQuotaCounter(workspace.quota?.usedChannels, workspace.quota?.maxChannels, "channels")}`}
+              />
+              <WorkspaceMetric label="保留期" value={formatRetentionSummary(workspace.quota)} />
+              <WorkspaceMetric label="Usage 窗口" value={formatWorkspaceUsageWindow(workspace.usage)} />
+              <WorkspaceMetric label="记忆" value={valueOrPlaceholder(workspace.memoryMode, "当前未返回 memory mode")} />
+            </dl>
+          </details>
           {workspace.usage?.warning || workspace.quota?.warning ? (
             <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5 text-sm leading-6">
               {workspace.usage?.warning ?? workspace.quota?.warning}
@@ -1004,15 +1021,6 @@ export function LiveSetupOverview() {
               })
             )}
           </div>
-        </Panel>
-        <Panel tone="ink" className="!p-3.5 shadow-[6px_6px_0_0_var(--shock-pink)]">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em]">当前协作基线</p>
-          <ol className="mt-3 space-y-2 text-sm leading-6 text-white/78">
-            <li>1. Workspace 直接显示 live repo / branch / runtime selection 真值。</li>
-            <li>2. Setup 不再把静态步骤卡当成当前环境状态。</li>
-            <li>3. 当前工作区已有 {state.issues.length} 条 live issue、{state.runs.length} 条 live run。</li>
-            <li>4. 当前已注册 {registryRuntimes.length} 台 runtime，selection 为 {selectedRuntimeLabel}，下一条 lane 指向 {assignedRuntimeLabel}，active lease 为 {activeLeases.length} 条。</li>
-          </ol>
         </Panel>
       </div>
     </div>

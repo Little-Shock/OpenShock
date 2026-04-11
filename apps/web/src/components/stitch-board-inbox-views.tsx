@@ -1025,42 +1025,44 @@ export function StitchInboxView() {
         <section className="flex min-h-0 flex-col">
           <WorkspaceStatusStrip workspaceName={workspaceName} disconnected={disconnected} />
           <StitchTopBar
-            eyebrow={mailboxSurfaceActive ? "Agent Mailbox Surface" : "Human Decision Surface"}
-            title={mailboxSurfaceActive ? "Mailbox Ledger" : "Approval Center"}
+            eyebrow={mailboxSurfaceActive ? "Mailbox" : "Inbox"}
+            title={mailboxSurfaceActive ? "Mailbox" : "Inbox"}
             description={
               mailboxSurfaceActive
-                ? "这里把正式 handoff request / acknowledge / blocked / complete 收成同一条 governance ledger；Room 和 Inbox 继续保留上下文与通知回链。"
-                : "这里是需要人类判断的唯一入口。approval、blocked、review 会在这里汇总，并回跳到 room / run / PR。"
+                ? "正式 handoff 的 request / acknowledge / blocked / complete 都收在这里，Room 和 Inbox 继续保留上下文回链。"
+                : "这里收所有需要人类判断的 approval、blocked 和 review，再回到 room / run / PR 继续处理。"
             }
-            tabs={mailboxSurfaceActive ? ["Mailbox", "Inbox", "Recent"] : ["Inbox", "Review", "Recent"]}
-            activeTab={mailboxSurfaceActive ? "Mailbox" : "Inbox"}
-            searchPlaceholder={mailboxSurfaceActive ? "Search mailbox / handoff / room" : "Search approval / review / block"}
+            searchPlaceholder={mailboxSurfaceActive ? "Search handoff / room / agent" : "Search approval / review / room"}
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
           />
           <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--shock-paper)] px-4 py-4">
             <div className="mx-auto max-w-[1180px]">
-              <div className="border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+              <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[var(--shock-shadow-sm)]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
                   <div>
-                    <p className="inline-flex border border-[var(--shock-ink)] bg-[#ead7ff] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--shock-purple)]">
-                      Human Intelligence Required
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                      {mailboxSurfaceActive ? "formal handoff ledger" : "human decision queue"}
                     </p>
-                    <p className="mt-3 font-display text-[20px] font-bold">Approval Center</p>
+                    <p className="mt-2 font-display text-[22px] font-bold">
+                      {mailboxSurfaceActive ? "先看正式交接，再回房间推进" : "先把需要判断的信号收在一处"}
+                    </p>
                     <p className="mt-2 max-w-2xl text-[12px] leading-5 text-[color:rgba(24,20,14,0.62)]">
-                      `/inbox` 直接消费 `/v1/approval-center`，把 approval / blocked / review 的 open lifecycle、unread 热点和 recent resolution 明面化。
+                      {mailboxSurfaceActive
+                        ? "Mailbox 负责正式 handoff 自身，Inbox 继续保留可见通知和回房间入口。"
+                        : "`/inbox` 直接消费 `/v1/approval-center`，把 approval / blocked / review 的 open lifecycle 压成同一条 decision queue。"}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]" data-testid="approval-center-open-count">
+                    <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]" data-testid={centerLoading || error ? undefined : "approval-center-open-count"}>
                       {centerLoading || error ? "…" : approvalCenter.openCount} open
                     </span>
-                    <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]" data-testid="approval-center-unread-count">
+                    <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]" data-testid={centerLoading || error ? undefined : "approval-center-unread-count"}>
                       {centerLoading || error ? "…" : approvalCenter.unreadCount} unread
                     </span>
-                    <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]" data-testid="approval-center-recent-count">
+                    <span className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]" data-testid={centerLoading || error ? undefined : "approval-center-recent-count"}>
                       {centerLoading || error ? "…" : approvalCenter.recentCount} recent
                     </span>
-                    <span className="border border-[var(--shock-ink)] bg-[var(--shock-pink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white" data-testid="approval-center-blocked-count">
+                    <span className="border border-[var(--shock-ink)] bg-[var(--shock-pink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white" data-testid={centerLoading || error ? undefined : "approval-center-blocked-count"}>
                       {centerLoading || error ? "…" : blockedCount} blocked
                     </span>
                   </div>

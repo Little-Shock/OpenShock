@@ -17,22 +17,22 @@ export default function SetupPage() {
     <LiveRuntimeProvider>
       <OpenShockShell
         view="setup"
-        eyebrow="Onboarding Studio"
-        title="把 `/access` 和 `/setup` 收成同一条首次启动主链"
-        description="这里不再只摆静态 setup 步骤卡，而是直接镜像 access recovery、template bootstrap、repo binding、GitHub effective auth path、runtime bridge 与当前 resume progress。"
-        contextTitle="首次启动在线"
-        contextDescription="当 access recovery、模板选择、repo/GitHub/runtime 真值和 resumable progress 都直接从 live contract 读清时，首次启动才算真正站住。"
+        eyebrow="Setup"
+        title="把首次启动收成一条主链"
+        description="这里直接镜像 next step、template bootstrap、repo / GitHub / runtime 真值和当前恢复入口，不再把 setup 做成一堆分散控制台。"
+        contextTitle="Current Setup Truth"
+        contextDescription="先回答现在该做什么，再展开 repo、GitHub、runtime 和 bridge 细节。"
         contextBody={<LiveSetupContextRail />}
       >
         <div className="space-y-4">
-          <LiveSetupOverview />
           <SetupFirstStartJourneyPanel />
+          <LiveSetupOverview />
           <OnboardingStudioPanel />
           <RepoBindingConsole />
           <GitHubConnectionConsole />
+          <LiveBridgeConsole />
           <BranchHeadTruthConsole />
           <LiveRolloutParityConsole />
-          <LiveBridgeConsole />
         </div>
       </OpenShockShell>
     </LiveRuntimeProvider>
