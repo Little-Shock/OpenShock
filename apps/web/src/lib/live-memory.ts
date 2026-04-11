@@ -50,6 +50,19 @@ export type MemoryPromotionKind = "skill" | "policy";
 export type MemoryPromotionStatus = "pending_review" | "approved" | "rejected";
 export type MemoryProviderKind = "workspace-file" | "search-sidecar" | "external-persistent";
 export type MemoryProviderStatus = "healthy" | "standby" | "degraded";
+export type MemoryProviderActivityAction = "check" | "recovery";
+
+export type MemoryProviderActivityRun = {
+  id: string;
+  action: MemoryProviderActivityAction;
+  triggeredAt: string;
+  triggeredBy: string;
+  source?: string;
+  status: MemoryProviderStatus;
+  summary: string;
+  detail?: string;
+  nextAction?: string;
+};
 
 export type MemoryInjectionPolicy = {
 	mode: MemoryPolicyMode;
@@ -74,8 +87,16 @@ export type MemoryProviderBinding = {
   retentionPolicy: string;
   sharingPolicy: string;
   summary: string;
+  lastSummary?: string;
+  nextAction?: string;
   lastCheckedAt?: string;
+  lastCheckSource?: string;
   lastError?: string;
+  lastRecoveryAt?: string;
+  lastRecoveryBy?: string;
+  lastRecoverySummary?: string;
+  failureCount?: number;
+  activity: MemoryProviderActivityRun[];
   updatedAt?: string;
   updatedBy?: string;
 };
@@ -211,6 +232,11 @@ type MemoryPolicyResponse = {
 
 type MemoryProvidersResponse = {
   providers: MemoryProviderBinding[];
+  center: MemoryCenter;
+};
+
+type MemoryProviderRecoveryResponse = {
+  provider: MemoryProviderBinding;
   center: MemoryCenter;
 };
 
@@ -353,6 +379,29 @@ export function useLiveMemoryCenter() {
     [commitCenter]
   );
 
+  const checkProvider = useCallback(
+    async (providerId?: string) => {
+      const payload = await requestJSON<MemoryProvidersResponse>("/v1/memory-center/providers/check", {
+        method: "POST",
+        body: JSON.stringify(providerId ? { providerId } : {}),
+      });
+      commitCenter(payload.center);
+      return payload;
+    },
+    [commitCenter]
+  );
+
+  const recoverProvider = useCallback(
+    async (providerId: string) => {
+      const payload = await requestJSON<MemoryProviderRecoveryResponse>(`/v1/memory-center/providers/${providerId}/recover`, {
+        method: "POST",
+      });
+      commitCenter(payload.center);
+      return payload;
+    },
+    [commitCenter]
+  );
+
   const createPromotion = useCallback(
     async (input: MemoryPromotionInput) => {
       const payload = await requestJSON<MemoryPromotionResponse>("/v1/memory-center/promotions", {
@@ -416,6 +465,8 @@ export function useLiveMemoryCenter() {
     refresh,
     updatePolicy,
     updateProviders,
+    checkProvider,
+    recoverProvider,
     createPromotion,
     reviewPromotion,
     runCleanup,

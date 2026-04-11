@@ -335,7 +335,144 @@ func TestMemoryProviderBindingsPersistAndAnnotatePromptSummary(t *testing.T) {
 		t.Fatalf("search-sidecar provider = %#v, want disabled standby", got)
 	}
 
-	_, providers, center, err := s.UpdateMemoryProviders([]MemoryProviderBinding{
+	_, providers, center, err := s.UpdateMemoryProviders(sampleMemoryProviderBindings(), "Larkspur")
+	if err != nil {
+		t.Fatalf("UpdateMemoryProviders() error = %v", err)
+	}
+
+	searchProvider := findMemoryProviderByKind(providers, memoryProviderKindSearchSidecar)
+	if searchProvider == nil || !searchProvider.Enabled || searchProvider.Status != memoryProviderStatusDegraded || searchProvider.LastError == "" || searchProvider.NextAction == "" {
+		t.Fatalf("search provider = %#v, want enabled degraded with recovery guidance", searchProvider)
+	}
+	externalProvider := findMemoryProviderByKind(providers, memoryProviderKindExternalPersistent)
+	if externalProvider == nil || !externalProvider.Enabled || externalProvider.Status != memoryProviderStatusDegraded || externalProvider.LastError == "" || externalProvider.NextAction == "" {
+		t.Fatalf("external provider = %#v, want enabled degraded with error", externalProvider)
+	}
+
+	preview := findMemoryPreviewBySession(center.Previews, "session-memory")
+	if preview == nil {
+		t.Fatalf("session-memory preview missing")
+	}
+	if got := findMemoryProviderByKind(preview.Providers, memoryProviderKindSearchSidecar); got == nil || got.Status != memoryProviderStatusDegraded {
+		t.Fatalf("preview search provider = %#v, want degraded before recovery", got)
+	}
+	if !strings.Contains(preview.PromptSummary, "Memory providers active for this run:") ||
+		!strings.Contains(preview.PromptSummary, "Search Sidecar") ||
+		!strings.Contains(preview.PromptSummary, "External Persistent Memory") ||
+		!strings.Contains(preview.PromptSummary, "Local recall index is missing.") ||
+		!strings.Contains(preview.PromptSummary, "External durable adapter stub is not configured.") {
+		t.Fatalf("prompt summary missing provider orchestration details:\n%s", preview.PromptSummary)
+	}
+
+	reloaded, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New(reload) error = %v", err)
+	}
+	reloadedCenter := reloaded.MemoryCenter()
+	if got := findMemoryProviderByKind(reloadedCenter.Providers, memoryProviderKindExternalPersistent); got == nil || !got.Enabled || got.Status != memoryProviderStatusDegraded {
+		t.Fatalf("reloaded external provider = %#v, want persisted degraded binding", got)
+	}
+	if got := findMemoryProviderByKind(reloadedCenter.Providers, memoryProviderKindSearchSidecar); got == nil || got.Status != memoryProviderStatusDegraded || got.NextAction == "" {
+		t.Fatalf("reloaded search provider = %#v, want degraded binding with recovery guidance", got)
+	}
+}
+
+func TestMemoryProviderHealthCheckAndRecoveryLifecycle(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, _, _, err := s.UpdateMemoryProviders(sampleMemoryProviderBindings(), "Larkspur"); err != nil {
+		t.Fatalf("UpdateMemoryProviders() error = %v", err)
+	}
+
+	_, checkedProviders, _, err := s.CheckMemoryProviders(memoryProviderKindSearchSidecar, "Larkspur")
+	if err != nil {
+		t.Fatalf("CheckMemoryProviders(search-sidecar) error = %v", err)
+	}
+	searchChecked := findMemoryProviderByKind(checkedProviders, memoryProviderKindSearchSidecar)
+	if searchChecked == nil || searchChecked.LastCheckSource != "manual-check" || searchChecked.FailureCount != 1 || len(searchChecked.Activity) == 0 {
+		t.Fatalf("search checked provider = %#v, want manual-check ledger entry", searchChecked)
+	}
+
+	_, recoveredSearch, _, err := s.RecoverMemoryProvider(memoryProviderKindSearchSidecar, "Larkspur")
+	if err != nil {
+		t.Fatalf("RecoverMemoryProvider(search-sidecar) error = %v", err)
+	}
+	if recoveredSearch.Status != memoryProviderStatusHealthy || recoveredSearch.LastRecoverySummary == "" || recoveredSearch.LastCheckSource != "recovery-verify" {
+		t.Fatalf("recovered search provider = %#v, want healthy recovery-verified provider", recoveredSearch)
+	}
+
+	_, recoveredExternal, _, err := s.RecoverMemoryProvider(memoryProviderKindExternalPersistent, "Larkspur")
+	if err != nil {
+		t.Fatalf("RecoverMemoryProvider(external-persistent) error = %v", err)
+	}
+	if recoveredExternal.Status != memoryProviderStatusHealthy || recoveredExternal.LastRecoverySummary == "" || !strings.Contains(recoveredExternal.NextAction, "real remote durable sink") {
+		t.Fatalf("recovered external provider = %#v, want healthy local relay stub with next action", recoveredExternal)
+	}
+
+	workspaceMemoryPath := filepath.Join(root, "MEMORY.md")
+	if err := os.Remove(workspaceMemoryPath); err != nil {
+		t.Fatalf("Remove(MEMORY.md) error = %v", err)
+	}
+
+	_, checkedWorkspaceProviders, _, err := s.CheckMemoryProviders(memoryProviderKindWorkspaceFile, "Larkspur")
+	if err != nil {
+		t.Fatalf("CheckMemoryProviders(workspace-file) error = %v", err)
+	}
+	workspaceChecked := findMemoryProviderByKind(checkedWorkspaceProviders, memoryProviderKindWorkspaceFile)
+	if workspaceChecked == nil || workspaceChecked.Status != memoryProviderStatusDegraded || workspaceChecked.LastError == "" {
+		t.Fatalf("workspace checked provider = %#v, want degraded missing scaffold", workspaceChecked)
+	}
+
+	_, recoveredWorkspace, finalCenter, err := s.RecoverMemoryProvider(memoryProviderKindWorkspaceFile, "Larkspur")
+	if err != nil {
+		t.Fatalf("RecoverMemoryProvider(workspace-file) error = %v", err)
+	}
+	if recoveredWorkspace.Status != memoryProviderStatusHealthy || recoveredWorkspace.LastRecoverySummary == "" {
+		t.Fatalf("recovered workspace provider = %#v, want healthy recovered scaffold", recoveredWorkspace)
+	}
+	if _, err := os.Stat(workspaceMemoryPath); err != nil {
+		t.Fatalf("workspace MEMORY.md not restored: %v", err)
+	}
+
+	preview := findMemoryPreviewBySession(finalCenter.Previews, "session-memory")
+	if preview == nil {
+		t.Fatalf("session-memory preview missing after recovery")
+	}
+	if got := findMemoryProviderByKind(preview.Providers, memoryProviderKindSearchSidecar); got == nil || got.Status != memoryProviderStatusHealthy {
+		t.Fatalf("preview search provider after recovery = %#v, want healthy", got)
+	}
+	if got := findMemoryProviderByKind(preview.Providers, memoryProviderKindExternalPersistent); got == nil || got.Status != memoryProviderStatusHealthy {
+		t.Fatalf("preview external provider after recovery = %#v, want healthy", got)
+	}
+	if !strings.Contains(preview.PromptSummary, "External durable adapter stub is configured in local relay mode.") ||
+		!strings.Contains(preview.PromptSummary, "Search sidecar index ready") {
+		t.Fatalf("prompt summary missing recovered provider health notes:\n%s", preview.PromptSummary)
+	}
+
+	reloaded, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New(reload) error = %v", err)
+	}
+	reloadedCenter := reloaded.MemoryCenter()
+	if got := findMemoryProviderByKind(reloadedCenter.Providers, memoryProviderKindSearchSidecar); got == nil || got.Status != memoryProviderStatusHealthy || len(got.Activity) < 2 {
+		t.Fatalf("reloaded search provider = %#v, want persisted healthy provider with activity", got)
+	}
+	if got := findMemoryProviderByKind(reloadedCenter.Providers, memoryProviderKindExternalPersistent); got == nil || got.Status != memoryProviderStatusHealthy || got.LastRecoverySummary == "" {
+		t.Fatalf("reloaded external provider = %#v, want persisted healthy relay stub", got)
+	}
+	if got := findMemoryProviderByKind(reloadedCenter.Providers, memoryProviderKindWorkspaceFile); got == nil || got.Status != memoryProviderStatusHealthy || got.LastRecoverySummary == "" {
+		t.Fatalf("reloaded workspace provider = %#v, want persisted recovered scaffold", got)
+	}
+}
+
+func sampleMemoryProviderBindings() []MemoryProviderBinding {
+	return []MemoryProviderBinding{
 		{
 			ID:              memoryProviderKindWorkspaceFile,
 			Kind:            memoryProviderKindWorkspaceFile,
@@ -372,41 +509,6 @@ func TestMemoryProviderBindingsPersistAndAnnotatePromptSummary(t *testing.T) {
 			SharingPolicy:   "explicit-share-only",
 			Summary:         "Forward approved memories to an external durable sink.",
 		},
-	}, "Larkspur")
-	if err != nil {
-		t.Fatalf("UpdateMemoryProviders() error = %v", err)
-	}
-
-	searchProvider := findMemoryProviderByKind(providers, memoryProviderKindSearchSidecar)
-	if searchProvider == nil || !searchProvider.Enabled || searchProvider.Status != memoryProviderStatusHealthy {
-		t.Fatalf("search provider = %#v, want enabled healthy", searchProvider)
-	}
-	externalProvider := findMemoryProviderByKind(providers, memoryProviderKindExternalPersistent)
-	if externalProvider == nil || !externalProvider.Enabled || externalProvider.Status != memoryProviderStatusDegraded || externalProvider.LastError == "" {
-		t.Fatalf("external provider = %#v, want enabled degraded with error", externalProvider)
-	}
-
-	preview := findMemoryPreviewBySession(center.Previews, "session-memory")
-	if preview == nil {
-		t.Fatalf("session-memory preview missing")
-	}
-	if got := findMemoryProviderByKind(preview.Providers, memoryProviderKindSearchSidecar); got == nil || got.Status != memoryProviderStatusHealthy {
-		t.Fatalf("preview search provider = %#v, want healthy", got)
-	}
-	if !strings.Contains(preview.PromptSummary, "Memory providers active for this run:") ||
-		!strings.Contains(preview.PromptSummary, "Search Sidecar") ||
-		!strings.Contains(preview.PromptSummary, "External Persistent Memory") ||
-		!strings.Contains(preview.PromptSummary, "External durable adapter is not configured yet") {
-		t.Fatalf("prompt summary missing provider orchestration details:\n%s", preview.PromptSummary)
-	}
-
-	reloaded, err := New(statePath, root)
-	if err != nil {
-		t.Fatalf("New(reload) error = %v", err)
-	}
-	reloadedCenter := reloaded.MemoryCenter()
-	if got := findMemoryProviderByKind(reloadedCenter.Providers, memoryProviderKindExternalPersistent); got == nil || !got.Enabled || got.Status != memoryProviderStatusDegraded {
-		t.Fatalf("reloaded external provider = %#v, want persisted degraded binding", got)
 	}
 }
 

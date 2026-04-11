@@ -7,6 +7,7 @@ import { usePhaseZeroState } from "@/lib/live-phase0";
 import {
   type MemoryArtifactDetail,
   type MemoryCleanupRun,
+  type MemoryProviderActivityRun,
   type MemoryInjectionPolicy,
   type MemoryInjectionPreview,
   type MemoryProviderBinding,
@@ -214,6 +215,10 @@ function providerStatusTone(status: MemoryProviderBinding["status"]) {
   }
 }
 
+function providerActivityActionLabel(action: MemoryProviderActivityRun["action"]) {
+  return action === "recovery" ? "recovery" : "check";
+}
+
 function providerScopeLabel(scope: string) {
   return scope.replace(/-/g, " ");
 }
@@ -412,6 +417,8 @@ export function LiveMemoryView() {
     error: centerError,
     updatePolicy,
     updateProviders,
+    checkProvider,
+    recoverProvider,
     createPromotion,
     reviewPromotion,
     runCleanup,
@@ -672,6 +679,26 @@ export function LiveMemoryView() {
       const nextActive = payload.providers.filter((provider) => provider.enabled).length;
       const nextDegraded = payload.providers.filter((provider) => provider.status === "degraded").length;
       setMutationSuccess(`memory providers updated: ${nextActive} active / ${nextDegraded} degraded`);
+    });
+  }
+
+  async function handleCheckProvider(providerId: string) {
+    await runAction(`check-provider-${providerId}`, async () => {
+      const payload = await checkProvider(providerId);
+      const provider = payload.providers.find((item) => item.id === providerId);
+      if (!provider) {
+        throw new Error("provider check completed but target provider was not returned");
+      }
+      await refresh();
+      setMutationSuccess(`${provider.label} check -> ${provider.status}`);
+    });
+  }
+
+  async function handleRecoverProvider(providerId: string) {
+    await runAction(`recover-provider-${providerId}`, async () => {
+      const payload = await recoverProvider(providerId);
+      await refresh();
+      setMutationSuccess(`${payload.provider.label} recovery -> ${payload.provider.status}`);
     });
   }
 
@@ -1028,16 +1055,60 @@ export function LiveMemoryView() {
                       <StatusRow label="Retention" value={provider.retentionPolicy} tone="white" />
                       <StatusRow
                         label="Last Check"
-                        value={`${formatTimestamp(provider.lastCheckedAt)} / ${valueOrFallback(provider.updatedBy, "System")}`}
+                        value={`${formatTimestamp(provider.lastCheckedAt)} / ${valueOrFallback(provider.lastCheckSource, "unspecified")}`}
                         tone={provider.status === "degraded" ? "pink" : "white"}
                       />
                     </div>
 
+                    <div className="mt-4 grid gap-2 md:grid-cols-2">
+                      <StatusRow
+                        label="Health Summary"
+                        value={valueOrFallback(provider.lastSummary, "尚未记录 health summary")}
+                        tone={provider.status === "degraded" ? "pink" : provider.status === "healthy" ? "lime" : "white"}
+                        testID={`memory-provider-health-summary-${provider.id}`}
+                      />
+                      <StatusRow
+                        label="Next Action"
+                        value={valueOrFallback(provider.nextAction, "当前无额外操作建议")}
+                        tone={provider.status === "degraded" ? "yellow" : "white"}
+                        testID={`memory-provider-next-action-${provider.id}`}
+                      />
+                    </div>
+
                     {provider.lastError ? (
-                      <p className="mt-4 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-4 text-sm leading-6 text-white">
+                      <p
+                        data-testid={`memory-provider-error-${provider.id}`}
+                        className="mt-4 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-4 text-sm leading-6 text-white"
+                      >
                         {provider.lastError}
                       </p>
                     ) : null}
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        data-testid={`memory-provider-check-${provider.id}`}
+                        disabled={!canMutate || busyAction !== null}
+                        onClick={() => void handleCheckProvider(provider.id)}
+                        className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] disabled:opacity-60"
+                      >
+                        {busyAction === `check-provider-${provider.id}` ? "checking..." : "run health check"}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`memory-provider-recover-${provider.id}`}
+                        disabled={!canMutate || busyAction !== null}
+                        onClick={() => void handleRecoverProvider(provider.id)}
+                        className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] disabled:opacity-60"
+                      >
+                        {busyAction === `recover-provider-${provider.id}` ? "recovering..." : "attempt recovery"}
+                      </button>
+                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                        {provider.failureCount && provider.failureCount > 0
+                          ? `${provider.failureCount} consecutive degraded check(s) recorded.`
+                          : "当前没有连续失败记录。"}
+                      </p>
+                    </div>
 
                     <div className="mt-4 grid gap-4 xl:grid-cols-2">
                       <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4">
@@ -1147,6 +1218,46 @@ export function LiveMemoryView() {
                       className="mt-4 min-h-[110px] w-full rounded-[10px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm leading-6 outline-none disabled:opacity-60"
                       placeholder="Provider Summary"
                     />
+
+                    <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">Health Timeline</p>
+                        <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em]">
+                          {provider.activity.length} events
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-2" data-testid={`memory-provider-activity-${provider.id}`}>
+                        {provider.activity.length === 0 ? (
+                          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">还没有 health / recovery event。先跑一次检查或恢复。</p>
+                        ) : (
+                          provider.activity.map((event) => (
+                            <div
+                              key={event.id}
+                              className={cn(
+                                "rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3",
+                                providerStatusTone(event.status) === "lime" && "bg-[var(--shock-lime)]",
+                                providerStatusTone(event.status) === "pink" && "bg-[var(--shock-pink)] text-white",
+                                providerStatusTone(event.status) === "white" && "bg-white"
+                              )}
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <p className="font-mono text-[10px] uppercase tracking-[0.18em]">
+                                  {providerActivityActionLabel(event.action)} / {event.status}
+                                </p>
+                                <p className="font-mono text-[10px] uppercase tracking-[0.16em]">
+                                  {formatTimestamp(event.triggeredAt)} / {valueOrFallback(event.triggeredBy, "System")}
+                                </p>
+                              </div>
+                              <p className="mt-2 text-sm leading-6">{event.summary}</p>
+                              {event.detail ? <p className="mt-2 text-sm leading-6 opacity-80">{event.detail}</p> : null}
+                              {event.nextAction ? (
+                                <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] opacity-80">next: {event.nextAction}</p>
+                              ) : null}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -1408,12 +1519,18 @@ export function LiveMemoryView() {
                               </span>
                             </div>
                             <p className="mt-3 text-sm leading-6">{provider.summary}</p>
+                            {provider.lastSummary ? <p className="mt-3 text-sm leading-6">{provider.lastSummary}</p> : null}
                             <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.62)]">
                               {providerScopeSummary(provider)}
                             </p>
                             {provider.lastError ? (
                               <p className="mt-3 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-3 py-3 text-sm leading-6 text-white">
                                 {provider.lastError}
+                              </p>
+                            ) : null}
+                            {provider.nextAction ? (
+                              <p className="mt-3 rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm leading-6">
+                                next: {provider.nextAction}
                               </p>
                             ) : null}
                           </div>

@@ -26,6 +26,9 @@ const (
 	memoryProviderStatusStandby  = "standby"
 	memoryProviderStatusDegraded = "degraded"
 
+	memoryProviderActivityActionCheck    = "check"
+	memoryProviderActivityActionRecovery = "recovery"
+
 	memoryPromotionStatusPending  = "pending_review"
 	memoryPromotionStatusApproved = "approved"
 	memoryPromotionStatusRejected = "rejected"
@@ -39,6 +42,7 @@ const (
 	memoryCleanupPendingTTL       = 72 * time.Hour
 	memoryCleanupRejectedTTL      = 14 * 24 * time.Hour
 	maxMemoryCleanupLedgerEntries = 8
+	maxMemoryProviderActivityRuns = 6
 )
 
 var (
@@ -53,6 +57,7 @@ var (
 	ErrMemoryProviderKindInvalid       = errors.New("memory provider kind is invalid")
 	ErrMemoryProviderScopeInvalid      = errors.New("memory provider scope is invalid")
 	ErrMemoryProviderWorkspaceRequired = errors.New("workspace-file provider must stay enabled")
+	ErrMemoryProviderNotFound          = errors.New("memory provider not found")
 )
 
 type MemoryInjectionPolicy struct {
@@ -146,22 +151,42 @@ type MemoryCleanupState struct {
 	Ledger       []MemoryCleanupRun `json:"ledger"`
 }
 
+type MemoryProviderActivityRun struct {
+	ID          string `json:"id"`
+	Action      string `json:"action"`
+	TriggeredAt string `json:"triggeredAt"`
+	TriggeredBy string `json:"triggeredBy"`
+	Source      string `json:"source,omitempty"`
+	Status      string `json:"status"`
+	Summary     string `json:"summary"`
+	Detail      string `json:"detail,omitempty"`
+	NextAction  string `json:"nextAction,omitempty"`
+}
+
 type MemoryProviderBinding struct {
-	ID              string   `json:"id"`
-	Label           string   `json:"label"`
-	Kind            string   `json:"kind"`
-	Status          string   `json:"status"`
-	Enabled         bool     `json:"enabled"`
-	ReadScopes      []string `json:"readScopes"`
-	WriteScopes     []string `json:"writeScopes"`
-	RecallPolicy    string   `json:"recallPolicy"`
-	RetentionPolicy string   `json:"retentionPolicy"`
-	SharingPolicy   string   `json:"sharingPolicy"`
-	Summary         string   `json:"summary"`
-	LastCheckedAt   string   `json:"lastCheckedAt,omitempty"`
-	LastError       string   `json:"lastError,omitempty"`
-	UpdatedAt       string   `json:"updatedAt,omitempty"`
-	UpdatedBy       string   `json:"updatedBy,omitempty"`
+	ID                  string                      `json:"id"`
+	Label               string                      `json:"label"`
+	Kind                string                      `json:"kind"`
+	Status              string                      `json:"status"`
+	Enabled             bool                        `json:"enabled"`
+	ReadScopes          []string                    `json:"readScopes"`
+	WriteScopes         []string                    `json:"writeScopes"`
+	RecallPolicy        string                      `json:"recallPolicy"`
+	RetentionPolicy     string                      `json:"retentionPolicy"`
+	SharingPolicy       string                      `json:"sharingPolicy"`
+	Summary             string                      `json:"summary"`
+	LastSummary         string                      `json:"lastSummary,omitempty"`
+	NextAction          string                      `json:"nextAction,omitempty"`
+	LastCheckedAt       string                      `json:"lastCheckedAt,omitempty"`
+	LastCheckSource     string                      `json:"lastCheckSource,omitempty"`
+	LastError           string                      `json:"lastError,omitempty"`
+	LastRecoveryAt      string                      `json:"lastRecoveryAt,omitempty"`
+	LastRecoveryBy      string                      `json:"lastRecoveryBy,omitempty"`
+	LastRecoverySummary string                      `json:"lastRecoverySummary,omitempty"`
+	FailureCount        int                         `json:"failureCount,omitempty"`
+	Activity            []MemoryProviderActivityRun `json:"activity"`
+	UpdatedAt           string                      `json:"updatedAt,omitempty"`
+	UpdatedBy           string                      `json:"updatedBy,omitempty"`
 }
 
 type MemoryCenter struct {
@@ -205,6 +230,34 @@ type memoryCenterStateFile struct {
 	Providers  []MemoryProviderBinding `json:"providers"`
 	Promotions []MemoryPromotion       `json:"promotions"`
 	Cleanup    MemoryCleanupState      `json:"cleanup"`
+}
+
+type memoryProviderObservation struct {
+	Status     string
+	Summary    string
+	Detail     string
+	LastError  string
+	NextAction string
+}
+
+type memorySearchSidecarIndexFile struct {
+	Version       int      `json:"version"`
+	GeneratedAt   string   `json:"generatedAt"`
+	ArtifactCount int      `json:"artifactCount"`
+	Paths         []string `json:"paths"`
+}
+
+type memoryExternalPersistentAdapterFile struct {
+	Version         int      `json:"version"`
+	Mode            string   `json:"mode"`
+	WorkspaceRoot   string   `json:"workspaceRoot"`
+	RelayPath       string   `json:"relayPath"`
+	GeneratedAt     string   `json:"generatedAt"`
+	RecallPolicy    string   `json:"recallPolicy"`
+	RetentionPolicy string   `json:"retentionPolicy"`
+	SharingPolicy   string   `json:"sharingPolicy"`
+	ReadScopes      []string `json:"readScopes"`
+	WriteScopes     []string `json:"writeScopes"`
 }
 
 func defaultMemoryCenterState(now string) memoryCenterStateFile {
@@ -268,6 +321,7 @@ func defaultMemoryProviderBinding(kind string, now string) MemoryProviderBinding
 			RetentionPolicy: "保留版本、人工纠偏和提升 ledger。",
 			SharingPolicy:   "workspace-governed",
 			Summary:         "Primary file-backed memory via MEMORY.md、notes/、decisions/ 和 .openshock/agents。",
+			Activity:        []MemoryProviderActivityRun{},
 			LastCheckedAt:   now,
 			UpdatedAt:       now,
 			UpdatedBy:       "System",
@@ -285,6 +339,7 @@ func defaultMemoryProviderBinding(kind string, now string) MemoryProviderBinding
 			RetentionPolicy: "只保留本地 recall index 与短期 query cache。",
 			SharingPolicy:   "workspace-query-only",
 			Summary:         "Optional local search sidecar over governed file memory; 不向外部持久化写入。",
+			Activity:        []MemoryProviderActivityRun{},
 			LastCheckedAt:   now,
 			UpdatedAt:       now,
 			UpdatedBy:       "System",
@@ -302,6 +357,7 @@ func defaultMemoryProviderBinding(kind string, now string) MemoryProviderBinding
 			RetentionPolicy: "长期保留经治理批准的 durable memory。",
 			SharingPolicy:   "explicit-share-only",
 			Summary:         "Optional external durable memory binding for cross-run recall and replay exports.",
+			Activity:        []MemoryProviderActivityRun{},
 			LastCheckedAt:   now,
 			UpdatedAt:       now,
 			UpdatedBy:       "System",
@@ -321,6 +377,26 @@ func normalizeMemoryProviderKind(value string) (string, error) {
 		return memoryProviderKindExternalPersistent, nil
 	default:
 		return "", ErrMemoryProviderKindInvalid
+	}
+}
+
+func normalizeMemoryProviderStatus(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case memoryProviderStatusHealthy:
+		return memoryProviderStatusHealthy
+	case memoryProviderStatusDegraded:
+		return memoryProviderStatusDegraded
+	default:
+		return memoryProviderStatusStandby
+	}
+}
+
+func normalizeMemoryProviderActivityAction(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case memoryProviderActivityActionRecovery:
+		return memoryProviderActivityActionRecovery
+	default:
+		return memoryProviderActivityActionCheck
 	}
 }
 
@@ -452,7 +528,7 @@ func (s *Store) normalizeMemoryCenterStateLocked(state memoryCenterStateFile) me
 	state.Policy.MaxItems = maxItems
 	state.Policy.UpdatedAt = defaultString(strings.TrimSpace(state.Policy.UpdatedAt), defaults.Policy.UpdatedAt)
 	state.Policy.UpdatedBy = defaultString(strings.TrimSpace(state.Policy.UpdatedBy), defaults.Policy.UpdatedBy)
-	state.Providers = normalizeMemoryProviderBindings(state.Providers, defaults.Providers, now)
+	state.Providers = normalizeMemoryProviderBindings(state.Providers, defaults.Providers, now, s.workspaceRoot)
 
 	normalizedPromotions := make([]MemoryPromotion, 0, len(state.Promotions))
 	for _, item := range state.Promotions {
@@ -506,7 +582,7 @@ func (s *Store) normalizeMemoryCenterStateLocked(state memoryCenterStateFile) me
 	return state
 }
 
-func normalizeMemoryProviderBindings(items []MemoryProviderBinding, defaults []MemoryProviderBinding, now string) []MemoryProviderBinding {
+func normalizeMemoryProviderBindings(items []MemoryProviderBinding, defaults []MemoryProviderBinding, now string, workspaceRoot string) []MemoryProviderBinding {
 	index := map[string]MemoryProviderBinding{}
 	for _, item := range items {
 		kind, err := normalizeMemoryProviderKind(defaultString(strings.TrimSpace(item.Kind), strings.TrimSpace(item.ID)))
@@ -522,12 +598,12 @@ func normalizeMemoryProviderBindings(items []MemoryProviderBinding, defaults []M
 		if !ok {
 			current = fallback
 		}
-		normalized = append(normalized, materializeMemoryProviderBinding(current, fallback, now))
+		normalized = append(normalized, materializeMemoryProviderBinding(current, fallback, now, workspaceRoot))
 	}
 	return normalized
 }
 
-func materializeMemoryProviderBinding(current, fallback MemoryProviderBinding, now string) MemoryProviderBinding {
+func materializeMemoryProviderBinding(current, fallback MemoryProviderBinding, now string, workspaceRoot string) MemoryProviderBinding {
 	provider := fallback
 	provider.ID = fallback.ID
 	provider.Kind = fallback.Kind
@@ -563,38 +639,261 @@ func materializeMemoryProviderBinding(current, fallback MemoryProviderBinding, n
 	if summary := strings.TrimSpace(current.Summary); summary != "" {
 		provider.Summary = summary
 	}
+	provider.LastSummary = strings.TrimSpace(current.LastSummary)
+	provider.NextAction = strings.TrimSpace(current.NextAction)
 	provider.LastCheckedAt = defaultString(strings.TrimSpace(current.LastCheckedAt), fallback.LastCheckedAt)
+	provider.LastCheckSource = strings.TrimSpace(current.LastCheckSource)
 	provider.UpdatedAt = defaultString(strings.TrimSpace(current.UpdatedAt), fallback.UpdatedAt)
 	provider.UpdatedBy = defaultString(strings.TrimSpace(current.UpdatedBy), fallback.UpdatedBy)
 	provider.LastError = strings.TrimSpace(current.LastError)
+	provider.LastRecoveryAt = strings.TrimSpace(current.LastRecoveryAt)
+	provider.LastRecoveryBy = strings.TrimSpace(current.LastRecoveryBy)
+	provider.LastRecoverySummary = strings.TrimSpace(current.LastRecoverySummary)
+	provider.FailureCount = current.FailureCount
+	provider.Activity = normalizeMemoryProviderActivityRuns(current.Activity, now)
 
-	switch provider.Kind {
-	case memoryProviderKindWorkspaceFile:
-		provider.Enabled = true
-		provider.Status = memoryProviderStatusHealthy
-		provider.LastError = ""
-	case memoryProviderKindSearchSidecar:
-		if provider.Enabled {
-			provider.Status = memoryProviderStatusHealthy
-			provider.LastError = ""
-		} else {
-			provider.Status = memoryProviderStatusStandby
-			provider.LastError = ""
-		}
-	case memoryProviderKindExternalPersistent:
-		if provider.Enabled {
-			provider.Status = memoryProviderStatusDegraded
-			provider.LastError = defaultString(provider.LastError, "External durable adapter is not configured yet; recall falls back to workspace file memory.")
-		} else {
-			provider.Status = memoryProviderStatusStandby
-			provider.LastError = ""
-		}
-	}
+	observed := observeMemoryProviderBinding(workspaceRoot, provider)
+	provider.Status = observed.Status
+	provider.LastSummary = defaultString(strings.TrimSpace(observed.Summary), provider.LastSummary)
+	provider.NextAction = strings.TrimSpace(observed.NextAction)
+	provider.LastError = strings.TrimSpace(observed.LastError)
 
 	provider.LastCheckedAt = defaultString(strings.TrimSpace(provider.LastCheckedAt), now)
 	provider.UpdatedAt = defaultString(strings.TrimSpace(provider.UpdatedAt), now)
 	provider.UpdatedBy = defaultString(strings.TrimSpace(provider.UpdatedBy), "System")
+	if provider.Activity == nil {
+		provider.Activity = []MemoryProviderActivityRun{}
+	}
 	return provider
+}
+
+func normalizeMemoryProviderActivityRuns(entries []MemoryProviderActivityRun, now string) []MemoryProviderActivityRun {
+	normalized := make([]MemoryProviderActivityRun, 0, len(entries))
+	for _, entry := range entries {
+		entry.TriggeredAt = defaultString(strings.TrimSpace(entry.TriggeredAt), now)
+		entry.TriggeredBy = defaultString(strings.TrimSpace(entry.TriggeredBy), "System")
+		entry.Action = normalizeMemoryProviderActivityAction(entry.Action)
+		entry.Status = normalizeMemoryProviderStatus(entry.Status)
+		entry.Source = strings.TrimSpace(entry.Source)
+		entry.Summary = strings.TrimSpace(entry.Summary)
+		entry.Detail = strings.TrimSpace(entry.Detail)
+		entry.NextAction = strings.TrimSpace(entry.NextAction)
+		if entry.Summary == "" {
+			continue
+		}
+		entry.ID = defaultString(strings.TrimSpace(entry.ID), fmt.Sprintf("memory-provider-%s-%s", entry.Action, slugify(entry.TriggeredAt+"-"+entry.Summary)))
+		normalized = append(normalized, entry)
+	}
+	sort.SliceStable(normalized, func(i, j int) bool {
+		if normalized[i].TriggeredAt != normalized[j].TriggeredAt {
+			return normalized[i].TriggeredAt > normalized[j].TriggeredAt
+		}
+		return normalized[i].ID < normalized[j].ID
+	})
+	if len(normalized) > maxMemoryProviderActivityRuns {
+		normalized = normalized[:maxMemoryProviderActivityRuns]
+	}
+	if normalized == nil {
+		return []MemoryProviderActivityRun{}
+	}
+	return normalized
+}
+
+func observeMemoryProviderBinding(workspaceRoot string, provider MemoryProviderBinding) memoryProviderObservation {
+	switch provider.Kind {
+	case memoryProviderKindWorkspaceFile:
+		return observeWorkspaceFileMemoryProvider(workspaceRoot)
+	case memoryProviderKindSearchSidecar:
+		return observeSearchSidecarMemoryProvider(workspaceRoot, provider.Enabled)
+	case memoryProviderKindExternalPersistent:
+		return observeExternalPersistentMemoryProvider(workspaceRoot, provider.Enabled)
+	default:
+		return memoryProviderObservation{
+			Status:  memoryProviderStatusStandby,
+			Summary: "provider kind not recognized",
+		}
+	}
+}
+
+func observeWorkspaceFileMemoryProvider(workspaceRoot string) memoryProviderObservation {
+	if strings.TrimSpace(workspaceRoot) == "" {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "Workspace root missing; file-backed memory cannot be mounted.",
+			LastError:  "Workspace root is empty, so MEMORY.md / notes / decisions cannot be read.",
+			NextAction: "Set a workspace root and rerun provider recovery to materialize the governed memory scaffold.",
+		}
+	}
+
+	missing := missingMemoryProviderPaths(workspaceRoot, memoryWorkspaceFileRequiredPaths(workspaceRoot))
+	if len(missing) > 0 {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    fmt.Sprintf("Workspace memory scaffold missing %d required file(s).", len(missing)),
+			Detail:     strings.Join(missing, ", "),
+			LastError:  fmt.Sprintf("Missing governed memory scaffold: %s", strings.Join(missing, ", ")),
+			NextAction: "Attempt recovery to recreate MEMORY.md / notes / decisions scaffold before the next run.",
+		}
+	}
+
+	return memoryProviderObservation{
+		Status:  memoryProviderStatusHealthy,
+		Summary: "Workspace memory scaffold is present across MEMORY.md / notes / decisions.",
+		Detail:  "MEMORY.md, notes/ and decisions/ are available for governed recall.",
+	}
+}
+
+func observeSearchSidecarMemoryProvider(workspaceRoot string, enabled bool) memoryProviderObservation {
+	if !enabled {
+		return memoryProviderObservation{
+			Status:  memoryProviderStatusStandby,
+			Summary: "Search sidecar is disabled; recall falls back to governed file scan.",
+		}
+	}
+
+	workspace := observeWorkspaceFileMemoryProvider(workspaceRoot)
+	if workspace.Status == memoryProviderStatusDegraded {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "Search sidecar cannot index because workspace file memory is not ready.",
+			Detail:     workspace.Detail,
+			LastError:  defaultString(workspace.LastError, "Workspace scaffold is missing."),
+			NextAction: "Recover the workspace-file provider first, then rebuild the local recall index.",
+		}
+	}
+
+	indexPath := memorySearchSidecarIndexPath(workspaceRoot)
+	body, err := os.ReadFile(indexPath)
+	if err != nil {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "Local recall index is missing.",
+			LastError:  fmt.Sprintf("Search sidecar index not found at %s", filepath.ToSlash(indexPath)),
+			NextAction: "Attempt recovery to rebuild the search sidecar index from governed memory artifacts.",
+		}
+	}
+
+	var indexFile memorySearchSidecarIndexFile
+	if err := json.Unmarshal(body, &indexFile); err != nil {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "Local recall index is unreadable.",
+			LastError:  fmt.Sprintf("Search sidecar index at %s is invalid JSON.", filepath.ToSlash(indexPath)),
+			NextAction: "Attempt recovery to rewrite the index metadata and rebuild recall coverage.",
+		}
+	}
+
+	return memoryProviderObservation{
+		Status:  memoryProviderStatusHealthy,
+		Summary: fmt.Sprintf("Search sidecar index ready with %d governed artifact(s).", indexFile.ArtifactCount),
+		Detail:  fmt.Sprintf("Index file: %s / generated: %s", filepath.ToSlash(indexPath), defaultString(indexFile.GeneratedAt, "unknown")),
+	}
+}
+
+func observeExternalPersistentMemoryProvider(workspaceRoot string, enabled bool) memoryProviderObservation {
+	if !enabled {
+		return memoryProviderObservation{
+			Status:  memoryProviderStatusStandby,
+			Summary: "External persistent adapter is disabled.",
+		}
+	}
+	if strings.TrimSpace(workspaceRoot) == "" {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "External durable adapter cannot start without a workspace root.",
+			LastError:  "Workspace root is empty, so no external adapter stub can be materialized.",
+			NextAction: "Set a workspace root, then run recovery to scaffold the local export adapter.",
+		}
+	}
+
+	configPath := memoryExternalPersistentConfigPath(workspaceRoot)
+	body, err := os.ReadFile(configPath)
+	if err != nil {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "External durable adapter stub is not configured.",
+			LastError:  fmt.Sprintf("External persistent config not found at %s", filepath.ToSlash(configPath)),
+			NextAction: "Attempt recovery to scaffold the local export adapter and relay files.",
+		}
+	}
+
+	var config memoryExternalPersistentAdapterFile
+	if err := json.Unmarshal(body, &config); err != nil {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "External durable adapter config is unreadable.",
+			LastError:  fmt.Sprintf("External persistent config at %s is invalid JSON.", filepath.ToSlash(configPath)),
+			NextAction: "Attempt recovery to rewrite the local export adapter config.",
+		}
+	}
+
+	relayPath := strings.TrimSpace(config.RelayPath)
+	if relayPath == "" {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "External durable adapter stub is missing a relay path.",
+			LastError:  "External persistent config does not declare a relay path for queued exports.",
+			NextAction: "Attempt recovery to recreate the adapter stub with a relay queue file.",
+		}
+	}
+
+	relayAbsolute := relayPath
+	if !filepath.IsAbs(relayAbsolute) {
+		relayAbsolute = filepath.Join(workspaceRoot, filepath.FromSlash(relayPath))
+	}
+	if _, err := os.Stat(relayAbsolute); err != nil {
+		return memoryProviderObservation{
+			Status:     memoryProviderStatusDegraded,
+			Summary:    "External durable relay queue is missing.",
+			LastError:  fmt.Sprintf("Relay queue not found at %s", filepath.ToSlash(relayAbsolute)),
+			NextAction: "Attempt recovery to recreate the relay queue and adapter stub.",
+		}
+	}
+
+	return memoryProviderObservation{
+		Status:     memoryProviderStatusHealthy,
+		Summary:    "External durable adapter stub is configured in local relay mode.",
+		Detail:     fmt.Sprintf("Config: %s / relay: %s / mode: %s", filepath.ToSlash(configPath), filepath.ToSlash(relayAbsolute), defaultString(config.Mode, "unknown")),
+		NextAction: "Attach a real remote durable sink when available; current relay stays local-only.",
+	}
+}
+
+func missingMemoryProviderPaths(workspaceRoot string, paths []string) []string {
+	missing := make([]string, 0, len(paths))
+	for _, candidate := range paths {
+		absolute := candidate
+		if !filepath.IsAbs(absolute) {
+			absolute = filepath.Join(workspaceRoot, filepath.FromSlash(candidate))
+		}
+		if _, err := os.Stat(absolute); err != nil {
+			relative := absolute
+			if rel, relErr := filepath.Rel(workspaceRoot, absolute); relErr == nil && !strings.HasPrefix(rel, "..") {
+				relative = filepath.ToSlash(rel)
+			}
+			missing = append(missing, filepath.ToSlash(relative))
+		}
+	}
+	return missing
+}
+
+func memoryWorkspaceFileRequiredPaths(workspaceRoot string) []string {
+	return []string{
+		filepath.Join(workspaceRoot, "MEMORY.md"),
+		filepath.Join(workspaceRoot, "notes", "channels.md"),
+		filepath.Join(workspaceRoot, "notes", "operating-rules.md"),
+		filepath.Join(workspaceRoot, "notes", "skills.md"),
+		filepath.Join(workspaceRoot, "notes", "policies.md"),
+		filepath.Join(workspaceRoot, "notes", "work-log.md"),
+		filepath.Join(workspaceRoot, "decisions", "README.md"),
+	}
+}
+
+func memorySearchSidecarIndexPath(workspaceRoot string) string {
+	return filepath.Join(workspaceRoot, ".openshock", "memory", "search-sidecar", "index.json")
+}
+
+func memoryExternalPersistentConfigPath(workspaceRoot string) string {
+	return filepath.Join(workspaceRoot, ".openshock", "memory", "external-persistent", "config.json")
 }
 
 func normalizeMemoryCleanupState(state MemoryCleanupState, now string) MemoryCleanupState {
@@ -1028,6 +1327,12 @@ func buildMemoryPromptSummary(policy MemoryInjectionPolicy, session Session, ite
 			if provider.LastError != "" {
 				line += fmt.Sprintf(" / note:%s", summarizeMemoryPromptLine(provider.LastError))
 			}
+			if provider.LastSummary != "" {
+				line += fmt.Sprintf(" / health:%s", summarizeMemoryPromptLine(provider.LastSummary))
+			}
+			if provider.NextAction != "" {
+				line += fmt.Sprintf(" / next:%s", summarizeMemoryPromptLine(provider.NextAction))
+			}
 			lines = append(lines, line)
 		}
 	}
@@ -1396,7 +1701,7 @@ func (s *Store) UpdateMemoryProviders(bindings []MemoryProviderBinding, updatedB
 		next.UpdatedAt = now
 		next.UpdatedBy = defaultString(strings.TrimSpace(updatedBy), "System")
 		next.LastError = strings.TrimSpace(provider.LastError)
-		merged[kind] = materializeMemoryProviderBinding(next, fallback, now)
+		merged[kind] = materializeMemoryProviderBinding(next, fallback, now, s.workspaceRoot)
 	}
 
 	state.Providers = normalizeMemoryProviderBindings(
@@ -1407,6 +1712,7 @@ func (s *Store) UpdateMemoryProviders(bindings []MemoryProviderBinding, updatedB
 		},
 		defaultMemoryProviderBindings(now),
 		now,
+		s.workspaceRoot,
 	)
 	s.state.Workspace.MemoryMode = memoryModeLabel(state.Policy, state.Providers)
 
@@ -1419,6 +1725,233 @@ func (s *Store) UpdateMemoryProviders(bindings []MemoryProviderBinding, updatedB
 
 	snapshot := cloneState(s.state)
 	return snapshot, append([]MemoryProviderBinding{}, state.Providers...), buildMemoryCenter(snapshot, state), nil
+}
+
+func (s *Store) CheckMemoryProviders(providerID string, checkedBy string) (State, []MemoryProviderBinding, MemoryCenter, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.loadMemoryCenterStateLocked()
+	if err != nil {
+		return State{}, nil, MemoryCenter{}, err
+	}
+	state = s.normalizeMemoryCenterStateLocked(state)
+
+	targets, err := resolveMemoryProviderTargets(state.Providers, providerID)
+	if err != nil {
+		return State{}, nil, MemoryCenter{}, err
+	}
+
+	for _, index := range targets {
+		provider := state.Providers[index]
+		observation := observeMemoryProviderBinding(s.workspaceRoot, provider)
+		provider.Status = observation.Status
+		provider.LastSummary = observation.Summary
+		provider.LastError = observation.LastError
+		provider.NextAction = observation.NextAction
+		provider.LastCheckedAt = now
+		provider.LastCheckSource = "manual-check"
+		provider.UpdatedAt = now
+		provider.UpdatedBy = defaultString(strings.TrimSpace(checkedBy), "System")
+		provider.FailureCount = nextMemoryProviderFailureCount(provider.FailureCount, provider.Enabled, observation.Status)
+		provider.Activity = appendMemoryProviderActivityRun(provider.Activity, MemoryProviderActivityRun{
+			Action:      memoryProviderActivityActionCheck,
+			TriggeredAt: now,
+			TriggeredBy: defaultString(strings.TrimSpace(checkedBy), "System"),
+			Source:      "manual-check",
+			Status:      observation.Status,
+			Summary:     observation.Summary,
+			Detail:      observation.Detail,
+			NextAction:  observation.NextAction,
+		}, now)
+		state.Providers[index] = provider
+	}
+
+	state.Providers = normalizeMemoryProviderBindings(state.Providers, defaultMemoryProviderBindings(now), now, s.workspaceRoot)
+	s.state.Workspace.MemoryMode = memoryModeLabel(state.Policy, state.Providers)
+	if err := s.saveMemoryCenterStateLocked(state); err != nil {
+		return State{}, nil, MemoryCenter{}, err
+	}
+	if err := s.persistLocked(); err != nil {
+		return State{}, nil, MemoryCenter{}, err
+	}
+
+	snapshot := cloneState(s.state)
+	return snapshot, append([]MemoryProviderBinding{}, state.Providers...), buildMemoryCenter(snapshot, state), nil
+}
+
+func (s *Store) RecoverMemoryProvider(providerID string, recoveredBy string) (State, MemoryProviderBinding, MemoryCenter, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.loadMemoryCenterStateLocked()
+	if err != nil {
+		return State{}, MemoryProviderBinding{}, MemoryCenter{}, err
+	}
+	state = s.normalizeMemoryCenterStateLocked(state)
+
+	targets, err := resolveMemoryProviderTargets(state.Providers, providerID)
+	if err != nil {
+		return State{}, MemoryProviderBinding{}, MemoryCenter{}, err
+	}
+	if len(targets) != 1 {
+		return State{}, MemoryProviderBinding{}, MemoryCenter{}, ErrMemoryProviderNotFound
+	}
+
+	index := targets[0]
+	provider := state.Providers[index]
+	recoverySummary, recoveryDetail, err := s.recoverMemoryProviderLocked(&provider, now)
+	if err != nil {
+		return State{}, MemoryProviderBinding{}, MemoryCenter{}, err
+	}
+
+	observation := observeMemoryProviderBinding(s.workspaceRoot, provider)
+	provider.Status = observation.Status
+	provider.LastSummary = observation.Summary
+	provider.LastError = observation.LastError
+	provider.NextAction = observation.NextAction
+	provider.LastCheckedAt = now
+	provider.LastCheckSource = "recovery-verify"
+	provider.LastRecoveryAt = now
+	provider.LastRecoveryBy = defaultString(strings.TrimSpace(recoveredBy), "System")
+	provider.LastRecoverySummary = recoverySummary
+	provider.UpdatedAt = now
+	provider.UpdatedBy = defaultString(strings.TrimSpace(recoveredBy), "System")
+	provider.FailureCount = nextMemoryProviderFailureCount(provider.FailureCount, provider.Enabled, observation.Status)
+	provider.Activity = appendMemoryProviderActivityRun(provider.Activity, MemoryProviderActivityRun{
+		Action:      memoryProviderActivityActionRecovery,
+		TriggeredAt: now,
+		TriggeredBy: defaultString(strings.TrimSpace(recoveredBy), "System"),
+		Source:      "manual-recovery",
+		Status:      observation.Status,
+		Summary:     defaultString(strings.TrimSpace(recoverySummary), observation.Summary),
+		Detail:      defaultString(strings.TrimSpace(recoveryDetail), observation.Detail),
+		NextAction:  observation.NextAction,
+	}, now)
+	state.Providers[index] = provider
+	state.Providers = normalizeMemoryProviderBindings(state.Providers, defaultMemoryProviderBindings(now), now, s.workspaceRoot)
+	s.state.Workspace.MemoryMode = memoryModeLabel(state.Policy, state.Providers)
+	if err := s.saveMemoryCenterStateLocked(state); err != nil {
+		return State{}, MemoryProviderBinding{}, MemoryCenter{}, err
+	}
+	if err := s.persistLocked(); err != nil {
+		return State{}, MemoryProviderBinding{}, MemoryCenter{}, err
+	}
+
+	snapshot := cloneState(s.state)
+	return snapshot, state.Providers[index], buildMemoryCenter(snapshot, state), nil
+}
+
+func resolveMemoryProviderTargets(providers []MemoryProviderBinding, providerID string) ([]int, error) {
+	target := strings.TrimSpace(providerID)
+	if target == "" {
+		targets := make([]int, 0, len(providers))
+		for index := range providers {
+			targets = append(targets, index)
+		}
+		return targets, nil
+	}
+
+	normalized, err := normalizeMemoryProviderKind(target)
+	if err != nil {
+		return nil, ErrMemoryProviderNotFound
+	}
+	for index := range providers {
+		if providers[index].Kind == normalized || providers[index].ID == normalized {
+			return []int{index}, nil
+		}
+	}
+	return nil, ErrMemoryProviderNotFound
+}
+
+func nextMemoryProviderFailureCount(current int, enabled bool, status string) int {
+	if !enabled || status != memoryProviderStatusDegraded {
+		return 0
+	}
+	return current + 1
+}
+
+func appendMemoryProviderActivityRun(entries []MemoryProviderActivityRun, entry MemoryProviderActivityRun, now string) []MemoryProviderActivityRun {
+	entry.ID = defaultString(strings.TrimSpace(entry.ID), fmt.Sprintf("memory-provider-%s-%s", entry.Action, slugify(entry.TriggeredAt+"-"+entry.Summary)))
+	return normalizeMemoryProviderActivityRuns(append(entries, entry), now)
+}
+
+func (s *Store) recoverMemoryProviderLocked(provider *MemoryProviderBinding, now string) (string, string, error) {
+	switch provider.Kind {
+	case memoryProviderKindWorkspaceFile:
+		if err := s.ensureFilesystemArtifactsLocked(); err != nil {
+			return "", "", err
+		}
+		return "Workspace memory scaffold recovered.", "Recreated missing MEMORY.md / notes / decisions files where needed.", nil
+	case memoryProviderKindSearchSidecar:
+		if err := s.ensureFilesystemArtifactsLocked(); err != nil {
+			return "", "", err
+		}
+		indexFile := memorySearchSidecarIndexFile{
+			Version:       1,
+			GeneratedAt:   now,
+			ArtifactCount: len(s.state.Memory),
+			Paths:         collectMemoryArtifactPaths(s.state.Memory),
+		}
+		if err := writeMemoryProviderJSONFile(memorySearchSidecarIndexPath(s.workspaceRoot), indexFile); err != nil {
+			return "", "", err
+		}
+		return fmt.Sprintf("Search sidecar index rebuilt with %d governed artifact(s).", indexFile.ArtifactCount),
+			fmt.Sprintf("Index file written to %s", filepath.ToSlash(memorySearchSidecarIndexPath(s.workspaceRoot))), nil
+	case memoryProviderKindExternalPersistent:
+		if err := os.MkdirAll(filepath.Dir(memoryExternalPersistentConfigPath(s.workspaceRoot)), 0o755); err != nil {
+			return "", "", err
+		}
+		relayPath := filepath.Join(s.workspaceRoot, ".openshock", "memory", "external-persistent", "relay.ndjson")
+		if err := ensureFile(relayPath, ""); err != nil {
+			return "", "", err
+		}
+		config := memoryExternalPersistentAdapterFile{
+			Version:         1,
+			Mode:            "local-export-stub",
+			WorkspaceRoot:   s.workspaceRoot,
+			RelayPath:       filepath.ToSlash(relayPath),
+			GeneratedAt:     now,
+			RecallPolicy:    provider.RecallPolicy,
+			RetentionPolicy: provider.RetentionPolicy,
+			SharingPolicy:   provider.SharingPolicy,
+			ReadScopes:      append([]string{}, provider.ReadScopes...),
+			WriteScopes:     append([]string{}, provider.WriteScopes...),
+		}
+		if err := writeMemoryProviderJSONFile(memoryExternalPersistentConfigPath(s.workspaceRoot), config); err != nil {
+			return "", "", err
+		}
+		return "External durable adapter stub recovered in local relay mode.",
+			fmt.Sprintf("Config written to %s with relay queue %s", filepath.ToSlash(memoryExternalPersistentConfigPath(s.workspaceRoot)), filepath.ToSlash(relayPath)), nil
+	default:
+		return "", "", ErrMemoryProviderNotFound
+	}
+}
+
+func collectMemoryArtifactPaths(items []MemoryArtifact) []string {
+	paths := make([]string, 0, len(items))
+	for _, item := range items {
+		if path := filepath.ToSlash(strings.TrimSpace(item.Path)); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func writeMemoryProviderJSONFile(path string, payload any) error {
+	body, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, body, 0o644)
 }
 
 func (s *Store) RequestMemoryPromotion(input MemoryPromotionRequestInput) (State, MemoryPromotion, MemoryCenter, error) {

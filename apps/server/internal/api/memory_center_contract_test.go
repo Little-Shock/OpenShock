@@ -396,11 +396,11 @@ func TestMemoryCenterProviderRoutesExposeDurableProviderBindings(t *testing.T) {
 	}
 	decodeJSON(t, updateResp, &updatePayload)
 	searchProvider := findProviderByKind(updatePayload.Providers, "search-sidecar")
-	if searchProvider == nil || !searchProvider.Enabled || searchProvider.Status != "healthy" {
-		t.Fatalf("search provider = %#v, want enabled healthy", searchProvider)
+	if searchProvider == nil || !searchProvider.Enabled || searchProvider.Status != "degraded" || searchProvider.NextAction == "" {
+		t.Fatalf("search provider = %#v, want enabled degraded with next action", searchProvider)
 	}
 	externalProvider := findProviderByKind(updatePayload.Providers, "external-persistent")
-	if externalProvider == nil || !externalProvider.Enabled || externalProvider.Status != "degraded" || externalProvider.LastError == "" {
+	if externalProvider == nil || !externalProvider.Enabled || externalProvider.Status != "degraded" || externalProvider.LastError == "" || externalProvider.NextAction == "" {
 		t.Fatalf("external provider = %#v, want enabled degraded with error", externalProvider)
 	}
 	if !strings.Contains(updatePayload.State.Workspace.MemoryMode, "workspace-file + search-sidecar + external-persistent(degraded)") {
@@ -411,12 +411,106 @@ func TestMemoryCenterProviderRoutesExposeDurableProviderBindings(t *testing.T) {
 	if preview == nil {
 		t.Fatalf("session-memory preview missing from updated center")
 	}
-	if got := findProviderByKind(preview.Providers, "search-sidecar"); got == nil || got.Status != "healthy" {
-		t.Fatalf("preview search provider = %#v, want healthy", got)
+	if got := findProviderByKind(preview.Providers, "search-sidecar"); got == nil || got.Status != "degraded" {
+		t.Fatalf("preview search provider = %#v, want degraded before recovery", got)
 	}
 	if !strings.Contains(preview.PromptSummary, "Memory providers active for this run:") ||
-		!strings.Contains(preview.PromptSummary, "External durable adapter is not configured yet") {
+		!strings.Contains(preview.PromptSummary, "Local recall index is missing.") ||
+		!strings.Contains(preview.PromptSummary, "External durable adapter stub is not configured.") {
 		t.Fatalf("prompt summary missing provider failure note:\n%s", preview.PromptSummary)
+	}
+}
+
+func TestMemoryCenterProviderHealthRoutesRecoverDurableBindings(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	updateResp := doJSONRequest(
+		t,
+		http.DefaultClient,
+		http.MethodPost,
+		server.URL+"/v1/memory-center/providers",
+		`{"providers":[
+			{"id":"workspace-file","kind":"workspace-file","label":"Workspace File Memory","enabled":true,"readScopes":["workspace","issue-room","room-notes","decision-ledger","agent","promoted-ledger"],"writeScopes":["workspace","issue-room","room-notes","decision-ledger","agent"],"recallPolicy":"governed-first","retentionPolicy":"保留版本、人工纠偏和提升 ledger。","sharingPolicy":"workspace-governed","summary":"Primary file-backed memory."},
+			{"id":"search-sidecar","kind":"search-sidecar","label":"Search Sidecar","enabled":true,"readScopes":["workspace","issue-room","decision-ledger","promoted-ledger"],"writeScopes":[],"recallPolicy":"search-on-demand","retentionPolicy":"短期 query cache。","sharingPolicy":"workspace-query-only","summary":"Use local recall index before full scan."},
+			{"id":"external-persistent","kind":"external-persistent","label":"External Persistent Memory","enabled":true,"readScopes":["workspace","agent","user"],"writeScopes":["agent","user"],"recallPolicy":"promote-approved-only","retentionPolicy":"长期保留审核通过的 durable memory。","sharingPolicy":"explicit-share-only","summary":"Forward approved memories to an external durable sink."}
+		]}`,
+	)
+	defer updateResp.Body.Close()
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/memory-center/providers status = %d, want %d", updateResp.StatusCode, http.StatusOK)
+	}
+
+	checkResp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/memory-center/providers/check", `{"providerId":"search-sidecar"}`)
+	defer checkResp.Body.Close()
+	if checkResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/memory-center/providers/check status = %d, want %d", checkResp.StatusCode, http.StatusOK)
+	}
+
+	var checkPayload struct {
+		Providers []store.MemoryProviderBinding `json:"providers"`
+		Center    store.MemoryCenter            `json:"center"`
+		State     store.State                   `json:"state"`
+	}
+	decodeJSON(t, checkResp, &checkPayload)
+	searchChecked := findProviderByKind(checkPayload.Providers, "search-sidecar")
+	if searchChecked == nil || searchChecked.LastCheckSource != "manual-check" || searchChecked.FailureCount != 1 || len(searchChecked.Activity) == 0 {
+		t.Fatalf("search checked provider = %#v, want manual-check activity", searchChecked)
+	}
+
+	recoverSearchResp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/memory-center/providers/search-sidecar/recover", "")
+	defer recoverSearchResp.Body.Close()
+	if recoverSearchResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/memory-center/providers/search-sidecar/recover status = %d, want %d", recoverSearchResp.StatusCode, http.StatusOK)
+	}
+
+	var recoverSearchPayload struct {
+		Provider store.MemoryProviderBinding `json:"provider"`
+		Center   store.MemoryCenter          `json:"center"`
+		State    store.State                 `json:"state"`
+	}
+	decodeJSON(t, recoverSearchResp, &recoverSearchPayload)
+	if recoverSearchPayload.Provider.Status != "healthy" || recoverSearchPayload.Provider.LastRecoverySummary == "" || recoverSearchPayload.Provider.LastCheckSource != "recovery-verify" {
+		t.Fatalf("recovered search provider = %#v, want healthy recovery-verified provider", recoverSearchPayload.Provider)
+	}
+	if !strings.Contains(recoverSearchPayload.State.Workspace.MemoryMode, "workspace-file + search-sidecar + external-persistent(degraded)") {
+		t.Fatalf("workspace memory mode after search recovery = %q, want external still degraded", recoverSearchPayload.State.Workspace.MemoryMode)
+	}
+
+	recoverExternalResp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/memory-center/providers/external-persistent/recover", "")
+	defer recoverExternalResp.Body.Close()
+	if recoverExternalResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/memory-center/providers/external-persistent/recover status = %d, want %d", recoverExternalResp.StatusCode, http.StatusOK)
+	}
+
+	var recoverExternalPayload struct {
+		Provider store.MemoryProviderBinding `json:"provider"`
+		Center   store.MemoryCenter          `json:"center"`
+		State    store.State                 `json:"state"`
+	}
+	decodeJSON(t, recoverExternalResp, &recoverExternalPayload)
+	if recoverExternalPayload.Provider.Status != "healthy" || recoverExternalPayload.Provider.LastRecoverySummary == "" || !strings.Contains(recoverExternalPayload.Provider.NextAction, "real remote durable sink") {
+		t.Fatalf("recovered external provider = %#v, want healthy local relay stub", recoverExternalPayload.Provider)
+	}
+	if !strings.Contains(recoverExternalPayload.State.Workspace.MemoryMode, "workspace-file + search-sidecar + external-persistent") ||
+		strings.Contains(recoverExternalPayload.State.Workspace.MemoryMode, "(degraded)") {
+		t.Fatalf("workspace memory mode after full recovery = %q, want healthy providers", recoverExternalPayload.State.Workspace.MemoryMode)
+	}
+
+	preview := findPreviewBySession(recoverExternalPayload.Center.Previews, "session-memory")
+	if preview == nil {
+		t.Fatalf("session-memory preview missing after recovery")
+	}
+	if got := findProviderByKind(preview.Providers, "search-sidecar"); got == nil || got.Status != "healthy" {
+		t.Fatalf("preview search provider after recovery = %#v, want healthy", got)
+	}
+	if got := findProviderByKind(preview.Providers, "external-persistent"); got == nil || got.Status != "healthy" {
+		t.Fatalf("preview external provider after recovery = %#v, want healthy", got)
+	}
+	if !strings.Contains(preview.PromptSummary, "Search sidecar index ready") ||
+		!strings.Contains(preview.PromptSummary, "External durable adapter stub is configured in local relay mode.") {
+		t.Fatalf("prompt summary missing recovery truth:\n%s", preview.PromptSummary)
 	}
 }
 

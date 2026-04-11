@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -20,6 +21,7 @@ func registerMemoryRoutes(s *Server, mux *http.ServeMux) {
 	mux.HandleFunc("/v1/memory-center/cleanup", s.handleMemoryCenterCleanup)
 	mux.HandleFunc("/v1/memory-center/policy", s.handleMemoryCenterPolicy)
 	mux.HandleFunc("/v1/memory-center/providers", s.handleMemoryCenterProviders)
+	mux.HandleFunc("/v1/memory-center/providers/", s.handleMemoryCenterProviderRoutes)
 	mux.HandleFunc("/v1/memory-center/promotions", s.handleMemoryCenterPromotions)
 	mux.HandleFunc("/v1/memory-center/promotions/", s.handleMemoryCenterPromotionRoutes)
 }
@@ -136,6 +138,10 @@ type MemoryProviderBindingsRequest struct {
 	Providers []store.MemoryProviderBinding `json:"providers"`
 }
 
+type MemoryProviderCheckRequest struct {
+	ProviderID string `json:"providerId"`
+}
+
 type MemoryPromotionRequest struct {
 	MemoryID      string `json:"memoryId"`
 	SourceVersion int    `json:"sourceVersion"`
@@ -218,6 +224,73 @@ func (s *Server) handleMemoryCenterProviders(w http.ResponseWriter, r *http.Requ
 		})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+func (s *Server) handleMemoryCenterProviderRoutes(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.URL.Path, "/v1/memory-center/providers/") {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+
+	trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/memory-center/providers/"), "/")
+	if trimmed == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "memory provider route not found"})
+		return
+	}
+
+	parts := strings.Split(trimmed, "/")
+	switch {
+	case len(parts) == 1 && parts[0] == "check":
+		if !requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		if !s.requireSessionPermission(w, "memory.write") {
+			return
+		}
+
+		var req MemoryProviderCheckRequest
+		if r.Body != nil {
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, http.ErrBodyNotAllowed) && !errors.Is(err, io.EOF) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+				return
+			}
+		}
+
+		snapshot := s.store.Snapshot()
+		nextState, providers, center, err := s.store.CheckMemoryProviders(req.ProviderID, currentAuthActor(snapshot.Auth.Session))
+		if err != nil {
+			writeMemoryError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"providers": providers,
+			"center":    center,
+			"state":     nextState,
+		})
+	case len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && parts[1] == "recover":
+		if !requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		if !s.requireSessionPermission(w, "memory.write") {
+			return
+		}
+
+		snapshot := s.store.Snapshot()
+		nextState, provider, center, err := s.store.RecoverMemoryProvider(parts[0], currentAuthActor(snapshot.Auth.Session))
+		if err != nil {
+			writeMemoryError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"provider": provider,
+			"center":   center,
+			"state":    nextState,
+		})
+	default:
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "memory provider route not found"})
 	}
 }
 
@@ -372,7 +445,8 @@ func writeMemoryError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrMemoryArtifactVersionConflict):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	case errors.Is(err, store.ErrMemoryArtifactNotFound),
-		errors.Is(err, store.ErrMemoryPromotionNotFound):
+		errors.Is(err, store.ErrMemoryPromotionNotFound),
+		errors.Is(err, store.ErrMemoryProviderNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
