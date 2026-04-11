@@ -457,6 +457,15 @@ func sanitizeWorkspaceEscalationSLA(item store.WorkspaceGovernanceEscalationSLA)
 		item.Queue[index].Href = sanitizeDisplayText(item.Queue[index].Href, "")
 		item.Queue[index].TimeLabel = sanitizeDisplayText(item.Queue[index].TimeLabel, "")
 	}
+	for index := range item.Rollup {
+		item.Rollup[index].RoomID = sanitizeDisplayText(item.Rollup[index].RoomID, "")
+		item.Rollup[index].RoomTitle = sanitizeDisplayText(item.Rollup[index].RoomTitle, "未命名讨论间")
+		item.Rollup[index].Status = sanitizeDisplayText(item.Rollup[index].Status, "pending")
+		item.Rollup[index].LatestSource = sanitizeDisplayText(item.Rollup[index].LatestSource, "governance")
+		item.Rollup[index].LatestLabel = sanitizeDisplayText(item.Rollup[index].LatestLabel, "未命名 escalation")
+		item.Rollup[index].LatestSummary = sanitizeDisplayText(item.Rollup[index].LatestSummary, "当前 room escalation 正在整理中。")
+		item.Rollup[index].Href = sanitizeDisplayText(item.Rollup[index].Href, "")
+	}
 	return item
 }
 

@@ -214,6 +214,7 @@ export type WorkspaceGovernanceEscalationSLA = {
   breachedEscalations: number;
   nextEscalation?: string;
   queue?: WorkspaceGovernanceEscalationQueueEntry[];
+  rollup?: WorkspaceGovernanceEscalationRoomRollup[];
 };
 
 export type WorkspaceGovernanceEscalationQueueEntry = {
@@ -228,6 +229,18 @@ export type WorkspaceGovernanceEscalationQueueEntry = {
   timeLabel?: string;
   elapsedMinutes: number;
   thresholdMinutes: number;
+};
+
+export type WorkspaceGovernanceEscalationRoomRollup = {
+  roomId: string;
+  roomTitle: string;
+  status: string;
+  escalationCount: number;
+  blockedCount: number;
+  latestSource?: string;
+  latestLabel?: string;
+  latestSummary?: string;
+  href?: string;
 };
 
 export type WorkspaceGovernanceNotificationPolicy = {

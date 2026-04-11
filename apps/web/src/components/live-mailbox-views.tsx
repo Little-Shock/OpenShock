@@ -213,6 +213,20 @@ function escalationQueueAgeLabel(entry: {
   return `${entry.thresholdMinutes} min SLA`;
 }
 
+function escalationRoomRollupSummary(entry: {
+  escalationCount: number;
+  blockedCount: number;
+}) {
+  const activeCount = Math.max(0, entry.escalationCount - entry.blockedCount);
+  if (entry.blockedCount > 0 && activeCount > 0) {
+    return `${entry.escalationCount} items · ${entry.blockedCount} blocked · ${activeCount} active`;
+  }
+  if (entry.blockedCount > 0) {
+    return `${entry.escalationCount} items · ${entry.blockedCount} blocked`;
+  }
+  return `${entry.escalationCount} items · all active`;
+}
+
 function governedCloseoutLabel(href: string) {
   return href.startsWith("/pull-requests/") ? "Open Delivery Entry" : "Review Closeout";
 }
@@ -289,6 +303,7 @@ export function LiveMailboxPageContent() {
   const batchActions = commonBatchActions(selectedMailboxHandoffs);
   const governance = state.workspace.governance;
   const escalationQueue = governance.escalationSla.queue ?? [];
+  const escalationRollup = governance.escalationSla.rollup ?? [];
   const governedSuggestion = governance.routingPolicy.suggestedHandoff;
   const governedRouteKey = [
     governedSuggestion.status,
@@ -797,6 +812,93 @@ export function LiveMailboxPageContent() {
                               className="mt-3 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                             >
                               Open Escalation
+                            </Link>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </Panel>
+
+              <Panel tone={escalationRollup.some((entry) => entry.status === "blocked") ? "pink" : "paper"}>
+                <div
+                  data-testid="mailbox-governance-escalation-rollup"
+                  className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                        cross-room escalation rollup
+                      </p>
+                      <p className="mt-2 font-display text-2xl font-bold">哪些讨论间还在冒烟</p>
+                      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                        当前 queue 只显示治理焦点；这里把整个 workspace 里仍有 escalation 的 room 摆平，避免只盯一个 room 时漏看其他冒烟点。
+                      </p>
+                    </div>
+                    <span
+                      data-testid="mailbox-governance-escalation-rollup-count"
+                      className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+                    >
+                      {escalationRollup.length} rooms
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {escalationRollup.length === 0 ? (
+                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                        当前没有跨 room escalation；新的 hot room 会直接出现在这里。
+                      </p>
+                    ) : (
+                      escalationRollup.map((entry) => (
+                        <div
+                          key={entry.roomId}
+                          data-testid={`mailbox-governance-escalation-rollup-room-${entry.roomId}`}
+                          className={cn(
+                            "rounded-[18px] border-2 border-[var(--shock-ink)] px-4 py-3",
+                            entry.roomId === roomId ? "bg-white" : "bg-[#fffaf0]"
+                          )}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-display text-lg font-semibold">{entry.roomTitle}</p>
+                                {entry.roomId === roomId ? (
+                                  <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+                                    current room
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.6)]">
+                                {escalationRoomRollupSummary(entry)}
+                                {entry.latestSource ? ` · latest ${entry.latestSource}` : ""}
+                              </p>
+                            </div>
+                            <span
+                              data-testid={`mailbox-governance-escalation-rollup-status-${entry.roomId}`}
+                              className={cn(
+                                "rounded-full border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]",
+                                governanceTone(entry.status) === "pink"
+                                  ? "bg-[var(--shock-pink)] text-white"
+                                  : governanceTone(entry.status) === "lime"
+                                    ? "bg-[var(--shock-lime)]"
+                                    : governanceTone(entry.status) === "yellow"
+                                      ? "bg-[var(--shock-yellow)]"
+                                      : "bg-white"
+                              )}
+                            >
+                              {governanceStatusLabel(entry.status)}
+                            </span>
+                          </div>
+                          {entry.latestLabel ? <p className="mt-3 font-display text-base font-semibold">{entry.latestLabel}</p> : null}
+                          {entry.latestSummary ? (
+                            <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{entry.latestSummary}</p>
+                          ) : null}
+                          {entry.href ? (
+                            <Link
+                              href={entry.href}
+                              className="mt-3 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            >
+                              Open Room Escalations
                             </Link>
                           ) : null}
                         </div>

@@ -41,6 +41,13 @@ func TestStateRouteExposesGovernanceSnapshot(t *testing.T) {
 	if state.Workspace.Governance.EscalationSLA.TimeoutMinutes == 0 || state.Workspace.Governance.NotificationPolicy.BrowserPush == "" {
 		t.Fatalf("sla/notification = %#v / %#v, want governance SLA + notification truth", state.Workspace.Governance.EscalationSLA, state.Workspace.Governance.NotificationPolicy)
 	}
+	if len(state.Workspace.Governance.EscalationSLA.Rollup) == 0 {
+		t.Fatalf("escalation rollup = %#v, want existing workspace-level blocked room rollup", state.Workspace.Governance.EscalationSLA.Rollup)
+	}
+	baselineRollup := state.Workspace.Governance.EscalationSLA.Rollup[0]
+	if baselineRollup.RoomID == "" || baselineRollup.Status != "blocked" {
+		t.Fatalf("baseline escalation rollup = %#v, want blocked room-level rollup", state.Workspace.Governance.EscalationSLA.Rollup)
+	}
 	if state.Workspace.Governance.Stats.AggregationSources == 0 {
 		t.Fatalf("governance stats = %#v, want aggregation source count", state.Workspace.Governance.Stats)
 	}
@@ -53,6 +60,11 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	root := t.TempDir()
 	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
 	defer server.Close()
+	baselineState := readStateSnapshot(t, server.URL)
+	secondRoomID := findAlternateGovernanceRoomID(baselineState, "room-runtime")
+	if secondRoomID == "" {
+		t.Fatalf("baseline rooms = %#v, want second room for cross-room governance rollup", baselineState.Rooms)
+	}
 
 	createResp, handoff := mustCreateMailboxHandoff(t, server.URL)
 	createResp.Body.Close()
@@ -92,6 +104,10 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	if findEscalationQueueEntryBySource(afterBlocked.Workspace.Governance.EscalationSLA.Queue, "inbox blocker") == nil {
 		t.Fatalf("blocked escalation queue = %#v, want inbox blocker entry", afterBlocked.Workspace.Governance.EscalationSLA.Queue)
 	}
+	runtimeRollup := findEscalationRoomRollupByRoomID(afterBlocked.Workspace.Governance.EscalationSLA.Rollup, "room-runtime")
+	if runtimeRollup == nil || runtimeRollup.Status != "blocked" || runtimeRollup.EscalationCount != 2 || runtimeRollup.BlockedCount != 2 {
+		t.Fatalf("blocked escalation rollup = %#v, want blocked runtime room rollup", afterBlocked.Workspace.Governance.EscalationSLA.Rollup)
+	}
 
 	ackResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+handoff.ID, map[string]string{
 		"action":        "acknowledged",
@@ -121,6 +137,21 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	finalStep := findGovernanceWalkthroughStep(afterComplete.Workspace.Governance.Walkthrough, "final-response")
 	if finalStep == nil || finalStep.Status != "ready" {
 		t.Fatalf("final step after complete = %#v, want ready final response", finalStep)
+	}
+
+	secondaryCreateResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox", map[string]string{
+		"roomId":      secondRoomID,
+		"fromAgentId": "agent-codex-dockmaster",
+		"toAgentId":   "agent-memory-clerk",
+		"title":       "把第二个 room 也收进 escalation rollup",
+		"summary":     "保持 requested，验证跨 room 治理 rollup。",
+	})
+	secondaryCreateResp.Body.Close()
+
+	afterSecondRoom := readStateSnapshot(t, server.URL)
+	secondaryRollup := findEscalationRoomRollupByRoomID(afterSecondRoom.Workspace.Governance.EscalationSLA.Rollup, secondRoomID)
+	if secondaryRollup == nil || secondaryRollup.Status != "active" || secondaryRollup.EscalationCount != 1 || secondaryRollup.BlockedCount != 0 {
+		t.Fatalf("second room escalation rollup = %#v, want active second-room rollup", afterSecondRoom.Workspace.Governance.EscalationSLA.Rollup)
 	}
 }
 
@@ -169,4 +200,29 @@ func findEscalationQueueEntryBySource(
 		}
 	}
 	return nil
+}
+
+func findEscalationRoomRollupByRoomID(
+	items []store.WorkspaceGovernanceEscalationRoomRollup,
+	roomID string,
+) *store.WorkspaceGovernanceEscalationRoomRollup {
+	for index := range items {
+		if items[index].RoomID == roomID {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func findAlternateGovernanceRoomID(state store.State, exclude string) string {
+	hotRoomIDs := map[string]bool{}
+	for _, item := range state.Workspace.Governance.EscalationSLA.Rollup {
+		hotRoomIDs[item.RoomID] = true
+	}
+	for _, room := range state.Rooms {
+		if room.ID != exclude && !hotRoomIDs[room.ID] {
+			return room.ID
+		}
+	}
+	return ""
 }

@@ -128,6 +128,20 @@ function escalationQueueAgeLabel(entry: {
   return `${entry.thresholdMinutes} min SLA`;
 }
 
+function escalationRoomRollupSummary(entry: {
+  escalationCount: number;
+  blockedCount: number;
+}) {
+  const activeCount = Math.max(0, entry.escalationCount - entry.blockedCount);
+  if (entry.blockedCount > 0 && activeCount > 0) {
+    return `${entry.escalationCount} items · ${entry.blockedCount} blocked · ${activeCount} active`;
+  }
+  if (entry.blockedCount > 0) {
+    return `${entry.escalationCount} items · ${entry.blockedCount} blocked`;
+  }
+  return `${entry.escalationCount} items · all active`;
+}
+
 function plannerQueueStatusLabel(status: string) {
   switch (status) {
     case "queued":
@@ -612,6 +626,7 @@ function PlannerQueueCard({ item }: { item: PlannerQueueItem }) {
 
 function GovernanceReplaySurface({ governance }: { governance: WorkspaceGovernanceSnapshot }) {
   const escalationQueue = governance.escalationSla.queue ?? [];
+  const escalationRollup = governance.escalationSla.rollup ?? [];
 
   return (
     <Panel tone="lime">
@@ -835,6 +850,62 @@ function GovernanceReplaySurface({ governance }: { governance: WorkspaceGovernan
                         </div>
                       ))
                     )}
+                  </div>
+                  <div className="mt-4 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">cross-room rollup</p>
+                      <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                        {escalationRollup.length} rooms
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {escalationRollup.length === 0 ? (
+                        <p className="text-sm leading-6 opacity-70">当前没有跨 room escalation rollup。</p>
+                      ) : (
+                        escalationRollup.map((entry) => (
+                          <div
+                            key={entry.roomId}
+                            data-testid={`orchestration-governance-escalation-rollup-room-${entry.roomId}`}
+                            className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="font-display text-lg font-semibold">{entry.roomTitle}</p>
+                                <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
+                                  {escalationRoomRollupSummary(entry)}
+                                  {entry.latestSource ? ` · latest ${entry.latestSource}` : ""}
+                                </p>
+                              </div>
+                              <span
+                                data-testid={`orchestration-governance-escalation-rollup-status-${entry.roomId}`}
+                                className={cn(
+                                  "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]",
+                                  governanceTone(entry.status) === "pink"
+                                    ? "bg-[var(--shock-pink)] text-white"
+                                    : governanceTone(entry.status) === "lime"
+                                      ? "bg-[var(--shock-lime)]"
+                                      : governanceTone(entry.status) === "yellow"
+                                        ? "bg-[var(--shock-yellow)]"
+                                        : "bg-white"
+                                )}
+                              >
+                                {governanceStatusLabel(entry.status)}
+                              </span>
+                            </div>
+                            {entry.latestLabel ? <p className="mt-2 font-display text-base font-semibold">{entry.latestLabel}</p> : null}
+                            {entry.latestSummary ? <p className="mt-2 text-sm leading-6 opacity-70">{entry.latestSummary}</p> : null}
+                            {entry.href ? (
+                              <Link
+                                href={entry.href}
+                                className="mt-3 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                              >
+                                Open Room Escalations
+                              </Link>
+                            ) : null}
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </Panel>
                 <Panel tone={governanceTone(governance.notificationPolicy.status)} className="!p-3.5">

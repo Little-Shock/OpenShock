@@ -211,6 +211,7 @@ function sanitizeWorkspaceGovernance(
       breachedEscalations: 0,
       nextEscalation: "",
       queue: [],
+      rollup: [],
     },
     notificationPolicy: {
       status: "",
@@ -400,6 +401,29 @@ function sanitizeWorkspaceGovernance(
           nextStep: sanitizeDisplayText(safeEntry.nextStep, "当前 escalation 下一步正在整理中。"),
           href: sanitizeDisplayText(safeEntry.href ?? "", ""),
           timeLabel: sanitizeDisplayText(safeEntry.timeLabel ?? "", ""),
+        };
+      }),
+      rollup: (safeGovernance.escalationSla?.rollup ?? []).map((entry) => {
+        const safeEntry = entry ?? {
+          roomId: "",
+          roomTitle: "",
+          status: "",
+          escalationCount: 0,
+          blockedCount: 0,
+          latestSource: "",
+          latestLabel: "",
+          latestSummary: "",
+          href: "",
+        };
+        return {
+          ...safeEntry,
+          roomId: sanitizeDisplayText(safeEntry.roomId, ""),
+          roomTitle: sanitizeDisplayText(safeEntry.roomTitle, "未命名讨论间"),
+          status: sanitizeDisplayText(safeEntry.status, "pending"),
+          latestSource: sanitizeDisplayText(safeEntry.latestSource ?? "", "governance"),
+          latestLabel: sanitizeDisplayText(safeEntry.latestLabel ?? "", "未命名 escalation"),
+          latestSummary: sanitizeDisplayText(safeEntry.latestSummary ?? "", "当前 room escalation 正在整理中。"),
+          href: sanitizeDisplayText(safeEntry.href ?? "", ""),
         };
       }),
     },

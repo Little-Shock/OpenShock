@@ -200,14 +200,15 @@ type WorkspaceGovernanceSuggestedHandoff struct {
 }
 
 type WorkspaceGovernanceEscalationSLA struct {
-	Status              string `json:"status"`
-	Summary             string `json:"summary"`
-	TimeoutMinutes      int    `json:"timeoutMinutes"`
-	RetryBudget         int    `json:"retryBudget"`
-	ActiveEscalations   int    `json:"activeEscalations"`
-	BreachedEscalations int    `json:"breachedEscalations"`
-	NextEscalation      string `json:"nextEscalation,omitempty"`
+	Status              string                                    `json:"status"`
+	Summary             string                                    `json:"summary"`
+	TimeoutMinutes      int                                       `json:"timeoutMinutes"`
+	RetryBudget         int                                       `json:"retryBudget"`
+	ActiveEscalations   int                                       `json:"activeEscalations"`
+	BreachedEscalations int                                       `json:"breachedEscalations"`
+	NextEscalation      string                                    `json:"nextEscalation,omitempty"`
 	Queue               []WorkspaceGovernanceEscalationQueueEntry `json:"queue,omitempty"`
+	Rollup              []WorkspaceGovernanceEscalationRoomRollup `json:"rollup,omitempty"`
 }
 
 type WorkspaceGovernanceEscalationQueueEntry struct {
@@ -222,6 +223,18 @@ type WorkspaceGovernanceEscalationQueueEntry struct {
 	TimeLabel        string `json:"timeLabel,omitempty"`
 	ElapsedMinutes   int    `json:"elapsedMinutes"`
 	ThresholdMinutes int    `json:"thresholdMinutes"`
+}
+
+type WorkspaceGovernanceEscalationRoomRollup struct {
+	RoomID          string `json:"roomId"`
+	RoomTitle       string `json:"roomTitle"`
+	Status          string `json:"status"`
+	EscalationCount int    `json:"escalationCount"`
+	BlockedCount    int    `json:"blockedCount"`
+	LatestSource    string `json:"latestSource,omitempty"`
+	LatestLabel     string `json:"latestLabel,omitempty"`
+	LatestSummary   string `json:"latestSummary,omitempty"`
+	Href            string `json:"href,omitempty"`
 }
 
 type WorkspaceGovernanceNotificationPolicy struct {

@@ -325,6 +325,7 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
         breachedEscalations: 0,
         nextEscalation: "",
         queue: [],
+        rollup: [],
       },
       notificationPolicy: {
         status: "",

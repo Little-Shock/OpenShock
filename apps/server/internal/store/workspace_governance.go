@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -150,7 +151,7 @@ func hydrateWorkspaceGovernance(workspace *WorkspaceSnapshot, state *State) {
 	stats := buildGovernanceStats(*state)
 	humanOverride := buildHumanOverride(focus)
 	routingPolicy := buildGovernanceRoutingPolicy(effectiveTemplate, *state, focus, humanOverride)
-	escalationSLA := buildGovernanceEscalationSLA(effectiveTemplate, focus)
+	escalationSLA := buildGovernanceEscalationSLA(effectiveTemplate, *state, focus)
 	notificationPolicy := buildGovernanceNotificationPolicy(*workspace, effectiveTemplate, focus)
 	responseAggregation := buildResponseAggregation(focus, humanOverride)
 	deliveryDelegationMode := workspaceGovernanceDeliveryDelegationMode(*workspace)
@@ -701,7 +702,7 @@ func agentNameOrDefault(agent Agent, ok bool) string {
 	return agent.Name
 }
 
-func buildGovernanceEscalationSLA(template governanceTemplateDefinition, focus governanceFocus) WorkspaceGovernanceEscalationSLA {
+func buildGovernanceEscalationSLA(template governanceTemplateDefinition, state State, focus governanceFocus) WorkspaceGovernanceEscalationSLA {
 	timeoutMinutes := template.TimeoutMinutes
 	retryBudget := template.RetryBudget
 	activeEscalations := len(focus.BlockedInbox)
@@ -775,7 +776,253 @@ func buildGovernanceEscalationSLA(template governanceTemplateDefinition, focus g
 		BreachedEscalations: breachedEscalations,
 		NextEscalation:      nextEscalation,
 		Queue:               queue,
+		Rollup:              buildGovernanceEscalationRoomRollup(template, state),
 	}
+}
+
+type governanceEscalationRoomAccumulator struct {
+	RoomID          string
+	RoomTitle       string
+	EscalationCount int
+	BlockedCount    int
+	LatestSource    string
+	LatestLabel     string
+	LatestSummary   string
+	Href            string
+	latestAt        time.Time
+	latestKnown     bool
+}
+
+func buildGovernanceEscalationRoomRollup(
+	template governanceTemplateDefinition,
+	state State,
+) []WorkspaceGovernanceEscalationRoomRollup {
+	if len(state.Rooms) == 0 {
+		return nil
+	}
+
+	rollups := map[string]*governanceEscalationRoomAccumulator{}
+	for _, handoff := range state.Mailbox {
+		if handoff.Status == "completed" || isGovernanceSidecarHandoff(handoff.Kind) {
+			continue
+		}
+		roomTitle := governanceRoomTitleByID(state.Rooms, handoff.RoomID)
+		entryStatus := "active"
+		if handoff.Status == "blocked" || governanceMinutesSince(handoff.UpdatedAt) > template.TimeoutMinutes {
+			entryStatus = "blocked"
+		}
+		accumulator := ensureGovernanceEscalationRoomAccumulator(rollups, handoff.RoomID, roomTitle)
+		accumulator.EscalationCount++
+		if entryStatus == "blocked" {
+			accumulator.BlockedCount++
+		}
+		updateGovernanceEscalationRoomAccumulator(
+			accumulator,
+			entryStatus,
+			"mailbox handoff",
+			fmt.Sprintf("%s -> %s", handoff.FromAgent, handoff.ToAgent),
+			handoff.LastAction,
+			mailboxInboxHref(handoff.ID, handoff.RoomID),
+			governanceParseTimestamp(handoff.UpdatedAt),
+		)
+	}
+
+	for _, item := range state.Inbox {
+		if item.Kind != "blocked" {
+			continue
+		}
+		roomID, roomTitle := governanceEscalationInboxRoom(state, item)
+		if roomID == "" && strings.TrimSpace(roomTitle) == "" {
+			continue
+		}
+		accumulator := ensureGovernanceEscalationRoomAccumulator(rollups, roomID, roomTitle)
+		accumulator.EscalationCount++
+		accumulator.BlockedCount++
+		updateGovernanceEscalationRoomAccumulator(
+			accumulator,
+			"blocked",
+			"inbox blocker",
+			item.Title,
+			item.Summary,
+			defaultString(item.Href, governanceMailboxRoomHref(roomID)),
+			governanceInboxOccurredAt(state, item),
+		)
+	}
+
+	items := make([]WorkspaceGovernanceEscalationRoomRollup, 0, len(rollups))
+	for _, accumulator := range rollups {
+		status := "active"
+		if accumulator.BlockedCount > 0 {
+			status = "blocked"
+		}
+		items = append(items, WorkspaceGovernanceEscalationRoomRollup{
+			RoomID:          accumulator.RoomID,
+			RoomTitle:       accumulator.RoomTitle,
+			Status:          status,
+			EscalationCount: accumulator.EscalationCount,
+			BlockedCount:    accumulator.BlockedCount,
+			LatestSource:    accumulator.LatestSource,
+			LatestLabel:     accumulator.LatestLabel,
+			LatestSummary:   accumulator.LatestSummary,
+			Href:            accumulator.Href,
+		})
+	}
+
+	sort.Slice(items, func(left, right int) bool {
+		if items[left].Status != items[right].Status {
+			return items[left].Status == "blocked"
+		}
+		if items[left].EscalationCount != items[right].EscalationCount {
+			return items[left].EscalationCount > items[right].EscalationCount
+		}
+		return strings.ToLower(items[left].RoomTitle) < strings.ToLower(items[right].RoomTitle)
+	})
+
+	return items
+}
+
+func ensureGovernanceEscalationRoomAccumulator(
+	items map[string]*governanceEscalationRoomAccumulator,
+	roomID string,
+	roomTitle string,
+) *governanceEscalationRoomAccumulator {
+	key := strings.TrimSpace(roomID)
+	if key == "" {
+		key = strings.TrimSpace(roomTitle)
+	}
+	if existing, ok := items[key]; ok {
+		if existing.RoomTitle == "" {
+			existing.RoomTitle = roomTitle
+		}
+		if existing.Href == "" {
+			existing.Href = governanceMailboxRoomHref(roomID)
+		}
+		return existing
+	}
+	item := &governanceEscalationRoomAccumulator{
+		RoomID:    strings.TrimSpace(roomID),
+		RoomTitle: strings.TrimSpace(defaultString(roomTitle, roomID)),
+		Href:      governanceMailboxRoomHref(roomID),
+	}
+	items[key] = item
+	return item
+}
+
+func updateGovernanceEscalationRoomAccumulator(
+	accumulator *governanceEscalationRoomAccumulator,
+	status string,
+	source string,
+	label string,
+	summary string,
+	href string,
+	occurredAt time.Time,
+) {
+	if strings.TrimSpace(href) != "" {
+		accumulator.Href = href
+	}
+	if accumulator.latestKnown && !occurredAt.After(accumulator.latestAt) {
+		return
+	}
+	if !accumulator.latestKnown && !occurredAt.IsZero() {
+		accumulator.latestKnown = true
+		accumulator.latestAt = occurredAt
+	} else if accumulator.latestKnown {
+		accumulator.latestAt = occurredAt
+	}
+	if !accumulator.latestKnown || !occurredAt.IsZero() || accumulator.LatestLabel == "" {
+		accumulator.LatestSource = source
+		accumulator.LatestLabel = label
+		accumulator.LatestSummary = summary
+		if strings.TrimSpace(href) != "" {
+			accumulator.Href = href
+		}
+	}
+	if status == "blocked" && accumulator.BlockedCount == 0 {
+		accumulator.BlockedCount = 1
+	}
+}
+
+func governanceEscalationInboxRoom(state State, item InboxItem) (string, string) {
+	if strings.TrimSpace(item.HandoffID) != "" {
+		for _, handoff := range state.Mailbox {
+			if handoff.ID == item.HandoffID {
+				return handoff.RoomID, governanceRoomTitleByID(state.Rooms, handoff.RoomID)
+			}
+		}
+	}
+	roomID := governanceRoomIDFromHref(item.Href)
+	if roomID != "" {
+		return roomID, defaultString(governanceRoomTitleByID(state.Rooms, roomID), item.Room)
+	}
+	if roomID = governanceRoomIDByTitle(state.Rooms, item.Room); roomID != "" {
+		return roomID, governanceRoomTitleByID(state.Rooms, roomID)
+	}
+	return "", strings.TrimSpace(item.Room)
+}
+
+func governanceRoomTitleByID(rooms []Room, roomID string) string {
+	for _, room := range rooms {
+		if room.ID == roomID {
+			return room.Title
+		}
+	}
+	return ""
+}
+
+func governanceRoomIDByTitle(rooms []Room, roomTitle string) string {
+	title := strings.TrimSpace(roomTitle)
+	for _, room := range rooms {
+		if strings.EqualFold(strings.TrimSpace(room.Title), title) {
+			return room.ID
+		}
+	}
+	return ""
+}
+
+func governanceRoomIDFromHref(href string) string {
+	if href == "" {
+		return ""
+	}
+	marker := "roomId="
+	index := strings.Index(href, marker)
+	if index == -1 {
+		return ""
+	}
+	value := href[index+len(marker):]
+	if ampersand := strings.Index(value, "&"); ampersand >= 0 {
+		value = value[:ampersand]
+	}
+	return strings.TrimSpace(value)
+}
+
+func governanceMailboxRoomHref(roomID string) string {
+	if strings.TrimSpace(roomID) == "" {
+		return "/mailbox"
+	}
+	return fmt.Sprintf("/mailbox?roomId=%s", roomID)
+}
+
+func governanceInboxOccurredAt(state State, item InboxItem) time.Time {
+	if strings.TrimSpace(item.HandoffID) != "" {
+		for _, handoff := range state.Mailbox {
+			if handoff.ID == item.HandoffID {
+				return governanceParseTimestamp(handoff.UpdatedAt)
+			}
+		}
+	}
+	return time.Time{}
+}
+
+func governanceParseTimestamp(value string) time.Time {
+	timestamp := strings.TrimSpace(value)
+	if timestamp == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err == nil {
+		return parsed
+	}
+	return time.Time{}
 }
 
 func buildGovernanceNotificationPolicy(workspace WorkspaceSnapshot, template governanceTemplateDefinition, focus governanceFocus) WorkspaceGovernanceNotificationPolicy {

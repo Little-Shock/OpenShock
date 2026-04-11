@@ -321,6 +321,10 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	if baseline.Workspace.Governance.HumanOverride.Status != "required" {
 		t.Fatalf("baseline human override = %#v, want required override gate", baseline.Workspace.Governance.HumanOverride)
 	}
+	secondRoomID := findAlternateGovernanceRoomID(baseline, "room-runtime")
+	if secondRoomID == "" {
+		t.Fatalf("baseline rooms = %#v, want second room for cross-room escalation rollup", baseline.Rooms)
+	}
 
 	nextState, handoff, err := s.CreateHandoff(MailboxCreateInput{
 		RoomID:      "room-runtime",
@@ -358,6 +362,10 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	if findEscalationQueueEntryBySource(blockedState.Workspace.Governance.EscalationSLA.Queue, "inbox blocker") == nil {
 		t.Fatalf("blocked escalation queue = %#v, want inbox blocker entry", blockedState.Workspace.Governance.EscalationSLA.Queue)
 	}
+	runtimeRollup := findEscalationRoomRollupByRoomID(blockedState.Workspace.Governance.EscalationSLA.Rollup, "room-runtime")
+	if runtimeRollup == nil || runtimeRollup.Status != "blocked" || runtimeRollup.EscalationCount != 2 || runtimeRollup.BlockedCount != 2 {
+		t.Fatalf("runtime escalation rollup after block = %#v, want blocked rollup with handoff + inbox blocker", blockedState.Workspace.Governance.EscalationSLA.Rollup)
+	}
 	reviewerLane := findGovernanceLane(blockedState.Workspace.Governance.TeamTopology, "reviewer")
 	if reviewerLane == nil || reviewerLane.Status != "blocked" {
 		t.Fatalf("reviewer lane = %#v, want blocked reviewer lane", reviewerLane)
@@ -385,6 +393,21 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	finalStep := findGovernanceStep(completedState.Workspace.Governance.Walkthrough, "final-response")
 	if finalStep == nil || finalStep.Status != "ready" {
 		t.Fatalf("final response step = %#v, want ready final response walkthrough", finalStep)
+	}
+
+	secondRoomState, _, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      secondRoomID,
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-memory-clerk",
+		Title:       "把第二个 room 也接入 cross-room escalation rollup",
+		Summary:     "请保持 requested，验证治理面会把另一个 room 也收进 rollup。",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff(second room) error = %v", err)
+	}
+	secondRoomRollup := findEscalationRoomRollupByRoomID(secondRoomState.Workspace.Governance.EscalationSLA.Rollup, secondRoomID)
+	if secondRoomRollup == nil || secondRoomRollup.Status != "active" || secondRoomRollup.EscalationCount != 1 || secondRoomRollup.BlockedCount != 0 {
+		t.Fatalf("second room escalation rollup = %#v, want active second-room rollup", secondRoomState.Workspace.Governance.EscalationSLA.Rollup)
 	}
 }
 
@@ -2082,6 +2105,31 @@ func findEscalationQueueEntryBySource(
 		}
 	}
 	return nil
+}
+
+func findEscalationRoomRollupByRoomID(
+	items []WorkspaceGovernanceEscalationRoomRollup,
+	roomID string,
+) *WorkspaceGovernanceEscalationRoomRollup {
+	for index := range items {
+		if items[index].RoomID == roomID {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func findAlternateGovernanceRoomID(state State, exclude string) string {
+	hotRoomIDs := map[string]bool{}
+	for _, item := range state.Workspace.Governance.EscalationSLA.Rollup {
+		hotRoomIDs[item.RoomID] = true
+	}
+	for _, room := range state.Rooms {
+		if room.ID != exclude && !hotRoomIDs[room.ID] {
+			return room.ID
+		}
+	}
+	return ""
 }
 
 func findDeliveryEvidence(items []PullRequestDeliveryEvidence, evidenceID string) *PullRequestDeliveryEvidence {
