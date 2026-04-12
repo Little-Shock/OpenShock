@@ -136,6 +136,59 @@ func TestPlannerSessionAssignmentRouteReassignsCurrentQueue(t *testing.T) {
 	}
 }
 
+func TestPlannerQueueRoutePrefersCurrentOwnerOverStaleRecentRunAgent(t *testing.T) {
+	root := t.TempDir()
+	s, server, created, _ := newPlannerTestServer(t, root, nil)
+	defer server.Close()
+
+	if _, _, err := s.CreateHandoff(store.MailboxCreateInput{
+		RoomID:      created.RoomID,
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "先接住交互收口",
+		Summary:     "请先把交互语气和漏项收一下。",
+		Kind:        "room-auto",
+	}); err != nil {
+		t.Fatalf("CreateHandoff(codex->claude room-auto) error = %v", err)
+	}
+
+	if _, _, err := s.CreateHandoff(store.MailboxCreateInput{
+		RoomID:      created.RoomID,
+		FromAgentID: "agent-claude-review-runner",
+		ToAgentID:   "agent-memory-clerk",
+		Title:       "继续收记忆和验收点",
+		Summary:     "请把影片资料、验收点和记忆写回一起收口。",
+		Kind:        "room-auto",
+	}); err != nil {
+		t.Fatalf("CreateHandoff(claude->memory room-auto) error = %v", err)
+	}
+
+	resp, err := http.Get(server.URL + "/v1/planner/queue")
+	if err != nil {
+		t.Fatalf("GET /v1/planner/queue error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/planner/queue status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload []store.PlannerQueueItem
+	decodeJSON(t, resp, &payload)
+
+	for _, item := range payload {
+		if item.SessionID != created.SessionID {
+			continue
+		}
+		if item.AgentID != "agent-memory-clerk" || item.Owner != "Memory Clerk" {
+			t.Fatalf("planner queue item = %#v, want current owner Memory Clerk over stale recent-run agent", item)
+		}
+		return
+	}
+
+	t.Fatalf("planner queue missing session %q: %#v", created.SessionID, payload)
+}
+
 func TestPlannerSessionAssignmentRouteRejectsUnknownAgent(t *testing.T) {
 	root := t.TempDir()
 	_, server, created, _ := newPlannerTestServer(t, root, nil)
