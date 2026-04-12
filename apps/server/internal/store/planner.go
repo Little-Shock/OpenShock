@@ -427,6 +427,9 @@ func findAgentByOwner(state State, owner string) (Agent, bool) {
 }
 
 func findAgentForRun(state State, run Run) (Agent, bool) {
+	if owner, ok := findAgentByOwner(state, run.Owner); ok {
+		return owner, true
+	}
 	if strings.TrimSpace(run.ID) != "" {
 		for _, item := range state.Agents {
 			for _, runID := range item.RecentRunIDs {
@@ -436,7 +439,7 @@ func findAgentForRun(state State, run Run) (Agent, bool) {
 			}
 		}
 	}
-	return findAgentByOwner(state, run.Owner)
+	return Agent{}, false
 }
 
 func prependUnique(items []string, value string) []string {
