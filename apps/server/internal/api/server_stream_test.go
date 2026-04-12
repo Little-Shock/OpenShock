@@ -1320,6 +1320,192 @@ func TestRoomAutoHandoffFollowupSupportsClarificationRequest(t *testing.T) {
 	}
 }
 
+func TestRoomAutoHandoffClarificationFollowupSurvivesRestart(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+	var execRequests []ExecRequest
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		var req ExecRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode exec payload: %v", err)
+		}
+		execRequests = append(execRequests, req)
+
+		switch len(execRequests) {
+		case 1:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "我先收一下当前范围。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核 rollout 范围 | 请先确认 rollout 范围。",
+				Duration: "0.5s",
+			})
+		case 2:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "claude",
+				Command:  []string{"claude", "--print"},
+				Output:   "KIND: clarification_request\nBODY:\n请先确认 rollout 范围。",
+				Duration: "0.4s",
+			})
+		case 3:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "claude",
+				Command:  []string{"claude", "--print"},
+				Output:   "我收到 rollout 范围了，接着把复核结果补齐。",
+				Duration: "0.4s",
+			})
+		default:
+			t.Fatalf("unexpected exec request count: %d", len(execRequests))
+		}
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Restarted Clarification", "Codex Dockmaster")
+
+	firstBody, err := json.Marshal(map[string]any{
+		"prompt": "继续推进当前 rollout。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	firstResp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(firstBody))
+	if err != nil {
+		t.Fatalf("POST first room message error = %v", err)
+	}
+	defer firstResp.Body.Close()
+
+	if firstResp.StatusCode != http.StatusOK {
+		t.Fatalf("first status = %d, want %d", firstResp.StatusCode, http.StatusOK)
+	}
+
+	var firstPayload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, firstResp, &firstPayload)
+	server.Close()
+
+	if len(execRequests) != 2 {
+		t.Fatalf("exec requests = %#v, want handoff + clarification followup", execRequests)
+	}
+	if execRequests[0].Provider != "codex" || !strings.Contains(execRequests[1].Prompt, "本轮请以 Claude Review Runner 的身份回应") {
+		t.Fatalf("exec requests = %#v, want Claude clarification followup after handoff", execRequests)
+	}
+	if firstPayload.Output != "我先收一下当前范围。" {
+		t.Fatalf("first payload output = %q, want original visible handoff reply", firstPayload.Output)
+	}
+	firstRoom := findRoomByID(firstPayload.State, created.RoomID)
+	firstRun := findRunByID(firstPayload.State, created.RunID)
+	var firstIssue *store.Issue
+	if firstRoom != nil {
+		firstIssue = findIssueByKey(firstPayload.State, firstRoom.IssueKey)
+	}
+	if firstRoom == nil || firstRoom.Topic.Owner != "Claude Review Runner" || firstRoom.Topic.Status != "paused" {
+		t.Fatalf("first room = %#v, want paused Claude owner after handoff clarification", firstRoom)
+	}
+	if firstRun == nil || firstRun.Owner != "Claude Review Runner" || firstRun.Status != "paused" {
+		t.Fatalf("first run = %#v, want paused Claude owner after handoff clarification", firstRun)
+	}
+	if firstIssue == nil || firstIssue.Owner != "Claude Review Runner" || firstIssue.State != "paused" {
+		t.Fatalf("first issue = %#v, want paused Claude owner after handoff clarification", firstIssue)
+	}
+	firstMessages := firstPayload.State.RoomMessages[created.RoomID]
+	firstLastMessage := firstMessages[len(firstMessages)-1]
+	if firstLastMessage.Speaker != "Claude Review Runner" || firstLastMessage.Tone != "blocked" || firstLastMessage.Message != "请先确认 rollout 范围。" {
+		t.Fatalf("first last room message = %#v, want Claude clarification after handoff", firstLastMessage)
+	}
+	foundClaudeWait := false
+	for _, wait := range firstPayload.State.RoomAgentWaits {
+		if wait.RoomID == created.RoomID && wait.AgentID == "agent-claude-review-runner" && wait.Status == "waiting_reply" {
+			foundClaudeWait = true
+			break
+		}
+	}
+	if !foundClaudeWait {
+		t.Fatalf("room waits = %#v, want Claude waiting_reply", firstPayload.State.RoomAgentWaits)
+	}
+
+	reloadedStore, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New(reload) error = %v", err)
+	}
+	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer reloadedServer.Close()
+
+	secondBody, err := json.Marshal(map[string]any{
+		"prompt": "rollout 只限当前 landing 页和详情页。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	secondResp, err := http.Post(reloadedServer.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(secondBody))
+	if err != nil {
+		t.Fatalf("POST second room message error = %v", err)
+	}
+	defer secondResp.Body.Close()
+
+	if secondResp.StatusCode != http.StatusOK {
+		t.Fatalf("second status = %d, want %d", secondResp.StatusCode, http.StatusOK)
+	}
+
+	var secondPayload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, secondResp, &secondPayload)
+
+	if len(execRequests) != 3 {
+		t.Fatalf("exec requests after restart = %#v, want resumed clarification followup", execRequests)
+	}
+	if execRequests[2].Provider != "claude" {
+		t.Fatalf("restart exec request = %#v, want claude provider", execRequests[2])
+	}
+	for _, expected := range []string{
+		"本轮请以 Claude Review Runner 的身份回应",
+		"你上一轮刚提出过阻塞性澄清",
+	} {
+		if !strings.Contains(execRequests[2].Prompt, expected) {
+			t.Fatalf("restart exec prompt = %q, want %q", execRequests[2].Prompt, expected)
+		}
+	}
+	if secondPayload.Output != "我收到 rollout 范围了，接着把复核结果补齐。" {
+		t.Fatalf("second payload output = %q, want resumed Claude reply", secondPayload.Output)
+	}
+	secondMessages := secondPayload.State.RoomMessages[created.RoomID]
+	secondLastMessage := secondMessages[len(secondMessages)-1]
+	if secondLastMessage.Speaker != "Claude Review Runner" || secondLastMessage.Role != "agent" || secondLastMessage.Message != "我收到 rollout 范围了，接着把复核结果补齐。" {
+		t.Fatalf("second last room message = %#v, want resumed Claude reply", secondLastMessage)
+	}
+	secondRoom := findRoomByID(secondPayload.State, created.RoomID)
+	secondRun := findRunByID(secondPayload.State, created.RunID)
+	var secondIssue *store.Issue
+	if secondRoom != nil {
+		secondIssue = findIssueByKey(secondPayload.State, secondRoom.IssueKey)
+	}
+	if secondRoom == nil || secondRoom.Topic.Owner != "Claude Review Runner" || secondRoom.Topic.Status != "running" {
+		t.Fatalf("second room = %#v, want running Claude owner after restart followup", secondRoom)
+	}
+	if secondRun == nil || secondRun.Owner != "Claude Review Runner" || secondRun.Status != "running" {
+		t.Fatalf("second run = %#v, want running Claude owner after restart followup", secondRun)
+	}
+	if secondIssue == nil || secondIssue.Owner != "Claude Review Runner" || secondIssue.State != "running" {
+		t.Fatalf("second issue = %#v, want running Claude owner after restart followup", secondIssue)
+	}
+	for _, wait := range secondPayload.State.RoomAgentWaits {
+		if wait.RoomID == created.RoomID && wait.AgentID == "agent-claude-review-runner" && wait.Status != "resolved" {
+			t.Fatalf("room waits = %#v, want resolved Claude wait after restart followup", secondPayload.State.RoomAgentWaits)
+		}
+	}
+}
+
 func TestRoomMessageStreamSequentialAutoHandoffsPersistCurrentOwnerAcrossRestart(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")

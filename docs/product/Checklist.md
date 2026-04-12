@@ -437,7 +437,7 @@
   - [x] `/settings` 当前已改成 `core settings -> advanced governance / credentials / notifications` 的信息层级；高频路径先看 workspace/member 真值，重治理能力继续保留在高级区
 - 当前 GAP:
   - [ ] 更重的 multi-room dependency graph、cross-room auto-closeout 和跨 room 依赖治理仍留后续；当前已不再缺“当前 room ledger 的 bulk closeout”“policy-based batch orchestration”“显式 escalation queue”“跨 room escalation rollup”以及“room-level governed create action”
-  - [ ] `handoff -> clarification wait -> memory preview/provider choice -> restart resume` 这条跨链连续性还没有被一条完整回归完全锁死；目前已补 `顺序 handoff + restart owner continuity`，但 clarification/memory 两段仍要继续收紧
+  - [ ] `handoff -> clarification wait -> memory preview/provider choice -> restart resume` 这条跨链连续性还没有被一条完整回归完全锁死；目前已补 `顺序 handoff + clarification wait + restart owner continuity`，但 memory/provider 这段仍要继续收紧
 - 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052` `TC-053` `TC-054` `TC-055` `TC-056` `TC-057` `TC-058` `TC-059` `TC-060` `TC-061` `TC-062` `TC-063` `TC-064` `TC-065` `TC-066` `TC-067` `TC-068` `TC-069` `TC-070` `TC-071` `TC-072` `TC-073` `TC-074` `TC-075` `TC-076` `TC-078` `TC-079` `TC-080` `TC-081` `TC-082` `TC-083` `TC-084` `TC-087`
 
 ### CHK-22 配置持久化、数据库与恢复真相
