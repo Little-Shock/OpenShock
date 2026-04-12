@@ -444,8 +444,12 @@ async function startServices() {
   const webURL = `http://127.0.0.1:${webPort}`;
   const serverURL = `http://127.0.0.1:${serverPort}`;
   const daemon = await startSyntheticDaemon({ port: daemonPort, workspaceRoot });
+  const nodeOptions = process.env.NODE_OPTIONS
+    ? `${process.env.NODE_OPTIONS} --max-old-space-size=4096`
+    : "--max-old-space-size=4096";
   const webEnv = {
     ...process.env,
+    NODE_OPTIONS: nodeOptions,
     OPENSHOCK_CONTROL_API_BASE: serverURL,
     NEXT_PUBLIC_OPENSHOCK_API_BASE: serverURL,
     OPENSHOCK_NEXT_DIST_DIR: webDistDirName,

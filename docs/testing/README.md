@@ -2,6 +2,8 @@
 
 - [Headed Movie Site Multi-Agent Report 2026-04-12](../../output/testing/headed-multi-agent-movie-studio-report.md)
   - 本轮新增的多智能体顺序交接有头报告，覆盖 `星野产品 -> 折光交互 -> 青岚策展` 的 room-auto 协作链、Mailbox walkthrough、最终 owner 上下文与 protocol leak probe
+- [Headed Run History Resume Context Report 2026-04-12](../../output/testing/headed-run-history-resume-context-report.md)
+  - 本轮重新生成的恢复链有头报告，覆盖 `/runs` 分页历史、prior-run reopen、session resume context 与回到 room run tab 后重新锚定当前 continuity
 - [Test Report 2026-04-11 Windows Chrome Identity Template Recovery Journey](./Test-Report-2026-04-11-windows-chrome-identity-template-recovery-journey.md)
   - `TKT-44` 的 Windows Chrome 有头报告，覆盖 `/settings` identity template chain 与 `/access` invite / verify / reset / blocked recovery 同链路回放
 - [Test Report 2026-04-11 Windows Chrome Restricted Sandbox Policy](./Test-Report-2026-04-11-windows-chrome-restricted-sandbox-policy.md)
