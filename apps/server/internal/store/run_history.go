@@ -24,6 +24,7 @@ func (s *Store) RunDetail(runID string) (RunDetail, bool) {
 	if !ok {
 		return RunDetail{}, false
 	}
+	run = normalizeRunOwnerForView(snapshot, run, issue, room)
 
 	session, _ := findSessionForRunSnapshot(snapshot, run.ID)
 
@@ -84,6 +85,7 @@ func buildRunHistoryEntry(snapshot State, run Run) (RunHistoryEntry, bool) {
 	if !ok {
 		return RunHistoryEntry{}, false
 	}
+	run = normalizeRunOwnerForView(snapshot, run, issue, room)
 
 	session, _ := findSessionForRunSnapshot(snapshot, run.ID)
 

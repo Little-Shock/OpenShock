@@ -58,6 +58,62 @@ func TestCreateHandoffPersistsMailboxInboxAndRoomTruth(t *testing.T) {
 	}
 }
 
+func TestCreateRoomAutoHandoffImmediatelySwitchesOwner(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	nextState, handoff, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "继续复核当前房间",
+		Summary:     "请直接接棒并继续推进这条房间线程。",
+		Kind:        handoffKindRoomAuto,
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff(room-auto) error = %v", err)
+	}
+
+	if handoff.Kind != handoffKindRoomAuto || handoff.Status != "acknowledged" {
+		t.Fatalf("handoff = %#v, want acknowledged room-auto handoff", handoff)
+	}
+	if len(handoff.Messages) < 2 || handoff.Messages[len(handoff.Messages)-1].Kind != "ack" {
+		t.Fatalf("handoff messages = %#v, want request + ack ledger", handoff.Messages)
+	}
+
+	run := findRunByID(nextState, "run_runtime_01")
+	room := findRoomByID(nextState, "room-runtime")
+	issue := findIssueByID(nextState, "issue-runtime")
+	session := findSessionByID(nextState, "session-runtime")
+	if run == nil || run.Owner != "Claude Review Runner" || run.Status != "running" {
+		t.Fatalf("run = %#v, want Claude Review Runner running", run)
+	}
+	if room == nil || room.Topic.Owner != "Claude Review Runner" {
+		t.Fatalf("room = %#v, want topic owner switched", room)
+	}
+	if issue == nil || issue.Owner != "Claude Review Runner" {
+		t.Fatalf("issue = %#v, want issue owner switched", issue)
+	}
+	if session == nil || session.Status != "running" || !strings.Contains(session.ControlNote, "Claude Review Runner") {
+		t.Fatalf("session = %#v, want running session control note switched", session)
+	}
+
+	inboxItem := findInboxItemByHandoffID(nextState.Inbox, handoff.ID)
+	if inboxItem == nil || !strings.Contains(inboxItem.Title, "已接棒") {
+		t.Fatalf("inbox item = %#v, want acknowledged inbox title", inboxItem)
+	}
+
+	roomMessages := nextState.RoomMessages["room-runtime"]
+	if len(roomMessages) == 0 || !strings.Contains(roomMessages[len(roomMessages)-1].Message, "已接棒") {
+		t.Fatalf("room messages = %#v, want concise auto-handoff writeback", roomMessages)
+	}
+}
+
 func TestAdvanceHandoffLifecycleUpdatesOwnerAndLedger(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -139,6 +195,66 @@ func TestAdvanceHandoffLifecycleUpdatesOwnerAndLedger(t *testing.T) {
 	completedInbox := findInboxItemByHandoffID(completedState.Inbox, handoff.ID)
 	if completedInbox == nil || !strings.Contains(completedInbox.Summary, "收口备注") {
 		t.Fatalf("completed inbox item = %#v, want completion note reflected", completedInbox)
+	}
+}
+
+func TestStaleCompletedHandoffDoesNotOverrideActiveRunTruth(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, first, err := s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+		Title:       "先接住 reviewer lane",
+		Summary:     "请先接住 reviewer lane。",
+		Kind:        handoffKindRoomAuto,
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff(first room-auto) error = %v", err)
+	}
+
+	_, _, err = s.CreateHandoff(MailboxCreateInput{
+		RoomID:      "room-runtime",
+		FromAgentID: "agent-claude-review-runner",
+		ToAgentID:   "agent-memory-clerk",
+		Title:       "把记忆与收口交给 Memory",
+		Summary:     "请继续负责记忆与收口。",
+		Kind:        handoffKindRoomAuto,
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff(second room-auto) error = %v", err)
+	}
+
+	staleNote := "旧 reviewer closeout 不该抢走当前 owner。"
+	nextState, _, err := s.AdvanceHandoff(first.ID, MailboxUpdateInput{
+		Action:        "completed",
+		ActingAgentID: "agent-claude-review-runner",
+		Note:          staleNote,
+	})
+	if err != nil {
+		t.Fatalf("AdvanceHandoff(stale complete) error = %v", err)
+	}
+
+	run := findRunByID(nextState, "run_runtime_01")
+	if run == nil || run.Owner != "Memory Clerk" {
+		t.Fatalf("run = %#v, want Memory Clerk remain current owner", run)
+	}
+	if strings.Contains(run.NextAction, staleNote) || !strings.Contains(run.NextAction, "Memory Clerk") {
+		t.Fatalf("run next action = %q, want active owner truth preserved", run.NextAction)
+	}
+
+	session := findSessionByID(nextState, "session-runtime")
+	if session == nil {
+		t.Fatalf("session-runtime missing")
+	}
+	if strings.Contains(session.ControlNote, staleNote) || !strings.Contains(session.ControlNote, "Memory Clerk") {
+		t.Fatalf("session control note = %q, want active owner truth preserved", session.ControlNote)
 	}
 }
 

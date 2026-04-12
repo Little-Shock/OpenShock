@@ -1064,7 +1064,9 @@ func buildMemoryInjectionPreview(snapshot State, policy MemoryInjectionPolicy, p
 
 	run := findRunForSession(snapshot, session.ID, session.ActiveRunID)
 	var agent *Agent
+	ownerName := ""
 	if run != nil {
+		ownerName = resolveRunOwnerName(snapshot, *run)
 		if found, ok := findAgentForRun(snapshot, *run); ok {
 			agent = &found
 		}
@@ -1097,7 +1099,10 @@ func buildMemoryInjectionPreview(snapshot State, policy MemoryInjectionPolicy, p
 	}
 
 	if run != nil && (policy.IncludeAgentMemory || (agent != nil && agentWantsAgentMemory(*agent, policy))) {
-		agentSlug := slugify(run.Owner)
+		if agent != nil {
+			ownerName = strings.TrimSpace(agent.Name)
+		}
+		agentSlug := slugify(ownerName)
 		if agentSlug != "" {
 			addCandidate(filepath.ToSlash(filepath.Join(".openshock", "agents", agentSlug, "MEMORY.md")), "owner agent memory", false)
 		}

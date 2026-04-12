@@ -442,8 +442,8 @@
 - 当前 GAP:
   - [ ] 更重的 multi-room dependency graph、cross-room auto-closeout 和跨 room 依赖治理仍留后续；当前已不再缺“当前 room ledger 的 bulk closeout”“policy-based batch orchestration”“显式 escalation queue”“跨 room escalation rollup”以及“room-level governed create action”
   - [x] `handoff -> clarification wait -> memory preview/provider choice -> restart resume` 这条跨链连续性现在已有单条 API 回归锁住；阻塞澄清期间 `/v1/memory-center` preview 会跟随 current owner/provider truth，reload 后也不会回退
-  - [ ] `run detail/history -> memory preview current owner -> final response aggregation` 还没有被一条完整回归串起来；下一步要继续收紧 room/run/governance 三个面上的最终对外真相
-- 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052` `TC-053` `TC-054` `TC-055` `TC-056` `TC-057` `TC-058` `TC-059` `TC-060` `TC-061` `TC-062` `TC-063` `TC-064` `TC-065` `TC-066` `TC-067` `TC-068` `TC-069` `TC-070` `TC-071` `TC-072` `TC-073` `TC-074` `TC-075` `TC-076` `TC-078` `TC-079` `TC-080` `TC-081` `TC-082` `TC-083` `TC-084` `TC-087` `TC-089` `TC-090` `TC-091`
+  - [x] `run detail/history -> memory preview current owner -> final response aggregation` 现在已有完整回归串起来；旧 handoff completion 不会再抢走当前 owner 的 run/session/governance truth
+- 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052` `TC-053` `TC-054` `TC-055` `TC-056` `TC-057` `TC-058` `TC-059` `TC-060` `TC-061` `TC-062` `TC-063` `TC-064` `TC-065` `TC-066` `TC-067` `TC-068` `TC-069` `TC-070` `TC-071` `TC-072` `TC-073` `TC-074` `TC-075` `TC-076` `TC-078` `TC-079` `TC-080` `TC-081` `TC-082` `TC-083` `TC-084` `TC-087` `TC-089` `TC-090` `TC-091` `TC-092`
 
 ### CHK-22 配置持久化、数据库与恢复真相
 

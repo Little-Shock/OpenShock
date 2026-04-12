@@ -44,7 +44,7 @@ func governanceTemplateFor(templateID string) governanceTemplateDefinition {
 	case "research-team":
 		return governanceTemplateDefinition{
 			TemplateID:        "research-team",
-			Label:             "研究团队分工",
+			Label:             "研究团队治理链",
 			Summary:           "研究团队模板会提供资料收集、分析整理和复核分工。",
 			TimeoutMinutes:    30,
 			RetryBudget:       2,
@@ -59,21 +59,21 @@ func governanceTemplateFor(templateID string) governanceTemplateDefinition {
 	case "blank-custom":
 		return governanceTemplateDefinition{
 			TemplateID:        "blank-custom",
-			Label:             "自定义团队分工",
+			Label:             "自定义治理链",
 			Summary:           "空白模板会提供最基础的分工和协作设置。",
 			TimeoutMinutes:    45,
 			RetryBudget:       1,
 			EscalationChannel: "mailbox -> inbox -> owner",
 			Topology: []governanceTemplateLaneDefinition{
-				{ID: "owner", Label: "Owner", Role: "目标与验收", DefaultAgent: "Starter Agent", Lane: "scope / final response"},
-				{ID: "member", Label: "Member", Role: "执行与上下文整理", DefaultAgent: "Starter Agent", Lane: "build / collect"},
-				{ID: "reviewer", Label: "Reviewer", Role: "复核与阻塞升级", DefaultAgent: "Review Agent", Lane: "review / unblock"},
+				{ID: "owner", Label: "Owner", Role: "目标与验收", DefaultAgent: "启动智能体", Lane: "scope / final response"},
+				{ID: "member", Label: "Member", Role: "执行与上下文整理", DefaultAgent: "启动智能体", Lane: "build / collect"},
+				{ID: "reviewer", Label: "Reviewer", Role: "复核与阻塞升级", DefaultAgent: "评审智能体", Lane: "review / unblock"},
 			},
 		}
 	default:
 		return governanceTemplateDefinition{
 			TemplateID:        "dev-team",
-			Label:             "开发团队分工",
+			Label:             "开发团队治理链",
 			Summary:           "开发团队模板会提供产品、开发、评审和测试协作分工。",
 			TimeoutMinutes:    20,
 			RetryBudget:       2,
@@ -153,7 +153,7 @@ func hydrateWorkspaceGovernance(workspace *WorkspaceSnapshot, state *State) {
 	routingPolicy := buildGovernanceRoutingPolicy(effectiveTemplate, *state, focus, humanOverride)
 	escalationSLA := buildGovernanceEscalationSLA(effectiveTemplate, *state, focus)
 	notificationPolicy := buildGovernanceNotificationPolicy(*workspace, effectiveTemplate, focus)
-	responseAggregation := buildResponseAggregation(focus, humanOverride)
+	responseAggregation := buildResponseAggregation(*state, focus, humanOverride)
 	deliveryDelegationMode := workspaceGovernanceDeliveryDelegationMode(*workspace)
 	stats.SLABreaches = escalationSLA.BreachedEscalations
 	stats.AggregationSources = len(responseAggregation.Sources)
@@ -447,7 +447,7 @@ func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDef
 		}
 	}
 
-	currentOwner := governanceCurrentOwnerName(focus)
+	currentOwner := governanceCurrentOwnerName(state, focus)
 	if currentOwner == "" {
 		result.Reason = "当前 room 还没有可映射到治理拓扑的 owner。"
 		return result
@@ -562,14 +562,22 @@ func governanceSuggestedHandoffHref(item WorkspaceGovernanceSuggestedHandoff, ro
 	return governanceMailboxRoomHref(roomID)
 }
 
-func governanceCurrentOwnerName(focus governanceFocus) string {
+func governanceCurrentOwnerName(state State, focus governanceFocus) string {
 	switch {
-	case focus.Run != nil && strings.TrimSpace(focus.Run.Owner) != "":
-		return strings.TrimSpace(focus.Run.Owner)
-	case focus.Room != nil && strings.TrimSpace(focus.Room.Topic.Owner) != "":
-		return strings.TrimSpace(focus.Room.Topic.Owner)
+	case focus.Run != nil:
+		issue := Issue{}
+		if focus.Issue != nil {
+			issue = *focus.Issue
+		}
+		room := Room{}
+		if focus.Room != nil {
+			room = *focus.Room
+		}
+		return resolveRunOwnerNameWithContext(state, *focus.Run, issue, room)
 	case focus.Issue != nil && strings.TrimSpace(focus.Issue.Owner) != "":
-		return strings.TrimSpace(focus.Issue.Owner)
+		return canonicalOwnerName(state.Agents, focus.Issue.Owner)
+	case focus.Room != nil && strings.TrimSpace(focus.Room.Topic.Owner) != "":
+		return canonicalOwnerName(state.Agents, focus.Room.Topic.Owner)
 	default:
 		return ""
 	}
@@ -897,7 +905,7 @@ func buildGovernanceEscalationRoomRollup(
 			status = "blocked"
 		}
 		roomFocus := resolveGovernanceFocusForRoom(state, accumulator.RoomID)
-		currentOwner := governanceCurrentOwnerName(roomFocus)
+		currentOwner := governanceCurrentOwnerName(state, roomFocus)
 		currentLane := ""
 		if lane := governanceLaneByAgentName(template.Topology, state.Agents, currentOwner); lane != nil {
 			currentLane = lane.Label
@@ -1123,7 +1131,8 @@ func buildHumanOverride(focus governanceFocus) WorkspaceHumanOverride {
 	}
 }
 
-func buildResponseAggregation(focus governanceFocus, humanOverride WorkspaceHumanOverride) WorkspaceResponseAggregation {
+func buildResponseAggregation(state State, focus governanceFocus, humanOverride WorkspaceHumanOverride) WorkspaceResponseAggregation {
+	currentOwner := governanceCurrentOwnerName(state, focus)
 	sources := []string{}
 	if focus.Issue != nil {
 		sources = append(sources, fmt.Sprintf("%s issue", focus.Issue.Key))
@@ -1196,24 +1205,24 @@ func buildResponseAggregation(focus governanceFocus, humanOverride WorkspaceHuma
 	finalResponse := "等待当前 reviewer / tester loop 收口后再聚合最终响应。"
 	status := "draft"
 	summary := "最终响应会把 issue、room、handoff、review 和 inbox signal 聚合到同一条 human-readable closeout。"
-	aggregator := "workspace governance"
+	aggregator := defaultString(currentOwner, "workspace governance")
 
 	switch {
-	case focus.LatestCompletion != nil && strings.TrimSpace(focus.LatestCompletion.LastNote) != "":
+	case governanceCompletionMatchesCurrentOwner(focus.LatestCompletion, currentOwner) && strings.TrimSpace(focus.LatestCompletion.LastNote) != "":
 		status = "ready"
 		finalResponse = focus.LatestCompletion.LastNote
 		summary = fmt.Sprintf("最新 closeout note 已从 mailbox 回写：%s。", focus.LatestCompletion.LastNote)
 		aggregator = focus.LatestCompletion.ToAgent
-	case focus.PullRequest != nil && strings.TrimSpace(focus.PullRequest.ReviewSummary) != "":
-		status = governanceStatusFromPullRequest(focus.PullRequest.Status)
-		finalResponse = focus.PullRequest.ReviewSummary
-		summary = fmt.Sprintf("%s 当前把 reviewer verdict 留在同一条 aggregation surface 上。", focus.PullRequest.Label)
-		aggregator = focus.PullRequest.Author
 	case focus.Run != nil && strings.TrimSpace(focus.Run.NextAction) != "":
 		status = governanceStatusFromRun(focus.Run.Status)
 		finalResponse = focus.Run.NextAction
 		summary = "当前 final response 继续围同一条 run next-action truth 聚合，不需要再靠口头总结。"
-		aggregator = focus.Run.Owner
+		aggregator = defaultString(currentOwner, aggregator)
+	case focus.PullRequest != nil && strings.TrimSpace(focus.PullRequest.ReviewSummary) != "":
+		status = governanceStatusFromPullRequest(focus.PullRequest.Status)
+		finalResponse = focus.PullRequest.ReviewSummary
+		summary = fmt.Sprintf("%s 当前把 reviewer verdict 留在同一条 aggregation surface 上。", focus.PullRequest.Label)
+		aggregator = defaultString(strings.TrimSpace(focus.PullRequest.Author), aggregator)
 	}
 	auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
 		ID:         "audit-final-response",
@@ -1234,6 +1243,21 @@ func buildResponseAggregation(focus governanceFocus, humanOverride WorkspaceHuma
 		OverrideTrace: overrideTrace,
 		AuditTrail:    auditTrail,
 	}
+}
+
+func governanceCompletionMatchesCurrentOwner(item *AgentHandoff, currentOwner string) bool {
+	if item == nil {
+		return false
+	}
+	completionOwner := strings.TrimSpace(item.ToAgent)
+	currentOwner = strings.TrimSpace(currentOwner)
+	if completionOwner == "" {
+		return false
+	}
+	if currentOwner == "" {
+		return true
+	}
+	return strings.EqualFold(completionOwner, currentOwner)
 }
 
 func buildGovernanceTeamTopology(template governanceTemplateDefinition, focus governanceFocus, humanOverride WorkspaceHumanOverride) []WorkspaceGovernanceLane {

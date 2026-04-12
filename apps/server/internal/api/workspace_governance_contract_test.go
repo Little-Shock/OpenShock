@@ -161,6 +161,113 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	}
 }
 
+func TestGovernanceAggregationPrefersCurrentOwnerOverStaleCompletedHandoff(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	firstResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox", map[string]string{
+		"roomId":      "room-runtime",
+		"fromAgentId": "agent-codex-dockmaster",
+		"toAgentId":   "agent-claude-review-runner",
+		"title":       "先接住 review lane",
+		"summary":     "请先把 review lane 接起来。",
+		"kind":        "room-auto",
+	})
+	defer firstResp.Body.Close()
+	if firstResp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST first room-auto handoff status = %d, want %d", firstResp.StatusCode, http.StatusCreated)
+	}
+	var firstPayload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+	}
+	decodeJSON(t, firstResp, &firstPayload)
+	if firstPayload.Handoff.Status != "acknowledged" {
+		t.Fatalf("first handoff = %#v, want room-auto acknowledged", firstPayload.Handoff)
+	}
+
+	secondResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox", map[string]string{
+		"roomId":      "room-runtime",
+		"fromAgentId": "agent-claude-review-runner",
+		"toAgentId":   "agent-memory-clerk",
+		"title":       "把记忆与收口交给 Memory",
+		"summary":     "请继续负责当前 room 的记忆与收口。",
+		"kind":        "room-auto",
+	})
+	defer secondResp.Body.Close()
+	if secondResp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST second room-auto handoff status = %d, want %d", secondResp.StatusCode, http.StatusCreated)
+	}
+	var secondPayload struct {
+		Handoff store.AgentHandoff `json:"handoff"`
+	}
+	decodeJSON(t, secondResp, &secondPayload)
+	if secondPayload.Handoff.Status != "acknowledged" {
+		t.Fatalf("second handoff = %#v, want room-auto acknowledged", secondPayload.Handoff)
+	}
+
+	staleCompletionNote := "旧 reviewer closeout 不该覆盖当前 Memory Clerk 真相。"
+	completeResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+firstPayload.Handoff.ID, map[string]string{
+		"action":        "completed",
+		"actingAgentId": "agent-claude-review-runner",
+		"note":          staleCompletionNote,
+	})
+	defer completeResp.Body.Close()
+	if completeResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST stale handoff complete status = %d, want %d", completeResp.StatusCode, http.StatusOK)
+	}
+
+	runResp, err := http.Get(server.URL + "/v1/runs/run_runtime_01/detail")
+	if err != nil {
+		t.Fatalf("GET run detail error = %v", err)
+	}
+	defer runResp.Body.Close()
+	if runResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET run detail status = %d, want %d", runResp.StatusCode, http.StatusOK)
+	}
+	var detail store.RunDetail
+	decodeJSON(t, runResp, &detail)
+	if detail.Run.Owner != "Memory Clerk" || detail.Room.Topic.Owner != "Memory Clerk" {
+		t.Fatalf("run detail owner truth = %#v / %#v, want Memory Clerk remain current owner", detail.Run, detail.Room.Topic)
+	}
+	if len(detail.History) == 0 || !detail.History[0].IsCurrent || detail.History[0].Run.ID != detail.Run.ID {
+		t.Fatalf("run detail history = %#v, want current run first", detail.History)
+	}
+
+	centerResp, err := http.Get(server.URL + "/v1/memory-center")
+	if err != nil {
+		t.Fatalf("GET /v1/memory-center error = %v", err)
+	}
+	defer centerResp.Body.Close()
+	if centerResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/memory-center status = %d, want %d", centerResp.StatusCode, http.StatusOK)
+	}
+	var center store.MemoryCenter
+	decodeJSON(t, centerResp, &center)
+	preview := findPreviewBySession(center.Previews, "session-runtime")
+	if preview == nil {
+		t.Fatalf("session-runtime preview missing: %#v", center.Previews)
+	}
+	if !strings.Contains(preview.PromptSummary, "Memory Clerk") {
+		t.Fatalf("preview summary = %q, want current owner Memory Clerk", preview.PromptSummary)
+	}
+	if strings.Contains(preview.PromptSummary, "优先给 exact-head reviewer verdict 和 scope-local blocker。") {
+		t.Fatalf("preview summary = %q, should not fall back to stale reviewer prompt", preview.PromptSummary)
+	}
+
+	state := readStateSnapshot(t, server.URL)
+	aggregation := state.Workspace.Governance.ResponseAggregation
+	if aggregation.Aggregator != "Memory Clerk" {
+		t.Fatalf("response aggregation aggregator = %#v, want current owner Memory Clerk", aggregation)
+	}
+	if !strings.Contains(aggregation.FinalResponse, "Memory Clerk") {
+		t.Fatalf("response aggregation final response = %#v, want current owner closeout truth", aggregation)
+	}
+	if strings.Contains(aggregation.FinalResponse, staleCompletionNote) {
+		t.Fatalf("response aggregation final response = %#v, should ignore stale completion note", aggregation)
+	}
+}
+
 func readStateSnapshot(t *testing.T, serverURL string) store.State {
 	t.Helper()
 

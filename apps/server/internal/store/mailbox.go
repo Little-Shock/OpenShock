@@ -30,6 +30,7 @@ var (
 
 const (
 	handoffKindManual           = "manual"
+	handoffKindRoomAuto         = "room-auto"
 	handoffKindGoverned         = "governed"
 	handoffKindDeliveryCloseout = "delivery-closeout"
 	handoffKindDeliveryReply    = "delivery-reply"
@@ -164,6 +165,7 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 	now := time.Now()
 	nowClock := shortClock()
 	updatedAt := mailboxEventTimestamp(now)
+	shouldSyncActiveRun := shouldSyncHandoffIntoActiveRun(*handoff, action, s.state.Runs[runIndex].Owner)
 	presentation := handoffActionPresentation(*handoff, actingAgent, action, note)
 	presentation = s.decorateDeliveryDelegationParentPresentationLocked(*handoff, presentation)
 
@@ -185,13 +187,16 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 		s.state.Rooms[roomIndex].Topic.Owner = handoff.ToAgent
 		s.state.Runs[runIndex].Owner = handoff.ToAgent
 		s.state.Issues[issueIndex].Owner = handoff.ToAgent
+		shouldSyncActiveRun = true
 	}
-	s.state.Runs[runIndex].NextAction = presentation.NextAction
-	s.updateSessionLocked(handoff.RunID, func(item *Session) {
-		item.Summary = presentation.Summary
-		item.ControlNote = presentation.NextAction
-		item.UpdatedAt = updatedAt
-	})
+	if shouldSyncActiveRun {
+		s.state.Runs[runIndex].NextAction = presentation.NextAction
+		s.updateSessionLocked(handoff.RunID, func(item *Session) {
+			item.Summary = presentation.Summary
+			item.ControlNote = presentation.NextAction
+			item.UpdatedAt = updatedAt
+		})
+	}
 	s.updateHandoffInboxLocked(*handoff, presentation.Title, presentation.Summary)
 	s.appendRoomMessageLocked(handoff.RoomID, Message{
 		ID:      fmt.Sprintf("%s-system-%d", handoff.RoomID, now.UnixNano()),
@@ -230,6 +235,19 @@ func (s *Store) AdvanceHandoff(handoffID string, input MailboxUpdateInput) (Stat
 		return State{}, AgentHandoff{}, err
 	}
 	return cloneState(s.state), *handoff, nil
+}
+
+func shouldSyncHandoffIntoActiveRun(handoff AgentHandoff, action, currentOwner string) bool {
+	if handoff.Kind == handoffKindDeliveryCloseout || handoff.Kind == handoffKindDeliveryReply {
+		return true
+	}
+	if action == "acknowledged" {
+		return true
+	}
+	if handoff.Status != "acknowledged" {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(currentOwner), strings.TrimSpace(handoff.ToAgent))
 }
 
 func (s *Store) createHandoffLocked(input MailboxCreateInput) (AgentHandoff, error) {
@@ -322,15 +340,124 @@ func (s *Store) createHandoffLocked(input MailboxCreateInput) (AgentHandoff, err
 		item.ControlNote = handoff.LastAction
 		item.UpdatedAt = createdAt
 	})
-	s.appendRoomMessageLocked(roomID, Message{
-		ID:      fmt.Sprintf("%s-system-%d", roomID, now.UnixNano()),
+	if handoffKind != handoffKindRoomAuto {
+		s.appendRoomMessageLocked(roomID, Message{
+			ID:      fmt.Sprintf("%s-system-%d", roomID, now.UnixNano()),
+			Speaker: "System",
+			Role:    "system",
+			Tone:    "system",
+			Message: fmt.Sprintf("%s 向 %s 发起正式交接：%s。Mailbox 里现在可以追踪 request -> ack / blocked / complete。", fromAgent.Name, toAgent.Name, title),
+			Time:    nowClock,
+		})
+		return handoff, nil
+	}
+
+	return s.autoAcknowledgeRoomHandoffLocked(handoff.ID, roomIndex, runIndex, issueIndex)
+}
+
+func (s *Store) autoAcknowledgeRoomHandoffLocked(handoffID string, roomIndex, runIndex, issueIndex int) (AgentHandoff, error) {
+	handoffIndex := -1
+	for index := range s.state.Mailbox {
+		if s.state.Mailbox[index].ID == handoffID {
+			handoffIndex = index
+			break
+		}
+	}
+	if handoffIndex == -1 {
+		return AgentHandoff{}, ErrMailboxHandoffNotFound
+	}
+
+	handoff := &s.state.Mailbox[handoffIndex]
+	actingAgentIndex := -1
+	for index := range s.state.Agents {
+		if s.state.Agents[index].ID == handoff.ToAgentID {
+			actingAgentIndex = index
+			break
+		}
+	}
+	if actingAgentIndex == -1 {
+		return AgentHandoff{}, ErrMailboxAgentNotFound
+	}
+
+	now := time.Now()
+	nowClock := shortClock()
+	updatedAt := mailboxEventTimestamp(now)
+	actingAgent := &s.state.Agents[actingAgentIndex]
+	previousOwner := strings.TrimSpace(s.state.Runs[runIndex].Owner)
+	if previousOwner == "" {
+		previousOwner = handoff.FromAgent
+	}
+
+	nextSummary := fmt.Sprintf("%s 已接棒：%s", handoff.ToAgent, handoff.Title)
+	nextAction := fmt.Sprintf("当前由 %s 继续推进；如需补充，再直接在房间里追加消息。", handoff.ToAgent)
+	roomMessage := fmt.Sprintf("%s 已接棒：%s。", handoff.ToAgent, handoff.Title)
+	inboxSummary := fmt.Sprintf("%s 正在跟进：%s", handoff.ToAgent, defaultString(strings.TrimSpace(handoff.Summary), handoff.Title))
+	providerLabel := strings.TrimSpace(defaultString(strings.TrimSpace(actingAgent.ProviderPreference), strings.TrimSpace(actingAgent.Provider)))
+
+	handoff.Status = "acknowledged"
+	handoff.UpdatedAt = updatedAt
+	handoff.LastAction = nextAction
+	appendMailboxMessageLocked(
+		handoff,
+		"ack",
+		actingAgent.ID,
+		actingAgent.Name,
+		nextSummary,
+		updatedAt,
+	)
+
+	s.state.Rooms[roomIndex].Topic.Owner = handoff.ToAgent
+	s.state.Rooms[roomIndex].Topic.Status = "running"
+	s.state.Rooms[roomIndex].Topic.Summary = nextSummary
+
+	s.state.Issues[issueIndex].Owner = handoff.ToAgent
+	s.state.Issues[issueIndex].State = "running"
+
+	s.state.Runs[runIndex].Owner = handoff.ToAgent
+	s.state.Runs[runIndex].Status = "running"
+	s.state.Runs[runIndex].Summary = nextSummary
+	s.state.Runs[runIndex].NextAction = nextAction
+	if providerLabel != "" {
+		s.state.Runs[runIndex].Provider = providerLabel
+	}
+	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{
+		ID:    fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1),
+		Label: fmt.Sprintf("%s 已自动接棒", handoff.ToAgent),
+		At:    nowClock,
+		Tone:  "lime",
+	})
+
+	if previousOwner != "" && previousOwner != handoff.ToAgent {
+		s.updateAgentStateLocked(previousOwner, "idle", "等待下一次接棒或房间补充")
+	}
+	actingAgent.State = "running"
+	actingAgent.Mood = "正在跟进当前房间"
+	actingAgent.Lane = s.state.Issues[issueIndex].Key
+	actingAgent.RecentRunIDs = prependUnique(actingAgent.RecentRunIDs, s.state.Runs[runIndex].ID)
+
+	s.updateSessionLocked(handoff.RunID, func(item *Session) {
+		item.Status = "running"
+		item.Summary = nextSummary
+		item.ControlNote = nextAction
+		item.UpdatedAt = updatedAt
+		if providerLabel != "" {
+			item.Provider = providerLabel
+		}
+		if len(item.MemoryPaths) == 0 {
+			item.MemoryPaths = defaultSessionMemoryPaths(item.RoomID, item.IssueKey)
+		}
+	})
+	s.updateHandoffInboxLocked(*handoff, fmt.Sprintf("%s 已接棒", handoff.ToAgent), inboxSummary)
+	s.appendRoomMessageLocked(handoff.RoomID, Message{
+		ID:      fmt.Sprintf("%s-system-%d", handoff.RoomID, now.UnixNano()),
 		Speaker: "System",
 		Role:    "system",
 		Tone:    "system",
-		Message: fmt.Sprintf("%s 向 %s 发起正式交接：%s。Mailbox 里现在可以追踪 request -> ack / blocked / complete。", fromAgent.Name, toAgent.Name, title),
+		Message: roomMessage,
 		Time:    nowClock,
 	})
-	return handoff, nil
+
+	return *handoff, nil
 }
 
 func (s *Store) createGovernedHandoffForRoomLocked(roomID string) (AgentHandoff, WorkspaceGovernanceSuggestedHandoff, error) {
@@ -568,6 +695,8 @@ func mailboxInboxHref(handoffID, roomID string) string {
 
 func normalizeHandoffKind(kind string) string {
 	switch strings.TrimSpace(kind) {
+	case handoffKindRoomAuto:
+		return handoffKindRoomAuto
 	case handoffKindGoverned:
 		return handoffKindGoverned
 	case handoffKindDeliveryCloseout:

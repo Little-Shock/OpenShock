@@ -1286,3 +1286,18 @@
   5. 再向同一 room 补充澄清信息，确认下一轮继续路由给 waiting owner，且 `/v1/memory-center` preview 继续保持同一 current owner。
 - 预期结果: clarification wait 期间和 restart 之后，room route、memory preview、provider summary、owner truth 必须保持同一份 durable continuity；不能因为 reload/restart 掉回旧 owner、旧 prompt scaffold 或旧 provider 视图。
 - 业务结论: 2026 年 4 月 12 日新增 `TestRoomAutoHandoffClarificationMemoryCenterPreviewPersistsAcrossRestart`，把 `正式交棒 -> 阻塞澄清 -> /v1/memory-center preview -> reload -> 恢复回复` 这条跨链回归正式锁进 `go test ./apps/server/internal/api`。同轮还复跑了 `TestRoomAutoHandoffClarificationFollowupSurvivesRestart`、`TestRoomMessageRouteClarificationWaitSurvivesStoreReload`、`TestMemoryCenterProviderPreviewTracksCurrentOwnerAcrossHandoffReload` 与 `TestMemoryProviderPreviewFollowsCurrentOwnerAcrossHandoffReload`，因此这条 room/memory/restart 连续性当前转为 `Pass`。
+
+## TC-092 Current Owner Truth Beats Stale Completion Aggregation
+
+- 业务目标: 确认当 `A -> B -> C` 顺序交接后，旧 lane 的 completion note 不会再冲掉当前 owner 的 `run detail / session control note / memory preview / workspace governance final response`；三个面对外真相必须继续围当前 owner 收口。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21` `CHK-22`
+- 前置条件: room-auto handoff contract、run detail history surface、memory center preview 和 workspace governance response aggregation 已存在。
+- 测试步骤:
+  1. 在 `room-runtime` 依次执行 `Codex Dockmaster -> Claude Review Runner -> Memory Clerk` 两次 room-auto handoff，确认当前 owner 已切到 `Memory Clerk`。
+  2. 对第一条旧 handoff 追加 `completed`，写入一条只属于旧 reviewer lane 的 closeout note。
+  3. 读取 `/v1/runs/run_runtime_01/detail`，确认 `run.Owner / room.Topic.Owner / history[0]` 仍锚定当前 run 和 `Memory Clerk`。
+  4. 读取 `/v1/memory-center`，确认 `session-runtime` preview 继续使用 `Memory Clerk` 的 prompt scaffold，不回落到 stale reviewer prompt。
+  5. 读取 `/v1/state`，确认 `workspace.governance.responseAggregation.aggregator/finalResponse` 继续围当前 owner，而不是吃进旧 handoff 的 completion note。
+- 预期结果: 旧 handoff completion 只能留在自己的 mailbox ledger，不得回写污染当前 active run/session/governance aggregation；对外 surface 必须继续锚定当前 owner 的 closeout truth。
+- 业务结论: 2026 年 4 月 13 日新增 `TestGovernanceAggregationPrefersCurrentOwnerOverStaleCompletedHandoff` 与 `TestStaleCompletedHandoffDoesNotOverrideActiveRunTruth`，同时复跑 `TestRunDetailRouteReturnsResumeContextAndRoomHistory`、`TestMemoryProviderPreviewFollowsCurrentOwnerAcrossHandoffReload`、`TestMailboxLifecycleUpdatesGovernanceSnapshot` 与 `TestRoomAutoHandoffClarificationMemoryCenterPreviewPersistsAcrossRestart`。当前 targeted `go test ./apps/server/internal/api` 与 `go test ./apps/server/internal/store` 已确认旧 reviewer closeout 不会再抢走 `Memory Clerk` 的 active owner / final response truth，因此这条跨 `run -> memory -> governance` 聚合连续性用例当前转为 `Pass`。
