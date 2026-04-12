@@ -1186,6 +1186,32 @@ func (s *Store) AppendSystemRoomMessage(roomID, speaker, text, tone string) (Sta
 	return cloneState(s.state), nil
 }
 
+func (s *Store) SuppressRoomAutoHandoffAnnouncement(roomID, owner, title string) (State, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		return cloneState(s.state), false, nil
+	}
+	expected := strings.TrimSpace(fmt.Sprintf("%s 已接棒：%s。", strings.TrimSpace(owner), strings.TrimSpace(title)))
+	if expected == "" {
+		return cloneState(s.state), false, nil
+	}
+	last, ok := s.removeLastRoomMessageLocked(roomID)
+	if !ok {
+		return cloneState(s.state), false, nil
+	}
+	if last.Role != "system" || !strings.EqualFold(strings.TrimSpace(last.Speaker), "System") || strings.TrimSpace(last.Message) != expected {
+		s.appendRoomMessageLocked(roomID, last)
+		return cloneState(s.state), false, nil
+	}
+	if err := s.persistLocked(); err != nil {
+		return State{}, false, err
+	}
+	return cloneState(s.state), true, nil
+}
+
 func (s *Store) AppendRuntimeLeaseConflict(roomID, speaker, text, inboxTitle, nextAction, controlNote string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

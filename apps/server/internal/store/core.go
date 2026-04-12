@@ -414,6 +414,25 @@ func (s *Store) appendRoomMessageLocked(roomID string, msg Message) {
 	}
 }
 
+func (s *Store) removeLastRoomMessageLocked(roomID string) (Message, bool) {
+	messages := s.state.RoomMessages[roomID]
+	if len(messages) == 0 {
+		return Message{}, false
+	}
+	last := messages[len(messages)-1]
+	s.state.RoomMessages[roomID] = messages[:len(messages)-1]
+	for index := range s.state.Rooms {
+		if s.state.Rooms[index].ID != roomID {
+			continue
+		}
+		if count := len(s.state.Rooms[index].MessageIDs); count > 0 {
+			s.state.Rooms[index].MessageIDs = s.state.Rooms[index].MessageIDs[:count-1]
+		}
+		break
+	}
+	return last, true
+}
+
 func (s *Store) findPullRequestLocked(pullRequestID string) int {
 	for index, item := range s.state.PullRequests {
 		if item.ID == pullRequestID {

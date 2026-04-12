@@ -1242,3 +1242,32 @@
   5. 验证 preview 不再出现 `Claude Review Runner` 的 stale prompt scaffold。
 - 预期结果: memory preview 必须围当前 owner 与 provider binding 的组合真相前滚；handoff 和重启后既不能把 agent prompt 漂回旧 owner，也不能丢失 provider orchestration/health 摘要。
 - 业务结论: 2026 年 4 月 12 日新增 `TestMemoryProviderPreviewFollowsCurrentOwnerAcrossHandoffReload` 与 `TestMemoryCenterProviderPreviewTracksCurrentOwnerAcrossHandoffReload`，把 `provider binding -> room-auto handoff -> session-runtime preview -> reload` 这条跨链回归同时锁进 `store` 与 `/v1/memory-center` contract。当前 targeted `go test ./apps/server/internal/store` 与 `go test ./apps/server/internal/api` 已覆盖 `Memory Clerk` 当前 owner、provider degraded summary 和 reload 后不回落到 stale Claude prompt，因此这条 memory/provider continuity 用例当前转为 `Pass`。
+
+## TC-089 Mention Reply Claim Guard
+
+- 业务目标: 确认被点名的 Agent 即使返回 `summary` 或 `clarification_request`，也不会因为误带 `CLAIM: take` 就偷偷改掉当前 owner；`CLAIM: take` 只应对真正的持续接手消息生效。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: room 已有稳定 owner；至少存在一名被 mention 的次级 Agent；room message route 支持 `SEND_PUBLIC_MESSAGE` envelope。
+- 测试步骤:
+  1. 发送一条明确点名次级 Agent 的房间消息，让 daemon 返回 `KIND: summary`、`CLAIM: take` 的公开同步。
+  2. 检查返回的公开正文与 room timeline，确认 summary 正常显示，但 `room / run / issue` owner 保持原 owner 不变。
+  3. 再发送一条明确点名次级 Agent 的房间消息，让 daemon 返回 `KIND: clarification_request`、`CLAIM: take` 的阻塞澄清。
+  4. 检查返回的公开问题与 room paused 状态，确认当前 speaker 正确切到被点名 Agent，但 owner 仍保持原 owner，不生成额外 formal handoff。
+- 预期结果: mention-response 的 `summary / clarification_request` 只能产生可见同步或问题，不得顺手改写 owner truth。owner 只能在真正的 `message + CLAIM: take` 或 formal handoff 下前滚。
+- 业务结论: 2026 年 4 月 12 日新增 `TestRoomMessageRouteSummaryClaimTakeDoesNotTransferOwnership` 与 `TestRoomMessageRouteClarificationClaimTakeDoesNotTransferOwnership`，并把 `applyRoomResponseDirectives` 收紧为只对 `KIND: message` 接受 `CLAIM: take`。当前 targeted `go test ./apps/server/internal/api` 已验证 summary/clarification 两条路径都不会再偷改 `room / run / issue` owner，因此这条 claim guard 用例当前转为 `Pass`。
+
+## TC-090 Auto-Handoff Public Speech Discipline
+
+- 业务目标: 确认 room-auto handoff 后的自动续写不再重复“我已接手”式铺垫，也不会把公开房间写成长段旁白；回复要更像自然团队同步，同时继续保持 protocol leak 防护。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-21`
+- 前置条件: room-auto handoff contract 已开启；存在可重放的多 Agent 顺序协作脚本；公开消息仍通过 `SEND_PUBLIC_MESSAGE` envelope 进入房间。
+- 测试步骤:
+  1. 读取 auto-followup prompt，确认其明确要求优先 `KIND: no_response`、不要继续转交别人、若公开回复则只用 `1 到 2 句` 说明当前判断和下一步。
+  2. 让 auto-handoff followup 明确返回 `SEND_PUBLIC_MESSAGE / KIND: no_response`，确认 owner / mailbox 继续前滚，但房间里不会再追加一条冗余的 “已接棒” system narration。
+  3. 运行 `A -> B -> C` 的多 Agent 有头脚本，检查两次 auto-handoff 后的公开房间消息。
+  4. 检查 `/mailbox` 与 `/memory`，确认 owner continuity、provider preview 与 handoff ledger 继续成立。
+  5. 对 room state 做 protocol leak probe，确认公开消息不泄露 `SEND_PUBLIC_MESSAGE` 或 `OPENSHOCK_HANDOFF:` 内部协议。
+- 预期结果: auto-handoff 的自动续写应更短、更直接、更像房间里的自然同步；若接棒方选择静默内部推进，公开房间里不应再多出一条系统旁白，同时 owner continuity、Mailbox/memory continuity 与 protocol hygiene 不得回退。
+- 业务结论: 2026 年 4 月 12 日新增 `TestBuildRoomAutoFollowupPromptPrefersSilentContinuation` 与 `TestRoomAutoHandoffFollowupSupportsNoResponseEnvelope`，把 auto-followup prompt 收紧为“优先静默继续，公开回复时只保留当前判断 + 下一步”，并验证 `no_response` 时不会再在 room transcript 里补一条冗余的 `已接棒` system narration。同日重新执行 `node ./scripts/headed-multi-agent-movie-studio.mjs --report output/testing/headed-multi-agent-movie-studio-report.md`，继续给出 `VERDICT: PASS`，覆盖 `星野产品 -> 折光交互 -> 青岚策展` 的顺序交接、Mailbox walkthrough、`/memory` preview continuity 和 protocol leak probe，因此这条公开发言纪律用例当前转为 `Pass`。

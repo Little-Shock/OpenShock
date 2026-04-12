@@ -78,7 +78,8 @@ func TestBuildRoomExecPromptIncludesRoomRunAndRecentContext(t *testing.T) {
 		"- 先在内部判断这条消息是否需要公开回复、是否需要你接手，再决定输出。",
 		"- 公开消息只能通过 SEND_PUBLIC_MESSAGE 这个封装返回；不要把正文裸写出来。",
 		"- 先判断这条消息是否真的需要一个可见回复。",
-		"- 默认控制在 3 到 6 句；先直接回答，再补下一步。",
+		"- 默认控制在 1 到 3 句；先直接回答，再补下一步。",
+		"- 如果只是内部继续执行，不要为了刷存在感发公开消息；优先 KIND: no_response。",
 		"- 除非用户明确要求，不要长篇分点，不要复述系统背景。",
 		"- 如果要回复，第一句必须像团队成员在聊天里说话，不要写成报告。",
 		"- 如果本轮要接手、推进或同步结果，在第一句自然说清楚，不要写内部思考过程。",
@@ -89,9 +90,10 @@ func TestBuildRoomExecPromptIncludesRoomRunAndRecentContext(t *testing.T) {
 		"- 如果这轮其实不需要你可见回复，就返回 SEND_PUBLIC_MESSAGE，KIND: no_response，BODY 留空。",
 		"- 如果你要回复，就返回 SEND_PUBLIC_MESSAGE，KIND: message，然后在 BODY 写自然中文；系统只会展示 BODY。",
 		"- 如果你只缺一个继续推进所必需的信息，就返回 KIND: clarification_request，然后在 BODY 里只问那一个问题。",
-		"- 如果你只是做简短收尾或状态同步，就返回 KIND: summary，然后在 BODY 里写简短同步。",
+		"- 如果你只是做简短收尾或状态同步，就返回 KIND: summary；只写 1 到 2 句必要同步，不要重复房间背景。",
 		"- 只有你准备继续承担这条房间后续工作时，才把 CLAIM 设为 take；只是被点名答一句时保持 CLAIM: keep。",
 		"- 如果要把当前线程交给别人继续，也可以返回 KIND: handoff，然后在 BODY 里用 @agent_id 点名接手人；系统会自动把它记成正式交接。",
+		"- handoff 正文只写一句短交棒，不要把上下文再讲一遍。",
 		"- 如果这轮应该交给别的智能体继续，在正文最后单独追加一行：OPENSHOCK_HANDOFF: <agent_id> | <title> | <summary>",
 		"  - agent-claude-review-runner | Claude Review Runner | Review Runner | lane=OPS-19",
 		"- 不要把打算做的事说成已经做完。",
@@ -270,11 +272,32 @@ func TestBuildRoomExecPromptIncludesMentionResponseHint(t *testing.T) {
 		"当前触发提醒：",
 		"- 这条消息明确点名了 Claude Review Runner，默认由他直接回应。",
 		"- 被点名不等于自动接手；只有准备继续负责后续工作时，才显式 CLAIM: take。",
+		"- 如果只是被点名答一句，不要顺手写成长段接手宣言。",
 		"- 本轮请以 Claude Review Runner 的身份回应，不要替多个智能体同时发言。",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected mention-response prompt to contain %q, got:\n%s", expected, prompt)
 		}
+	}
+}
+
+func TestBuildRoomAutoFollowupPromptKeepsReplyShortAndConcrete(t *testing.T) {
+	prompt := buildRoomAutoFollowupPrompt("Claude Review Runner", "继续复核恢复链路")
+
+	for _, expected := range []string{
+		"你刚刚已经接住当前房间的正式交棒",
+		"继续复核恢复链路",
+		"Claude Review Runner",
+		"用 1 到 2 句给当前判断和下一步",
+		"不要重复“我已接手”这类铺垫",
+		"这轮不要继续转交别人",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected auto followup prompt to contain %q, got:\n%s", expected, prompt)
+		}
+	}
+	if strings.Contains(prompt, "先自然说明你已接手") {
+		t.Fatalf("auto followup prompt should avoid repeated ownership narration, got:\n%s", prompt)
 	}
 }
 
@@ -466,6 +489,22 @@ func TestParseRoomResponseDirectivesSupportsCaseInsensitiveEnvelope(t *testing.T
 	}
 	if directives.DisplayOutput != "先同步当前结论。" {
 		t.Fatalf("display output = %q, want case-insensitive body parse", directives.DisplayOutput)
+	}
+}
+
+func TestBuildRoomAutoFollowupPromptPrefersSilentContinuation(t *testing.T) {
+	prompt := buildRoomAutoFollowupPrompt("Claude Review Runner", "继续复核恢复链路")
+
+	for _, expected := range []string{
+		"你刚刚已经接住当前房间的正式交棒",
+		"默认继续沿当前 room / run / worktree 内部推进",
+		"如果只是内部继续执行，优先返回 KIND: no_response。",
+		"用 1 到 2 句给当前判断和下一步，不要重复“我已接手”这类铺垫。",
+		"请直接以 Claude Review Runner 的身份继续推进。",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected auto followup prompt to contain %q, got:\n%s", expected, prompt)
+		}
 	}
 }
 

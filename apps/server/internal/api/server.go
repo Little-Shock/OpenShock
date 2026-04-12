@@ -641,8 +641,9 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 
 		directives := parseRoomResponseDirectives(strings.TrimSpace(payload.Output))
 		replySpeaker := roomReplySpeaker(snapshot, roomID, prompt)
+		suppressRelay := shouldSuppressRoomHandoffRelay(snapshot, roomID, directives)
 		var nextState store.State
-		if directives.SuppressReply {
+		if directives.SuppressReply || suppressRelay {
 			nextState, err = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, provider)
 		} else if directives.ReplyKind == "clarification_request" {
 			nextState, err = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, provider)
@@ -655,8 +656,21 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		nextState = s.applyRoomResponseDirectives(nextState, nextState, roomID, replySpeaker, provider, directives)
-		writeJSON(w, http.StatusOK, map[string]any{"output": directives.DisplayOutput, "state": nextState})
+		nextState, followupOutput := s.applyRoomResponseDirectives(nextState, nextState, roomID, replySpeaker, provider, directives)
+		visibleOutput := directives.DisplayOutput
+		if directives.SuppressReply {
+			visibleOutput = followupOutput
+		} else if suppressRelay {
+			if strings.TrimSpace(followupOutput) != "" {
+				visibleOutput = followupOutput
+			} else if strings.TrimSpace(directives.DisplayOutput) != "" {
+				if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, provider); restoreErr == nil {
+					nextState = restoredState
+				}
+				visibleOutput = directives.DisplayOutput
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"output": visibleOutput, "state": nextState})
 		return
 	}
 
@@ -1664,7 +1678,8 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 		appendErr error
 	)
 	replySpeaker := roomReplySpeaker(s.store.Snapshot(), roomID, prompt)
-	if directives.SuppressReply {
+	suppressRelay := shouldSuppressRoomHandoffRelay(s.store.Snapshot(), roomID, directives)
+	if directives.SuppressReply || suppressRelay {
 		nextState, appendErr = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, req.Provider)
 	} else if directives.ReplyKind == "clarification_request" {
 		nextState, appendErr = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, req.Provider)
@@ -1677,8 +1692,21 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 		_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "error", Error: appendErr.Error()})
 		return
 	}
-	nextState = s.applyRoomResponseDirectives(nextState, nextState, roomID, replySpeaker, req.Provider, directives)
-	_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "state", Output: directives.DisplayOutput, State: &nextState})
+	nextState, followupOutput := s.applyRoomResponseDirectives(nextState, nextState, roomID, replySpeaker, req.Provider, directives)
+	visibleOutput := directives.DisplayOutput
+	if directives.SuppressReply {
+		visibleOutput = followupOutput
+	} else if suppressRelay {
+		if strings.TrimSpace(followupOutput) != "" {
+			visibleOutput = followupOutput
+		} else if strings.TrimSpace(directives.DisplayOutput) != "" {
+			if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, req.Provider); restoreErr == nil {
+				nextState = restoredState
+			}
+			visibleOutput = directives.DisplayOutput
+		}
+	}
+	_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "state", Output: visibleOutput, State: &nextState})
 }
 
 func (s *Server) forwardGetJSON(w http.ResponseWriter, url string) {
@@ -1824,10 +1852,12 @@ func buildRoomExecPrompt(snapshot store.State, roomID, provider, userPrompt stri
 	builder.WriteString("- 先在内部判断这条消息是否需要公开回复、是否需要你接手，再决定输出。\n")
 	builder.WriteString("- 公开消息只能通过 SEND_PUBLIC_MESSAGE 这个封装返回；不要把正文裸写出来。\n")
 	builder.WriteString("- 先判断这条消息是否真的需要一个可见回复。\n")
-	builder.WriteString("- 默认控制在 3 到 6 句；先直接回答，再补下一步。\n")
+	builder.WriteString("- 默认控制在 1 到 3 句；先直接回答，再补下一步。\n")
+	builder.WriteString("- 如果只是内部继续执行，不要为了刷存在感发公开消息；优先 KIND: no_response。\n")
 	builder.WriteString("- 除非用户明确要求，不要长篇分点，不要复述系统背景。\n")
 	builder.WriteString("- 如果要回复，第一句必须像团队成员在聊天里说话，不要写成报告。\n")
 	builder.WriteString("- 如果本轮要接手、推进或同步结果，在第一句自然说清楚，不要写内部思考过程。\n")
+	builder.WriteString("- 如果只是被点名答一句，不要顺手写成长段接手宣言。\n")
 	builder.WriteString("- 默认沿用当前 room、run、branch 和 worktree 推进。\n")
 	if hasTurnAgent {
 		builder.WriteString(fmt.Sprintf("- 本轮请以 %s 的身份回应，不要替多个智能体同时发言。\n", turnAgent.Name))
@@ -1844,12 +1874,13 @@ func buildRoomExecPrompt(snapshot store.State, roomID, provider, userPrompt stri
 	builder.WriteString("- 如果这轮其实不需要你可见回复，就返回 SEND_PUBLIC_MESSAGE，KIND: no_response，BODY 留空。\n")
 	builder.WriteString("- 如果你要回复，就返回 SEND_PUBLIC_MESSAGE，KIND: message，然后在 BODY 写自然中文；系统只会展示 BODY。\n")
 	builder.WriteString("- 如果你只缺一个继续推进所必需的信息，就返回 KIND: clarification_request，然后在 BODY 里只问那一个问题。\n")
-	builder.WriteString("- 如果你只是做简短收尾或状态同步，就返回 KIND: summary，然后在 BODY 里写简短同步。\n")
+	builder.WriteString("- 如果你只是做简短收尾或状态同步，就返回 KIND: summary；只写 1 到 2 句必要同步，不要重复房间背景。\n")
 	builder.WriteString("- 只有你准备继续承担这条房间后续工作时，才把 CLAIM 设为 take；只是被点名答一句时保持 CLAIM: keep。\n")
 	builder.WriteString("- 如果信息不足，只问最小必要的澄清问题；否则直接推进。\n")
 	builder.WriteString("- 不要把打算做的事说成已经做完。\n")
 	if handoffCatalog := buildRoomHandoffCatalog(snapshot, roomID); handoffCatalog != "" {
 		builder.WriteString("- 如果要把当前线程交给别人继续，也可以返回 KIND: handoff，然后在 BODY 里用 @agent_id 点名接手人；系统会自动把它记成正式交接。\n")
+		builder.WriteString("- handoff 正文只写一句短交棒，不要把上下文再讲一遍。\n")
 		builder.WriteString("- 如果这轮应该交给别的智能体继续，在正文最后单独追加一行：OPENSHOCK_HANDOFF: <agent_id> | <title> | <summary>\n")
 		builder.WriteString("- 可交棒对象：\n")
 		builder.WriteString(handoffCatalog)
@@ -1867,7 +1898,7 @@ func buildRoomWakeupHint(snapshot store.State, roomID, wakeupMode string, turnAg
 		if name == "" {
 			name = defaultString(strings.TrimSpace(ownerAgent.Name), "当前智能体")
 		}
-		return fmt.Sprintf("- 这条消息明确点名了 %s，默认由他直接回应。\n- 被点名不等于自动接手；只有准备继续负责后续工作时，才显式 CLAIM: take。\n- 如果没有真实阻塞，不要把消息再转成旁白或代答。", name)
+		return fmt.Sprintf("- 这条消息明确点名了 %s，默认由他直接回应。\n- 被点名不等于自动接手；只有准备继续负责后续工作时，才显式 CLAIM: take。\n- 如果只是被点名答一句，不要顺手写成长段接手宣言。", name)
 	case "clarification_followup":
 		if _, ok := findOpenRoomClarificationWaitByAgent(snapshot, roomID, turnAgent.ID); ok {
 			return "- 你上一轮刚提出过阻塞性澄清，先判断这条新消息是否已经补齐关键信息。\n- 如果阻塞已解除，不要重复原问题，直接继续推进。"
@@ -2010,6 +2041,24 @@ func parseRoomResponseDirectives(output string) roomResponseDirectives {
 	}
 }
 
+func shouldSuppressRoomHandoffRelay(snapshot store.State, roomID string, directives roomResponseDirectives) bool {
+	if directives.ReplyKind != "handoff" {
+		return false
+	}
+	body := strings.TrimSpace(directives.DisplayOutput)
+	if body == "" {
+		return true
+	}
+	if !strings.HasPrefix(body, "@") {
+		return false
+	}
+	if directives.Handoff != nil {
+		return true
+	}
+	_, ok := inferRoomHandoffDirective(snapshot, roomID, body)
+	return ok
+}
+
 func parseRoomReplyEnvelope(output string) (string, string, string, bool) {
 	lines := strings.Split(strings.ReplaceAll(strings.TrimSpace(output), "\r\n", "\n"), "\n")
 	if len(lines) == 0 {
@@ -2093,8 +2142,8 @@ func parseRoomHandoffDirective(line string) (roomHandoffDirective, bool) {
 	return directive, true
 }
 
-func (s *Server) applyRoomResponseDirectives(current store.State, snapshot store.State, roomID, replySpeaker, provider string, directives roomResponseDirectives) store.State {
-	if directives.ClaimMode == "take" && directives.Handoff == nil && directives.ReplyKind != "handoff" {
+func (s *Server) applyRoomResponseDirectives(current store.State, snapshot store.State, roomID, replySpeaker, provider string, directives roomResponseDirectives) (store.State, string) {
+	if directives.ClaimMode == "take" && directives.Handoff == nil && directives.ReplyKind == "message" {
 		if nextState, err := s.store.ClaimRoomOwnership(roomID, replySpeaker, provider); err == nil {
 			current = nextState
 			snapshot = nextState
@@ -2107,18 +2156,17 @@ func (s *Server) applyRoomResponseDirectives(current store.State, snapshot store
 		}
 	}
 	if handoff == nil {
-		return current
+		return current, ""
 	}
 	handoffInput, ok := buildRoomAutoHandoffInput(snapshot, roomID, replySpeaker, *handoff)
 	if !ok {
-		return current
+		return current, ""
 	}
 	nextState, _, err := s.store.CreateHandoff(handoffInput)
 	if err != nil {
-		return current
+		return current, ""
 	}
-	nextState = s.continueRoomAutoHandoff(nextState, roomID, handoff.Title)
-	return nextState
+	return s.continueRoomAutoHandoff(nextState, roomID, handoff.Title)
 }
 
 func buildRoomAutoHandoffInput(snapshot store.State, roomID, fromAgentName string, directive roomHandoffDirective) (store.MailboxCreateInput, bool) {
@@ -2144,13 +2192,13 @@ func buildRoomAutoHandoffInput(snapshot store.State, roomID, fromAgentName strin
 	}, true
 }
 
-func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTitle string) store.State {
+func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTitle string) (store.State, string) {
 	room, _, _, ok := findRoomRunIssue(snapshot, roomID)
 	if !ok {
-		return snapshot
+		return snapshot, ""
 	}
 	if strings.TrimSpace(room.Topic.Owner) == "" {
-		return snapshot
+		return snapshot, ""
 	}
 
 	provider := resolveRoomExecProvider(snapshot, roomID, "")
@@ -2158,9 +2206,9 @@ func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTi
 		message := fmt.Sprintf("%s 已接棒，但当前无法继续执行：%s", room.Topic.Owner, blocked)
 		nextState, err := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
 		if err != nil {
-			return snapshot
+			return snapshot, ""
 		}
-		return nextState
+		return nextState, message
 	}
 
 	followupPrompt := buildRoomAutoFollowupPrompt(room.Topic.Owner, handoffTitle)
@@ -2174,14 +2222,20 @@ func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTi
 		message := fmt.Sprintf("%s 已接棒，但继续推进失败：%s", room.Topic.Owner, execFailureMessage("讨论间自动接棒", err))
 		nextState, appendErr := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
 		if appendErr != nil {
-			return snapshot
+			return snapshot, ""
 		}
-		return nextState
+		return nextState, message
 	}
 
 	directives := parseRoomResponseDirectives(strings.TrimSpace(payload.Output))
+	if directives.SuppressReply {
+		if nextState, _, err := s.store.SuppressRoomAutoHandoffAnnouncement(roomID, room.Topic.Owner, handoffTitle); err == nil {
+			return nextState, ""
+		}
+		return snapshot, ""
+	}
 	if strings.TrimSpace(directives.DisplayOutput) == "" {
-		return snapshot
+		return snapshot, ""
 	}
 	var nextState store.State
 	if directives.ReplyKind == "clarification_request" {
@@ -2192,14 +2246,14 @@ func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTi
 		nextState, err = s.store.AppendAgentRoomMessage(roomID, room.Topic.Owner, directives.DisplayOutput, provider)
 	}
 	if err != nil {
-		return snapshot
+		return snapshot, ""
 	}
-	return nextState
+	return nextState, directives.DisplayOutput
 }
 
 func buildRoomAutoFollowupPrompt(ownerName, handoffTitle string) string {
 	return fmt.Sprintf(
-		"你刚刚已经接住当前房间的正式交棒，主题是「%s」。请直接以 %s 的身份继续推进：先自然说明你已接手和当前判断，再给接下来一步。默认 2 到 4 句，除非真的阻塞，不要提问；这轮不要继续转交别人。",
+		"你刚刚已经接住当前房间的正式交棒，主题是「%s」。默认继续沿当前 room / run / worktree 内部推进，不要重讲背景，这轮不要继续转交别人。如果只是内部继续执行，优先返回 KIND: no_response。只有确实需要让人知道当前判断、同步阶段结论或提出唯一阻塞问题时，才公开回复；用 1 到 2 句给当前判断和下一步，不要重复“我已接手”这类铺垫。如果已经能直接开做，就不要提问。请直接以 %s 的身份继续推进。",
 		defaultString(strings.TrimSpace(handoffTitle), "继续当前房间"),
 		defaultString(strings.TrimSpace(ownerName), "当前接手智能体"),
 	)

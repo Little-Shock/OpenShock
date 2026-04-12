@@ -1320,6 +1320,100 @@ func TestRoomAutoHandoffFollowupSupportsClarificationRequest(t *testing.T) {
 	}
 }
 
+func TestRoomAutoHandoffFollowupSupportsNoResponseEnvelope(t *testing.T) {
+	root := t.TempDir()
+	requestCount := 0
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		requestCount += 1
+		if requestCount == 1 {
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "KIND: handoff\nBODY:\n@agent-claude-review-runner 你继续把恢复链路和副作用复核完。",
+				Duration: "0.6s",
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, DaemonExecResponse{
+			Provider: "claude",
+			Command:  []string{"claude", "--print"},
+			Output:   "SEND_PUBLIC_MESSAGE\nKIND: no_response\nBODY:",
+			Duration: "0.4s",
+		})
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Auto Handoff No Response", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续推进这条 lane",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST room message error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &payload)
+
+	if requestCount != 2 {
+		t.Fatalf("requestCount = %d, want 2 with silent auto followup", requestCount)
+	}
+	if payload.Output != "@agent-claude-review-runner 你继续把恢复链路和副作用复核完。" {
+		t.Fatalf("payload output = %q, want original visible handoff body", payload.Output)
+	}
+
+	room := findRoomByID(payload.State, created.RoomID)
+	run := findRunByID(payload.State, created.RunID)
+	var issue *store.Issue
+	if room != nil {
+		issue = findIssueByKey(payload.State, room.IssueKey)
+	}
+	if room == nil || room.Topic.Owner != "Claude Review Runner" {
+		t.Fatalf("room = %#v, want owner switched to Claude Review Runner", room)
+	}
+	if run == nil || run.Owner != "Claude Review Runner" {
+		t.Fatalf("run = %#v, want owner switched to Claude Review Runner", run)
+	}
+	if issue == nil || issue.Owner != "Claude Review Runner" {
+		t.Fatalf("issue = %#v, want owner switched to Claude Review Runner", issue)
+	}
+
+	roomMessages := payload.State.RoomMessages[created.RoomID]
+	for _, message := range roomMessages {
+		if message.Speaker == "Claude Review Runner" {
+			t.Fatalf("room messages = %#v, want no extra visible followup from claude", roomMessages)
+		}
+		if message.Speaker == "System" && strings.Contains(message.Message, "Claude Review Runner 已接棒") {
+			t.Fatalf("room messages = %#v, want no redundant system takeover narration", roomMessages)
+		}
+		if strings.Contains(message.Message, "已接手") {
+			t.Fatalf("room messages = %#v, want no filler takeover message", roomMessages)
+		}
+	}
+}
+
 func TestRoomAutoHandoffClarificationFollowupSurvivesRestart(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -1902,6 +1996,232 @@ func TestRoomMessageRouteClaimTakeTransfersOwnershipToMentionedAgent(t *testing.
 	}
 	if len(payload.State.Mailbox) != 0 {
 		t.Fatalf("mailbox = %#v, want no formal handoff for claim-take reply", payload.State.Mailbox)
+	}
+}
+
+func TestRoomMessageRouteSummaryClaimTakeDoesNotTransferOwnership(t *testing.T) {
+	root := t.TempDir()
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, DaemonExecResponse{
+			Provider: "claude",
+			Command:  []string{"claude", "--print"},
+			Output:   "SEND_PUBLIC_MESSAGE\nKIND: summary\nCLAIM: take\nBODY:\n当前结论先收住，下一步我按这条恢复链路继续复核。",
+			Duration: "0.4s",
+		})
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Summary Claim Guard", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt": "@agent-claude-review-runner 你先同步一下当前结论。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST room message error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &payload)
+
+	if payload.Output != "当前结论先收住，下一步我按这条恢复链路继续复核。" {
+		t.Fatalf("payload output = %q, want summary body", payload.Output)
+	}
+
+	room := findRoomByID(payload.State, created.RoomID)
+	run := findRunByID(payload.State, created.RunID)
+	var issue *store.Issue
+	if room != nil {
+		issue = findIssueByKey(payload.State, room.IssueKey)
+	}
+	if room == nil || room.Topic.Owner != "Codex Dockmaster" {
+		t.Fatalf("room = %#v, want owner unchanged for summary claim", room)
+	}
+	if run == nil || run.Owner != "Codex Dockmaster" {
+		t.Fatalf("run = %#v, want run owner unchanged for summary claim", run)
+	}
+	if issue == nil || issue.Owner != "Codex Dockmaster" {
+		t.Fatalf("issue = %#v, want issue owner unchanged for summary claim", issue)
+	}
+	if len(payload.State.Mailbox) != 0 {
+		t.Fatalf("mailbox = %#v, want no formal handoff for summary claim", payload.State.Mailbox)
+	}
+}
+
+func TestRoomMessageRouteClarificationClaimTakeDoesNotTransferOwnership(t *testing.T) {
+	root := t.TempDir()
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, DaemonExecResponse{
+			Provider: "claude",
+			Command:  []string{"claude", "--print"},
+			Output:   "SEND_PUBLIC_MESSAGE\nKIND: clarification_request\nCLAIM: take\nBODY:\n先确认一下，这条恢复链路现在允许我直接改 billing guard 吗？",
+			Duration: "0.4s",
+		})
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Clarification Claim Guard", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt": "@agent-claude-review-runner 你先看下还有什么阻塞。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST room message error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &payload)
+
+	if payload.Output != "先确认一下，这条恢复链路现在允许我直接改 billing guard 吗？" {
+		t.Fatalf("payload output = %q, want clarification body", payload.Output)
+	}
+
+	room := findRoomByID(payload.State, created.RoomID)
+	run := findRunByID(payload.State, created.RunID)
+	var issue *store.Issue
+	if room != nil {
+		issue = findIssueByKey(payload.State, room.IssueKey)
+	}
+	if room == nil || room.Topic.Owner != "Codex Dockmaster" {
+		t.Fatalf("room = %#v, want owner unchanged for clarification claim", room)
+	}
+	if run == nil || run.Owner != "Codex Dockmaster" {
+		t.Fatalf("run = %#v, want run owner unchanged for clarification claim", run)
+	}
+	if issue == nil || issue.Owner != "Codex Dockmaster" {
+		t.Fatalf("issue = %#v, want issue owner unchanged for clarification claim", issue)
+	}
+	if len(payload.State.Mailbox) != 0 {
+		t.Fatalf("mailbox = %#v, want no formal handoff for clarification claim", payload.State.Mailbox)
+	}
+}
+
+func TestRoomMessageRouteHandoffEnvelopeSuppressesVisibleRelayAfterFollowup(t *testing.T) {
+	root := t.TempDir()
+	requestCount := 0
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		requestCount += 1
+		if requestCount == 1 {
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "KIND: handoff\nBODY:\n@agent-claude-review-runner 你继续复核恢复链路。",
+				Duration: "0.5s",
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, DaemonExecResponse{
+			Provider: "claude",
+			Command:  []string{"claude", "--print"},
+			Output:   "我来接这条复核，先看恢复链路，再回写结论。",
+			Duration: "0.4s",
+		})
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Handoff Relay Compression", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续推进这条 lane",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST room message error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &payload)
+
+	if requestCount != 2 {
+		t.Fatalf("requestCount = %d, want 2 with auto followup", requestCount)
+	}
+	if payload.Output != "我来接这条复核，先看恢复链路，再回写结论。" {
+		t.Fatalf("payload output = %q, want visible followup output", payload.Output)
+	}
+
+	roomMessages := payload.State.RoomMessages[created.RoomID]
+	lastMessage := roomMessages[len(roomMessages)-1]
+	if lastMessage.Speaker != "Claude Review Runner" || lastMessage.Message != "我来接这条复核，先看恢复链路，再回写结论。" {
+		t.Fatalf("last room message = %#v, want followup from Claude Review Runner", lastMessage)
+	}
+	for _, message := range roomMessages {
+		if strings.Contains(message.Message, "@agent-claude-review-runner 你继续复核恢复链路。") {
+			t.Fatalf("room messages should not keep visible relay body: %#v", roomMessages)
+		}
+	}
+
+	var handoff *store.AgentHandoff
+	for index := range payload.State.Mailbox {
+		item := &payload.State.Mailbox[index]
+		if item.RoomID == created.RoomID && item.Kind == "room-auto" {
+			handoff = item
+			break
+		}
+	}
+	if handoff == nil || handoff.ToAgentID != "agent-claude-review-runner" || handoff.Status != "acknowledged" {
+		t.Fatalf("handoff = %#v, want acknowledged handoff to claude reviewer", handoff)
 	}
 }
 

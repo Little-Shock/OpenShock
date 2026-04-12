@@ -433,13 +433,16 @@
   - [x] cross-room rollup 现在还会补 `current owner / current lane / next governed route` 元数据；`/mailbox` 可直接从 `ready` room 上 `Create Governed Handoff`，`/agents` 会镜像同一条 room-level route truth
   - [x] room-auto 的顺序交接当前已补专门回归：`A -> B -> C` 时，第二次 auto-followup 会围最新 owner 路由，不再因为 stale `RecentRunIDs` 把 provider、identity prompt 或 agent prompt scaffold 锚回上一位 Agent
   - [x] 当前 owner 的 room continuity 也已补重启恢复回归；store / server reload 后，下一条房间消息仍会继续路由给最新接手者，而不是掉回旧 owner 或旧 provider
+  - [x] mention-response 的 claim discipline 已收紧：`summary / clarification_request` 即使误带 `CLAIM: take` 也不会偷偷改写 owner；只有真正持续接手的 `message` 才会触发 claim transfer
+  - [x] room-auto 的公开续写提示也已压缩成“优先静默继续；若公开回复则只保留 `1 到 2 句当前判断 + 下一步`”，明确禁止重复“我已接手”式铺垫
+  - [x] 当接棒方明确返回 `KIND: no_response` 时，room transcript 现在还会自动抹掉那条冗余的 `已接棒` system narration；handoff truth 仍保留在 mailbox、owner state 与 `/memory` preview continuity 中
   - [x] PR detail 现在也已升级成 single delivery contract：release gate、operator handoff note、delivery template 与 evidence bundle 可在同页复核
   - [x] `/settings` 现在可直接编辑 team topology，并把 lane / role / default agent / handoff path 写回 durable workspace truth；`/setup` `/mailbox` `/agents` 会继续读取同一份配置，且已补 Windows Chrome 有头证据
   - [x] `/settings` 当前已改成 `core settings -> advanced governance / credentials / notifications` 的信息层级；高频路径先看 workspace/member 真值，重治理能力继续保留在高级区
 - 当前 GAP:
   - [ ] 更重的 multi-room dependency graph、cross-room auto-closeout 和跨 room 依赖治理仍留后续；当前已不再缺“当前 room ledger 的 bulk closeout”“policy-based batch orchestration”“显式 escalation queue”“跨 room escalation rollup”以及“room-level governed create action”
-  - [ ] `handoff -> clarification wait -> memory preview/provider choice -> restart resume` 这条跨链连续性还没有被一条完整回归完全锁死；目前已补 `顺序 handoff + clarification wait + restart owner continuity`，但 memory/provider 这段仍要继续收紧
-- 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052` `TC-053` `TC-054` `TC-055` `TC-056` `TC-057` `TC-058` `TC-059` `TC-060` `TC-061` `TC-062` `TC-063` `TC-064` `TC-065` `TC-066` `TC-067` `TC-068` `TC-069` `TC-070` `TC-071` `TC-072` `TC-073` `TC-074` `TC-075` `TC-076` `TC-078` `TC-079` `TC-080` `TC-081` `TC-082` `TC-083` `TC-084` `TC-087`
+  - [ ] `handoff -> clarification wait -> memory preview/provider choice -> restart resume` 这条跨链连续性还没有被一条完整回归完全锁死；目前已补 `顺序 handoff + clarification wait + restart owner continuity`，并新增 claim discipline / auto-handoff speech compression 回归，但 memory/provider 这段仍要继续收紧
+- 对应 Test Cases: `TC-039` `TC-041` `TC-050` `TC-051` `TC-052` `TC-053` `TC-054` `TC-055` `TC-056` `TC-057` `TC-058` `TC-059` `TC-060` `TC-061` `TC-062` `TC-063` `TC-064` `TC-065` `TC-066` `TC-067` `TC-068` `TC-069` `TC-070` `TC-071` `TC-072` `TC-073` `TC-074` `TC-075` `TC-076` `TC-078` `TC-079` `TC-080` `TC-081` `TC-082` `TC-083` `TC-084` `TC-087` `TC-089` `TC-090`
 
 ### CHK-22 配置持久化、数据库与恢复真相
 
