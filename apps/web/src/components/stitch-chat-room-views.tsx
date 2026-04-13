@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { DestructiveGuardCard } from "@/components/destructive-guard-views";
 import type { SidebarProfileEntry } from "@/components/stitch-shell-primitives";
@@ -10,6 +10,7 @@ import { QuickSearchSurface, StitchSidebar, StitchTopBar, WorkspaceStatusStrip }
 import { buildRunHistoryEntries, rewriteCustomerFacingText } from "@/lib/phase-zero-helpers";
 import { useQuickSearchController } from "@/lib/quick-search";
 import { buildNamedProfileHref, buildProfileHref } from "@/lib/profile-surface";
+import { useAutoScrollBottom } from "@/lib/use-auto-scroll-bottom";
 import {
   type AgentHandoff,
   type ApprovalCenterItem,
@@ -31,6 +32,41 @@ import { RunControlSurface } from "@/components/run-control-surface";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
+}
+
+function shouldSubmitComposer(event: KeyboardEvent<HTMLTextAreaElement>) {
+  return event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing;
+}
+
+function resizeComposer(node: HTMLTextAreaElement | null) {
+  if (!node) {
+    return;
+  }
+  node.style.height = "0px";
+  node.style.height = `${Math.min(node.scrollHeight, 176)}px`;
+}
+
+function insertTextAtCursor(
+  node: HTMLTextAreaElement | null,
+  value: string,
+  insertion: string,
+  onChange: (nextValue: string) => void
+) {
+  if (!node) {
+    onChange(`${value}${insertion}`);
+    return;
+  }
+
+  const start = node.selectionStart ?? value.length;
+  const end = node.selectionEnd ?? value.length;
+  const nextValue = `${value.slice(0, start)}${insertion}${value.slice(end)}`;
+  const nextCursor = start + insertion.length;
+  onChange(nextValue);
+  window.requestAnimationFrame(() => {
+    node.focus();
+    node.setSelectionRange(nextCursor, nextCursor);
+    resizeComposer(node);
+  });
 }
 
 function roleLabel(role: Message["role"]) {
@@ -2302,47 +2338,7 @@ function MessageStreamRow({
 }
 
 function useStickyMessageScroll(scopeId: string, messageCount: number, latestMessageSize: number) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const shouldStickToBottomRef = useRef(true);
-
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node) return;
-
-    const updateStickiness = () => {
-      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-      shouldStickToBottomRef.current = distanceFromBottom <= 72;
-    };
-
-    updateStickiness();
-    node.addEventListener("scroll", updateStickiness, { passive: true });
-    return () => node.removeEventListener("scroll", updateStickiness);
-  }, [scopeId]);
-
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node || !shouldStickToBottomRef.current) return;
-
-    const frame = window.requestAnimationFrame(() => {
-      node.scrollTop = node.scrollHeight;
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [scopeId, messageCount, latestMessageSize]);
-
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node) return;
-
-    shouldStickToBottomRef.current = true;
-    const frame = window.requestAnimationFrame(() => {
-      node.scrollTop = node.scrollHeight;
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [scopeId]);
-
-  return scrollRef;
+  return useAutoScrollBottom<HTMLDivElement>(`${scopeId}:${messageCount}:${latestMessageSize}`);
 }
 
 function ClaudeCompactComposer({
@@ -2400,7 +2396,7 @@ function ClaudeCompactComposer({
   );
   const latestMessage = messages[messages.length - 1];
   const scrollRef = useStickyMessageScroll(room.id, messages.length, latestMessage?.message.length ?? 0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const streamBuffersRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
@@ -2431,6 +2427,10 @@ function ClaudeCompactComposer({
     }
   }, [replyTarget]);
 
+  useEffect(() => {
+    resizeComposer(inputRef.current);
+  }, [draft]);
+
   const activePendingCount = pendingSends.filter((item) => !item.settled).length;
 
   function replacePlaceholderWithPreview(message: Message, preview: string, tone?: Message["tone"]) {
@@ -2446,7 +2446,6 @@ function ClaudeCompactComposer({
     const prompt = draft.trim();
     const sendPrompt = replyTarget ? `回复 ${replyTarget.speaker}：${prompt}` : prompt;
     setDraft("");
-    onClearReplyTarget?.();
     const now = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
     const requestId = `room-send-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const humanMessage: Message = {
@@ -2515,6 +2514,7 @@ function ClaudeCompactComposer({
           return;
         }
       });
+      onClearReplyTarget?.();
       const nextMessages = payload?.state?.roomMessages?.[room.id];
       if (nextMessages) {
         delete streamBuffersRef.current[requestId];
@@ -2540,6 +2540,7 @@ function ClaudeCompactComposer({
     } catch (error) {
       delete streamBuffersRef.current[requestId];
       const message = error instanceof Error ? error.message : "发送失败";
+      setDraft(prompt);
       setPendingSends((current) =>
         current.map((entry) =>
           entry.requestId === requestId
@@ -2558,6 +2559,9 @@ function ClaudeCompactComposer({
             : entry
         )
       );
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
     } finally {
     }
   }
@@ -2565,6 +2569,14 @@ function ClaudeCompactComposer({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await handleSend();
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!shouldSubmitComposer(event)) {
+      return;
+    }
+    event.preventDefault();
+    void handleSend();
   }
 
   return (
@@ -2593,16 +2605,29 @@ function ClaudeCompactComposer({
             <ReplyComposerChip replyTarget={replyTarget} onClear={() => onClearReplyTarget?.()} />
           ) : null}
         </div>
-        <form onSubmit={(event) => void handleSubmit(event)} className="mx-auto flex max-w-[1040px] items-center gap-3">
-          <input
+        <form onSubmit={(event) => void handleSubmit(event)} className="mx-auto flex max-w-[1040px] items-end gap-3">
+          <div className="flex min-w-0 flex-1 items-end gap-2 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-3 py-2 shadow-[var(--shock-shadow-sm)] transition-colors duration-150 focus-within:bg-white">
+            <button
+              type="button"
+              aria-label="mention teammate"
+              disabled={!canSend}
+              onClick={() => insertTextAtCursor(inputRef.current, draft, "@", setDraft)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-[var(--shock-ink)] bg-white text-sm shadow-[2px_2px_0_0_var(--shock-ink)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              @
+            </button>
+            <textarea
             ref={inputRef}
             data-testid="room-message-input"
             value={draft}
+            rows={1}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
             disabled={!canSend}
-            className="h-12 flex-1 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-4 text-[15px] outline-none transition-colors duration-150 focus:bg-white focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            className="min-h-[48px] flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-6 outline-none"
             placeholder={replyTarget ? `回复 ${replyTarget.speaker}` : "继续这条讨论"}
           />
+          </div>
           <button
             type="submit"
             data-testid="room-send-message"
@@ -2612,6 +2637,9 @@ function ClaudeCompactComposer({
             {activePendingCount > 0 ? "发送中" : "发送"}
           </button>
         </form>
+        <p className="mx-auto mt-2 max-w-[1040px] text-[12px] leading-5 text-[color:rgba(24,20,14,0.56)]">
+          回车发送，Shift + 回车换行。
+        </p>
         <p data-testid="room-reply-authz" className="mx-auto mt-2 max-w-[1040px] text-[12px] leading-5 text-[color:rgba(24,20,14,0.62)]">
           {roomReplyStatusLabel(sendStatus)}
         </p>
@@ -2685,7 +2713,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
   );
   const latestMessage = messages.length > 0 ? messages[messages.length - 1] : null;
   const messageScrollRef = useStickyMessageScroll(channelId, messages.length, latestMessage?.message.length ?? 0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
   const workspaceName = loading || error ? undefined : state.workspace.name;
   const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
@@ -2797,6 +2825,10 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     }
   }, [replyTarget]);
 
+  useEffect(() => {
+    resizeComposer(inputRef.current);
+  }, [draft]);
+
   function handleOpenThread(message: Message) {
     setSelectedThreadId(message.id);
     setReplyTarget(buildReplyTarget(message));
@@ -2870,7 +2902,11 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
       setReplyTarget(null);
     } catch (channelError) {
       setPendingMessages([]);
+      setDraft(submittedDraft);
       setSendError(channelError instanceof Error ? channelError.message : "频道消息发送失败");
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
     } finally {
       setSending(false);
     }
@@ -2879,6 +2915,14 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
   async function handleChannelSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await handleChannelSend();
+  }
+
+  function handleChannelComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!shouldSubmitComposer(event)) {
+      return;
+    }
+    event.preventDefault();
+    void handleChannelSend();
   }
 
   return (
@@ -3036,36 +3080,35 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                         <ReplyComposerChip replyTarget={replyTarget} onClear={() => setReplyTarget(null)} />
                       ) : null}
                     </div>
-                    <form onSubmit={(event) => void handleChannelSubmit(event)} className="mx-auto flex max-w-[1040px] items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label="attach message context"
-                        className="flex h-11 w-11 items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white text-lg shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                      >
-                        +
-                      </button>
-                      <input
-                        ref={inputRef}
-                        data-testid="channel-message-input"
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        disabled={!canChannelCompose}
-                        className="h-11 flex-1 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-3 font-mono text-[13px] outline-none transition-colors duration-150 focus:bg-white focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                        placeholder={
-                          replyTarget
-                            ? `继续回复 ${replyTarget.speaker}...`
+                    <form onSubmit={(event) => void handleChannelSubmit(event)} className="mx-auto flex max-w-[1040px] items-end gap-2">
+                      <div className="flex min-w-0 flex-1 items-end gap-2 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[#fafafa] px-3 py-2 shadow-[var(--shock-shadow-sm)] transition-colors duration-150 focus-within:bg-white">
+                        <button
+                          type="button"
+                          aria-label="mention teammate"
+                          disabled={!canChannelCompose}
+                          onClick={() => insertTextAtCursor(inputRef.current, draft, "@", setDraft)}
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-[var(--shock-ink)] bg-white text-sm shadow-[2px_2px_0_0_var(--shock-ink)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          @
+                        </button>
+                        <textarea
+                          ref={inputRef}
+                          data-testid="channel-message-input"
+                          value={draft}
+                          rows={1}
+                          onChange={(event) => setDraft(event.target.value)}
+                          onKeyDown={handleChannelComposerKeyDown}
+                          disabled={!canChannelCompose}
+                          className="min-h-[44px] flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-6 outline-none"
+                          placeholder={
+                            replyTarget
+                              ? `继续回复 ${replyTarget.speaker}...`
                               : canChannelCompose && channel
                                 ? `发送消息到 ${channel.name}...`
-                              : channelSendBoundary || "正在载入消息..."
-                        }
-                      />
-                      <button
-                        type="button"
-                        aria-label="mention teammate"
-                        className="flex h-11 w-11 items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                      >
-                        @
-                      </button>
+                                : channelSendBoundary || "正在载入消息..."
+                          }
+                        />
+                      </div>
                       <button
                         type="submit"
                         data-testid="channel-send-message"
@@ -3075,6 +3118,9 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                         {sending ? "发送中" : "发送"}
                       </button>
                     </form>
+                    <p className="mx-auto mt-2 max-w-[1040px] text-[12px] leading-5 text-[color:rgba(24,20,14,0.56)]">
+                      回车发送，Shift + 回车换行。
+                    </p>
                     {sendError ? (
                       <p data-testid="channel-send-error" className="mx-auto mt-3 max-w-[1040px] text-sm leading-6 text-[var(--shock-pink)]">
                         {sendError}

@@ -75,6 +75,11 @@ func TestBuildRoomExecPromptIncludesRoomRunAndRecentContext(t *testing.T) {
 		"- Codex Dockmaster[agent]: 我已经接到当前 worktree，会继续沿着这条 lane 推进。",
 		"本轮用户消息：",
 		"继续把 session continuity 做实",
+		"读取边界：",
+		"- 默认只围当前 room / run / worktree 和当前接手智能体的记忆继续推进。",
+		"- 如果需要补上下文，先看当前工作目录里的 MEMORY.md、notes/work-log.md 和当前 room 对应笔记，再决定是否继续扩展。",
+		"- 不要主动去翻别的 room、别的 issue、别的 worktree，或其他智能体的记忆空间。",
+		"- 只有用户明确要求，或当前回合必须排查系统级问题时，才扩大读取范围；扩大后必须在公开回复里同步原因。",
 		"- 先在内部判断这条消息是否需要公开回复、是否需要你接手，再决定输出。",
 		"- 公开消息只能通过 SEND_PUBLIC_MESSAGE 这个封装返回；不要把正文裸写出来。",
 		"- 先判断这条消息是否真的需要一个可见回复。",
@@ -84,6 +89,9 @@ func TestBuildRoomExecPromptIncludesRoomRunAndRecentContext(t *testing.T) {
 		"- 如果要回复，第一句必须像团队成员在聊天里说话，不要写成报告。",
 		"- 如果本轮要接手、推进或同步结果，在第一句自然说清楚，不要写内部思考过程。",
 		"- 本轮请以 Codex Dockmaster 的身份回应，不要替多个智能体同时发言。",
+		"- 默认只在当前 room、当前 run、当前 worktree 和你自己的职责范围内判断与行动。",
+		"- 不要主动扩散去翻其他 room、其他 agent 或其他工作空间；只有用户明确要求，或必须排查系统级问题且会在公开回复里说明原因时，才扩大范围。",
+		"- 如果只是拿到了稳定上下文，但不需要改变房间里的共享认知，优先静默继续推进，不要为了说明自己看过而发消息。",
 		"SEND_PUBLIC_MESSAGE",
 		"KIND: message | summary | clarification_request | handoff | no_response",
 		"CLAIM: keep | take",
@@ -496,6 +504,71 @@ func TestParseRoomResponseDirectivesStripsInternalProtocolAndToolLeak(t *testing
 	directives := parseRoomResponseDirectives("SEND_PUBLIC_MESSAGE\nKIND: message\nCLAIM: keep\nBODY:\n工具调用：\ngit status\n结果：\n当前工作区干净，我继续推进。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核 | 请补最后确认。")
 	if directives.DisplayOutput != "当前工作区干净，我继续推进。" {
 		t.Fatalf("display output = %q, want only visible public sentence", directives.DisplayOutput)
+	}
+}
+
+func TestBuildChannelExecPromptConstrainsScopeAndPublicSurface(t *testing.T) {
+	snapshot := store.State{
+		Channels: []store.Channel{{
+			ID:   "all",
+			Name: "#all",
+		}},
+		ChannelMessages: map[string][]store.Message{
+			"all": {
+				{Speaker: "Larkspur", Role: "human", Message: "@agent-codex-dockmaster 帮我同步一下当前进展。"},
+			},
+		},
+	}
+
+	prompt := buildChannelExecPrompt(snapshot, "all", "codex", "同步一下现在做到哪了。")
+
+	for _, expected := range []string{
+		"你正在 OpenShock 的频道里发一条公开消息。",
+		"- 频道：#all (all)",
+		"- Provider：codex",
+		"- 默认只基于当前频道上下文和这次触发消息判断，不要为了凑回复去扩散查其他频道、讨论间或智能体上下文。",
+		"- 只有用户明确要求，或你必须在公开消息里同步跨范围核对结果时，才扩大判断范围。",
+		"- 如果这轮不需要公屏回复，就返回 SEND_PUBLIC_MESSAGE，KIND: no_response，BODY 留空。",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected channel prompt to contain %q, got:\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestBuildChannelExecPromptIncludesPublicValueAndReadBoundary(t *testing.T) {
+	snapshot := store.State{
+		Channels: []store.Channel{{
+			ID:   "all",
+			Name: "#all",
+		}},
+		ChannelMessages: map[string][]store.Message{
+			"all": {
+				{Speaker: "Larkspur", Role: "human", Message: "先看下当前状态。"},
+				{Speaker: "Codex Dockmaster", Role: "agent", Message: "我先同步一个简短结论。"},
+			},
+		},
+	}
+
+	prompt := buildChannelExecPrompt(snapshot, "all", "codex", "继续同步当前结果")
+
+	for _, expected := range []string{
+		"你正在 OpenShock 的频道里发一条公开消息。",
+		"频道只展示对团队当前会话有价值的有效信息，不展示你的内部执行过程。",
+		"- 频道：#all (all)",
+		"- Provider：codex",
+		"- Larkspur[human]: 先看下当前状态。",
+		"- Codex Dockmaster[agent]: 我先同步一个简短结论。",
+		"读取边界：",
+		"- 频道回复默认只基于当前频道会话和这次触发消息判断，不主动扩展到别的 room、别的 issue 或别的智能体上下文。",
+		"- 如果没有新增判断、结论、唯一阻塞问题或下一步动作，就不要为了刷存在感发公屏消息。",
+		"- 只有会话里对别人有用的当前判断、简短结论、唯一阻塞问题，才值得发到公屏。",
+		"- 不要公开暴露工具调用、命令、函数参数、内部协议、思考过程、旁白或自我解释。",
+		"KIND: message | summary | clarification_request | no_response",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected channel prompt to contain %q, got:\n%s", expected, prompt)
+		}
 	}
 }
 

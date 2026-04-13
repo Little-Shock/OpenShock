@@ -260,6 +260,13 @@ async function waitForButtonEnabled(page, testId, message) {
   });
 }
 
+async function waitForInputValue(page, testId, expected, message) {
+  await waitFor(async () => {
+    const value = await page.getByTestId(testId).inputValue();
+    return value === expected;
+  }, message);
+}
+
 async function waitForPostRequest(page, urlFragment, message, timeoutMs = 120_000) {
   return page.waitForRequest(
     (request) => request.method() === "POST" && request.url().includes(urlFragment),
@@ -390,7 +397,36 @@ async function startServices() {
 }
 
 async function verifyChannelSend(page, webURL, serverURL, statePath) {
+  const failedText = `频道失败恢复验证 ${Date.now()}`;
+
+  await page.route(
+    "**/v1/channels/all/messages",
+    async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "频道发送失败（模拟）" }),
+      });
+    },
+    { times: 1 }
+  );
+
+  await waitForPage(page, `${webURL}/chat/all`, {
+    expectedPath: "/chat/all",
+    expectedTestID: "channel-message-input",
+  });
+
+  await page.getByTestId("channel-message-input").fill(failedText);
+  await waitForButtonEnabled(page, "channel-send-message", "channel send button did not become enabled before failure probe");
+  await page.getByTestId("channel-message-input").press("Enter");
+  await waitForVisibleText(page, "频道发送失败（模拟）", "channel failure message did not surface after mocked failure");
+  await waitForInputValue(page, "channel-message-input", failedText, "channel draft did not recover after mocked failure");
+  await waitForButtonLabel(page, "channel-send-message", "发送", "channel send button did not recover after mocked failure");
+  record("频道发送失败后，草稿会自动恢复到输入框，方便直接重试 -> PASS");
+
   const uniqueText = `频道发送流验证 ${Date.now()}`;
+  const uniqueFollowup = "第二行";
+  const composedText = `${uniqueText}\n${uniqueFollowup}`;
 
   await page.route(
     "**/v1/channels/all/messages",
@@ -407,6 +443,13 @@ async function verifyChannelSend(page, webURL, serverURL, statePath) {
   });
 
   await page.getByTestId("channel-message-input").fill(uniqueText);
+  await page.getByTestId("channel-message-input").press("Shift+Enter");
+  await page.getByTestId("channel-message-input").type(uniqueFollowup);
+  assert(
+    (await page.getByTestId("channel-message-input").inputValue()) === composedText,
+    "channel composer did not keep multiline draft after Shift+Enter"
+  );
+  record("频道输入支持 Shift + 回车换行，草稿不会被提前发送 -> PASS");
   await waitForButtonEnabled(page, "channel-send-message", "channel send button did not become enabled after typing");
   const requestPromise = waitForPostRequest(
     page,
@@ -416,6 +459,7 @@ async function verifyChannelSend(page, webURL, serverURL, statePath) {
   await page.getByTestId("channel-message-input").press("Enter");
 
   await waitForVisibleText(page, uniqueText, "channel optimistic human message did not appear immediately");
+  await waitForVisibleText(page, uniqueFollowup, "channel optimistic multiline draft did not appear immediately");
   await waitForVisibleText(page, MESSAGE_PLACEHOLDER, "channel placeholder did not appear while request was in flight");
   await waitForButtonLabel(page, "channel-send-message", "发送中", "channel send button did not expose sending state");
   record("频道发送后，人类消息会先出现在消息流里，同时显示“发送中”和“正在生成回复...” -> PASS");
@@ -452,6 +496,8 @@ async function verifyChannelSend(page, webURL, serverURL, statePath) {
 
 async function verifyRoomSend(page, webURL, statePath, roomId) {
   const uniqueText = `讨论间发送流验证 ${Date.now()}`;
+  const uniqueFollowup = "第二行";
+  const composedText = `${uniqueText}\n${uniqueFollowup}`;
 
   await page.route(
     `**/v1/rooms/${roomId}/messages/stream`,
@@ -468,6 +514,13 @@ async function verifyRoomSend(page, webURL, statePath, roomId) {
   });
 
   await page.getByTestId("room-message-input").fill(uniqueText);
+  await page.getByTestId("room-message-input").press("Shift+Enter");
+  await page.getByTestId("room-message-input").type(uniqueFollowup);
+  assert(
+    (await page.getByTestId("room-message-input").inputValue()) === composedText,
+    "room composer did not keep multiline draft after Shift+Enter"
+  );
+  record("讨论间输入支持 Shift + 回车换行，草稿不会被提前发送 -> PASS");
   await waitForButtonEnabled(page, "room-send-message", "room send button did not become enabled after typing");
   const requestPromise = waitForPostRequest(
     page,
@@ -477,6 +530,7 @@ async function verifyRoomSend(page, webURL, statePath, roomId) {
   await page.getByTestId("room-message-input").press("Enter");
 
   await waitForVisibleText(page, uniqueText, "room optimistic human message did not appear immediately");
+  await waitForVisibleText(page, uniqueFollowup, "room optimistic multiline draft did not appear immediately");
   await waitForVisibleText(page, MESSAGE_PLACEHOLDER, "room placeholder did not appear while request was in flight");
   await waitForButtonLabel(page, "room-send-message", "发送中", "room send button did not expose sending state");
   record("讨论间发送后，人类消息会先落到流里，按钮和回复占位会一起进入发送态 -> PASS");

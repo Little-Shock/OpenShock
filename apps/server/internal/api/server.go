@@ -1861,6 +1861,11 @@ func buildRoomExecPrompt(snapshot store.State, roomID, provider, userPrompt stri
 
 	builder.WriteString("\n本轮用户消息：\n")
 	builder.WriteString(strings.TrimSpace(userPrompt))
+	builder.WriteString("\n\n读取边界：\n")
+	builder.WriteString("- 默认只围当前 room / run / worktree 和当前接手智能体的记忆继续推进。\n")
+	builder.WriteString("- 如果需要补上下文，先看当前工作目录里的 MEMORY.md、notes/work-log.md 和当前 room 对应笔记，再决定是否继续扩展。\n")
+	builder.WriteString("- 不要主动去翻别的 room、别的 issue、别的 worktree，或其他智能体的记忆空间。\n")
+	builder.WriteString("- 只有用户明确要求，或当前回合必须排查系统级问题时，才扩大读取范围；扩大后必须在公开回复里同步原因。\n")
 	builder.WriteString("\n\n回复要求：\n")
 	builder.WriteString("- 先在内部判断这条消息是否需要公开回复、是否需要你接手，再决定输出。\n")
 	builder.WriteString("- 公开消息只能通过 SEND_PUBLIC_MESSAGE 这个封装返回；不要把正文裸写出来。\n")
@@ -1872,6 +1877,9 @@ func buildRoomExecPrompt(snapshot store.State, roomID, provider, userPrompt stri
 	builder.WriteString("- 如果本轮要接手、推进或同步结果，在第一句自然说清楚，不要写内部思考过程。\n")
 	builder.WriteString("- 如果只是被点名答一句，不要顺手写成长段接手宣言。\n")
 	builder.WriteString("- 默认沿用当前 room、run、branch 和 worktree 推进。\n")
+	builder.WriteString("- 默认只在当前 room、当前 run、当前 worktree 和你自己的职责范围内判断与行动。\n")
+	builder.WriteString("- 不要主动扩散去翻其他 room、其他 agent 或其他工作空间；只有用户明确要求，或必须排查系统级问题且会在公开回复里说明原因时，才扩大范围。\n")
+	builder.WriteString("- 如果只是拿到了稳定上下文，但不需要改变房间里的共享认知，优先静默继续推进，不要为了说明自己看过而发消息。\n")
 	if hasTurnAgent {
 		builder.WriteString(fmt.Sprintf("- 本轮请以 %s 的身份回应，不要替多个智能体同时发言。\n", turnAgent.Name))
 	} else if hasOwnerAgent {
@@ -1926,9 +1934,14 @@ func buildChannelExecPrompt(snapshot store.State, channelID, provider, userPromp
 
 	builder.WriteString("\n本轮用户消息：\n")
 	builder.WriteString(strings.TrimSpace(userPrompt))
+	builder.WriteString("\n\n读取边界：\n")
+	builder.WriteString("- 频道回复默认只基于当前频道会话和这次触发消息判断，不主动扩展到别的 room、别的 issue 或别的智能体上下文。\n")
+	builder.WriteString("- 如果没有新增判断、结论、唯一阻塞问题或下一步动作，就不要为了刷存在感发公屏消息。\n")
 	builder.WriteString("\n\n回复要求：\n")
 	builder.WriteString("- 先判断这条消息是否真的需要公屏可见回复。\n")
 	builder.WriteString("- 只有会话里对别人有用的当前判断、简短结论、唯一阻塞问题，才值得发到公屏。\n")
+	builder.WriteString("- 默认只基于当前频道上下文和这次触发消息判断，不要为了凑回复去扩散查其他频道、讨论间或智能体上下文。\n")
+	builder.WriteString("- 只有用户明确要求，或你必须在公开消息里同步跨范围核对结果时，才扩大判断范围。\n")
 	builder.WriteString("- 不要公开暴露工具调用、命令、函数参数、内部协议、思考过程、旁白或自我解释。\n")
 	builder.WriteString("- 默认控制在 1 到 3 句；先说结论，再补下一步。\n")
 	builder.WriteString("- 如果只是内部继续执行，不要为了刷存在感发消息；优先 KIND: no_response。\n")
