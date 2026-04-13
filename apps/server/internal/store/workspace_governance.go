@@ -153,7 +153,7 @@ func hydrateWorkspaceGovernance(workspace *WorkspaceSnapshot, state *State) {
 	routingPolicy := buildGovernanceRoutingPolicy(effectiveTemplate, *state, focus, humanOverride)
 	escalationSLA := buildGovernanceEscalationSLA(effectiveTemplate, *state, focus)
 	notificationPolicy := buildGovernanceNotificationPolicy(*workspace, effectiveTemplate, focus)
-	responseAggregation := buildResponseAggregation(*state, focus, humanOverride)
+	responseAggregation := buildResponseAggregation(*state, focus, humanOverride, routingPolicy.SuggestedHandoff)
 	deliveryDelegationMode := workspaceGovernanceDeliveryDelegationMode(*workspace)
 	stats.SLABreaches = escalationSLA.BreachedEscalations
 	stats.AggregationSources = len(responseAggregation.Sources)
@@ -1131,7 +1131,12 @@ func buildHumanOverride(focus governanceFocus) WorkspaceHumanOverride {
 	}
 }
 
-func buildResponseAggregation(state State, focus governanceFocus, humanOverride WorkspaceHumanOverride) WorkspaceResponseAggregation {
+func buildResponseAggregation(
+	state State,
+	focus governanceFocus,
+	humanOverride WorkspaceHumanOverride,
+	routingPolicy WorkspaceGovernanceSuggestedHandoff,
+) WorkspaceResponseAggregation {
 	currentOwner := governanceCurrentOwnerName(state, focus)
 	sources := []string{}
 	if focus.Issue != nil {
@@ -1149,6 +1154,15 @@ func buildResponseAggregation(state State, focus governanceFocus, humanOverride 
 	if len(focus.RelatedInbox) > 0 {
 		sources = append(sources, fmt.Sprintf("%d inbox signals", len(focus.RelatedInbox)))
 	}
+	deliveryDelegation := PullRequestDeliveryDelegation{}
+	deliveryDelegationActive := false
+	if focus.PullRequest != nil && routingPolicy.Status == "done" {
+		deliveryDelegation = buildPullRequestDeliveryDelegation(state, *focus.PullRequest, routingPolicy)
+		deliveryDelegationActive = deliveryDelegation.Status == "ready" || deliveryDelegation.Status == "blocked" || deliveryDelegation.Status == "done"
+		if deliveryDelegationActive {
+			sources = append(sources, "delivery closeout")
+		}
+	}
 	decisionPath := []string{}
 	if focus.Issue != nil {
 		decisionPath = append(decisionPath, fmt.Sprintf("issue:%s", focus.Issue.Key))
@@ -1161,6 +1175,9 @@ func buildResponseAggregation(state State, focus governanceFocus, humanOverride 
 	}
 	if len(focus.RelatedInbox) > 0 {
 		decisionPath = append(decisionPath, fmt.Sprintf("inbox:%d", len(focus.RelatedInbox)))
+	}
+	if deliveryDelegationActive {
+		decisionPath = append(decisionPath, fmt.Sprintf("delivery:%s", deliveryDelegation.Status))
 	}
 	overrideTrace := []string{}
 	if humanOverride.Status == "required" || humanOverride.Status == "watch" {
@@ -1201,6 +1218,16 @@ func buildResponseAggregation(state State, focus governanceFocus, humanOverride 
 			OccurredAt: focus.PullRequest.UpdatedAt,
 		})
 	}
+	if deliveryDelegationActive {
+		auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
+			ID:         "audit-delivery-closeout",
+			Label:      "Delivery Closeout",
+			Status:     deliveryDelegation.Status,
+			Actor:      defaultString(strings.TrimSpace(deliveryDelegation.TargetAgent), defaultString(strings.TrimSpace(currentOwner), "delivery closeout")),
+			Summary:    deliveryDelegation.Summary,
+			OccurredAt: responseAggregationDeliveryOccurredAt(state, deliveryDelegation),
+		})
+	}
 
 	finalResponse := "等待当前 reviewer / tester loop 收口后再聚合最终响应。"
 	status := "draft"
@@ -1208,6 +1235,11 @@ func buildResponseAggregation(state State, focus governanceFocus, humanOverride 
 	aggregator := defaultString(currentOwner, "workspace governance")
 
 	switch {
+	case deliveryDelegationActive:
+		status = responseAggregationStatusFromDeliveryDelegation(deliveryDelegation.Status)
+		finalResponse = deliveryDelegation.Summary
+		summary = "当前 final response 继续围 PR delivery closeout / release receipt truth 聚合。"
+		aggregator = defaultString(strings.TrimSpace(deliveryDelegation.TargetAgent), aggregator)
 	case governanceCompletionMatchesCurrentOwner(focus.LatestCompletion, currentOwner) && strings.TrimSpace(focus.LatestCompletion.LastNote) != "":
 		status = "ready"
 		finalResponse = focus.LatestCompletion.LastNote
@@ -1243,6 +1275,32 @@ func buildResponseAggregation(state State, focus governanceFocus, humanOverride 
 		OverrideTrace: overrideTrace,
 		AuditTrail:    auditTrail,
 	}
+}
+
+func responseAggregationStatusFromDeliveryDelegation(status string) string {
+	switch strings.TrimSpace(status) {
+	case "blocked":
+		return "blocked"
+	case "ready", "done":
+		return "ready"
+	default:
+		return "draft"
+	}
+}
+
+func responseAggregationDeliveryOccurredAt(state State, delegation PullRequestDeliveryDelegation) string {
+	for _, handoff := range state.Mailbox {
+		if handoff.ID == delegation.ResponseHandoffID {
+			return handoff.UpdatedAt
+		}
+		if handoff.ID == delegation.HandoffID {
+			return handoff.UpdatedAt
+		}
+	}
+	if delegation.Status == "done" || delegation.Status == "ready" || delegation.Status == "blocked" {
+		return time.Now().UTC().Format(time.RFC3339)
+	}
+	return ""
 }
 
 func governanceCompletionMatchesCurrentOwner(item *AgentHandoff, currentOwner string) bool {

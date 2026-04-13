@@ -788,11 +788,19 @@ func buildPullRequestDeliveryHandoffNote(
 		fmt.Sprintf("当前通知 / handoff：%s", notificationGate.Summary),
 		fmt.Sprintf("发布前命令：`pnpm verify:release` -> `pnpm ops:smoke`。Issue = %s。", defaultString(strings.TrimSpace(issue.Key), "待整理 issue")),
 	}
-	if governanceAggregation.Status == "ready" && strings.TrimSpace(governanceAggregation.FinalResponse) != "" {
+	governedCloseoutReason := strings.TrimSpace(governedCloseout.Reason)
+	if governedCloseout.Status == "done" && governedCloseoutReason != "" {
+		lines = append(lines, fmt.Sprintf("当前治理收口：%s", governedCloseoutReason))
+	} else if governanceAggregation.Status == "ready" && strings.TrimSpace(governanceAggregation.FinalResponse) != "" {
 		lines = append(lines, fmt.Sprintf("当前治理收口：%s", governanceAggregation.FinalResponse))
 	}
 	if governedCloseout.Status == "done" {
 		lines = append(lines, "governed route 已到 done；当前不需要新的 formal handoff，直接围这份 delivery entry / release gate 做最后收口。")
+	}
+	if governanceAggregation.Status == "ready" &&
+		strings.TrimSpace(governanceAggregation.FinalResponse) != "" &&
+		(!strings.EqualFold(strings.TrimSpace(governanceAggregation.FinalResponse), governedCloseoutReason) || governedCloseoutReason == "") {
+		lines = append(lines, fmt.Sprintf("当前 delivery 聚合：%s", governanceAggregation.FinalResponse))
 	}
 	if delegation.Status == "ready" {
 		lines = append(lines, fmt.Sprintf("当前 delivery delegation：交给 %s（%s）。", delegation.TargetAgent, delegation.TargetLane))
@@ -878,12 +886,18 @@ func buildPullRequestDeliveryEvidence(
 			Href:    pr.URL,
 		})
 	}
-	if governanceAggregation.Status == "ready" && strings.TrimSpace(governanceAggregation.FinalResponse) != "" {
+	governedCloseoutSummary := strings.TrimSpace(governedCloseout.Reason)
+	governedCloseoutActor := strings.TrimSpace(governedCloseout.FromAgent)
+	if governedCloseoutSummary == "" {
+		governedCloseoutSummary = strings.TrimSpace(governanceAggregation.FinalResponse)
+		governedCloseoutActor = strings.TrimSpace(governanceAggregation.Aggregator)
+	}
+	if governedCloseoutSummary != "" {
 		items = append(items, PullRequestDeliveryEvidence{
 			ID:      "governed-closeout",
 			Label:   "Governed Closeout",
-			Value:   defaultString(strings.TrimSpace(governanceAggregation.Aggregator), "workspace governance"),
-			Summary: governanceAggregation.FinalResponse,
+			Value:   defaultString(governedCloseoutActor, "workspace governance"),
+			Summary: governedCloseoutSummary,
 			Href:    defaultString(strings.TrimSpace(governedCloseout.Href), "/mailbox"),
 		})
 	}
