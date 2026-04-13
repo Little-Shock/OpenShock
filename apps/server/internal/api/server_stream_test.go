@@ -1195,8 +1195,8 @@ func TestRoomMessageRouteInfersVisibleHandoffEnvelope(t *testing.T) {
 	if requestCount != 2 {
 		t.Fatalf("requestCount = %d, want 2 with auto followup", requestCount)
 	}
-	if !strings.Contains(payload.Output, "@agent-claude-review-runner") {
-		t.Fatalf("payload output = %q, want visible handoff body preserved", payload.Output)
+	if payload.Output != "我已接手，先复核恢复链路和副作用，再把结论回写到房间。" {
+		t.Fatalf("payload output = %q, want visible followup output", payload.Output)
 	}
 
 	var handoff *store.AgentHandoff
@@ -1235,6 +1235,11 @@ func TestRoomMessageRouteInfersVisibleHandoffEnvelope(t *testing.T) {
 	lastRoomMessage := payload.State.RoomMessages[created.RoomID][len(payload.State.RoomMessages[created.RoomID])-1]
 	if lastRoomMessage.Speaker != "Claude Review Runner" || !strings.Contains(lastRoomMessage.Message, "恢复链路") {
 		t.Fatalf("last room message = %#v, want followup from Claude Review Runner", lastRoomMessage)
+	}
+	for _, message := range payload.State.RoomMessages[created.RoomID] {
+		if strings.Contains(message.Message, "@agent-claude-review-runner 你继续把恢复链路和副作用复核完。") {
+			t.Fatalf("room messages should not keep visible relay body: %#v", payload.State.RoomMessages[created.RoomID])
+		}
 	}
 }
 

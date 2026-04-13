@@ -156,9 +156,9 @@ func (s *Service) Probe(workspaceRoot string) (Status, error) {
 		case !status.RemoteConfigured:
 			status.Message = "当前仓库还没有 origin remote，无法进入真实 GitHub 闭环。"
 		case status.GHAuthenticated:
-			status.Message = "GitHub CLI 已认证，可以继续推进真实远端 PR 集成。"
+			status.Message = "GitHub 命令行已登录，可以继续处理远端拉取请求。"
 		default:
-			status.Message = "origin 已存在，但 GitHub CLI 尚未认证。"
+			status.Message = "已检测到 origin，但 GitHub 命令行还没登录。"
 		}
 	case appStatus.Enabled:
 		status.Ready = false
@@ -171,9 +171,9 @@ func (s *Service) Probe(workspaceRoot string) (Status, error) {
 		case !status.RemoteConfigured:
 			status.Message = "当前仓库还没有 origin remote，无法进入真实 GitHub 闭环。"
 		case status.GHAuthenticated:
-			status.Message = "GitHub CLI 已认证，可以继续推进真实远端 PR 集成。"
+			status.Message = "GitHub 命令行已登录，可以继续处理远端拉取请求。"
 		default:
-			status.Message = "origin 已存在，但 GitHub CLI 尚未认证。"
+			status.Message = "已检测到 origin，但 GitHub 命令行还没登录。"
 		}
 	default:
 		status.Ready = false
@@ -181,7 +181,7 @@ func (s *Service) Probe(workspaceRoot string) (Status, error) {
 		case !status.RemoteConfigured:
 			status.Message = "当前仓库还没有 origin remote，无法进入真实 GitHub 闭环。"
 		default:
-			status.Message = "origin 已存在，但机器上没有 gh CLI。"
+			status.Message = "已检测到 origin，但这台机器还没安装 GitHub 命令行。"
 		}
 	}
 
@@ -464,21 +464,21 @@ func detectGitHubAppProbe(workspaceRoot string) appProbeStatus {
 func githubAppProbeMessage(status Status, appReady, ghReady bool) string {
 	switch {
 	case !status.RemoteConfigured:
-		return "GitHub App 配置已探测，但当前仓库还没有 origin remote。"
+		return "已检测到 GitHub 应用配置，但当前仓库还没有配置 origin。"
 	case !status.AppConfigured && ghReady:
-		return fmt.Sprintf("GitHub App 配置不完整，缺少 %s；当前仍退回 gh CLI。", strings.Join(status.Missing, " / "))
+		return fmt.Sprintf("GitHub 应用配置不完整，缺少 %s；当前先使用命令行登录。", strings.Join(status.Missing, " / "))
 	case !status.AppConfigured:
-		return fmt.Sprintf("GitHub App 配置不完整，缺少 %s。", strings.Join(status.Missing, " / "))
+		return fmt.Sprintf("GitHub 应用配置不完整，缺少 %s。", strings.Join(status.Missing, " / "))
 	case !status.AppInstalled && ghReady:
-		return "GitHub App 已配置，但 installation 还未完成；当前仍退回 gh CLI。"
+		return "GitHub 应用已配置，但还没完成安装；当前先使用命令行登录。"
 	case !status.AppInstalled:
-		return "GitHub App 已配置，但 installation 还未完成。"
+		return "GitHub 应用已配置，但还没完成安装。"
 	case ghReady:
-		return "GitHub App installation 已就绪；当前 gh CLI 也已认证，可并行支撑 repo binding 与现有 PR 闭环。"
+		return "GitHub 应用已就绪；命令行登录也可用，可以继续连接仓库与回调。"
 	case status.GHCLIInstalled && !status.GHAuthenticated:
-		return "GitHub App installation 已就绪；gh CLI 尚未认证，但不影响 installation / repo binding contract。"
+		return "GitHub 应用已就绪；命令行还没登录，但不影响当前连接。"
 	default:
-		return "GitHub App installation 已就绪，可以继续推进 repo binding 与 webhook contract。"
+		return "GitHub 应用已就绪，可以继续连接仓库与回调。"
 	}
 }
 

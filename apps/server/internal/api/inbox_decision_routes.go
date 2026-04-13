@@ -199,20 +199,20 @@ func summarizeRemotePullRequestStatus(status, reviewDecision, mergeable, mergeSt
 		mergeStateStatus = strings.ToUpper(strings.TrimSpace(mergeStateStatus))
 		switch {
 		case mergeStateStatus == "DIRTY" || mergeable == "CONFLICTING":
-			return "当前 PR 与 base 存在冲突，需 refresh current base 后再继续 review / merge。"
+			return "当前 PR 与基线分支存在冲突，需先同步最新基线后再继续评审或合并。"
 		case mergeStateStatus == "BEHIND":
-			return "当前 PR 已落后 base，需先 refresh 到 current base 后再继续合并。"
+			return "当前 PR 已落后基线分支，需先同步最新基线后再继续合并。"
 		case mergeStateStatus == "BLOCKED":
 			if strings.EqualFold(strings.TrimSpace(reviewDecision), "APPROVED") {
-				return "GitHub Review 已批准，但 branch protections / required checks 仍阻塞 merge。"
+				return "GitHub 评审已批准，但分支保护和必需检查仍阻塞合并。"
 			}
-			return "当前 merge 仍被 branch protections / required checks 阻塞。"
+			return "当前合并仍被分支保护和必需检查阻塞。"
 		case mergeStateStatus == "HAS_HOOKS":
-			return "GitHub 当前仍在等待 required hooks / protections 收敛，merge 还不能放行。"
+			return "GitHub 当前仍在等待检查和保护规则完成，暂时还不能放行合并。"
 		case mergeStateStatus == "UNSTABLE":
-			return "GitHub 当前 merge safety 仍不稳定，需等待 checks 收敛后再继续合并。"
+			return "GitHub 当前合并状态仍不稳定，需等待检查收敛后再继续合并。"
 		case mergeStateStatus == "UNKNOWN" || mergeable == "UNKNOWN":
-			return "GitHub 正在计算 merge safety，暂不允许贸然合并。"
+			return "GitHub 正在计算当前合并条件，暂不允许直接合并。"
 		}
 		switch strings.TrimSpace(reviewDecision) {
 		case "APPROVED":

@@ -35,14 +35,14 @@ func (s *Server) handleGitHubInstallationCallback(w http.ResponseWriter, r *http
 	var req GitHubInstallationCallbackRequest
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求体不是合法的 JSON"})
 			return
 		}
 	}
 	req.InstallationID = strings.TrimSpace(req.InstallationID)
 	req.SetupAction = strings.TrimSpace(req.SetupAction)
 	if req.InstallationID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "installationId is required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "缺少安装编号"})
 		return
 	}
 

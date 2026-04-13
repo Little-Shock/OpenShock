@@ -104,7 +104,7 @@ func workspaceOnboardingTemplateDefinition(templateID string) onboardingTemplate
 			Label:              "研究团队",
 			Channels:           []string{"#intake", "#evidence", "#synthesis"},
 			Roles:              []string{"Research Lead", "Collector", "Synthesizer", "Reviewer"},
-			Agents:             []string{"Collector", "Synthesizer", "Review Runner"},
+			Agents:             []string{"Lead Operator", "Collector", "Synthesizer", "Review Runner"},
 			NotificationPolicy: "evidence ready / synthesis blocked / reviewer feedback 优先推送",
 			Notes: []string{
 				"系统会创建输入、资料和综合相关频道。",
@@ -414,6 +414,172 @@ func syncWorkspaceSnapshotDefaults(workspace *WorkspaceSnapshot) {
 	}
 }
 
+func freshOnboardingTemplateShouldMaterialize(workspace WorkspaceSnapshot) bool {
+	if canonicalWorkspaceOnboardingTemplateID(workspace.Onboarding.TemplateID) == "blank-custom" {
+		return false
+	}
+	return strings.TrimSpace(workspace.Onboarding.Status) != workspaceOnboardingNotStarted
+}
+
+func ensureFreshTemplateChannelLocked(channels []Channel, channelLabel string) ([]Channel, string, bool) {
+	name := strings.TrimSpace(channelLabel)
+	if name == "" {
+		return channels, "", false
+	}
+	if !strings.HasPrefix(name, "#") {
+		name = "#" + name
+	}
+	channelID := slugify(strings.TrimPrefix(name, "#"))
+	if channelID == "" {
+		return channels, "", false
+	}
+	for _, existing := range channels {
+		if existing.ID == channelID || strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+			return channels, channelID, false
+		}
+	}
+	return append(channels, Channel{
+		ID:      channelID,
+		Name:    name,
+		Summary: fmt.Sprintf("%s 已按当前模板加入。", name),
+		Unread:  0,
+		Purpose: fmt.Sprintf("用于 %s 的起步协作。", name),
+	}), channelID, true
+}
+
+func freshTemplateAgentAvatar(lane governanceTemplateLaneDefinition) string {
+	switch {
+	case isGovernanceOwnerLane(lane):
+		return "starter-spark"
+	case isGovernanceArchitectureLane(lane):
+		return "builder-lantern"
+	case isGovernanceReviewLane(lane):
+		return "review-orbit"
+	case isGovernanceVerificationLane(lane):
+		return "research-wave"
+	default:
+		return "starter-spark"
+	}
+}
+
+func freshTemplateAgentPrompt(lane governanceTemplateLaneDefinition) string {
+	switch {
+	case isGovernanceOwnerLane(lane):
+		return "先确认目标和验收，再决定下一棒交给谁。"
+	case isGovernanceArchitectureLane(lane):
+		return "先厘清边界和拆解顺序，再推进实现。"
+	case isGovernanceReviewLane(lane):
+		return "先给结论，再指出需要补证据的地方。"
+	case isGovernanceVerificationLane(lane):
+		return "先验证主链路，再回写测试和发布证据。"
+	default:
+		return "先推进当前 lane，再同步最关键的进展。"
+	}
+}
+
+func (s *Store) ensureFreshOnboardingMaterializationLocked() error {
+	if !s.freshBootstrap() || !freshOnboardingTemplateShouldMaterialize(s.state.Workspace) {
+		return nil
+	}
+
+	templateID := canonicalWorkspaceOnboardingTemplateID(s.state.Workspace.Onboarding.TemplateID)
+	template := governanceTemplateFor(templateID)
+	materialization := workspaceOnboardingMaterialization(templateID)
+	changed := false
+
+	if s.state.ChannelMessages == nil {
+		s.state.ChannelMessages = map[string][]Message{}
+	}
+	for _, channelLabel := range materialization.Channels {
+		nextChannels, channelID, added := ensureFreshTemplateChannelLocked(s.state.Channels, channelLabel)
+		if !added {
+			if channelID != "" {
+				if _, ok := s.state.ChannelMessages[channelID]; !ok {
+					s.state.ChannelMessages[channelID] = []Message{}
+				}
+			}
+			continue
+		}
+		s.state.Channels = nextChannels
+		s.state.ChannelMessages[channelID] = []Message{}
+		changed = true
+	}
+
+	providerPreference := "Codex CLI"
+	modelPreference := "gpt-5.3-codex"
+	runtimePreference := strings.TrimSpace(s.state.Workspace.PairedRuntime)
+	providerLabel := providerPreference
+	recallPolicy := agentRecallPolicyBalanced
+	sandbox := s.state.Workspace.Sandbox
+	memorySpaces := []string{"workspace"}
+	if len(s.state.Agents) > 0 {
+		baseAgent := s.state.Agents[0]
+		providerPreference = defaultString(strings.TrimSpace(baseAgent.ProviderPreference), providerPreference)
+		modelPreference = defaultString(strings.TrimSpace(baseAgent.ModelPreference), modelPreference)
+		runtimePreference = defaultString(strings.TrimSpace(baseAgent.RuntimePreference), runtimePreference)
+		providerLabel = defaultString(strings.TrimSpace(baseAgent.Provider), providerPreference)
+		recallPolicy = defaultString(strings.TrimSpace(baseAgent.RecallPolicy), recallPolicy)
+		sandbox = baseAgent.Sandbox
+		if len(baseAgent.MemorySpaces) > 0 {
+			memorySpaces = append([]string{}, baseAgent.MemorySpaces...)
+		}
+	}
+	if runtimePreference == "" && len(s.state.Runtimes) > 0 {
+		runtimePreference = s.state.Runtimes[0].ID
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	seenAgentNames := map[string]bool{}
+	for _, agent := range s.state.Agents {
+		seenAgentNames[strings.ToLower(strings.TrimSpace(agent.Name))] = true
+	}
+	for _, lane := range template.Topology {
+		agentName := strings.TrimSpace(lane.DefaultAgent)
+		if agentName == "" || seenAgentNames[strings.ToLower(agentName)] {
+			continue
+		}
+		seenAgentNames[strings.ToLower(agentName)] = true
+		s.state.Agents = append(s.state.Agents, Agent{
+			ID:                    uniqueAgentID(s.state.Agents, "agent-"+slugify(agentName)),
+			Name:                  agentName,
+			Description:           fmt.Sprintf("负责 %s。", defaultString(strings.TrimSpace(lane.Role), defaultString(strings.TrimSpace(lane.Label), "当前治理 lane"))),
+			Mood:                  "等待分配",
+			State:                 "idle",
+			Lane:                  defaultString(strings.TrimSpace(lane.Label), defaultString(strings.TrimSpace(lane.Lane), "template-lane")),
+			Role:                  defaultString(strings.TrimSpace(lane.Role), defaultString(strings.TrimSpace(lane.Label), "Team Agent")),
+			Avatar:                freshTemplateAgentAvatar(lane),
+			Prompt:                freshTemplateAgentPrompt(lane),
+			OperatingInstructions: "围当前模板 lane 推进，不抢占别的 lane。",
+			Provider:              providerLabel,
+			ProviderPreference:    providerPreference,
+			ModelPreference:       modelPreference,
+			RecallPolicy:          recallPolicy,
+			RuntimePreference:     defaultString(runtimePreference, "shock-main"),
+			MemorySpaces:          append([]string{}, memorySpaces...),
+			CredentialProfileIDs:  []string{},
+			Sandbox:               sandbox,
+			RecentRunIDs:          []string{},
+			ProfileAudit: []AgentProfileAuditEntry{{
+				ID:        fmt.Sprintf("%s-audit-1", slugify(agentName)),
+				UpdatedAt: now,
+				UpdatedBy: "fresh-onboarding",
+				Summary:   fmt.Sprintf("按 %s 物化默认智能体。", materialization.Label),
+				Changes:   []AgentProfileAuditChange{},
+			}},
+		})
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+	artifacts, err := ensureWorkspaceScaffold(s.workspaceRoot, s.state.Agents, s.state.Memory)
+	if err != nil {
+		return err
+	}
+	s.state.Memory = artifacts
+	return nil
+}
+
 func syncWorkspaceMemberDefaults(member *WorkspaceMember) {
 	member.Preferences.StartRoute = defaultString(member.Preferences.StartRoute, defaultWorkspaceMemberPreferences().StartRoute)
 	if github := firstIdentityForProvider(member.LinkedIdentities, "github"); github.Provider != "" {
@@ -513,6 +679,9 @@ func (s *Store) UpdateWorkspaceConfig(input WorkspaceConfigUpdateInput) (State, 
 
 	s.state.Workspace = workspace
 	syncWorkspaceSnapshotDefaults(&s.state.Workspace)
+	if err := s.ensureFreshOnboardingMaterializationLocked(); err != nil {
+		return State{}, WorkspaceSnapshot{}, err
+	}
 	if err := s.persistLocked(); err != nil {
 		return State{}, WorkspaceSnapshot{}, err
 	}

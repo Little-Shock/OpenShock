@@ -725,6 +725,17 @@ type MailboxMessage struct {
 	CreatedAt  string `json:"createdAt"`
 }
 
+type RoomAgentWait struct {
+	ID                string `json:"id"`
+	RoomID            string `json:"roomId"`
+	AgentID           string `json:"agentId"`
+	Agent             string `json:"agent"`
+	BlockingMessageID string `json:"blockingMessageId"`
+	Status            string `json:"status"`
+	CreatedAt         string `json:"createdAt"`
+	ResolvedAt        string `json:"resolvedAt,omitempty"`
+}
+
 type AgentHandoff struct {
 	ID              string           `json:"id"`
 	Kind            string           `json:"kind,omitempty"`
@@ -972,6 +983,7 @@ type State struct {
 	Runtimes              []RuntimeRecord                    `json:"runtimes"`
 	Inbox                 []InboxItem                        `json:"inbox"`
 	Mailbox               []AgentHandoff                     `json:"mailbox"`
+	RoomAgentWaits        []RoomAgentWait                    `json:"roomAgentWaits,omitempty"`
 	PullRequests          []PullRequest                      `json:"pullRequests"`
 	Sessions              []Session                          `json:"sessions"`
 	RuntimeLeases         []RuntimeLease                     `json:"runtimeLeases,omitempty"`

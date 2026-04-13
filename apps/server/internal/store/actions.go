@@ -522,6 +522,115 @@ func (s *Store) findAgentIndexLocked(owner string) int {
 	return -1
 }
 
+func (s *Store) findAgentIndexByIDOrNameLocked(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return -1
+	}
+	for index := range s.state.Agents {
+		if strings.EqualFold(strings.TrimSpace(s.state.Agents[index].ID), value) || strings.EqualFold(strings.TrimSpace(s.state.Agents[index].Name), value) {
+			return index
+		}
+	}
+	return -1
+}
+
+func (s *Store) markRoomAgentWaitingLocked(roomID, speaker, blockingMessageID string) {
+	agentIndex := s.findAgentIndexByIDOrNameLocked(speaker)
+	if agentIndex == -1 {
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	agent := s.state.Agents[agentIndex]
+	for index := range s.state.RoomAgentWaits {
+		wait := &s.state.RoomAgentWaits[index]
+		if wait.RoomID != roomID || wait.AgentID != agent.ID || wait.Status != "waiting_reply" {
+			continue
+		}
+		wait.Agent = agent.Name
+		wait.BlockingMessageID = strings.TrimSpace(blockingMessageID)
+		wait.CreatedAt = now
+		wait.ResolvedAt = ""
+		return
+	}
+
+	s.state.RoomAgentWaits = append(s.state.RoomAgentWaits, RoomAgentWait{
+		ID:                fmt.Sprintf("room-wait-%d", time.Now().UnixNano()),
+		RoomID:            roomID,
+		AgentID:           agent.ID,
+		Agent:             agent.Name,
+		BlockingMessageID: strings.TrimSpace(blockingMessageID),
+		Status:            "waiting_reply",
+		CreatedAt:         now,
+	})
+}
+
+func (s *Store) resolveAllRoomAgentWaitsLocked(roomID string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	for index := range s.state.RoomAgentWaits {
+		wait := &s.state.RoomAgentWaits[index]
+		if wait.RoomID != roomID || wait.Status != "waiting_reply" {
+			continue
+		}
+		wait.Status = "resolved"
+		wait.ResolvedAt = now
+	}
+}
+
+func (s *Store) resolveRoomAgentWaitFromPromptLocked(roomID, prompt string) {
+	waitIndex, ok := s.findResolvableRoomAgentWaitIndexLocked(roomID, prompt)
+	if !ok {
+		return
+	}
+	s.state.RoomAgentWaits[waitIndex].Status = "resolved"
+	s.state.RoomAgentWaits[waitIndex].ResolvedAt = time.Now().UTC().Format(time.RFC3339)
+}
+
+func (s *Store) findResolvableRoomAgentWaitIndexLocked(roomID, prompt string) (int, bool) {
+	candidateAgentID := findMentionedAgentIDLocked(s.state.Agents, prompt)
+	matchIndex := -1
+	openCount := 0
+
+	for index := len(s.state.RoomAgentWaits) - 1; index >= 0; index-- {
+		wait := s.state.RoomAgentWaits[index]
+		if wait.RoomID != roomID || wait.Status != "waiting_reply" {
+			continue
+		}
+		openCount++
+		if candidateAgentID != "" && wait.AgentID == candidateAgentID {
+			return index, true
+		}
+		if matchIndex == -1 {
+			matchIndex = index
+		}
+	}
+
+	if candidateAgentID == "" && openCount == 1 && matchIndex >= 0 {
+		return matchIndex, true
+	}
+	return -1, false
+}
+
+func findMentionedAgentIDLocked(agents []Agent, body string) string {
+	for _, token := range strings.Fields(body) {
+		if !strings.HasPrefix(token, "@") {
+			continue
+		}
+		label := strings.Trim(token, " \t\r\n,.;:!?()[]{}<>\"'，。；：！？、】【")
+		candidate := strings.TrimPrefix(label, "@")
+		if candidate == "" {
+			continue
+		}
+		for _, agent := range agents {
+			if strings.EqualFold(strings.TrimSpace(agent.ID), candidate) || strings.EqualFold(strings.TrimSpace(agent.Name), candidate) {
+				return agent.ID
+			}
+		}
+	}
+	return ""
+}
+
 func (s *Store) findMachineIndexLocked(machine string) int {
 	machine = strings.TrimSpace(machine)
 	if machine == "" {
@@ -944,6 +1053,103 @@ func conversationProviderTool(value string) string {
 }
 
 func (s *Store) AppendConversation(roomID, prompt, output, provider string) (State, error) {
+	return s.AppendConversationAsAgent(roomID, prompt, "", output, provider)
+}
+
+func (s *Store) AppendConversationAsAgent(roomID, prompt, speaker, output, provider string) (State, error) {
+	return s.appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, "agent")
+}
+
+func (s *Store) AppendConversationSummary(roomID, prompt, speaker, output, provider string) (State, error) {
+	return s.appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, "paper")
+}
+
+func (s *Store) ClaimRoomOwnership(roomID, speaker, provider string) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
+	if !ok {
+		return State{}, fmt.Errorf("room not found")
+	}
+
+	claimSpeaker := strings.TrimSpace(speaker)
+	if claimSpeaker == "" {
+		claimSpeaker = defaultString(
+			strings.TrimSpace(s.state.Runs[runIndex].Owner),
+			defaultString(strings.TrimSpace(s.state.Issues[issueIndex].Owner), defaultString(strings.TrimSpace(s.state.Rooms[roomIndex].Topic.Owner), "")),
+		)
+	}
+	if claimSpeaker == "" {
+		return State{}, fmt.Errorf("claim speaker is required")
+	}
+
+	now := shortClock()
+	updatedAt := time.Now().UTC().Format(time.RFC3339)
+	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
+	previousOwner := defaultString(
+		strings.TrimSpace(s.state.Runs[runIndex].Owner),
+		defaultString(strings.TrimSpace(s.state.Issues[issueIndex].Owner), strings.TrimSpace(s.state.Rooms[roomIndex].Topic.Owner)),
+	)
+	summary := fmt.Sprintf("%s 已认领当前房间，继续沿现有线程推进。", claimSpeaker)
+	nextAction := fmt.Sprintf("当前由 %s 继续推进；后续回复和执行默认收敛到同一条房间链路。", claimSpeaker)
+
+	s.state.Rooms[roomIndex].Topic.Owner = claimSpeaker
+	s.state.Rooms[roomIndex].Topic.Status = "running"
+	s.state.Rooms[roomIndex].Topic.Summary = summary
+
+	s.state.Issues[issueIndex].Owner = claimSpeaker
+	s.state.Issues[issueIndex].State = "running"
+
+	s.state.Runs[runIndex].Owner = claimSpeaker
+	s.state.Runs[runIndex].Status = "running"
+	s.state.Runs[runIndex].Summary = summary
+	s.state.Runs[runIndex].NextAction = nextAction
+	if strings.TrimSpace(providerLabel) != "" {
+		s.state.Runs[runIndex].Provider = providerLabel
+	}
+	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{
+		ID:    fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1),
+		Label: fmt.Sprintf("%s 已认领当前房间", claimSpeaker),
+		At:    now,
+		Tone:  "lime",
+	})
+
+	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
+		item.Status = "running"
+		item.Summary = summary
+		item.ControlNote = nextAction
+		item.UpdatedAt = updatedAt
+		if strings.TrimSpace(providerLabel) != "" {
+			item.Provider = providerLabel
+		}
+		if len(item.MemoryPaths) == 0 {
+			item.MemoryPaths = defaultSessionMemoryPaths(item.RoomID, item.IssueKey)
+		}
+	})
+
+	if previousOwner != "" && !strings.EqualFold(previousOwner, claimSpeaker) {
+		s.updateAgentStateLocked(previousOwner, "idle", "等待下一次房间接手")
+	}
+	if agentIndex := s.findAgentIndexLocked(claimSpeaker); agentIndex != -1 {
+		s.state.Agents[agentIndex].State = "running"
+		s.state.Agents[agentIndex].Mood = "正在跟进当前房间"
+		s.state.Agents[agentIndex].Lane = s.state.Issues[issueIndex].Key
+		s.state.Agents[agentIndex].RecentRunIDs = prependUnique(s.state.Agents[agentIndex].RecentRunIDs, s.state.Runs[runIndex].ID)
+	}
+	s.resolveAllRoomAgentWaitsLocked(roomID)
+
+	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, claimSpeaker, "Room Claim", fmt.Sprintf("- owner: %s\n- provider: %s", claimSpeaker, defaultString(strings.TrimSpace(providerLabel), s.state.Runs[runIndex].Provider))); err != nil {
+		return State{}, err
+	}
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, claimSpeaker), "Room Claim", "room-claim", claimSpeaker)
+	if err := s.persistLocked(); err != nil {
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
+func (s *Store) appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, tone string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -955,14 +1161,31 @@ func (s *Store) AppendConversation(roomID, prompt, output, provider string) (Sta
 	now := shortClock()
 	humanSpeaker := sessionSpeakerLabel(s.state.Auth)
 	agentSpeaker := defaultString(
-		strings.TrimSpace(s.state.Runs[runIndex].Owner),
-		defaultString(strings.TrimSpace(s.state.Issues[issueIndex].Owner), defaultString(strings.TrimSpace(s.state.Rooms[roomIndex].Topic.Owner), "当前智能体")),
+		strings.TrimSpace(speaker),
+		defaultString(
+			strings.TrimSpace(s.state.Runs[runIndex].Owner),
+			defaultString(strings.TrimSpace(s.state.Issues[issueIndex].Owner), defaultString(strings.TrimSpace(s.state.Rooms[roomIndex].Topic.Owner), "当前智能体")),
+		),
 	)
 	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
 	providerTool := conversationProviderTool(providerLabel)
 	humanMessage := Message{ID: fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()), Speaker: humanSpeaker, Role: "human", Tone: "human", Message: prompt, Time: now}
 	agentText := defaultString(strings.TrimSpace(output), "已收到，但这次没有可展示的文本输出。")
-	agentMessage := Message{ID: fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()), Speaker: agentSpeaker, Role: "agent", Tone: "agent", Message: agentText, Time: now}
+	messageTone := defaultString(strings.TrimSpace(tone), "agent")
+	agentMessage := Message{ID: fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()), Speaker: agentSpeaker, Role: "agent", Tone: messageTone, Message: agentText, Time: now}
+	toolSummary := fmt.Sprintf("讨论间对话已同步到 %s", defaultString(strings.TrimSpace(providerLabel), "本地 CLI"))
+	timelineLabel := "已收到新指令并返回结果"
+	controlNote := "已在讨论间同步当前回复。"
+	artifactTitle := "Room Conversation"
+	artifactKind := "room-conversation"
+	if messageTone == "paper" {
+		toolSummary = fmt.Sprintf("%s 已同步当前状态摘要", agentSpeaker)
+		timelineLabel = "已同步当前状态摘要"
+		controlNote = "已回写当前状态同步。"
+		artifactTitle = "Room Summary"
+		artifactKind = "room-summary"
+	}
+	s.resolveRoomAgentWaitFromPromptLocked(roomID, prompt)
 
 	s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], humanMessage, agentMessage)
 	s.state.Rooms[roomIndex].MessageIDs = append(s.state.Rooms[roomIndex].MessageIDs, humanMessage.ID, agentMessage.ID)
@@ -975,28 +1198,313 @@ func (s *Store) AppendConversation(roomID, prompt, output, provider string) (Sta
 	s.state.Runs[runIndex].StartedAt = now
 	s.state.Runs[runIndex].Duration = "实时"
 	s.state.Runs[runIndex].Summary = agentText
-	s.state.Runs[runIndex].NextAction = "继续在讨论间追加约束或验收标准。"
+	if messageTone == "paper" {
+		s.state.Runs[runIndex].NextAction = "按当前同步继续推进，或在需要时再补充新的执行结果。"
+	} else {
+		s.state.Runs[runIndex].NextAction = "继续在讨论间追加约束或验收标准。"
+	}
 	s.state.Runs[runIndex].Stdout = append(s.state.Runs[runIndex].Stdout, fmt.Sprintf("[%s] %s", now, agentText))
 	s.state.Runs[runIndex].ToolCalls = append(s.state.Runs[runIndex].ToolCalls, ToolCall{
 		ID:      fmt.Sprintf("%s-tool-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].ToolCalls)+1),
 		Tool:    providerTool,
-		Summary: fmt.Sprintf("讨论间对话已同步到 %s", defaultString(strings.TrimSpace(providerLabel), "本地 CLI")),
+		Summary: toolSummary,
 		Result:  "成功",
 	})
-	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{ID: fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1), Label: "已收到新指令并返回结果", At: now, Tone: "lime"})
-	s.updateAgentStateLocked(s.state.Issues[issueIndex].Owner, "running", "正在处理讨论间新指令")
+	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{
+		ID:    fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1),
+		Label: timelineLabel,
+		At:    now,
+		Tone:  map[bool]string{true: "paper", false: "lime"}[messageTone == "paper"],
+	})
+	s.updateAgentStateLocked(agentSpeaker, "running", "正在处理讨论间新指令")
 	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
 		item.Status = "running"
 		item.Provider = defaultString(strings.TrimSpace(providerLabel), item.Provider)
 		item.ContinuityReady = true
 		item.Summary = agentText
+		item.ControlNote = controlNote
 		item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	})
 
-	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, s.state.Issues[issueIndex].Owner, "Room Conversation", fmt.Sprintf("- prompt: %s\n- output: %s", prompt, agentText)); err != nil {
+	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, agentSpeaker, artifactTitle, fmt.Sprintf("- prompt: %s\n- output: %s", prompt, agentText)); err != nil {
 		return State{}, err
 	}
-	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "Room Conversation", "room-conversation", s.state.Issues[issueIndex].Owner)
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, agentSpeaker), artifactTitle, artifactKind, agentSpeaker)
+	if err := s.persistLocked(); err != nil {
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
+func (s *Store) AppendConversationWithoutVisibleReply(roomID, prompt, provider string) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
+	if !ok {
+		return State{}, fmt.Errorf("room not found")
+	}
+
+	now := shortClock()
+	humanSpeaker := sessionSpeakerLabel(s.state.Auth)
+	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
+	providerTool := conversationProviderTool(providerLabel)
+	humanMessage := Message{
+		ID:      fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
+		Speaker: humanSpeaker,
+		Role:    "human",
+		Tone:    "human",
+		Message: defaultString(strings.TrimSpace(prompt), "空消息已忽略。"),
+		Time:    now,
+	}
+	summary := "已收到当前消息，这一轮不需要额外回复。"
+	s.resolveRoomAgentWaitFromPromptLocked(roomID, prompt)
+
+	s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], humanMessage)
+	s.state.Rooms[roomIndex].MessageIDs = append(s.state.Rooms[roomIndex].MessageIDs, humanMessage.ID)
+	s.state.Rooms[roomIndex].Unread = 0
+	s.state.Rooms[roomIndex].Topic.Status = "running"
+	s.state.Rooms[roomIndex].Topic.Summary = defaultString(strings.TrimSpace(prompt), s.state.Rooms[roomIndex].Topic.Summary)
+	s.state.Issues[issueIndex].State = "running"
+	s.state.Runs[runIndex].Status = "running"
+	s.state.Runs[runIndex].Provider = defaultString(strings.TrimSpace(providerLabel), s.state.Runs[runIndex].Provider)
+	s.state.Runs[runIndex].StartedAt = now
+	s.state.Runs[runIndex].Duration = "实时"
+	s.state.Runs[runIndex].Summary = summary
+	s.state.Runs[runIndex].NextAction = "当前继续等待下一条房间消息，或在需要时再显式接手回复。"
+	s.state.Runs[runIndex].ToolCalls = append(s.state.Runs[runIndex].ToolCalls, ToolCall{
+		ID:      fmt.Sprintf("%s-tool-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].ToolCalls)+1),
+		Tool:    providerTool,
+		Summary: "讨论间消息已记录，本轮无需额外回复",
+		Result:  "成功",
+	})
+	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{
+		ID:    fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1),
+		Label: "已收到新指令，本轮无需额外回复",
+		At:    now,
+		Tone:  "paper",
+	})
+	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
+		item.Status = "running"
+		item.Provider = defaultString(strings.TrimSpace(providerLabel), item.Provider)
+		item.ContinuityReady = true
+		item.Summary = summary
+		item.ControlNote = "当前无需额外回复，继续等待下一条房间消息。"
+		item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	})
+
+	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, s.state.Issues[issueIndex].Owner, "Room Conversation (No Response)", fmt.Sprintf("- prompt: %s", prompt)); err != nil {
+		return State{}, err
+	}
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, s.state.Issues[issueIndex].Owner), "Room Conversation (No Response)", "room-conversation-no-response", s.state.Issues[issueIndex].Owner)
+	if err := s.persistLocked(); err != nil {
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
+func (s *Store) AppendAgentRoomMessage(roomID, speaker, output, provider string) (State, error) {
+	return s.appendAgentRoomMessageWithTone(roomID, speaker, output, provider, "agent")
+}
+
+func (s *Store) AppendAgentRoomSummary(roomID, speaker, output, provider string) (State, error) {
+	return s.appendAgentRoomMessageWithTone(roomID, speaker, output, provider, "paper")
+}
+
+func (s *Store) appendAgentRoomMessageWithTone(roomID, speaker, output, provider, tone string) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
+	if !ok {
+		return State{}, fmt.Errorf("room not found")
+	}
+
+	now := shortClock()
+	agentSpeaker := defaultString(
+		strings.TrimSpace(speaker),
+		defaultString(
+			strings.TrimSpace(s.state.Runs[runIndex].Owner),
+			defaultString(strings.TrimSpace(s.state.Issues[issueIndex].Owner), defaultString(strings.TrimSpace(s.state.Rooms[roomIndex].Topic.Owner), "当前智能体")),
+		),
+	)
+	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
+	providerTool := conversationProviderTool(providerLabel)
+	agentText := defaultString(strings.TrimSpace(output), "我已接手，继续沿当前房间推进。")
+	messageTone := defaultString(strings.TrimSpace(tone), "agent")
+	agentMessage := Message{
+		ID:      fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()),
+		Speaker: agentSpeaker,
+		Role:    "agent",
+		Tone:    messageTone,
+		Message: agentText,
+		Time:    now,
+	}
+	toolSummary := fmt.Sprintf("%s 已继续当前讨论间", agentSpeaker)
+	timelineLabel := fmt.Sprintf("%s 已继续当前讨论", agentSpeaker)
+	controlNote := "已自动接棒并继续当前房间。"
+	artifactTitle := "Room Agent Follow-up"
+	artifactKind := "room-agent-followup"
+	if messageTone == "paper" {
+		toolSummary = fmt.Sprintf("%s 已同步当前状态摘要", agentSpeaker)
+		timelineLabel = fmt.Sprintf("%s 已同步当前状态", agentSpeaker)
+		controlNote = "已自动回写当前状态同步。"
+		artifactTitle = "Room Agent Summary"
+		artifactKind = "room-agent-summary"
+	}
+
+	s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], agentMessage)
+	s.state.Rooms[roomIndex].MessageIDs = append(s.state.Rooms[roomIndex].MessageIDs, agentMessage.ID)
+	s.state.Rooms[roomIndex].Unread = 0
+	s.state.Rooms[roomIndex].Topic.Status = "running"
+	s.state.Rooms[roomIndex].Topic.Summary = agentText
+	s.state.Issues[issueIndex].State = "running"
+	s.state.Runs[runIndex].Status = "running"
+	s.state.Runs[runIndex].Provider = defaultString(strings.TrimSpace(providerLabel), s.state.Runs[runIndex].Provider)
+	s.state.Runs[runIndex].StartedAt = now
+	s.state.Runs[runIndex].Duration = "实时"
+	s.state.Runs[runIndex].Summary = agentText
+	if messageTone == "paper" {
+		s.state.Runs[runIndex].NextAction = "按当前摘要继续推进，或在需要时再补充新的执行结果。"
+	} else {
+		s.state.Runs[runIndex].NextAction = "继续围当前讨论补充约束、执行结果或下一步。"
+	}
+	s.state.Runs[runIndex].Stdout = append(s.state.Runs[runIndex].Stdout, fmt.Sprintf("[%s] %s", now, agentText))
+	s.state.Runs[runIndex].ToolCalls = append(s.state.Runs[runIndex].ToolCalls, ToolCall{
+		ID:      fmt.Sprintf("%s-tool-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].ToolCalls)+1),
+		Tool:    providerTool,
+		Summary: toolSummary,
+		Result:  "成功",
+	})
+	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{
+		ID:    fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1),
+		Label: timelineLabel,
+		At:    now,
+		Tone:  map[bool]string{true: "paper", false: "lime"}[messageTone == "paper"],
+	})
+	s.updateAgentStateLocked(agentSpeaker, "running", "正在继续当前房间")
+	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
+		item.Status = "running"
+		item.Provider = defaultString(strings.TrimSpace(providerLabel), item.Provider)
+		item.ContinuityReady = true
+		item.Summary = agentText
+		item.ControlNote = controlNote
+		item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	})
+
+	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, agentSpeaker, artifactTitle, fmt.Sprintf("- output: %s", agentText)); err != nil {
+		return State{}, err
+	}
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, agentSpeaker), artifactTitle, artifactKind, agentSpeaker)
+	if err := s.persistLocked(); err != nil {
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
+func (s *Store) AppendClarificationRequest(roomID, prompt, speaker, question, provider string) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.appendClarificationRequestLocked(roomID, prompt, speaker, question, provider, true)
+}
+
+func (s *Store) AppendAgentClarificationRequest(roomID, speaker, question, provider string) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.appendClarificationRequestLocked(roomID, "", speaker, question, provider, false)
+}
+
+func (s *Store) appendClarificationRequestLocked(roomID, prompt, speaker, question, provider string, includeHuman bool) (State, error) {
+	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
+	if !ok {
+		return State{}, fmt.Errorf("room not found")
+	}
+
+	now := shortClock()
+	humanSpeaker := sessionSpeakerLabel(s.state.Auth)
+	agentSpeaker := defaultString(
+		strings.TrimSpace(speaker),
+		defaultString(
+			strings.TrimSpace(s.state.Runs[runIndex].Owner),
+			defaultString(strings.TrimSpace(s.state.Issues[issueIndex].Owner), defaultString(strings.TrimSpace(s.state.Rooms[roomIndex].Topic.Owner), "当前智能体")),
+		),
+	)
+	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
+	providerTool := conversationProviderTool(providerLabel)
+	questionText := defaultString(strings.TrimSpace(question), "我需要先确认一个关键信息。")
+	humanText := defaultString(strings.TrimSpace(prompt), "空消息已忽略。")
+	agentMessage := Message{
+		ID:      fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()),
+		Speaker: agentSpeaker,
+		Role:    "agent",
+		Tone:    "blocked",
+		Message: questionText,
+		Time:    now,
+	}
+
+	if includeHuman {
+		s.resolveRoomAgentWaitFromPromptLocked(roomID, humanText)
+		humanMessage := Message{
+			ID:      fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
+			Speaker: humanSpeaker,
+			Role:    "human",
+			Tone:    "human",
+			Message: humanText,
+			Time:    now,
+		}
+		s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], humanMessage, agentMessage)
+		s.state.Rooms[roomIndex].MessageIDs = append(s.state.Rooms[roomIndex].MessageIDs, humanMessage.ID, agentMessage.ID)
+	} else {
+		s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], agentMessage)
+		s.state.Rooms[roomIndex].MessageIDs = append(s.state.Rooms[roomIndex].MessageIDs, agentMessage.ID)
+	}
+	s.markRoomAgentWaitingLocked(roomID, agentSpeaker, agentMessage.ID)
+	s.state.Rooms[roomIndex].Unread = 0
+	s.state.Rooms[roomIndex].Topic.Status = "paused"
+	s.state.Rooms[roomIndex].Topic.Summary = questionText
+	s.state.Issues[issueIndex].State = "paused"
+	s.state.Runs[runIndex].Status = "paused"
+	s.state.Runs[runIndex].Provider = defaultString(strings.TrimSpace(providerLabel), s.state.Runs[runIndex].Provider)
+	s.state.Runs[runIndex].StartedAt = now
+	s.state.Runs[runIndex].Duration = "实时"
+	s.state.Runs[runIndex].Summary = questionText
+	s.state.Runs[runIndex].NextAction = "等待当前问题获得补充后，再继续推进。"
+	if includeHuman {
+		s.state.Runs[runIndex].Stdout = append(s.state.Runs[runIndex].Stdout, fmt.Sprintf("[%s] prompt: %s", now, humanText))
+	}
+	s.state.Runs[runIndex].Stdout = append(s.state.Runs[runIndex].Stdout, fmt.Sprintf("[%s] clarification: %s", now, questionText))
+	s.state.Runs[runIndex].ToolCalls = append(s.state.Runs[runIndex].ToolCalls, ToolCall{
+		ID:      fmt.Sprintf("%s-tool-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].ToolCalls)+1),
+		Tool:    providerTool,
+		Summary: fmt.Sprintf("%s %s", agentSpeaker, map[bool]string{true: "记录当前消息并发起澄清请求", false: "发起澄清请求"}[includeHuman]),
+		Result:  "成功",
+	})
+	s.state.Runs[runIndex].Timeline = append(s.state.Runs[runIndex].Timeline, RunEvent{
+		ID:    fmt.Sprintf("%s-ev-%d", s.state.Runs[runIndex].ID, len(s.state.Runs[runIndex].Timeline)+1),
+		Label: fmt.Sprintf("%s 请求补充关键信息", agentSpeaker),
+		At:    now,
+		Tone:  "paper",
+	})
+	s.updateAgentStateLocked(agentSpeaker, "blocked", "等待当前澄清回复")
+	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
+		item.Status = "paused"
+		item.Provider = defaultString(strings.TrimSpace(providerLabel), item.Provider)
+		item.ContinuityReady = true
+		item.Summary = questionText
+		item.ControlNote = "等待当前澄清回复。"
+		item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	})
+
+	artifactBody := fmt.Sprintf("- question: %s", questionText)
+	if includeHuman {
+		artifactBody = fmt.Sprintf("- prompt: %s\n- question: %s", humanText, questionText)
+	}
+	if err := appendRunArtifacts(s.workspaceRoot, roomID, s.state.Issues[issueIndex].Key, agentSpeaker, "Room Clarification Request", artifactBody); err != nil {
+		return State{}, err
+	}
+	s.recordMemoryArtifactWritesLocked(runArtifactPaths(roomID, agentSpeaker), "Room Clarification Request", "room-clarification-request", agentSpeaker)
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
 	}

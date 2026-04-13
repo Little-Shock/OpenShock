@@ -666,8 +666,10 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 					if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, provider); restoreErr == nil {
 						nextState = restoredState
 					}
+					visibleOutput = directives.DisplayOutput
+				} else {
+					visibleOutput = followupOutput
 				}
-				visibleOutput = directives.DisplayOutput
 			} else if strings.TrimSpace(followupOutput) != "" {
 				visibleOutput = followupOutput
 			}
@@ -1704,8 +1706,10 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 				if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, req.Provider); restoreErr == nil {
 					nextState = restoredState
 				}
+				visibleOutput = directives.DisplayOutput
+			} else {
+				visibleOutput = followupOutput
 			}
-			visibleOutput = directives.DisplayOutput
 		} else if strings.TrimSpace(followupOutput) != "" {
 			visibleOutput = followupOutput
 		}

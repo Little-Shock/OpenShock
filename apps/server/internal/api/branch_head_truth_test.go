@@ -46,7 +46,7 @@ func TestBranchHeadTruthEndpointReturnsAlignedTruth(t *testing.T) {
 				AuthMode:          "gh-cli",
 				PreferredAuthMode: "gh-cli",
 				Ready:             true,
-				Message:           "GitHub CLI 已认证，可以继续推进真实远端 PR 集成。",
+				Message:           "GitHub 命令行已登录，可以继续处理远端拉取请求。",
 			},
 		},
 	}).Handler())
@@ -155,7 +155,7 @@ func TestBranchHeadTruthEndpointFlagsDriftAcrossBindingCheckoutAndLiveService(t 
 				AuthMode:          "gh-cli",
 				PreferredAuthMode: "gh-cli",
 				Ready:             true,
-				Message:           "GitHub CLI 已认证，可以继续推进真实远端 PR 集成。",
+				Message:           "GitHub 命令行已登录，可以继续处理远端拉取请求。",
 			},
 		},
 	}).Handler())

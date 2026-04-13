@@ -219,6 +219,9 @@ func (s *Store) hydrateMissingDefaults() {
 			s.state.Mailbox[index].Messages = []MailboxMessage{}
 		}
 	}
+	if s.state.RoomAgentWaits == nil {
+		s.state.RoomAgentWaits = []RoomAgentWait{}
+	}
 	if len(s.state.Sessions) == 0 && !s.freshBootstrap() {
 		s.state.Sessions = defaults.Sessions
 	}

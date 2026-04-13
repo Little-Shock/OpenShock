@@ -236,8 +236,8 @@ func TestProbeMarksPreferredGitHubAppPathNotReadyWhenItFallsBackToGHCLI(t *testi
 	if status.PreferredAuthMode != "github-app" {
 		t.Fatalf("status.PreferredAuthMode = %q, want github-app", status.PreferredAuthMode)
 	}
-	if !strings.Contains(status.Message, "当前仍退回 gh CLI") {
-		t.Fatalf("status.Message = %q, want gh CLI fallback contract", status.Message)
+	if !strings.Contains(status.Message, "当前先使用命令行登录") {
+		t.Fatalf("status.Message = %q, want command-line fallback contract", status.Message)
 	}
 }
 

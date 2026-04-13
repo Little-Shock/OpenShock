@@ -152,7 +152,7 @@ func TestRepoBindingPromotesToGitHubAppWhenConnectionIsReady(t *testing.T) {
 				InstallationURL:  "https://github.com/settings/installations/67890",
 				Ready:            true,
 				AuthMode:         "github-app",
-				Message:          "GitHub App installation 已就绪。",
+				Message:          "GitHub 应用已就绪。",
 			},
 		},
 	}).Handler())
@@ -221,7 +221,7 @@ func TestCurrentRepoBindingCarriesPreferredAuthPathAndMissingFields(t *testing.T
 				InstallationURL:   "https://github.com/apps/openshock-app/installations/new",
 				Missing:           []string{"privateKey", "installationId"},
 				PreferredAuthMode: "github-app",
-				Message:           "GitHub App 配置不完整，缺少 privateKey / installationId。",
+				Message:           "GitHub 应用配置不完整，缺少 privateKey / installationId。",
 			},
 		},
 	}).Handler())
@@ -277,7 +277,7 @@ func TestRepoBindingReturnsExplicitContractWhenGitHubAppIsNotInstalled(t *testin
 				AppInstalled:     false,
 				InstallationURL:  "https://github.com/apps/openshock-app/installations/new",
 				AuthMode:         "github-app",
-				Message:          "GitHub App 已配置，但 installation 还未完成。",
+				Message:          "GitHub 应用已配置，但还没完成安装。",
 			},
 		},
 	}).Handler())
@@ -302,7 +302,7 @@ func TestRepoBindingReturnsExplicitContractWhenGitHubAppIsNotInstalled(t *testin
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode repo binding failure payload: %v", err)
 	}
-	if !strings.Contains(payload.Error, "installation") {
+	if !strings.Contains(payload.Error, "安装") {
 		t.Fatalf("error = %q, want installation contract failure", payload.Error)
 	}
 	if payload.Binding.BindingStatus != "blocked" {
@@ -347,7 +347,7 @@ func TestRepoBindingPrefersGitHubAppContractAndBlocksWhenInstallationIsPending(t
 				InstallationURL:   "https://github.com/apps/openshock-app/installations/new",
 				AuthMode:          "gh-cli",
 				PreferredAuthMode: "github-app",
-				Message:           "GitHub App 已配置，但 installation 还未完成；当前仍退回 gh CLI。",
+				Message:           "GitHub 应用已配置，但还没完成安装；当前先使用命令行登录。",
 			},
 		},
 	}).Handler())
@@ -383,7 +383,7 @@ func TestRepoBindingPrefersGitHubAppContractAndBlocksWhenInstallationIsPending(t
 	if payload.Binding.InstallationURL != "https://github.com/apps/openshock-app/installations/new" {
 		t.Fatalf("binding installation url = %q, want app installation URL", payload.Binding.InstallationURL)
 	}
-	if !strings.Contains(payload.Error, "installation") {
+	if !strings.Contains(payload.Error, "安装") {
 		t.Fatalf("error = %q, want installation contract failure", payload.Error)
 	}
 }

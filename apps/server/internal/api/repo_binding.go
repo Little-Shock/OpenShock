@@ -211,28 +211,28 @@ func validateRepoBindingConnection(binding store.RepoBindingInput, probeErr erro
 		return nil
 	}
 	if probeErr != nil {
-		return fmt.Errorf("probe github app readiness: %w", probeErr)
+		return fmt.Errorf("检查 GitHub 应用状态失败：%w", probeErr)
 	}
 	if !connection.RemoteConfigured {
-		return fmt.Errorf("github-app repo binding requires an origin remote")
+		return fmt.Errorf("使用 GitHub 应用前，需要先配置 origin 仓库")
 	}
 	if !strings.EqualFold(defaultString(strings.TrimSpace(connection.Provider), "github"), "github") {
-		return fmt.Errorf("github-app repo binding only supports GitHub remotes")
+		return fmt.Errorf("GitHub 应用目前只支持 GitHub 仓库")
 	}
 	if !connection.AppConfigured {
 		if message := strings.TrimSpace(connection.Message); message != "" {
 			return fmt.Errorf("%s", message)
 		}
 		if len(connection.Missing) > 0 {
-			return fmt.Errorf("github-app auth is not configured; missing %s", strings.Join(connection.Missing, " / "))
+			return fmt.Errorf("GitHub 应用配置不完整，缺少 %s", strings.Join(connection.Missing, " / "))
 		}
-		return fmt.Errorf("github-app auth is not configured")
+		return fmt.Errorf("GitHub 应用还没有配置完成")
 	}
 	if !connection.AppInstalled {
 		if message := strings.TrimSpace(connection.Message); message != "" {
 			return fmt.Errorf("%s", message)
 		}
-		return fmt.Errorf("github-app installation is not ready")
+		return fmt.Errorf("GitHub 应用还没完成安装")
 	}
 	return nil
 }
@@ -308,7 +308,7 @@ func workspaceGitHubInstallationSnapshot(workspace store.WorkspaceSnapshot) stor
 		installation.PreferredAuthMode = defaultString(workspace.RepoAuthMode, "local-git-origin")
 	}
 	if strings.TrimSpace(installation.ConnectionMessage) == "" {
-		installation.ConnectionMessage = "等待 GitHub probe 或 installation callback 返回 install truth。"
+		installation.ConnectionMessage = "等待 GitHub 状态检查或安装回调返回结果。"
 	}
 	return installation
 }

@@ -87,7 +87,7 @@ func TestGitHubInstallationCallbackPersistsInstallTruthAndRefreshesRepoBinding(t
 			Ready:             true,
 			AuthMode:          "github-app",
 			PreferredAuthMode: "github-app",
-			Message:           "GitHub App installation 已就绪，可以继续推进 repo binding 与 webhook contract。",
+			Message:           "GitHub 应用已就绪，可以继续连接仓库与回调。",
 		},
 	}
 
@@ -199,7 +199,7 @@ func TestGitHubInstallationCallbackRejectsMissingInstallationID(t *testing.T) {
 		Error string `json:"error"`
 	}
 	decodeJSON(t, resp, &payload)
-	if payload.Error != "installationId is required" {
+	if payload.Error != "缺少安装编号" {
 		t.Fatalf("error = %q, want installationId validation failure", payload.Error)
 	}
 	if _, err := githubsvc.LoadInstallationState(root); err == nil {

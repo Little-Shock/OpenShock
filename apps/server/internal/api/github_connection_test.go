@@ -55,7 +55,7 @@ func TestGitHubConnectionEndpointReturnsProbeStatus(t *testing.T) {
 				GHAuthenticated:  true,
 				Ready:            true,
 				AuthMode:         "gh-cli",
-				Message:          "GitHub CLI 已认证，可以继续推进真实远端 PR 集成。",
+				Message:          "GitHub 命令行已登录，可以继续处理远端拉取请求。",
 			},
 		},
 	}).Handler())
@@ -106,7 +106,7 @@ func TestGitHubConnectionEndpointSurfacesPublicIngressURLsWhenControlURLConfigur
 				AppConfigured:     true,
 				AppInstalled:      false,
 				PreferredAuthMode: "github-app",
-				Message:           "GitHub App 已配置，但 installation 还未完成。",
+				Message:           "GitHub 应用已配置，但还没完成安装。",
 			},
 		},
 	}).Handler())
@@ -209,7 +209,7 @@ func TestGitHubConnectionEndpointReturnsGitHubAppContract(t *testing.T) {
 				Ready:             true,
 				AuthMode:          "github-app",
 				PreferredAuthMode: "github-app",
-				Message:           "GitHub App installation 已就绪，可以继续推进 repo binding 与 webhook contract。",
+				Message:           "GitHub 应用已就绪，可以继续连接仓库与回调。",
 			},
 		},
 	}).Handler())
@@ -269,7 +269,7 @@ func TestGitHubConnectionEndpointSurfacesEffectiveAuthModeWhenGitHubAppFallsBack
 				Ready:             false,
 				AuthMode:          "gh-cli",
 				PreferredAuthMode: "github-app",
-				Message:           "GitHub App 配置不完整，缺少 privateKey / installationId；当前仍退回 gh CLI。",
+				Message:           "GitHub 应用配置不完整，缺少 privateKey / installationId；当前先使用命令行登录。",
 			},
 		},
 	}).Handler())
