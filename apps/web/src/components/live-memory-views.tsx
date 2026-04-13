@@ -1615,12 +1615,31 @@ export function LiveMemoryView() {
                 onClick={() => void handleRunCleanup()}
                 className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] disabled:opacity-60"
               >
-                {busyAction === "run-cleanup" ? "清理中..." : "开始清理"}
+                {busyAction === "run-cleanup"
+                  ? "清理中..."
+                  : center.cleanup.due && center.cleanup.dueCount > 0
+                    ? `处理 ${center.cleanup.dueCount} 条待清理`
+                    : "开始清理"}
               </button>
             </div>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
               用来清理过期、重复或不再使用的条目。
             </p>
+
+            <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+              <StatusRow
+                label="当前状态"
+                value={
+                  center.cleanup.due && center.cleanup.dueCount > 0
+                    ? `有 ${center.cleanup.dueCount} 条待清理项，建议现在执行。`
+                    : center.cleanup.nextRunAt
+                      ? `当前没有待清理项，下一次建议检查时间为 ${formatTimestamp(center.cleanup.nextRunAt)}。`
+                      : "当前没有待清理项。"
+                }
+                tone={center.cleanup.due ? "yellow" : "white"}
+                testID="memory-cleanup-schedule"
+              />
+            </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <ArtifactFact

@@ -1,7 +1,7 @@
 # OpenShock Product Checklist
 
-**版本:** 1.28
-**更新日期:** 2026 年 4 月 12 日
+**版本:** 1.29
+**更新日期:** 2026 年 4 月 14 日
 **关联文档:** [PRD](./PRD.md) · [Phase 0 MVP](./Phase0-MVP.md) · [Execution Tickets](./Execution-Tickets.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -211,8 +211,9 @@
   - [x] memory center 现在还会暴露 `workspace-file / search-sidecar / external-persistent` provider binding truth，并把 `read/write scopes / recall / retention / sharing / last-check / degraded fallback` 同步进 `/memory` 与 next-run preview
   - [x] `/memory` 现在还支持逐 provider health check / recovery，把 failure count、next action、activity timeline 与 reload persistence 收成正式产品真相
   - [x] room-auto handoff 发生后，session next-run preview 现在也会围当前 owner 与 provider summary 一起前滚；reload 后不会再回落到 stale reviewer prompt
+  - [x] memory cleanup 现在会暴露 `due / dueCount / nextRunAt`，并支持 safe `POST /v1/memory-center/cleanup?mode=due` contract，便于后续 scheduler / worker 只在真正到期时执行清理
 - 当前 GAP:
-  - [ ] 更重的后台整理任务（去重、压缩、打标签、TTL）仍未完成
+  - [ ] 更重的后台整理任务（压缩、打标签、真正后台 worker / scheduler）仍未完成；当前只补了到期判断与 safe run-due contract
   - [ ] 真实 remote external durable adapter 仍未完成；当前 external provider 虽可恢复到 local relay stub，但不会假装已经接上真实外部数据面
   - [ ] Agent 级 memory binding / recall policy / next-run preview 已可编辑，但跨 Agent 的更重治理、批量策略和后台编排仍留后续
 - 对应 Test Cases: `TC-019` `TC-023` `TC-036` `TC-085` `TC-086` `TC-088`

@@ -354,6 +354,124 @@ func TestMemoryCenterCleanupRoutePrunesQueueAndKeepsPromotionFlowLive(t *testing
 	}
 }
 
+func TestMemoryCenterCleanupRouteSupportsDueModeAndSchedule(t *testing.T) {
+	root := t.TempDir()
+	backingStore, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	snapshot := backingStore.Snapshot()
+	decisionArtifact := findMemoryArtifactByPath(snapshot.Memory, filepath.ToSlash(filepath.Join("decisions", "ops-27.md")))
+	if decisionArtifact == nil {
+		t.Fatalf("decision artifact missing from seeded snapshot")
+	}
+
+	if _, _, _, err := backingStore.RequestMemoryPromotion(store.MemoryPromotionRequestInput{
+		MemoryID:      decisionArtifact.ID,
+		SourceVersion: decisionArtifact.Version,
+		Kind:          "policy",
+		Title:         "Future Rejected Policy",
+		Rationale:     "remains live until the rejected TTL window closes",
+		ProposedBy:    "Larkspur",
+	}); err != nil {
+		t.Fatalf("RequestMemoryPromotion(rejected future) error = %v", err)
+	}
+
+	center := backingStore.MemoryCenter()
+	rejectedFuture := center.Promotions[0]
+	if _, _, _, err := backingStore.ReviewMemoryPromotion(rejectedFuture.ID, store.MemoryPromotionReviewInput{
+		Status:     "rejected",
+		ReviewNote: "keep around until TTL expires",
+		ReviewedBy: "Anne",
+	}); err != nil {
+		t.Fatalf("ReviewMemoryPromotion(rejected future) error = %v", err)
+	}
+	if _, _, _, err := backingStore.RequestMemoryPromotion(store.MemoryPromotionRequestInput{
+		MemoryID:      decisionArtifact.ID,
+		SourceVersion: decisionArtifact.Version,
+		Kind:          "skill",
+		Title:         "Room Conflict Triage",
+		Rationale:     "older duplicate should be pruned when due cleanup runs",
+		ProposedBy:    "Larkspur",
+	}); err != nil {
+		t.Fatalf("RequestMemoryPromotion(duplicate older) error = %v", err)
+	}
+	if _, _, _, err := backingStore.RequestMemoryPromotion(store.MemoryPromotionRequestInput{
+		MemoryID:      decisionArtifact.ID,
+		SourceVersion: decisionArtifact.Version,
+		Kind:          "skill",
+		Title:         "Room Conflict Triage",
+		Rationale:     "newest duplicate should stay live",
+		ProposedBy:    "Larkspur",
+	}); err != nil {
+		t.Fatalf("RequestMemoryPromotion(duplicate newer) error = %v", err)
+	}
+
+	centerResp, err := http.Get(server.URL + "/v1/memory-center")
+	if err != nil {
+		t.Fatalf("GET /v1/memory-center error = %v", err)
+	}
+	if centerResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/memory-center status = %d, want %d", centerResp.StatusCode, http.StatusOK)
+	}
+
+	var beforeCenter store.MemoryCenter
+	decodeJSON(t, centerResp, &beforeCenter)
+	if !beforeCenter.Cleanup.Due || beforeCenter.Cleanup.DueCount != 1 {
+		t.Fatalf("before cleanup schedule = %#v, want due=true dueCount=1", beforeCenter.Cleanup)
+	}
+	if strings.TrimSpace(beforeCenter.Cleanup.NextRunAt) == "" {
+		t.Fatalf("before cleanup schedule = %#v, want nextRunAt for remaining rejected item", beforeCenter.Cleanup)
+	}
+
+	cleanupResp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/memory-center/cleanup?mode=due", "")
+	defer cleanupResp.Body.Close()
+	if cleanupResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/memory-center/cleanup?mode=due status = %d, want %d", cleanupResp.StatusCode, http.StatusOK)
+	}
+
+	var cleanupPayload struct {
+		Executed bool                    `json:"executed"`
+		Cleanup  *store.MemoryCleanupRun `json:"cleanup"`
+		Center   store.MemoryCenter      `json:"center"`
+		State    store.State             `json:"state"`
+	}
+	decodeJSON(t, cleanupResp, &cleanupPayload)
+	if !cleanupPayload.Executed || cleanupPayload.Cleanup == nil {
+		t.Fatalf("cleanup payload = %#v, want executed cleanup run", cleanupPayload)
+	}
+	if cleanupPayload.Cleanup.Stats.DedupedPending != 1 || cleanupPayload.Cleanup.Stats.TotalRemoved != 1 {
+		t.Fatalf("cleanup stats = %#v, want one deduped removal", cleanupPayload.Cleanup.Stats)
+	}
+	if cleanupPayload.Center.Cleanup.Due || cleanupPayload.Center.Cleanup.DueCount != 0 {
+		t.Fatalf("center after due cleanup = %#v, want queue no longer due", cleanupPayload.Center.Cleanup)
+	}
+	if strings.TrimSpace(cleanupPayload.Center.Cleanup.NextRunAt) == "" {
+		t.Fatalf("center after due cleanup = %#v, want nextRunAt for remaining rejected item", cleanupPayload.Center.Cleanup)
+	}
+
+	noopResp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/memory-center/cleanup?mode=due", "")
+	defer noopResp.Body.Close()
+	if noopResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/memory-center/cleanup?mode=due noop status = %d, want %d", noopResp.StatusCode, http.StatusOK)
+	}
+
+	var noopPayload struct {
+		Executed bool                    `json:"executed"`
+		Cleanup  *store.MemoryCleanupRun `json:"cleanup"`
+		Center   store.MemoryCenter      `json:"center"`
+	}
+	decodeJSON(t, noopResp, &noopPayload)
+	if noopPayload.Executed || noopPayload.Cleanup != nil {
+		t.Fatalf("noop payload = %#v, want no execution", noopPayload)
+	}
+	if noopPayload.Center.Cleanup.Due || noopPayload.Center.Cleanup.DueCount != 0 {
+		t.Fatalf("noop center cleanup schedule = %#v, want queue still not due", noopPayload.Center.Cleanup)
+	}
+	if strings.TrimSpace(noopPayload.Center.Cleanup.NextRunAt) == "" {
+		t.Fatalf("noop center = %#v, want nextRunAt to remain visible", noopPayload.Center.Cleanup)
+	}
+}
+
 func TestMemoryCenterProviderRoutesExposeDurableProviderBindings(t *testing.T) {
 	root := t.TempDir()
 	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")

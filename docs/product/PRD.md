@@ -727,7 +727,7 @@ online -> busy -> offline
 7. QMD 侧车：本地文档 / topic transcript 可搜索
 8. OpenMemory / Mem0 / MemOS 等外部记忆插件适配
 9. Memory Viewer：查看、纠正、删除和追溯记忆
-10. 记忆整理任务：去重、TTL、promote-to-skill
+10. 记忆整理任务：去重、TTL、promote-to-skill，以及 `due / next-run / safe run-due` 调度真相
 11. 邮件通知：invite、verify、reset、blocked escalation、review reminder
 12. 基础角色权限：owner / admin / member / viewer
 13. Credential Profile 与加密 secrets 管理

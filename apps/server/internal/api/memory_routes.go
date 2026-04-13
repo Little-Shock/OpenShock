@@ -182,6 +182,30 @@ func (s *Server) handleMemoryCenterCleanup(w http.ResponseWriter, r *http.Reques
 	}
 
 	snapshot := s.store.Snapshot()
+	mode := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("mode")))
+	if mode != "" && mode != "due" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid cleanup mode"})
+		return
+	}
+	if mode == "due" {
+		nextState, cleanup, center, executed, err := s.store.RunDueMemoryCleanup(currentAuthActor(snapshot.Auth.Session))
+		if err != nil {
+			writeMemoryError(w, err)
+			return
+		}
+
+		payload := map[string]any{
+			"executed": executed,
+			"center":   center,
+			"state":    nextState,
+		}
+		if cleanup != nil {
+			payload["cleanup"] = cleanup
+		}
+		writeJSON(w, http.StatusOK, payload)
+		return
+	}
+
 	nextState, cleanup, center, err := s.store.RunMemoryCleanup(currentAuthActor(snapshot.Auth.Session))
 	if err != nil {
 		writeMemoryError(w, err)

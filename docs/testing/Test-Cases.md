@@ -323,7 +323,7 @@
   2. 触发 issue / conversation 写回。
   3. 重启 store 并模拟外部文件修改。
 - 预期结果: memory artifact 版本递增，带 governance 元数据，并能把外部编辑同步成新版本。
-- 业务结论: memory version / governance contract 已有后端基线。
+- 业务结论: 2026 年 4 月 14 日又补了 `TestMemoryCleanupDueRunExecutesOnlyWhenQueueNeedsPruning` 与 `TestMemoryCenterCleanupRouteSupportsDueModeAndSchedule`，把 memory center 的 `due / dueCount / nextRunAt` schedule truth，以及 safe `POST /v1/memory-center/cleanup?mode=due` 合同一起锁进 store/API。现在 cleanup 不再只是“手动点一下看看”，而是已经能稳定暴露“当前是否到期、下一次大概何时该跑”的 durable truth，因此这条 memory version / governance contract 继续保持 `Pass`。
 
 ## TC-024 Role / Permission Action Matrix
 

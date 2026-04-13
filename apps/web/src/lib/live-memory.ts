@@ -179,6 +179,9 @@ export type MemoryCleanupState = {
   lastRecovery?: string;
   lastStats: MemoryCleanupStats;
   ledger: MemoryCleanupRun[];
+  due: boolean;
+  dueCount: number;
+  nextRunAt?: string;
 };
 
 export type MemoryCenter = {
@@ -274,6 +277,9 @@ const EMPTY_MEMORY_CENTER: MemoryCenter = {
   providers: [],
   promotions: [],
   cleanup: {
+    due: false,
+    dueCount: 0,
+    nextRunAt: "",
     lastStats: {
       dedupedPending: 0,
       supersededPending: 0,

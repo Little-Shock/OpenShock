@@ -441,6 +441,160 @@ func TestMemoryCleanupPrunesStaleQueueAndKeepsPromotionPathLive(t *testing.T) {
 	}
 }
 
+func TestMemoryCleanupDueRunExecutesOnlyWhenQueueNeedsPruning(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	snapshot := s.Snapshot()
+	decisionArtifact := findMemoryArtifactByPath(snapshot, filepath.ToSlash(filepath.Join("decisions", "ops-27.md")))
+	if decisionArtifact == nil {
+		t.Fatalf("decision artifact missing from seeded snapshot")
+	}
+
+	_, rejectedFuture, _, err := s.RequestMemoryPromotion(MemoryPromotionRequestInput{
+		MemoryID:      decisionArtifact.ID,
+		SourceVersion: decisionArtifact.Version,
+		Kind:          memoryPromotionKindPolicy,
+		Title:         "Future Rejected Policy",
+		Rationale:     "stays live until the rejected TTL window closes",
+		ProposedBy:    "Larkspur",
+	})
+	if err != nil {
+		t.Fatalf("RequestMemoryPromotion(rejected future) error = %v", err)
+	}
+	if _, _, _, err := s.ReviewMemoryPromotion(rejectedFuture.ID, MemoryPromotionReviewInput{
+		Status:     memoryPromotionStatusRejected,
+		ReviewNote: "keep around until TTL expires",
+		ReviewedBy: "Anne",
+	}); err != nil {
+		t.Fatalf("ReviewMemoryPromotion(rejected future) error = %v", err)
+	}
+
+	_, duplicateOlder, _, err := s.RequestMemoryPromotion(MemoryPromotionRequestInput{
+		MemoryID:      decisionArtifact.ID,
+		SourceVersion: decisionArtifact.Version,
+		Kind:          memoryPromotionKindSkill,
+		Title:         "Room Conflict Triage",
+		Rationale:     "older duplicate should be pruned when due cleanup runs",
+		ProposedBy:    "Larkspur",
+	})
+	if err != nil {
+		t.Fatalf("RequestMemoryPromotion(duplicate older) error = %v", err)
+	}
+	_, duplicateNewer, _, err := s.RequestMemoryPromotion(MemoryPromotionRequestInput{
+		MemoryID:      decisionArtifact.ID,
+		SourceVersion: decisionArtifact.Version,
+		Kind:          memoryPromotionKindSkill,
+		Title:         "Room Conflict Triage",
+		Rationale:     "newest duplicate should stay live",
+		ProposedBy:    "Larkspur",
+	})
+	if err != nil {
+		t.Fatalf("RequestMemoryPromotion(duplicate newer) error = %v", err)
+	}
+
+	futureReviewedAt := time.Now().UTC().Add(-(memoryCleanupRejectedTTL - 2*time.Hour)).Format(time.RFC3339)
+	olderDuplicateAt := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	newerDuplicateAt := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+
+	s.mu.Lock()
+	state, err := s.loadMemoryCenterStateLocked()
+	if err != nil {
+		s.mu.Unlock()
+		t.Fatalf("loadMemoryCenterStateLocked() error = %v", err)
+	}
+	for index := range state.Promotions {
+		switch state.Promotions[index].ID {
+		case rejectedFuture.ID:
+			state.Promotions[index].ProposedAt = futureReviewedAt
+			state.Promotions[index].ReviewedAt = futureReviewedAt
+		case duplicateOlder.ID:
+			state.Promotions[index].ProposedAt = olderDuplicateAt
+		case duplicateNewer.ID:
+			state.Promotions[index].ProposedAt = newerDuplicateAt
+		}
+	}
+	if err := s.saveMemoryCenterStateLocked(state); err != nil {
+		s.mu.Unlock()
+		t.Fatalf("saveMemoryCenterStateLocked() error = %v", err)
+	}
+	s.mu.Unlock()
+
+	center := s.MemoryCenter()
+	if !center.Cleanup.Due || center.Cleanup.DueCount != 1 {
+		t.Fatalf("center cleanup schedule = %#v, want due=true dueCount=1", center.Cleanup)
+	}
+	expectedNextRunAt := time.Now().UTC()
+	expectedNextRunAt, err = time.Parse(time.RFC3339, futureReviewedAt)
+	if err != nil {
+		t.Fatalf("time.Parse(futureReviewedAt) error = %v", err)
+	}
+	expectedNextRunAt = expectedNextRunAt.Add(memoryCleanupRejectedTTL)
+	if center.Cleanup.NextRunAt != expectedNextRunAt.Format(time.RFC3339) {
+		t.Fatalf("center cleanup nextRunAt = %q, want %q", center.Cleanup.NextRunAt, expectedNextRunAt.Format(time.RFC3339))
+	}
+
+	postCleanupSnapshot, cleanupRun, postCleanupCenter, executed, err := s.RunDueMemoryCleanup("Larkspur")
+	if err != nil {
+		t.Fatalf("RunDueMemoryCleanup() error = %v", err)
+	}
+	if !executed || cleanupRun == nil {
+		t.Fatalf("RunDueMemoryCleanup() = executed=%v cleanup=%#v, want executed cleanup run", executed, cleanupRun)
+	}
+	if cleanupRun.Status != memoryCleanupStatusCleaned || cleanupRun.Stats.DedupedPending != 1 || cleanupRun.Stats.TotalRemoved != 1 {
+		t.Fatalf("cleanupRun = %#v, want cleaned run with one deduped pending removal", cleanupRun)
+	}
+	if postCleanupCenter.Cleanup.Due || postCleanupCenter.Cleanup.DueCount != 0 {
+		t.Fatalf("post cleanup schedule = %#v, want queue no longer due", postCleanupCenter.Cleanup)
+	}
+	if postCleanupCenter.Cleanup.NextRunAt != expectedNextRunAt.Format(time.RFC3339) {
+		t.Fatalf("post cleanup nextRunAt = %q, want %q", postCleanupCenter.Cleanup.NextRunAt, expectedNextRunAt.Format(time.RFC3339))
+	}
+	if len(postCleanupCenter.Cleanup.Ledger) == 0 || postCleanupCenter.Cleanup.Ledger[0].ID != cleanupRun.ID {
+		t.Fatalf("post cleanup ledger = %#v, want run recorded first", postCleanupCenter.Cleanup.Ledger)
+	}
+	if findPromotionByID(postCleanupCenter.Promotions, duplicateOlder.ID) != nil {
+		t.Fatalf("older duplicate still present after due cleanup: %#v", postCleanupCenter.Promotions)
+	}
+	if kept := findPromotionByID(postCleanupCenter.Promotions, duplicateNewer.ID); kept == nil || kept.Status != memoryPromotionStatusPending {
+		t.Fatalf("newest duplicate missing after due cleanup: %#v", postCleanupCenter.Promotions)
+	}
+	if kept := findPromotionByID(postCleanupCenter.Promotions, rejectedFuture.ID); kept == nil || kept.Status != memoryPromotionStatusRejected {
+		t.Fatalf("future rejected promotion should still be live after due cleanup: %#v", postCleanupCenter.Promotions)
+	}
+
+	reloaded, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New(reload) error = %v", err)
+	}
+	reloadedCenter := reloaded.MemoryCenter()
+	if reloadedCenter.Cleanup.Due || reloadedCenter.Cleanup.DueCount != 0 {
+		t.Fatalf("reloaded cleanup schedule = %#v, want persisted non-due queue", reloadedCenter.Cleanup)
+	}
+	if reloadedCenter.Cleanup.NextRunAt != expectedNextRunAt.Format(time.RFC3339) {
+		t.Fatalf("reloaded cleanup nextRunAt = %q, want %q", reloadedCenter.Cleanup.NextRunAt, expectedNextRunAt.Format(time.RFC3339))
+	}
+	if kept := findMemoryArtifactByPath(postCleanupSnapshot, filepath.ToSlash(filepath.Join("decisions", "ops-27.md"))); kept == nil {
+		t.Fatalf("decision artifact missing after due cleanup snapshot")
+	}
+
+	_, noopCleanup, noopCenter, executed, err := s.RunDueMemoryCleanup("Larkspur")
+	if err != nil {
+		t.Fatalf("RunDueMemoryCleanup(noop) error = %v", err)
+	}
+	if executed || noopCleanup != nil {
+		t.Fatalf("RunDueMemoryCleanup(noop) = executed=%v cleanup=%#v, want no execution", executed, noopCleanup)
+	}
+	if noopCenter.Cleanup.Due || noopCenter.Cleanup.DueCount != 0 {
+		t.Fatalf("noop center cleanup schedule = %#v, want queue still not due", noopCenter.Cleanup)
+	}
+}
+
 func TestMemoryProviderBindingsPersistAndAnnotatePromptSummary(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
