@@ -872,6 +872,185 @@ func TestRoomMessageRouteSupportsNoResponseEnvelope(t *testing.T) {
 	}
 }
 
+func TestRoomMessageRouteMemoryPreviewFollowsCurrentOwnerAcrossHandoffRestart(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+	requestCount := 0
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		requestCount += 1
+		switch requestCount {
+		case 1:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "KIND: handoff\nBODY:\n@agent-claude-review-runner 你继续把恢复链路和副作用复核完。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核恢复链路 | 请把恢复链路和副作用复核完。",
+				Duration: "0.5s",
+			})
+		case 2:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "claude",
+				Command:  []string{"claude", "--print"},
+				Output:   "SEND_PUBLIC_MESSAGE\nKIND: no_response\nBODY:",
+				Duration: "0.4s",
+			})
+		case 3:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "claude",
+				Command:  []string{"claude", "--print"},
+				Output:   "KIND: handoff\nBODY:\n@agent-memory-clerk 你继续收记忆和验收点。\nOPENSHOCK_HANDOFF: agent-memory-clerk | 继续收记忆和验收点 | 请把影片资料、验收点和记忆写回一起收口。",
+				Duration: "0.5s",
+			})
+		case 4:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "SEND_PUBLIC_MESSAGE\nKIND: no_response\nBODY:",
+				Duration: "0.4s",
+			})
+		default:
+			t.Fatalf("unexpected exec request count: %d", requestCount)
+		}
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Memory Preview Continuity", "Codex Dockmaster")
+
+	firstBody, err := json.Marshal(map[string]any{
+		"prompt":   "继续推进当前 lane。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	firstResp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(firstBody))
+	if err != nil {
+		t.Fatalf("POST first room message error = %v", err)
+	}
+	defer firstResp.Body.Close()
+	if firstResp.StatusCode != http.StatusOK {
+		t.Fatalf("first status = %d, want %d", firstResp.StatusCode, http.StatusOK)
+	}
+
+	var firstPayload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, firstResp, &firstPayload)
+	if requestCount != 2 {
+		t.Fatalf("requestCount after first turn = %d, want 2", requestCount)
+	}
+
+	firstCenterResp, err := http.Get(server.URL + "/v1/memory-center")
+	if err != nil {
+		t.Fatalf("GET /v1/memory-center error = %v", err)
+	}
+	defer firstCenterResp.Body.Close()
+	if firstCenterResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/memory-center status = %d, want %d", firstCenterResp.StatusCode, http.StatusOK)
+	}
+
+	var firstCenter store.MemoryCenter
+	decodeJSON(t, firstCenterResp, &firstCenter)
+	firstPreview := findPreviewBySession(firstCenter.Previews, created.SessionID)
+	if firstPreview == nil {
+		t.Fatalf("preview missing for session %q: %#v", created.SessionID, firstCenter.Previews)
+	}
+	if !strings.Contains(firstPreview.PromptSummary, "Claude Review Runner") {
+		t.Fatalf("first preview summary = %q, want Claude Review Runner after first handoff", firstPreview.PromptSummary)
+	}
+	if !strings.Contains(firstPreview.PromptSummary, "优先给 exact-head reviewer verdict 和 scope-local blocker。") {
+		t.Fatalf("first preview summary = %q, want Claude prompt scaffold", firstPreview.PromptSummary)
+	}
+	if strings.Contains(firstPreview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+		t.Fatalf("first preview summary = %q, should not jump to Memory Clerk before second handoff", firstPreview.PromptSummary)
+	}
+
+	server.Close()
+
+	reloadedStore, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New(reload) error = %v", err)
+	}
+	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer reloadedServer.Close()
+
+	secondBody, err := json.Marshal(map[string]any{
+		"prompt": "继续把影片资料、验收点和记忆写回一起收口。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	secondResp, err := http.Post(reloadedServer.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(secondBody))
+	if err != nil {
+		t.Fatalf("POST second room message error = %v", err)
+	}
+	defer secondResp.Body.Close()
+	if secondResp.StatusCode != http.StatusOK {
+		t.Fatalf("second status = %d, want %d", secondResp.StatusCode, http.StatusOK)
+	}
+
+	var secondPayload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, secondResp, &secondPayload)
+	if requestCount != 4 {
+		t.Fatalf("requestCount after second turn = %d, want 4", requestCount)
+	}
+
+	secondCenterResp, err := http.Get(reloadedServer.URL + "/v1/memory-center")
+	if err != nil {
+		t.Fatalf("GET /v1/memory-center after reload error = %v", err)
+	}
+	defer secondCenterResp.Body.Close()
+	if secondCenterResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/memory-center after reload status = %d, want %d", secondCenterResp.StatusCode, http.StatusOK)
+	}
+
+	var secondCenter store.MemoryCenter
+	decodeJSON(t, secondCenterResp, &secondCenter)
+	secondPreview := findPreviewBySession(secondCenter.Previews, created.SessionID)
+	if secondPreview == nil {
+		t.Fatalf("preview missing for session %q after reload: %#v", created.SessionID, secondCenter.Previews)
+	}
+	if !strings.Contains(secondPreview.PromptSummary, "Memory Clerk") {
+		t.Fatalf("second preview summary = %q, want Memory Clerk after second handoff", secondPreview.PromptSummary)
+	}
+	if !strings.Contains(secondPreview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+		t.Fatalf("second preview summary = %q, want Memory Clerk prompt scaffold", secondPreview.PromptSummary)
+	}
+	if strings.Contains(secondPreview.PromptSummary, "优先给 exact-head reviewer verdict 和 scope-local blocker。") {
+		t.Fatalf("second preview summary = %q, should not fall back to stale Claude Review Runner prompt", secondPreview.PromptSummary)
+	}
+
+	room := findRoomByID(secondPayload.State, created.RoomID)
+	run := findRunByID(secondPayload.State, created.RunID)
+	var issue *store.Issue
+	if room != nil {
+		issue = findIssueByKey(secondPayload.State, room.IssueKey)
+	}
+	if room == nil || room.Topic.Owner != "Memory Clerk" {
+		t.Fatalf("room = %#v, want Memory Clerk owner", room)
+	}
+	if run == nil || run.Owner != "Memory Clerk" {
+		t.Fatalf("run = %#v, want Memory Clerk owner", run)
+	}
+	if issue == nil || issue.Owner != "Memory Clerk" {
+		t.Fatalf("issue = %#v, want Memory Clerk owner", issue)
+	}
+}
+
 func TestRoomMessageRouteSupportsClarificationRequestEnvelope(t *testing.T) {
 	root := t.TempDir()
 
