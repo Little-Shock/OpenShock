@@ -2,6 +2,8 @@
 
 - [Verification Sweep Report 2026-04-13](./Test-Report-2026-04-13-verification-sweep.md)
   - 本轮 dev 分支收口报告，汇总 `verify:server`、`verify:web`、handoff contract 回归和当前已知发送流 browser GAP
+- [Headed First-Start Journey Report 2026-04-13](../../output/testing/headed-onboarding-studio-report.md)
+  - 本轮重新生成的首次启动有头报告，覆盖 `/access -> /onboarding -> /chat/all`、setup truth 回显、server restart 与第二浏览器上下文恢复
 - [Headed Movie Site Multi-Agent Report 2026-04-12](../../output/testing/headed-multi-agent-movie-studio-report.md)
   - 本轮重新生成的多智能体顺序交接有头报告，覆盖 `星野产品 -> 折光交互 -> 青岚策展` 的 room-auto 协作链、Mailbox walkthrough、`/memory` next-run preview continuity、最终 owner 上下文、公开发言压缩后的 protocol leak probe
 - [Headed Run History Resume Context Report 2026-04-12](../../output/testing/headed-run-history-resume-context-report.md)
