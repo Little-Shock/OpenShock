@@ -2652,6 +2652,164 @@ func TestChannelMessageDefaultsToPreferredProviderAndTimeout(t *testing.T) {
 	}
 }
 
+func TestChannelMessageStripsInternalProtocolAndToolLeak(t *testing.T) {
+	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
+
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	reportedAt := time.Now().UTC().Format(time.RFC3339)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, DaemonExecResponse{
+			Provider: "claude",
+			Command:  []string{"claude", "--print"},
+			Output:   "SEND_PUBLIC_MESSAGE\nKIND: message\nBODY:\n工具调用：\ngit status\n结果：\n当前工作区干净，我继续推进。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核 | 请补最后确认。",
+			Duration: "0.4s",
+		})
+	}))
+	defer daemon.Close()
+
+	if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
+		RuntimeID:     "shock-main",
+		DaemonURL:     daemon.URL,
+		Machine:       "shock-main",
+		DetectedCLI:   []string{"claude"},
+		Providers:     []store.RuntimeProvider{{ID: "claude", Label: "Claude Code CLI"}},
+		State:         "online",
+		WorkspaceRoot: root,
+		ReportedAt:    reportedAt,
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续推进",
+		"provider": "claude",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/channels/all/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /v1/channels/all/messages error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.Output != "当前工作区干净，我继续推进。" {
+		t.Fatalf("output = %q, want sanitized public sentence", payload.Output)
+	}
+
+	last := payload.State.ChannelMessages["all"][len(payload.State.ChannelMessages["all"])-1]
+	if last.Message != "当前工作区干净，我继续推进。" {
+		t.Fatalf("last channel message = %#v, want sanitized visible reply", last)
+	}
+}
+
+func TestChannelMessageNoResponseSuppressesVisibleReply(t *testing.T) {
+	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
+
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	reportedAt := time.Now().UTC().Format(time.RFC3339)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, DaemonExecResponse{
+			Provider: "claude",
+			Command:  []string{"claude", "--print"},
+			Output:   "SEND_PUBLIC_MESSAGE\nKIND: no_response\nBODY:",
+			Duration: "0.4s",
+		})
+	}))
+	defer daemon.Close()
+
+	if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
+		RuntimeID:     "shock-main",
+		DaemonURL:     daemon.URL,
+		Machine:       "shock-main",
+		DetectedCLI:   []string{"claude"},
+		Providers:     []store.RuntimeProvider{{ID: "claude", Label: "Claude Code CLI"}},
+		State:         "online",
+		WorkspaceRoot: root,
+		ReportedAt:    reportedAt,
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "收到就继续做",
+		"provider": "claude",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/channels/all/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /v1/channels/all/messages error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.Output != "" {
+		t.Fatalf("output = %q, want empty no_response output", payload.Output)
+	}
+	if got := len(payload.State.ChannelMessages["all"]); got != 1 {
+		t.Fatalf("channel messages = %#v, want only human message after no_response", payload.State.ChannelMessages["all"])
+	}
+}
+
 func TestRuntimePairingPersistsWorkspaceBinding(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")

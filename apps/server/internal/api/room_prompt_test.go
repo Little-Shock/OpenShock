@@ -492,6 +492,13 @@ func TestParseRoomResponseDirectivesSupportsCaseInsensitiveEnvelope(t *testing.T
 	}
 }
 
+func TestParseRoomResponseDirectivesStripsInternalProtocolAndToolLeak(t *testing.T) {
+	directives := parseRoomResponseDirectives("SEND_PUBLIC_MESSAGE\nKIND: message\nCLAIM: keep\nBODY:\n工具调用：\ngit status\n结果：\n当前工作区干净，我继续推进。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核 | 请补最后确认。")
+	if directives.DisplayOutput != "当前工作区干净，我继续推进。" {
+		t.Fatalf("display output = %q, want only visible public sentence", directives.DisplayOutput)
+	}
+}
+
 func TestBuildRoomAutoFollowupPromptPrefersSilentContinuation(t *testing.T) {
 	prompt := buildRoomAutoFollowupPrompt("Claude Review Runner", "继续复核恢复链路")
 

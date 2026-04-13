@@ -1600,11 +1600,12 @@ func (s *Store) AppendConversationFailure(roomID, prompt, message string) (State
 }
 
 type ChannelConversationInput struct {
-	Prompt       string
-	ReplySpeaker string
-	ReplyRole    string
-	ReplyTone    string
-	ReplyMessage string
+	Prompt        string
+	ReplySpeaker  string
+	ReplyRole     string
+	ReplyTone     string
+	ReplyMessage  string
+	SuppressReply bool
 }
 
 func (s *Store) AppendChannelConversation(channelID string, input ChannelConversationInput) (State, error) {
@@ -1640,7 +1641,9 @@ func (s *Store) AppendChannelConversation(channelID string, input ChannelConvers
 		Time:    now,
 	}
 	s.appendChannelMessageLocked(channelID, humanMessage)
-	s.appendChannelMessageLocked(channelID, replyMessage)
+	if !input.SuppressReply {
+		s.appendChannelMessageLocked(channelID, replyMessage)
+	}
 	s.state.Channels[channelIndex].Unread = 0
 
 	if err := s.persistLocked(); err != nil {

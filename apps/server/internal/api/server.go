@@ -336,6 +336,7 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		snapshot := s.store.Snapshot()
 		provider := resolveExecProvider(snapshot, req.Provider)
+		execPrompt := buildChannelExecPrompt(snapshot, channelID, provider, prompt)
 		if blocked := execProviderPreflightMessage("频道消息", snapshot, provider); blocked != "" {
 			nextState, appendErr := s.store.AppendChannelConversation(channelID, store.ChannelConversationInput{
 				Prompt:       prompt,
@@ -353,7 +354,7 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		payload, err := s.runDaemonExec(ExecRequest{
 			Provider:       provider,
-			Prompt:         prompt,
+			Prompt:         execPrompt,
 			Cwd:            req.Cwd,
 			TimeoutSeconds: channelMessageExecTimeoutSeconds,
 		})
@@ -386,12 +387,16 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, status, response)
 			return
 		}
+		directives := parseRoomResponseDirectives(strings.TrimSpace(payload.Output))
+		replyMessage := directives.DisplayOutput
+		suppressReply := directives.SuppressReply || strings.TrimSpace(replyMessage) == ""
 		nextState, err := s.store.AppendChannelConversation(channelID, store.ChannelConversationInput{
-			Prompt:       prompt,
-			ReplySpeaker: channelReplySpeaker(provider),
-			ReplyRole:    "agent",
-			ReplyTone:    "agent",
-			ReplyMessage: strings.TrimSpace(payload.Output),
+			Prompt:        prompt,
+			ReplySpeaker:  channelReplySpeaker(provider),
+			ReplyRole:     "agent",
+			ReplyTone:     channelReplyTone(directives.ReplyKind),
+			ReplyMessage:  replyMessage,
+			SuppressReply: suppressReply,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -401,7 +406,7 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, status, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"state": nextState, "output": payload.Output})
+		writeJSON(w, http.StatusOK, map[string]any{"state": nextState, "output": replyMessage})
 		return
 	}
 
@@ -1899,6 +1904,46 @@ func buildRoomExecPrompt(snapshot store.State, roomID, provider, userPrompt stri
 	return builder.String()
 }
 
+func buildChannelExecPrompt(snapshot store.State, channelID, provider, userPrompt string) string {
+	channelName := channelID
+	for _, channel := range snapshot.Channels {
+		if channel.ID == channelID {
+			channelName = defaultString(strings.TrimSpace(channel.Name), channelID)
+			break
+		}
+	}
+
+	var builder strings.Builder
+	builder.WriteString("你正在 OpenShock 的频道里发一条公开消息。\n")
+	builder.WriteString("频道只展示对团队当前会话有价值的有效信息，不展示你的内部执行过程。\n\n")
+	builder.WriteString("当前上下文：\n")
+	builder.WriteString(fmt.Sprintf("- 频道：%s (%s)\n", channelName, channelID))
+	builder.WriteString(fmt.Sprintf("- Provider：%s\n", defaultString(strings.TrimSpace(provider), "未指定")))
+	if recent := buildRoomPromptHistory(snapshot.ChannelMessages[channelID], 6); recent != "" {
+		builder.WriteString("\n最近频道消息：\n")
+		builder.WriteString(recent)
+	}
+
+	builder.WriteString("\n本轮用户消息：\n")
+	builder.WriteString(strings.TrimSpace(userPrompt))
+	builder.WriteString("\n\n回复要求：\n")
+	builder.WriteString("- 先判断这条消息是否真的需要公屏可见回复。\n")
+	builder.WriteString("- 只有会话里对别人有用的当前判断、简短结论、唯一阻塞问题，才值得发到公屏。\n")
+	builder.WriteString("- 不要公开暴露工具调用、命令、函数参数、内部协议、思考过程、旁白或自我解释。\n")
+	builder.WriteString("- 默认控制在 1 到 3 句；先说结论，再补下一步。\n")
+	builder.WriteString("- 如果只是内部继续执行，不要为了刷存在感发消息；优先 KIND: no_response。\n")
+	builder.WriteString("- 标准格式如下：\n")
+	builder.WriteString("  SEND_PUBLIC_MESSAGE\n")
+	builder.WriteString("  KIND: message | summary | clarification_request | no_response\n")
+	builder.WriteString("  BODY:\n")
+	builder.WriteString("  <只放准备公开发到频道的正文>\n")
+	builder.WriteString("- 如果要回复，就只在 BODY 放最终准备公开展示的那几句自然中文。\n")
+	builder.WriteString("- 如果这轮不需要公屏回复，就返回 SEND_PUBLIC_MESSAGE，KIND: no_response，BODY 留空。\n")
+	builder.WriteString("- 如果你只缺一个继续推进所必需的信息，就返回 KIND: clarification_request，然后只问那一个问题。\n")
+	builder.WriteString("- 如果你只是同步阶段结论，就返回 KIND: summary。\n")
+	return builder.String()
+}
+
 func buildRoomWakeupHint(snapshot store.State, roomID, wakeupMode string, turnAgent, ownerAgent store.Agent) string {
 	switch strings.TrimSpace(wakeupMode) {
 	case "mention_response":
@@ -2041,11 +2086,141 @@ func parseRoomResponseDirectives(output string) roomResponseDirectives {
 	}
 
 	return roomResponseDirectives{
-		DisplayOutput: strings.TrimSpace(strings.Join(filtered, "\n")),
+		DisplayOutput: sanitizePublicReplyBody(strings.Join(filtered, "\n")),
 		Handoff:       handoff,
 		ClaimMode:     claimMode,
 		ReplyKind:     replyKind,
 		SuppressReply: replyKind == "no_response",
+	}
+}
+
+func sanitizePublicReplyBody(output string) string {
+	lines := strings.Split(strings.ReplaceAll(strings.TrimSpace(output), "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines))
+	skipStructuredBlock := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if skipStructuredBlock {
+				skipStructuredBlock = false
+			}
+			if len(filtered) > 0 && filtered[len(filtered)-1] != "" {
+				filtered = append(filtered, "")
+			}
+			continue
+		}
+
+		if shouldStartInternalPublicReplyBlock(trimmed) {
+			skipStructuredBlock = true
+			continue
+		}
+		if skipStructuredBlock && looksLikeInternalPublicReplyLine(trimmed) {
+			continue
+		}
+		skipStructuredBlock = false
+
+		if isPublicReplyProtocolLine(trimmed) || looksLikeInternalPublicReplyLine(trimmed) {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+
+	return strings.TrimSpace(strings.Join(filtered, "\n"))
+}
+
+func shouldStartInternalPublicReplyBlock(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	switch {
+	case strings.HasPrefix(lower, "工具调用"),
+		strings.HasPrefix(lower, "调用工具"),
+		strings.HasPrefix(lower, "tool call"),
+		strings.HasPrefix(lower, "tool result"),
+		strings.HasPrefix(lower, "function call"),
+		strings.HasPrefix(lower, "function result"),
+		strings.HasPrefix(lower, "arguments:"),
+		strings.HasPrefix(lower, "参数:"),
+		strings.HasPrefix(lower, "结果："),
+		strings.HasPrefix(lower, "结果:"),
+		strings.HasPrefix(lower, "observation:"),
+		strings.HasPrefix(lower, "analysis:"),
+		strings.HasPrefix(lower, "reasoning:"),
+		strings.HasPrefix(lower, "thinking:"),
+		strings.HasPrefix(lower, "思考："),
+		strings.HasPrefix(lower, "思考:"),
+		strings.HasPrefix(lower, "心理活动"),
+		strings.HasPrefix(lower, "内心"),
+		strings.HasPrefix(lower, "推理："),
+		strings.HasPrefix(lower, "推理:"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isPublicReplyProtocolLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	switch {
+	case strings.EqualFold(line, "SEND_PUBLIC_MESSAGE"),
+		strings.HasPrefix(lower, "kind:"),
+		strings.HasPrefix(lower, "claim:"),
+		strings.HasPrefix(lower, "body:"),
+		strings.HasPrefix(strings.TrimSpace(line), "OPENSHOCK_HANDOFF:"):
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeInternalPublicReplyLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	lower := strings.ToLower(trimmed)
+
+	switch {
+	case strings.HasPrefix(lower, "tool:"),
+		strings.HasPrefix(lower, "tool call"),
+		strings.HasPrefix(lower, "tool result"),
+		strings.HasPrefix(lower, "function:"),
+		strings.HasPrefix(lower, "function call"),
+		strings.HasPrefix(lower, "function result"),
+		strings.HasPrefix(lower, "arguments:"),
+		strings.HasPrefix(lower, "result:"),
+		strings.HasPrefix(lower, "stdout:"),
+		strings.HasPrefix(lower, "stderr:"),
+		strings.HasPrefix(lower, "exit code"),
+		strings.HasPrefix(lower, "command:"),
+		strings.HasPrefix(lower, "$ "),
+		strings.HasPrefix(lower, "> "),
+		strings.HasPrefix(lower, "git "),
+		strings.HasPrefix(lower, "pnpm "),
+		strings.HasPrefix(lower, "npm "),
+		strings.HasPrefix(lower, "node "),
+		strings.HasPrefix(lower, "go "),
+		strings.HasPrefix(lower, "python "),
+		strings.HasPrefix(lower, "bash "),
+		strings.HasPrefix(lower, "curl "),
+		strings.HasPrefix(lower, "claude "),
+		strings.HasPrefix(lower, "codex "),
+		strings.HasPrefix(lower, "```"),
+		strings.HasPrefix(trimmed, "{"),
+		strings.HasPrefix(trimmed, "["),
+		strings.HasPrefix(trimmed, "<tool"),
+		strings.HasPrefix(trimmed, "</tool"),
+		strings.HasPrefix(trimmed, "<function"),
+		strings.HasPrefix(trimmed, "</function"),
+		strings.Contains(lower, "\"tool\""),
+		strings.Contains(lower, "\"arguments\""),
+		strings.Contains(lower, "\"command\""),
+		strings.Contains(lower, "openai tool"),
+		strings.Contains(lower, "tool_calls"),
+		strings.Contains(lower, "function_call"),
+		strings.Contains(lower, "心理活动"),
+		strings.Contains(lower, "内心独白"),
+		strings.Contains(lower, "chain-of-thought"),
+		strings.Contains(lower, "chain of thought"):
+		return true
+	default:
+		return false
 	}
 }
 
@@ -2610,6 +2785,17 @@ func channelReplySpeaker(provider string) string {
 		return "Codex Dockmaster"
 	default:
 		return "Shock_AI_Core"
+	}
+}
+
+func channelReplyTone(replyKind string) string {
+	switch strings.TrimSpace(replyKind) {
+	case "summary":
+		return "paper"
+	case "clarification_request":
+		return "blocked"
+	default:
+		return "agent"
 	}
 }
 
