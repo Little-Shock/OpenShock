@@ -434,6 +434,7 @@
   - [x] cross-room rollup 现在还会补 `current owner / current lane / next governed route` 元数据；`/mailbox` 可直接从 `ready` room 上 `Create Governed Handoff`，`/agents` 会镜像同一条 room-level route truth
   - [x] room-auto 的顺序交接当前已补专门回归：`A -> B -> C` 时，第二次 auto-followup 会围最新 owner 路由，不再因为 stale `RecentRunIDs` 把 provider、identity prompt 或 agent prompt scaffold 锚回上一位 Agent
   - [x] 当前 owner 的 room continuity 也已补重启恢复回归；store / server reload 后，下一条房间消息仍会继续路由给最新接手者，而不是掉回旧 owner 或旧 provider
+  - [x] room chat 现在也会把 clarification wait 显式渲染成等待补充卡片，展示当前 waiting owner 与阻塞问题；reload 后卡片与可回复 composer 会一起恢复，补充后自动继续执行
   - [x] mention-response 的 claim discipline 已收紧：`summary / clarification_request` 即使误带 `CLAIM: take` 也不会偷偷改写 owner；只有真正持续接手的 `message` 才会触发 claim transfer
   - [x] room-auto 的公开续写提示也已压缩成“优先静默继续；若公开回复则只保留 `1 到 2 句当前判断 + 下一步`”，明确禁止重复“我已接手”式铺垫
   - [x] 当接棒方明确返回 `KIND: no_response` 时，room transcript 现在还会自动抹掉那条冗余的 `已接棒` system narration；handoff truth 仍保留在 mailbox、owner state 与 `/memory` preview continuity 中

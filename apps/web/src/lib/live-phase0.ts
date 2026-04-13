@@ -406,6 +406,7 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
   runtimes: [],
   inbox: [],
   mailbox: [],
+  roomAgentWaits: [],
   pullRequests: [],
   sessions: [],
   runtimeLeases: [],

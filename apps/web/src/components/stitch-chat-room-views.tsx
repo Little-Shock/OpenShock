@@ -20,6 +20,7 @@ import {
   type PullRequest,
   type PullRequestConversationEntry,
   type Room,
+  type RoomAgentWait,
   type Run,
   type Session,
 } from "@/lib/phase-zero-types";
@@ -447,6 +448,11 @@ type ReplyTarget = {
   excerpt: string;
 };
 
+type ClarificationWaitState = {
+  wait: RoomAgentWait;
+  message?: Message;
+};
+
 type ThreadMap = Record<string, Message[]>;
 type ChannelWorkbenchTab = "chat" | "followed" | "saved";
 type SidebarDirectMessage = {
@@ -848,6 +854,31 @@ function buildReplyTarget(message: Message): ReplyTarget {
     messageId: message.id,
     speaker: message.speaker,
     excerpt: messageExcerpt(sanitizeRoomVisibleText(message.message), 56),
+  };
+}
+
+function findOpenRoomClarificationWait(roomAgentWaits: RoomAgentWait[], roomId: string): RoomAgentWait | null {
+  for (let index = roomAgentWaits.length - 1; index >= 0; index -= 1) {
+    const wait = roomAgentWaits[index];
+    if (wait.roomId === roomId && wait.status === "waiting_reply") {
+      return wait;
+    }
+  }
+  return null;
+}
+
+function buildClarificationWaitState(
+  roomAgentWaits: RoomAgentWait[],
+  roomId: string,
+  messages: Message[]
+): ClarificationWaitState | null {
+  const wait = findOpenRoomClarificationWait(roomAgentWaits, roomId);
+  if (!wait) {
+    return null;
+  }
+  return {
+    wait,
+    message: messages.find((message) => message.id === wait.blockingMessageId),
   };
 }
 
@@ -1936,12 +1967,18 @@ function ReplyComposerChip({
   onClear: () => void;
 }) {
   return (
-    <div className="mb-2 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 shadow-[var(--shock-shadow-sm)]">
+    <div
+      data-testid="room-reply-target-chip"
+      className="mb-2 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 shadow-[var(--shock-shadow-sm)]"
+    >
       <div className="flex items-center gap-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
           回复
         </span>
-        <p className="min-w-0 flex-1 truncate text-[12px] text-[color:rgba(24,20,14,0.74)]">
+        <p
+          data-testid="room-reply-target-label"
+          className="min-w-0 flex-1 truncate text-[12px] text-[color:rgba(24,20,14,0.74)]"
+        >
           {replyTarget.speaker}: {replyTarget.excerpt}
         </p>
         <button
@@ -2348,8 +2385,10 @@ function ClaudeCompactComposer({
   canSend,
   sendStatus,
   sendBoundary,
+  clarificationWait,
   replyTarget,
   onClearReplyTarget,
+  onFocusClarificationWait,
   threadReplyCounts,
   activeThreadMessageId,
   onOpenThread,
@@ -2367,8 +2406,10 @@ function ClaudeCompactComposer({
   canSend: boolean;
   sendStatus: string;
   sendBoundary: string;
+  clarificationWait?: ClarificationWaitState | null;
   replyTarget?: ReplyTarget | null;
   onClearReplyTarget?: () => void;
+  onFocusClarificationWait?: (message: Message) => void;
   threadReplyCounts: Record<string, number>;
   activeThreadMessageId?: string | null;
   onOpenThread: (message: Message) => void;
@@ -2601,6 +2642,42 @@ function ClaudeCompactComposer({
 
       <div className="border-t-2 border-[var(--shock-ink)] bg-white/95 px-4 py-3 shadow-[0_-3px_0_0_var(--shock-ink)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
         <div className="mx-auto max-w-[1040px]">
+          {clarificationWait ? (
+            <div
+              data-testid="room-clarification-wait-card"
+              className="mb-3 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[#fff3df] px-4 py-4 shadow-[var(--shock-shadow-sm)]"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                    当前等待补充
+                  </p>
+                  <h3
+                    data-testid="room-clarification-wait-owner"
+                    className="mt-2 font-display text-[20px] font-bold leading-6"
+                  >
+                    {clarificationWait.wait.agent}
+                  </h3>
+                  <p data-testid="room-clarification-wait-question" className="mt-2 text-[14px] leading-6 text-[color:rgba(24,20,14,0.84)]">
+                    {clarificationWait.message?.message ?? "当前问题正在同步中，直接补充这条信息后会继续推进。"}
+                  </p>
+                  <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.62)]">
+                    直接回复这条问题后，当前智能体会接着往下推进。
+                  </p>
+                </div>
+                {clarificationWait.message ? (
+                  <button
+                    type="button"
+                    data-testid="room-clarification-wait-reply"
+                    onClick={() => onFocusClarificationWait?.(clarificationWait.message!)}
+                    className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                  >
+                    回复问题
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {replyTarget ? (
             <ReplyComposerChip replyTarget={replyTarget} onClear={() => onClearReplyTarget?.()} />
           ) : null}
@@ -2625,7 +2702,13 @@ function ClaudeCompactComposer({
             onKeyDown={handleComposerKeyDown}
             disabled={!canSend}
             className="min-h-[48px] flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-6 outline-none"
-            placeholder={replyTarget ? `回复 ${replyTarget.speaker}` : "继续这条讨论"}
+            placeholder={
+              replyTarget
+                ? `回复 ${replyTarget.speaker}`
+                : clarificationWait
+                  ? `补充给 ${clarificationWait.wait.agent}`
+                  : "继续这条讨论"
+            }
           />
           </div>
           <button
@@ -3287,6 +3370,11 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
     [error, loading, roomRuntimeRecord?.providers]
   );
   const messages = useMemo(() => (room ? state.roomMessages[room.id] ?? [] : []), [room, state.roomMessages]);
+  const clarificationWait = useMemo(
+    () => (room ? buildClarificationWaitState(state.roomAgentWaits, room.id, messages) : null),
+    [messages, room, state.roomAgentWaits]
+  );
+  const hasClarificationWait = Boolean(clarificationWait);
   const roomThreadReplies = useMemo(() => (room ? SANITIZED_ROOM_THREAD_REPLIES[room.id] ?? {} : {}), [room]);
   const pullRequest = room ? state.pullRequests.find((item) => item.roomId === room.id) : undefined;
   const [prLoading, setPrLoading] = useState(false);
@@ -3301,21 +3389,21 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
   const canReply =
     !loading &&
     !error &&
-    !runPaused &&
     permissionReplyStatus === "allowed" &&
-    roomRuntimeBoundary === "";
+    roomRuntimeBoundary === "" &&
+    (!runPaused || hasClarificationWait);
   const roomReplyStatus = loading
     ? "syncing"
     : error
       ? "sync_failed"
-      : runPaused
+      : runPaused && !hasClarificationWait
         ? "paused"
         : permissionReplyStatus !== "allowed"
           ? permissionReplyStatus
           : roomRuntimeBoundary
             ? "runtime_blocked"
             : "allowed";
-  const roomReplyBoundary = runPaused
+  const roomReplyBoundary = runPaused && !hasClarificationWait
     ? "当前执行已暂停。先在右侧控制面板里恢复，或先锁定当前线程再继续执行。"
     : permissionReplyStatus !== "allowed"
       ? permissionReplyBoundary
@@ -3657,8 +3745,13 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                       canSend={canReply}
                       sendStatus={roomReplyStatus}
                       sendBoundary={roomReplyBoundary}
+                      clarificationWait={clarificationWait}
                       replyTarget={replyTarget}
                       onClearReplyTarget={() => setReplyTarget(null)}
+                      onFocusClarificationWait={(message) => {
+                        handleOpenThread(message);
+                        setReplyTarget(buildReplyTarget(message));
+                      }}
                       threadReplyCounts={threadReplyCounts}
                       activeThreadMessageId={selectedThreadMessage?.id}
                       onOpenThread={handleOpenThread}

@@ -57,6 +57,7 @@ type Agent = PhaseZeroState["agents"][number];
 type RuntimeRecord = PhaseZeroState["runtimes"][number];
 type InboxItem = PhaseZeroState["inbox"][number];
 type AgentHandoff = PhaseZeroState["mailbox"][number];
+type RoomAgentWait = PhaseZeroState["roomAgentWaits"][number];
 type MailboxMessage = AgentHandoff["messages"][number];
 type PullRequest = PhaseZeroState["pullRequests"][number];
 type PullRequestConversationEntry = NonNullable<PullRequest["conversation"]>[number];
@@ -192,6 +193,7 @@ export function sanitizePhaseZeroState(state: PhaseZeroState): PhaseZeroState {
     runtimes: asArray(state.runtimes).map(sanitizeRuntimeRecord),
     inbox: asArray(state.inbox).map(sanitizeInboxItem),
     mailbox: asArray(state.mailbox).map(sanitizeAgentHandoff),
+    roomAgentWaits: asArray(state.roomAgentWaits).map(sanitizeRoomAgentWait),
     pullRequests: asArray(state.pullRequests).map(sanitizePullRequest),
     sessions: asArray(state.sessions).map(sanitizeSession),
     runtimeLeases: asArray(state.runtimeLeases).map(sanitizeRuntimeLease),
@@ -820,6 +822,14 @@ function sanitizeAgentHandoff(item: AgentHandoff): AgentHandoff {
     lastAction: sanitizeDisplayText(item.lastAction, "等待 handoff 同步。"),
     lastNote: sanitizeDisplayText(item.lastNote ?? "", ""),
     messages: item.messages.map(sanitizeMailboxMessage),
+  };
+}
+
+function sanitizeRoomAgentWait(item: RoomAgentWait): RoomAgentWait {
+  return {
+    ...item,
+    agent: sanitizeDisplayText(item.agent, "当前等待中的智能体"),
+    blockingMessageId: sanitizeDisplayText(item.blockingMessageId ?? "", ""),
   };
 }
 

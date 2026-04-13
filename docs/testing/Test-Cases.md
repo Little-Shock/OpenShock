@@ -1285,7 +1285,7 @@
   4. reload store/server 后再次读取 `/v1/memory-center`，确认 preview 仍锚定同一 waiting owner 和同一组 provider summary。
   5. 再向同一 room 补充澄清信息，确认下一轮继续路由给 waiting owner，且 `/v1/memory-center` preview 继续保持同一 current owner。
 - 预期结果: clarification wait 期间和 restart 之后，room route、memory preview、provider summary、owner truth 必须保持同一份 durable continuity；不能因为 reload/restart 掉回旧 owner、旧 prompt scaffold 或旧 provider 视图。
-- 业务结论: 2026 年 4 月 12 日新增 `TestRoomAutoHandoffClarificationMemoryCenterPreviewPersistsAcrossRestart`，把 `正式交棒 -> 阻塞澄清 -> /v1/memory-center preview -> reload -> 恢复回复` 这条跨链回归正式锁进 `go test ./apps/server/internal/api`。同轮还复跑了 `TestRoomAutoHandoffClarificationFollowupSurvivesRestart`、`TestRoomMessageRouteClarificationWaitSurvivesStoreReload`、`TestMemoryCenterProviderPreviewTracksCurrentOwnerAcrossHandoffReload` 与 `TestMemoryProviderPreviewFollowsCurrentOwnerAcrossHandoffReload`，因此这条 room/memory/restart 连续性当前转为 `Pass`。
+- 业务结论: 2026 年 4 月 12 日新增 `TestRoomAutoHandoffClarificationMemoryCenterPreviewPersistsAcrossRestart`，把 `正式交棒 -> 阻塞澄清 -> /v1/memory-center preview -> reload -> 恢复回复` 这条跨链回归正式锁进 `go test ./apps/server/internal/api`。同轮还复跑了 `TestRoomAutoHandoffClarificationFollowupSurvivesRestart`、`TestRoomMessageRouteClarificationWaitSurvivesStoreReload`、`TestMemoryCenterProviderPreviewTracksCurrentOwnerAcrossHandoffReload` 与 `TestMemoryProviderPreviewFollowsCurrentOwnerAcrossHandoffReload`。2026 年 4 月 14 日又新增 `pnpm test:headed-room-clarification-wait -- --report output/testing/headed-room-clarification-wait-report.md`，把 room 前台的显式等待补充卡片、等待 owner/问题展示、reload 后继续可回复、锁定阻塞问题与补充后自动恢复执行也补成有头证据，因此这条 room/memory/restart 连续性当前继续保持 `Pass`。
 
 ## TC-092 Current Owner Truth Beats Stale Completion Aggregation
 

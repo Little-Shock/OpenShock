@@ -794,6 +794,17 @@ export type MailboxMessage = {
 
 export type HandoffStatus = "requested" | "acknowledged" | "blocked" | "completed";
 
+export type RoomAgentWait = {
+  id: string;
+  roomId: string;
+  agentId: string;
+  agent: string;
+  blockingMessageId: string;
+  status: string;
+  createdAt: string;
+  resolvedAt?: string;
+};
+
 export type AgentHandoff = {
   id: string;
   kind?: string;
@@ -1102,6 +1113,7 @@ export type PhaseZeroState = {
   runtimes: RuntimeRegistryRecord[];
   inbox: InboxItem[];
   mailbox: AgentHandoff[];
+  roomAgentWaits: RoomAgentWait[];
   pullRequests: PullRequest[];
   sessions: Session[];
   runtimeLeases: RuntimeLeaseRecord[];

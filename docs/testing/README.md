@@ -6,6 +6,8 @@
   - 本轮重新生成的首次启动有头报告，覆盖 `/access -> /onboarding -> /chat/all`、setup truth 回显、server restart 与第二浏览器上下文恢复
 - [Headed Message Send Flow Report 2026-04-13](../../output/testing/headed-message-send-flow-report.md)
   - 本轮新增的发送链路有头报告，覆盖频道与讨论间发送时的人类消息先落流、发送态占位、控制面回写与 reload 后持久化
+- [Headed Room Clarification Wait Report 2026-04-14](../../output/testing/headed-room-clarification-wait-report.md)
+  - 本轮新增的房间等待补充有头报告，覆盖显式等待卡片、等待 owner/问题展示、reload 后继续可回复、锁定阻塞问题与补充后自动恢复执行
 - [Headed Movie Site Multi-Agent Report 2026-04-12](../../output/testing/headed-multi-agent-movie-studio-report.md)
   - 本轮重新生成的多智能体顺序交接有头报告，覆盖 `星野产品 -> 折光交互 -> 青岚策展` 的 room-auto 协作链、Mailbox walkthrough、`/memory` next-run preview continuity、最终 owner 上下文、公开发言压缩后的 protocol leak probe
 - [Headed Run History Resume Context Report 2026-04-12](../../output/testing/headed-run-history-resume-context-report.md)
@@ -307,6 +309,8 @@
   - 验证 `/access -> /onboarding -> /chat/all` 的首次引导链路，以及 `/setup` / `/settings` / second browser context recovery
 - `pnpm test:headed-message-send-flow`
   - 验证频道与讨论间发送时的人类消息先落流、发送态占位、控制面回写和 reload 后仍可见
+- `pnpm test:headed-room-clarification-wait`
+  - 验证房间等待补充卡片、等待 owner/问题展示、reload 后继续可回复、锁定阻塞问题与补充后自动恢复执行
 - `pnpm test:headed-agent-profile-editor`
   - 验证 Agent profile edit、memory binding / recall policy、next-run preview 与 audit persistence
 - `pnpm test:headed-machine-profile-capability-binding`
