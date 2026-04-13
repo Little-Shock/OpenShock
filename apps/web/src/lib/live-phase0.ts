@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, createElement, startTransition, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, createElement, startTransition, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   ApprovalCenterState,
@@ -176,6 +176,14 @@ type PhaseZeroDeltaStreamEvent = {
   kinds: string[];
   events: string[];
   delta: Partial<PhaseZeroState>;
+};
+
+type PhaseZeroResyncStreamEvent = {
+  type: "resync";
+  sequence: number;
+  sentAt: string;
+  presence: PhaseZeroStreamPresence;
+  reason: string;
 };
 
 type PhaseZeroContextValue = {
@@ -440,6 +448,27 @@ async function readJSON<T>(path: string, init?: RequestInit) {
   return payload;
 }
 
+async function readStateSnapshot() {
+  const response = await fetch(`${API_BASE}/v1/state`, {
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  const payload = (await response.json()) as PhaseZeroState & { error?: string };
+  if (!response.ok) {
+    throw new StateMutationError(payload.error || `request failed: ${response.status}`, response.status, payload as StateMutationResponse);
+  }
+
+  const sequenceHeader = response.headers.get("X-OpenShock-State-Sequence");
+  const sequence = Number(sequenceHeader);
+  return {
+    state: payload,
+    sequence: Number.isFinite(sequence) && sequence > 0 ? sequence : 0,
+  };
+}
+
 function mergePhaseZeroState(current: PhaseZeroState, delta: Partial<PhaseZeroState>): PhaseZeroState {
   return sanitizePhaseZeroState({
     ...current,
@@ -454,6 +483,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   const [error, setError] = useState<string | null>(null);
   const [approvalCenterLoading, setApprovalCenterLoading] = useState(true);
   const [approvalCenterError, setApprovalCenterError] = useState<string | null>(null);
+  const lastStateStreamSequenceRef = useRef(0);
 
   const commitState = useCallback((next: PhaseZeroState) => {
     const sanitized = sanitizePhaseZeroState(next);
@@ -492,7 +522,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
 
   const refresh = useCallback(async () => {
     const [stateResult, approvalCenterResult] = await Promise.allSettled([
-      readJSON<PhaseZeroState>("/v1/state"),
+      readStateSnapshot(),
       readJSON<ApprovalCenterState>("/v1/approval-center"),
     ]);
 
@@ -503,7 +533,10 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     }
 
     if (stateResult.status === "fulfilled") {
-      commitState(stateResult.value);
+      if (stateResult.value.sequence > 0) {
+        lastStateStreamSequenceRef.current = Math.max(lastStateStreamSequenceRef.current, stateResult.value.sequence);
+      }
+      commitState(stateResult.value.state);
       return;
     }
 
@@ -536,19 +569,110 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     let source: EventSource | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const closeStream = () => {
+      source?.close();
+      source = null;
+    };
+
     const scheduleRetry = (delayMs = 2000) => {
       if (cancelled || retryTimer) {
         return;
       }
       retryTimer = setTimeout(() => {
         retryTimer = null;
-        void refresh().catch(() => {});
+        void (async () => {
+          try {
+            await refresh();
+          } catch {
+            // Try reopening the stream even if the polling refresh failed.
+          }
+          openStream();
+        })();
       }, delayMs);
+    };
+
+    const recordSequence = (sequence?: number) => {
+      if (typeof sequence !== "number" || !Number.isFinite(sequence) || sequence <= 0) {
+        return;
+      }
+      lastStateStreamSequenceRef.current = Math.max(lastStateStreamSequenceRef.current, sequence);
+    };
+
+    const openStream = () => {
+      if (cancelled || typeof EventSource === "undefined") {
+        return;
+      }
+
+      closeStream();
+      const suffix = lastStateStreamSequenceRef.current > 0 ? `?since=${lastStateStreamSequenceRef.current}` : "";
+      source = new EventSource(`${API_BASE}${STATE_STREAM_PATH}${suffix}`);
+      source.addEventListener("snapshot", (event) => {
+        if (cancelled) {
+          return;
+        }
+        try {
+          const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroSnapshotStreamEvent;
+          if (typeof payload.sequence === "number" && payload.sequence <= lastStateStreamSequenceRef.current) {
+            return;
+          }
+          recordSequence(payload.sequence);
+          commitStateAndRefreshApprovalCenter(payload.state);
+        } catch {
+          // Ignore malformed stream payloads and wait for the next reconnect/update.
+        }
+      });
+      source.addEventListener("delta", (event) => {
+        if (cancelled) {
+          return;
+        }
+        try {
+          const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroDeltaStreamEvent;
+          if (typeof payload.sequence === "number" && payload.sequence <= lastStateStreamSequenceRef.current) {
+            return;
+          }
+          if (
+            lastStateStreamSequenceRef.current > 0 &&
+            typeof payload.sequence === "number" &&
+            payload.sequence > lastStateStreamSequenceRef.current + 1
+          ) {
+            void refresh().catch(() => {});
+            recordSequence(payload.sequence);
+            return;
+          }
+          recordSequence(payload.sequence);
+          commitStateDeltaAndRefreshApprovalCenter(payload.delta);
+        } catch {
+          // Ignore malformed stream payloads and wait for the next reconnect/update.
+        }
+      });
+      source.addEventListener("resync", (event) => {
+        if (cancelled) {
+          return;
+        }
+        try {
+          const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroResyncStreamEvent;
+          if (typeof payload.sequence === "number" && Number.isFinite(payload.sequence) && payload.sequence > 0) {
+            lastStateStreamSequenceRef.current = payload.sequence;
+          }
+          void refresh().catch(() => {});
+        } catch {
+          // Ignore malformed stream payloads and wait for the next reconnect/update.
+        }
+      });
+      source.onerror = () => {
+        if (cancelled) {
+          return;
+        }
+        setLoading(false);
+        closeStream();
+        scheduleRetry();
+      };
     };
 
     async function hydrateInitialState() {
       try {
         await refresh();
+        openStream();
       } catch {
         if (!cancelled) {
           scheduleRetry();
@@ -558,49 +682,12 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
 
     void hydrateInitialState();
 
-    if (typeof EventSource === "undefined") {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    source = new EventSource(`${API_BASE}${STATE_STREAM_PATH}`);
-    source.addEventListener("snapshot", (event) => {
-      if (cancelled) {
-        return;
-      }
-      try {
-        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroSnapshotStreamEvent;
-        commitStateAndRefreshApprovalCenter(payload.state);
-      } catch {
-        // Ignore malformed stream payloads and wait for the next reconnect/update.
-      }
-    });
-    source.addEventListener("delta", (event) => {
-      if (cancelled) {
-        return;
-      }
-      try {
-        const payload = JSON.parse((event as MessageEvent<string>).data) as PhaseZeroDeltaStreamEvent;
-        commitStateDeltaAndRefreshApprovalCenter(payload.delta);
-      } catch {
-        // Ignore malformed stream payloads and wait for the next reconnect/update.
-      }
-    });
-    source.onerror = () => {
-      if (cancelled) {
-        return;
-      }
-      setLoading(false);
-      scheduleRetry();
-    };
-
     return () => {
       cancelled = true;
       if (retryTimer) {
         clearTimeout(retryTimer);
       }
-      source?.close();
+      closeStream();
     };
   }, [commitStateAndRefreshApprovalCenter, commitStateDeltaAndRefreshApprovalCenter, refresh]);
 

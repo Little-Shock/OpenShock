@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +48,15 @@ type StateStreamDeltaEvent struct {
 	Delta    map[string]any      `json:"delta"`
 }
 
+type StateStreamResyncEvent struct {
+	Type     string              `json:"type"`
+	Sequence int                 `json:"sequence"`
+	SentAt   string              `json:"sentAt"`
+	Presence StateStreamPresence `json:"presence"`
+	Reason   string              `json:"reason"`
+	State    store.State         `json:"state"`
+}
+
 func (s *Server) handleStateStream(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -63,15 +73,52 @@ func (s *Server) handleStateStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	subID, updates := s.store.SubscribeState()
-	defer s.store.UnsubscribeState(subID)
+	requestedSequence := requestedStateStreamSequence(r)
+	subscription := s.store.SubscribeState(requestedSequence)
+	defer s.store.UnsubscribeState(subscription.ID)
 
-	current := s.store.Snapshot()
-	sequence := 1
-	if err := writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(current, sequence)); err != nil {
-		return
+	previous := subscription.Current.Snapshot
+	previousSet := false
+
+	sendSnapshot := func(update store.StateStreamUpdate) error {
+		previous = update.Snapshot
+		previousSet = true
+		return writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(update.Snapshot, update.Sequence), update.Sequence)
 	}
-	previous := current
+	sendDelta := func(update store.StateStreamUpdate) error {
+		if !previousSet {
+			return sendSnapshot(update)
+		}
+		delta := buildStateStreamDeltaEvent(previous, update.Snapshot, update.Sequence)
+		previous = update.Snapshot
+		if len(delta.Delta) == 0 {
+			return writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(update.Snapshot, update.Sequence), update.Sequence)
+		}
+		return writeSSEEvent(w, flusher, "delta", delta, update.Sequence)
+	}
+
+	switch {
+	case subscription.Resync:
+		if err := writeSSEEvent(w, flusher, "resync", buildStateStreamResyncEvent(subscription.Current.Sequence, subscription.Current.Snapshot, "history_gap"), subscription.Current.Sequence); err != nil {
+			return
+		}
+	case len(subscription.Replay) > 0:
+		for index, update := range subscription.Replay {
+			if index == 0 {
+				if err := sendSnapshot(update); err != nil {
+					return
+				}
+				continue
+			}
+			if err := sendDelta(update); err != nil {
+				return
+			}
+		}
+	default:
+		if err := sendSnapshot(subscription.Current); err != nil {
+			return
+		}
+	}
 
 	keepalive := time.NewTicker(20 * time.Second)
 	defer keepalive.Stop()
@@ -80,20 +127,11 @@ func (s *Server) handleStateStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case snapshot, ok := <-updates:
+		case update, ok := <-subscription.Updates:
 			if !ok {
 				return
 			}
-			sequence++
-			delta := buildStateStreamDeltaEvent(previous, snapshot, sequence)
-			previous = snapshot
-			if len(delta.Delta) == 0 {
-				if err := writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(snapshot, sequence)); err != nil {
-					return
-				}
-				continue
-			}
-			if err := writeSSEEvent(w, flusher, "delta", delta); err != nil {
+			if err := sendDelta(update); err != nil {
 				return
 			}
 		case <-keepalive.C:
@@ -310,6 +348,38 @@ func buildStateStreamDeltaEvent(previous, next store.State, sequence int) StateS
 		Events:   sortedKeys(events),
 		Delta:    delta,
 	}
+}
+
+func buildStateStreamResyncEvent(sequence int, snapshot store.State, reason string) StateStreamResyncEvent {
+	snapshot = sanitizeLiveState(snapshot)
+	return StateStreamResyncEvent{
+		Type:     "resync",
+		Sequence: sequence,
+		SentAt:   time.Now().UTC().Format(time.RFC3339),
+		Presence: buildStateStreamPresence(snapshot),
+		Reason:   defaultString(strings.TrimSpace(reason), "history_gap"),
+		State:    snapshot,
+	}
+}
+
+func requestedStateStreamSequence(r *http.Request) int {
+	if r == nil {
+		return 0
+	}
+	for _, candidate := range []string{
+		strings.TrimSpace(r.URL.Query().Get("lastSequence")),
+		strings.TrimSpace(r.URL.Query().Get("since")),
+		strings.TrimSpace(r.Header.Get("Last-Event-ID")),
+	} {
+		if candidate == "" {
+			continue
+		}
+		value, err := strconv.Atoi(candidate)
+		if err == nil && value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func buildStateStreamPresence(snapshot store.State) StateStreamPresence {
@@ -543,10 +613,15 @@ func sortedKeys(values map[string]struct{}) []string {
 	return keys
 }
 
-func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, event string, payload any) error {
+func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, event string, payload any, sequence int) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
+	}
+	if sequence > 0 {
+		if _, err := fmt.Fprintf(w, "id: %d\n", sequence); err != nil {
+			return err
+		}
 	}
 	if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
 		return err

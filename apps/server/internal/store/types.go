@@ -1218,6 +1218,8 @@ type Store struct {
 	state         State
 	vault         credentialVault
 	vaultKey      []byte
-	subscribers   map[int]chan State
+	subscribers   map[int]chan StateStreamUpdate
+	stateHistory  []StateStreamUpdate
+	nextSequence  int
 	nextSubID     int
 }

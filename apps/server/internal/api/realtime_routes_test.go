@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,16 @@ type decodedStateStreamDeltaEvent struct {
 
 type stateStreamFrame struct {
 	Event string
+	ID    string
 	Data  string
+}
+
+type decodedStateStreamResyncEvent struct {
+	Type     string              `json:"type"`
+	Sequence int                 `json:"sequence"`
+	SentAt   string              `json:"sentAt"`
+	Presence StateStreamPresence `json:"presence"`
+	Reason   string              `json:"reason"`
 }
 
 func TestStateStreamEmitsInitialSnapshotAndDeltaUpdates(t *testing.T) {
@@ -290,6 +300,222 @@ func TestStateStreamDeltaEmitsMemberPreferenceAndOnboardingSignals(t *testing.T)
 	}
 }
 
+func TestStateRouteExposesCurrentStateSequenceHeader(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	readSequence := func() int {
+		resp, err := http.Get(server.URL + "/v1/state")
+		if err != nil {
+			t.Fatalf("GET /v1/state error = %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /v1/state status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		sequence, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("X-OpenShock-State-Sequence")))
+		if err != nil {
+			t.Fatalf("state sequence header parse error = %v", err)
+		}
+		return sequence
+	}
+
+	if sequence := readSequence(); sequence != 1 {
+		t.Fatalf("initial state sequence = %d, want 1", sequence)
+	}
+
+	if _, _, _, err := s.UpdateNotificationPolicy(store.NotificationPolicyInput{BrowserPush: "all"}); err != nil {
+		t.Fatalf("UpdateNotificationPolicy() error = %v", err)
+	}
+
+	if sequence := readSequence(); sequence != 2 {
+		t.Fatalf("updated state sequence = %d, want 2", sequence)
+	}
+}
+
+func TestStateStreamReplaysMissedSnapshotsFromRequestedSequence(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	initialResp, err := http.Get(server.URL + "/v1/state/stream")
+	if err != nil {
+		t.Fatalf("GET initial state stream error = %v", err)
+	}
+	initialReader := bufio.NewReader(initialResp.Body)
+	initial := decodeSnapshotFrame(t, readStateStreamFrame(t, initialReader))
+	initialResp.Body.Close()
+	if initial.Sequence != 1 {
+		t.Fatalf("initial snapshot = %#v, want sequence 1", initial)
+	}
+
+	if _, _, _, err := s.UpdateNotificationPolicy(store.NotificationPolicyInput{BrowserPush: "all"}); err != nil {
+		t.Fatalf("UpdateNotificationPolicy() error = %v", err)
+	}
+
+	reportedAt := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.UpsertRuntimeHeartbeat(store.RuntimeHeartbeatInput{
+		RuntimeID:          "shock-replay",
+		DaemonURL:          "http://127.0.0.1:8092",
+		Machine:            "shock-replay",
+		DetectedCLI:        []string{"codex"},
+		State:              "online",
+		WorkspaceRoot:      root,
+		ReportedAt:         reportedAt,
+		HeartbeatIntervalS: 12,
+		HeartbeatTimeoutS:  48,
+	}); err != nil {
+		t.Fatalf("UpsertRuntimeHeartbeat() error = %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/state/stream?since=1", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET state stream error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	first := decodeSnapshotFrame(t, readStateStreamFrame(t, reader))
+	second := decodeDeltaFrame(t, readStateStreamFrame(t, reader))
+
+	if first.Sequence != 2 || second.Sequence != 3 {
+		t.Fatalf("replay sequences = (%d, %d), want (2, 3)", first.Sequence, second.Sequence)
+	}
+	if first.State.Workspace.BrowserPush != "推全部 live 通知" {
+		t.Fatalf("first replay workspace = %#v, want updated browser push", first.State.Workspace)
+	}
+	var runtimes []store.RuntimeRecord
+	decodeDeltaField(t, second.Delta, "runtimes", &runtimes)
+	if !runtimeRecordsContain(runtimes, "shock-replay") {
+		t.Fatalf("second replay runtimes = %#v, want shock-replay", runtimes)
+	}
+}
+
+func TestStateStreamEmitsResyncWhenRequestedSequenceFallsOutsideHistoryWindow(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	initialResp, err := http.Get(server.URL + "/v1/state/stream")
+	if err != nil {
+		t.Fatalf("GET initial state stream error = %v", err)
+	}
+	initialReader := bufio.NewReader(initialResp.Body)
+	initial := decodeSnapshotFrame(t, readStateStreamFrame(t, initialReader))
+	initialResp.Body.Close()
+	if initial.Sequence != 1 {
+		t.Fatalf("initial snapshot = %#v, want sequence 1", initial)
+	}
+
+	for index := 0; index < 260; index += 1 {
+		reportedAt := time.Now().UTC().Add(time.Duration(index) * time.Second).Format(time.RFC3339)
+		if _, err := s.UpsertRuntimeHeartbeat(store.RuntimeHeartbeatInput{
+			RuntimeID:          "shock-resync",
+			DaemonURL:          "http://127.0.0.1:8093",
+			Machine:            "shock-resync",
+			DetectedCLI:        []string{"codex"},
+			State:              "online",
+			WorkspaceRoot:      root,
+			ReportedAt:         reportedAt,
+			HeartbeatIntervalS: 12,
+			HeartbeatTimeoutS:  48,
+		}); err != nil {
+			t.Fatalf("UpsertRuntimeHeartbeat(%d) error = %v", index, err)
+		}
+	}
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/state/stream?since=1", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET state stream error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	resync := decodeResyncFrame(t, readStateStreamFrame(t, reader))
+
+	if resync.Reason != "history_gap" {
+		t.Fatalf("resync = %#v, want history_gap", resync)
+	}
+	if resync.Sequence <= 256 {
+		t.Fatalf("resync sequence = %d, want sequence beyond history window", resync.Sequence)
+	}
+}
+
+func TestStateStreamEmitsResyncWhenRequestedSequenceExceedsCurrentState(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/state/stream?since=99", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET state stream error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	resync := decodeResyncFrame(t, readStateStreamFrame(t, bufio.NewReader(resp.Body)))
+	if resync.Reason != "history_gap" {
+		t.Fatalf("resync = %#v, want history_gap", resync)
+	}
+	if resync.Sequence != 1 {
+		t.Fatalf("resync sequence = %d, want 1 after sequence reset", resync.Sequence)
+	}
+}
+
 func readStateStreamFrame(t *testing.T, reader *bufio.Reader) stateStreamFrame {
 	t.Helper()
 
@@ -307,6 +533,8 @@ func readStateStreamFrame(t *testing.T, reader *bufio.Reader) stateStreamFrame {
 		switch {
 		case strings.HasPrefix(line, ":"):
 			continue
+		case strings.HasPrefix(line, "id: "):
+			frame.ID = strings.TrimSpace(strings.TrimPrefix(line, "id: "))
 		case strings.HasPrefix(line, "event: "):
 			frame.Event = strings.TrimSpace(strings.TrimPrefix(line, "event: "))
 		case strings.HasPrefix(line, "data: "):
@@ -345,6 +573,20 @@ func decodeDeltaFrame(t *testing.T, frame stateStreamFrame) decodedStateStreamDe
 	var payload decodedStateStreamDeltaEvent
 	if err := json.Unmarshal([]byte(frame.Data), &payload); err != nil {
 		t.Fatalf("json.Unmarshal(delta) error = %v", err)
+	}
+	return payload
+}
+
+func decodeResyncFrame(t *testing.T, frame stateStreamFrame) decodedStateStreamResyncEvent {
+	t.Helper()
+
+	if frame.Event != "resync" {
+		t.Fatalf("event name = %q, want resync", frame.Event)
+	}
+
+	var payload decodedStateStreamResyncEvent
+	if err := json.Unmarshal([]byte(frame.Data), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(resync) error = %v", err)
 	}
 	return payload
 }

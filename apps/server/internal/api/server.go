@@ -234,6 +234,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	w.Header().Set("X-OpenShock-State-Sequence", strconv.Itoa(s.store.CurrentStateSequence()))
 	writeJSON(w, http.StatusOK, sanitizeLiveState(s.store.Snapshot()))
 }
 
