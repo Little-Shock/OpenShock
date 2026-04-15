@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	githubsvc "github.com/Larkspur-Wang/OpenShock/apps/server/internal/github"
 	"github.com/Larkspur-Wang/OpenShock/apps/server/internal/store"
@@ -1634,18 +1635,32 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 
 	var outputBuilder strings.Builder
 	var stderrBuilder strings.Builder
+	outputProjector := newRoomStreamPublicProjector()
+	stderrProjector := newRoomStreamPublicProjector()
 
 	resp, err := s.streamRoomDaemonExec(r, roomID, req, func(event DaemonStreamEvent) error {
 		switch event.Type {
+		case "start":
+			event.Command = nil
 		case "stdout":
 			outputBuilder.WriteString(event.Delta)
+			event.Delta = outputProjector.Push(event.Delta)
 		case "stderr":
 			stderrBuilder.WriteString(event.Delta)
+			event.Delta = stderrProjector.Push(event.Delta)
 		case "done":
 			if strings.TrimSpace(event.Output) != "" {
 				outputBuilder.Reset()
 				outputBuilder.WriteString(event.Output)
 			}
+			event.Command = nil
+			event.Output = outputProjector.Finalize(event.Output)
+		}
+		if (event.Type == "stdout" || event.Type == "stderr") && strings.TrimSpace(event.Delta) == "" {
+			return nil
+		}
+		if event.Type == "done" && strings.TrimSpace(event.Output) == "" {
+			return nil
 		}
 		return writeNDJSON(w, flusher, event)
 	})
@@ -2352,6 +2367,209 @@ func looksLikeInternalPublicReplyLine(line string) bool {
 	default:
 		return false
 	}
+}
+
+type roomStreamPublicProjector struct {
+	raw     strings.Builder
+	emitted string
+}
+
+func newRoomStreamPublicProjector() *roomStreamPublicProjector {
+	return &roomStreamPublicProjector{}
+}
+
+func (p *roomStreamPublicProjector) Push(delta string) string {
+	if p == nil || strings.TrimSpace(delta) == "" {
+		return ""
+	}
+	p.raw.WriteString(delta)
+	visible := sanitizeStreamingPublicReplyPreview(p.raw.String())
+	if visible == "" {
+		return ""
+	}
+	if !strings.HasPrefix(visible, p.emitted) {
+		return ""
+	}
+	next := visible[len(p.emitted):]
+	p.emitted = visible
+	return next
+}
+
+func (p *roomStreamPublicProjector) Finalize(output string) string {
+	if p == nil {
+		return ""
+	}
+	if strings.TrimSpace(output) != "" {
+		p.raw.Reset()
+		p.raw.WriteString(output)
+	}
+	visible := strings.TrimSpace(parseRoomResponseDirectives(p.raw.String()).DisplayOutput)
+	p.emitted = visible
+	return visible
+}
+
+func sanitizeStreamingPublicReplyPreview(output string) string {
+	normalized := strings.ReplaceAll(output, "\r\n", "\n")
+	if strings.TrimSpace(normalized) == "" {
+		return ""
+	}
+
+	lines := strings.Split(normalized, "\n")
+	completeCount := len(lines)
+	trailing := ""
+	if !strings.HasSuffix(normalized, "\n") {
+		completeCount -= 1
+		if completeCount < 0 {
+			completeCount = 0
+		}
+		trailing = lines[len(lines)-1]
+	}
+
+	filtered := make([]string, 0, len(lines))
+	skipStructuredBlock := false
+
+	processLine := func(trimmed string) {
+		if trimmed == "" {
+			if skipStructuredBlock {
+				skipStructuredBlock = false
+			}
+			if len(filtered) > 0 && filtered[len(filtered)-1] != "" {
+				filtered = append(filtered, "")
+			}
+			return
+		}
+		if shouldStartInternalPublicReplyBlock(trimmed) {
+			skipStructuredBlock = true
+			return
+		}
+		if skipStructuredBlock && looksLikeInternalPublicReplyLine(trimmed) {
+			return
+		}
+		skipStructuredBlock = false
+		if isPublicReplyProtocolLine(trimmed) || looksLikeInternalPublicReplyLine(trimmed) {
+			return
+		}
+		filtered = append(filtered, trimmed)
+	}
+
+	for index := 0; index < completeCount; index += 1 {
+		processLine(strings.TrimSpace(lines[index]))
+	}
+
+	trimmedTrailing := strings.TrimSpace(trailing)
+	if trimmedTrailing != "" {
+		switch {
+		case shouldStartInternalPublicReplyBlock(trimmedTrailing):
+		case looksLikePotentialInternalPublicReplyPrefix(trimmedTrailing):
+		case skipStructuredBlock && (looksLikeInternalPublicReplyLine(trimmedTrailing) || looksLikePotentialInternalPublicReplyPrefix(trimmedTrailing)):
+		case isPublicReplyProtocolLine(trimmedTrailing):
+		case looksLikePotentialPublicReplyProtocolPrefix(trimmedTrailing):
+		default:
+			filtered = append(filtered, trimmedTrailing)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(filtered, "\n"))
+}
+
+func looksLikePotentialPublicReplyProtocolPrefix(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	for _, candidate := range []string{
+		"send_public_message",
+		"kind:",
+		"claim:",
+		"body:",
+		"openshock_handoff:",
+	} {
+		if matchesPartialInternalPrefix(lower, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikePotentialInternalPublicReplyPrefix(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	for _, candidate := range []string{
+		"工具调用",
+		"调用工具",
+		"tool:",
+		"tool call",
+		"tool result",
+		"function:",
+		"function call",
+		"function result",
+		"arguments:",
+		"结果：",
+		"结果:",
+		"result:",
+		"stdout:",
+		"stderr:",
+		"exit code",
+		"command:",
+		"$ ",
+		"> ",
+		"git ",
+		"pnpm ",
+		"npm ",
+		"node ",
+		"go ",
+		"python ",
+		"bash ",
+		"curl ",
+		"claude ",
+		"codex ",
+		"observation:",
+		"analysis:",
+		"reasoning:",
+		"thinking:",
+		"思考",
+		"心理活动",
+		"内心",
+		"推理",
+		"```",
+		"{",
+		"[",
+		"<tool",
+		"</tool",
+		"<function",
+		"</function",
+	} {
+		if matchesPartialInternalPrefix(lower, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesPartialInternalPrefix(line, candidate string) bool {
+	if line == "" || candidate == "" {
+		return false
+	}
+	if strings.HasPrefix(line, candidate) {
+		return true
+	}
+	if !strings.HasPrefix(candidate, line) {
+		return false
+	}
+	lineRunes := utf8.RuneCountInString(line)
+	candidateRunes := utf8.RuneCountInString(candidate)
+	minRunes := 3
+	if strings.IndexFunc(candidate, func(r rune) bool { return r > 127 }) != -1 {
+		minRunes = 2
+	}
+	if candidateRunes < minRunes {
+		minRunes = candidateRunes
+	}
+	return lineRunes >= minRunes
 }
 
 func shouldSuppressRoomHandoffRelay(snapshot store.State, roomID string, directives roomResponseDirectives) bool {

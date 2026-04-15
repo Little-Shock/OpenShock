@@ -136,6 +136,119 @@ func TestRoomMessageStreamPersistsConversation(t *testing.T) {
 	}
 }
 
+func TestRoomMessageStreamStripsLiveProtocolAndToolLeak(t *testing.T) {
+	root := t.TempDir()
+	var seen ExecRequest
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec/stream" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&seen); err != nil {
+			t.Fatalf("decode stream payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		events := []DaemonStreamEvent{
+			{Type: "start", Provider: "codex", Command: []string{"codex", "exec"}},
+			{Type: "stdout", Provider: "codex", Delta: "SEND_PUBLIC_MESS"},
+			{Type: "stdout", Provider: "codex", Delta: "AGE\nKIND: message\nCLAIM: take\nBODY:\n"},
+			{Type: "stdout", Provider: "codex", Delta: "工具调用：\ngit status\n结果：\n"},
+			{Type: "stdout", Provider: "codex", Delta: "当前工作区干净，我继续推进。"},
+			{Type: "done", Provider: "codex", Output: "SEND_PUBLIC_MESSAGE\nKIND: message\nCLAIM: take\nBODY:\n工具调用：\ngit status\n结果：\n当前工作区干净，我继续推进。", Duration: "0.8s"},
+		}
+		for _, event := range events {
+			if err := json.NewEncoder(w).Encode(event); err != nil {
+				t.Fatalf("encode event: %v", err)
+			}
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Streaming Hygiene", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续推进当前 lane",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages/stream", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST stream error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var events []DaemonStreamEvent
+	for scanner.Scan() {
+		var event DaemonStreamEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		events = append(events, event)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner.Err() = %v", err)
+	}
+
+	if len(events) == 0 {
+		t.Fatalf("expected sanitized stream events, got none")
+	}
+
+	for _, event := range events {
+		if event.Type == "start" && len(event.Command) != 0 {
+			t.Fatalf("start event leaked command = %#v", event)
+		}
+		if strings.Contains(event.Delta, "SEND_PUBLIC_MESSAGE") ||
+			strings.Contains(event.Delta, "KIND:") ||
+			strings.Contains(event.Delta, "BODY:") ||
+			strings.Contains(event.Delta, "工具调用") ||
+			strings.Contains(event.Delta, "git status") ||
+			strings.Contains(event.Delta, "结果：") {
+			t.Fatalf("stream delta leaked protocol/tool detail: %#v", event)
+		}
+		if strings.Contains(event.Output, "SEND_PUBLIC_MESSAGE") ||
+			strings.Contains(event.Output, "KIND:") ||
+			strings.Contains(event.Output, "BODY:") ||
+			strings.Contains(event.Output, "工具调用") ||
+			strings.Contains(event.Output, "git status") ||
+			strings.Contains(event.Output, "结果：") {
+			t.Fatalf("stream output leaked protocol/tool detail: %#v", event)
+		}
+	}
+
+	last := events[len(events)-1]
+	if last.Type != "state" || last.State == nil {
+		t.Fatalf("last event = %#v, want state payload", last)
+	}
+	if !strings.Contains(last.Output, "当前工作区干净，我继续推进。") {
+		t.Fatalf("final visible output = %q, want sanitized public reply", last.Output)
+	}
+
+	roomMessages := last.State.RoomMessages[created.RoomID]
+	if len(roomMessages) == 0 {
+		t.Fatalf("room messages empty for %q", created.RoomID)
+	}
+	lastMessage := roomMessages[len(roomMessages)-1]
+	if lastMessage.Message != "当前工作区干净，我继续推进。" {
+		t.Fatalf("last room message = %#v, want sanitized visible reply", lastMessage)
+	}
+}
+
 func TestRoomMessageStreamDisconnectPersistsPendingTurnForResume(t *testing.T) {
 	root := t.TempDir()
 	var firstStream ExecRequest
