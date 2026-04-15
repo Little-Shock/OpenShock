@@ -37,6 +37,9 @@ type Server struct {
 	workspaceRoot       string
 	github              githubsvc.Client
 	githubWebhookSecret string
+	roomAutoRecoveryMu  sync.Mutex
+	roomAutoInFlight    map[string]struct{}
+	roomAutoLastAttempt map[string]time.Time
 }
 
 type serverRouteRegistrar func(*Server, *http.ServeMux)
@@ -135,6 +138,8 @@ const (
 	roomStreamExecTimeoutSeconds     = 45
 	defaultExecTimeoutSeconds        = 90
 )
+
+var roomAutoRecoveryCooldown = 30 * time.Second
 
 type SelectRuntimeRequest struct {
 	Machine string `json:"machine"`
@@ -236,8 +241,13 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	snapshot := s.store.Snapshot()
+	if authSessionHasPermission(snapshot.Auth.Session, "room.reply") || authSessionHasPermission(snapshot.Auth.Session, "run.execute") {
+		s.kickRoomAutoRecovery()
+		snapshot = s.store.Snapshot()
+	}
 	w.Header().Set("X-OpenShock-State-Sequence", strconv.Itoa(s.store.CurrentStateSequence()))
-	writeJSON(w, http.StatusOK, sanitizeLiveState(s.store.Snapshot()))
+	writeJSON(w, http.StatusOK, sanitizeLiveState(snapshot))
 }
 
 func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -2874,6 +2884,137 @@ func buildRoomAutoFollowupPrompt(ownerName, handoffTitle string) string {
 		defaultString(strings.TrimSpace(handoffTitle), "继续当前房间"),
 		defaultString(strings.TrimSpace(ownerName), "当前接手智能体"),
 	)
+}
+
+func (s *Server) kickRoomAutoRecovery() {
+	snapshot := s.store.Snapshot()
+	now := time.Now()
+	for index := range snapshot.Mailbox {
+		handoff := snapshot.Mailbox[index]
+		if !roomAutoHandoffRecoveryEligible(snapshot, handoff) {
+			s.clearRoomAutoRecoveryTracking(handoff.ID)
+			continue
+		}
+		if !s.beginRoomAutoRecovery(handoff.ID, now) {
+			continue
+		}
+		go s.runRoomAutoRecovery(handoff.ID)
+	}
+}
+
+func (s *Server) beginRoomAutoRecovery(handoffID string, now time.Time) bool {
+	trimmedID := strings.TrimSpace(handoffID)
+	if trimmedID == "" {
+		return false
+	}
+	s.roomAutoRecoveryMu.Lock()
+	defer s.roomAutoRecoveryMu.Unlock()
+
+	if s.roomAutoInFlight == nil {
+		s.roomAutoInFlight = map[string]struct{}{}
+	}
+	if s.roomAutoLastAttempt == nil {
+		s.roomAutoLastAttempt = map[string]time.Time{}
+	}
+	if _, exists := s.roomAutoInFlight[trimmedID]; exists {
+		return false
+	}
+	if lastAttempt, exists := s.roomAutoLastAttempt[trimmedID]; exists && roomAutoRecoveryCooldown > 0 && now.Sub(lastAttempt) < roomAutoRecoveryCooldown {
+		return false
+	}
+	s.roomAutoInFlight[trimmedID] = struct{}{}
+	s.roomAutoLastAttempt[trimmedID] = now
+	return true
+}
+
+func (s *Server) runRoomAutoRecovery(handoffID string) {
+	defer s.finishRoomAutoRecovery(handoffID)
+
+	snapshot := s.store.Snapshot()
+	handoff, ok := findRoomAutoHandoffByID(snapshot, handoffID)
+	if !ok || !roomAutoHandoffRecoveryEligible(snapshot, handoff) {
+		return
+	}
+	_, _ = s.continueRoomAutoHandoff(snapshot, handoff.RoomID, handoff.Title, handoff.ID)
+}
+
+func (s *Server) finishRoomAutoRecovery(handoffID string) {
+	trimmedID := strings.TrimSpace(handoffID)
+	if trimmedID == "" {
+		return
+	}
+	snapshot := s.store.Snapshot()
+	handoff, ok := findRoomAutoHandoffByID(snapshot, trimmedID)
+
+	s.roomAutoRecoveryMu.Lock()
+	defer s.roomAutoRecoveryMu.Unlock()
+	delete(s.roomAutoInFlight, trimmedID)
+	if !ok || !roomAutoHandoffRecoveryEligible(snapshot, handoff) {
+		delete(s.roomAutoLastAttempt, trimmedID)
+	}
+}
+
+func (s *Server) clearRoomAutoRecoveryTracking(handoffID string) {
+	trimmedID := strings.TrimSpace(handoffID)
+	if trimmedID == "" {
+		return
+	}
+	s.roomAutoRecoveryMu.Lock()
+	defer s.roomAutoRecoveryMu.Unlock()
+	delete(s.roomAutoInFlight, trimmedID)
+	delete(s.roomAutoLastAttempt, trimmedID)
+}
+
+func roomAutoHandoffRecoveryEligible(snapshot store.State, handoff store.AgentHandoff) bool {
+	if handoff.Kind != "room-auto" || strings.TrimSpace(handoff.Status) != "acknowledged" || handoff.AutoFollowup == nil {
+		return false
+	}
+	switch strings.TrimSpace(handoff.AutoFollowup.Status) {
+	case "pending", "blocked":
+	default:
+		return false
+	}
+
+	room, run, issue, ok := findRoomRunIssue(snapshot, handoff.RoomID)
+	if !ok {
+		return false
+	}
+	ownerMatches := false
+	for _, owner := range []string{
+		strings.TrimSpace(room.Topic.Owner),
+		strings.TrimSpace(run.Owner),
+		strings.TrimSpace(issue.Owner),
+	} {
+		if owner == "" {
+			continue
+		}
+		if strings.EqualFold(owner, strings.TrimSpace(handoff.ToAgent)) || strings.EqualFold(owner, strings.TrimSpace(handoff.ToAgentID)) {
+			ownerMatches = true
+			break
+		}
+	}
+	if !ownerMatches {
+		return false
+	}
+
+	session, ok := findRoomConversationSession(snapshot, handoff.RoomID, "")
+	if ok && session.PendingTurn != nil {
+		return false
+	}
+	return true
+}
+
+func findRoomAutoHandoffByID(snapshot store.State, handoffID string) (store.AgentHandoff, bool) {
+	trimmedID := strings.TrimSpace(handoffID)
+	if trimmedID == "" {
+		return store.AgentHandoff{}, false
+	}
+	for _, handoff := range snapshot.Mailbox {
+		if handoff.ID == trimmedID && handoff.Kind == "room-auto" {
+			return handoff, true
+		}
+	}
+	return store.AgentHandoff{}, false
 }
 
 func (s *Server) completeRoomAutoHandoffFollowupIfNeeded(snapshot store.State, roomID, replySpeaker string, directives roomResponseDirectives, visibleOutput string) store.State {

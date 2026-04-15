@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -718,6 +719,315 @@ func TestRoomMessageStreamCreatesMailboxHandoffFromDirective(t *testing.T) {
 			t.Fatalf("room message leaked handoff directive: %#v", message)
 		}
 	}
+}
+
+func TestStateRouteAutonomouslyRecoversBlockedRoomAutoFollowupAfterReload(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	var (
+		mu           sync.Mutex
+		execRequests []ExecRequest
+	)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		var req ExecRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode exec payload: %v", err)
+		}
+		mu.Lock()
+		execRequests = append(execRequests, req)
+		count := len(execRequests)
+		mu.Unlock()
+
+		switch count {
+		case 1:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "我先把这一棒交给 reviewer。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核恢复链路 | 请把恢复链路和副作用复核完。",
+				Duration: "0.6s",
+			})
+		case 2:
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "not logged in"})
+		case 3:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "claude",
+				Command:  []string{"claude", "--print"},
+				Output:   "我接着上一轮卡住的复核继续推进，先把恢复链路收口。",
+				Duration: "0.4s",
+			})
+		default:
+			t.Fatalf("unexpected exec request count: %d", count)
+		}
+	}))
+	defer daemon.Close()
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	pairMainRuntime(t, s, daemon.URL)
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "State Tick Auto Recovery", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续把恢复链路推进。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST room message error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first room message status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var firstPayload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &firstPayload)
+	server.Close()
+
+	var blockedHandoff *store.AgentHandoff
+	for index := range firstPayload.State.Mailbox {
+		item := &firstPayload.State.Mailbox[index]
+		if item.RoomID == created.RoomID && item.Kind == "room-auto" {
+			blockedHandoff = item
+			break
+		}
+	}
+	if blockedHandoff == nil || blockedHandoff.AutoFollowup == nil || blockedHandoff.AutoFollowup.Status != "blocked" {
+		t.Fatalf("blocked handoff = %#v, want blocked room-auto followup", blockedHandoff)
+	}
+
+	reloadedStore, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New(reload) error = %v", err)
+	}
+	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer reloadedServer.Close()
+
+	var recovered store.State
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		stateResp, err := http.Get(reloadedServer.URL + "/v1/state")
+		if err != nil {
+			t.Fatalf("GET /v1/state error = %v", err)
+		}
+		if stateResp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /v1/state status = %d, want %d", stateResp.StatusCode, http.StatusOK)
+		}
+		decodeJSON(t, stateResp, &recovered)
+		stateResp.Body.Close()
+
+		var resumed *store.AgentHandoff
+		for index := range recovered.Mailbox {
+			item := &recovered.Mailbox[index]
+			if item.ID == blockedHandoff.ID {
+				resumed = item
+				break
+			}
+		}
+		if resumed != nil && resumed.AutoFollowup != nil && resumed.AutoFollowup.Status == "completed" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	var resumedHandoff *store.AgentHandoff
+	for index := range recovered.Mailbox {
+		item := &recovered.Mailbox[index]
+		if item.ID == blockedHandoff.ID {
+			resumedHandoff = item
+			break
+		}
+	}
+	if resumedHandoff == nil || resumedHandoff.AutoFollowup == nil || resumedHandoff.AutoFollowup.Status != "completed" {
+		t.Fatalf("recovered handoff = %#v, want completed auto followup after state tick", resumedHandoff)
+	}
+
+	mu.Lock()
+	if len(execRequests) != 3 {
+		mu.Unlock()
+		t.Fatalf("exec requests = %#v, want third autonomous retry after state tick", execRequests)
+	}
+	recoveryReq := execRequests[2]
+	mu.Unlock()
+	if recoveryReq.Provider != "claude" {
+		t.Fatalf("recovery exec request = %#v, want claude owner retry", recoveryReq)
+	}
+	for _, expected := range []string{
+		"你上一轮已正式接棒当前房间",
+		"自动继续时被阻塞",
+		"当前还未登录模型服务",
+	} {
+		if !strings.Contains(recoveryReq.Prompt, expected) {
+			t.Fatalf("recovery prompt = %q, want %q", recoveryReq.Prompt, expected)
+		}
+	}
+
+	roomMessages := recovered.RoomMessages[created.RoomID]
+	humanCount := 0
+	for _, message := range roomMessages {
+		if message.Role == "human" {
+			humanCount++
+		}
+	}
+	if humanCount != 1 {
+		t.Fatalf("room messages = %#v, want only original human message without explicit restart prompt", roomMessages)
+	}
+	lastMessage := roomMessages[len(roomMessages)-1]
+	if lastMessage.Speaker != "Claude Review Runner" || lastMessage.Message != "我接着上一轮卡住的复核继续推进，先把恢复链路收口。" {
+		t.Fatalf("last room message = %#v, want autonomous claude recovery reply", lastMessage)
+	}
+}
+
+func TestStateRouteRecoveryTickDoesNotDuplicateInFlightRoomAutoRetry(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	previousCooldown := roomAutoRecoveryCooldown
+	roomAutoRecoveryCooldown = 0
+	defer func() {
+		roomAutoRecoveryCooldown = previousCooldown
+	}()
+
+	var (
+		mu              sync.Mutex
+		execRequests    []ExecRequest
+		releaseRecovery = make(chan struct{})
+	)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		var req ExecRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode exec payload: %v", err)
+		}
+		mu.Lock()
+		execRequests = append(execRequests, req)
+		count := len(execRequests)
+		mu.Unlock()
+
+		switch count {
+		case 1:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "我先把这一棒交给 reviewer。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核恢复链路 | 请把恢复链路和副作用复核完。",
+				Duration: "0.6s",
+			})
+		case 2:
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "not logged in"})
+		case 3:
+			<-releaseRecovery
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "not logged in"})
+		default:
+			t.Fatalf("unexpected exec request count: %d", count)
+		}
+	}))
+	defer daemon.Close()
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	pairMainRuntime(t, s, daemon.URL)
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "State Tick Inflight Dedup", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续把恢复链路推进。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST room message error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first room message status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	server.Close()
+
+	reloadedStore, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New(reload) error = %v", err)
+	}
+	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer reloadedServer.Close()
+
+	firstTick, err := http.Get(reloadedServer.URL + "/v1/state")
+	if err != nil {
+		t.Fatalf("first GET /v1/state error = %v", err)
+	}
+	firstTick.Body.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		count := len(execRequests)
+		mu.Unlock()
+		if count == 3 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	mu.Lock()
+	if len(execRequests) != 3 {
+		mu.Unlock()
+		t.Fatalf("exec requests before duplicate polls = %#v, want one in-flight recovery request", execRequests)
+	}
+	mu.Unlock()
+
+	for index := 0; index < 3; index++ {
+		stateResp, err := http.Get(reloadedServer.URL + "/v1/state")
+		if err != nil {
+			t.Fatalf("duplicate GET /v1/state error = %v", err)
+		}
+		stateResp.Body.Close()
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	if len(execRequests) != 3 {
+		mu.Unlock()
+		t.Fatalf("exec requests during in-flight recovery = %#v, want no duplicate retry", execRequests)
+	}
+	mu.Unlock()
+
+	close(releaseRecovery)
 }
 
 func TestRoomMessageStreamPersistsBlockedConversationOnError(t *testing.T) {
