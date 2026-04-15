@@ -81,6 +81,35 @@ func (s *Store) Handoff(handoffID string) (AgentHandoff, bool) {
 	return AgentHandoff{}, false
 }
 
+func (s *Store) UpdateRoomAutoHandoffFollowup(handoffID, status, summary string) (State, AgentHandoff, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	handoff, ok := s.updateRoomAutoHandoffFollowupLocked(handoffID, status, summary, mailboxEventTimestamp(time.Now()))
+	if !ok {
+		return State{}, AgentHandoff{}, ErrMailboxHandoffNotFound
+	}
+	if err := s.persistLocked(); err != nil {
+		return State{}, AgentHandoff{}, err
+	}
+	return cloneState(s.state), handoff, nil
+}
+
+func (s *Store) CompleteLatestRoomAutoHandoffFollowup(roomID, agentName, summary string) (State, AgentHandoff, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	updatedAt := mailboxEventTimestamp(time.Now())
+	handoff, ok := s.completeLatestRoomAutoHandoffFollowupLocked(roomID, agentName, summary, updatedAt)
+	if !ok {
+		return cloneState(s.state), AgentHandoff{}, false, nil
+	}
+	if err := s.persistLocked(); err != nil {
+		return State{}, AgentHandoff{}, false, err
+	}
+	return cloneState(s.state), handoff, true, nil
+}
+
 func (s *Store) CreateHandoff(input MailboxCreateInput) (State, AgentHandoff, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -321,6 +350,13 @@ func (s *Store) createHandoffLocked(input MailboxCreateInput) (AgentHandoff, err
 		LastAction:      fmt.Sprintf("等待 %s acknowledge / block 这次交接。", toAgent.Name),
 		Messages:        []MailboxMessage{message},
 	}
+	if handoffKind == handoffKindRoomAuto {
+		handoff.AutoFollowup = &AgentHandoffAutoFollowup{
+			Status:    "pending",
+			Summary:   fmt.Sprintf("等待 %s 自动继续当前房间。", toAgent.Name),
+			UpdatedAt: createdAt,
+		}
+	}
 
 	s.state.Mailbox = append([]AgentHandoff{handoff}, s.state.Mailbox...)
 	s.state.Inbox = append([]InboxItem{{
@@ -458,6 +494,50 @@ func (s *Store) autoAcknowledgeRoomHandoffLocked(handoffID string, roomIndex, ru
 	})
 
 	return *handoff, nil
+}
+
+func (s *Store) updateRoomAutoHandoffFollowupLocked(handoffID, status, summary, updatedAt string) (AgentHandoff, bool) {
+	for index := range s.state.Mailbox {
+		handoff := &s.state.Mailbox[index]
+		if handoff.ID != strings.TrimSpace(handoffID) || handoff.Kind != handoffKindRoomAuto {
+			continue
+		}
+		if handoff.AutoFollowup == nil {
+			handoff.AutoFollowup = &AgentHandoffAutoFollowup{}
+		}
+		handoff.AutoFollowup.Status = strings.TrimSpace(status)
+		handoff.AutoFollowup.Summary = strings.TrimSpace(summary)
+		handoff.AutoFollowup.UpdatedAt = updatedAt
+		handoff.UpdatedAt = updatedAt
+		return *handoff, true
+	}
+	return AgentHandoff{}, false
+}
+
+func (s *Store) completeLatestRoomAutoHandoffFollowupLocked(roomID, agentName, summary, updatedAt string) (AgentHandoff, bool) {
+	roomID = strings.TrimSpace(roomID)
+	agentName = strings.TrimSpace(agentName)
+	if roomID == "" || agentName == "" {
+		return AgentHandoff{}, false
+	}
+	for index := range s.state.Mailbox {
+		handoff := &s.state.Mailbox[index]
+		if handoff.RoomID != roomID || handoff.Kind != handoffKindRoomAuto || handoff.AutoFollowup == nil {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(handoff.ToAgent), agentName) {
+			continue
+		}
+		switch strings.TrimSpace(handoff.AutoFollowup.Status) {
+		case "pending", "blocked":
+			handoff.AutoFollowup.Status = "completed"
+			handoff.AutoFollowup.Summary = strings.TrimSpace(summary)
+			handoff.AutoFollowup.UpdatedAt = updatedAt
+			handoff.UpdatedAt = updatedAt
+			return *handoff, true
+		}
+	}
+	return AgentHandoff{}, false
 }
 
 func (s *Store) createGovernedHandoffForRoomLocked(roomID string) (AgentHandoff, WorkspaceGovernanceSuggestedHandoff, error) {

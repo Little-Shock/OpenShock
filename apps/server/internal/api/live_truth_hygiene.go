@@ -786,6 +786,10 @@ func sanitizeAgentHandoff(item store.AgentHandoff) store.AgentHandoff {
 	item.ToAgent = sanitizeDisplayText(item.ToAgent, "目标 Agent")
 	item.LastAction = sanitizeDisplayText(item.LastAction, "等待 handoff 同步。")
 	item.LastNote = sanitizeDisplayText(item.LastNote, "")
+	if item.AutoFollowup != nil {
+		item.AutoFollowup.Status = sanitizeDisplayText(item.AutoFollowup.Status, "")
+		item.AutoFollowup.Summary = sanitizeDisplayText(item.AutoFollowup.Summary, "当前自动接棒摘要正在整理中。")
+	}
 	item.Messages = sanitizeLivePayload(item.Messages).([]store.MailboxMessage)
 	return item
 }

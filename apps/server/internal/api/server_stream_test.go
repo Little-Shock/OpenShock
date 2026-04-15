@@ -413,6 +413,163 @@ func TestRoomMessageStreamDisconnectPersistsPendingTurnForResume(t *testing.T) {
 	}
 }
 
+func TestRoomAutoHandoffBlockedFollowupPersistsDurableContinuationAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+	var execRequests []ExecRequest
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/exec" {
+			http.NotFound(w, r)
+			return
+		}
+		var req ExecRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode exec payload: %v", err)
+		}
+		execRequests = append(execRequests, req)
+
+		switch len(execRequests) {
+		case 1:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "我先把这一棒交给 reviewer。\nOPENSHOCK_HANDOFF: agent-claude-review-runner | 继续复核恢复链路 | 请把恢复链路和副作用复核完。",
+				Duration: "0.6s",
+			})
+		case 2:
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "not logged in"})
+		case 3:
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "claude",
+				Command:  []string{"claude", "--print"},
+				Output:   "我接着上一轮没跑完的复核，先把恢复链路继续收口。",
+				Duration: "0.4s",
+			})
+		default:
+			t.Fatalf("unexpected exec request count: %d", len(execRequests))
+		}
+	}))
+	defer daemon.Close()
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	pairMainRuntime(t, s, daemon.URL)
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Blocked Auto Handoff Continuation", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续把恢复链路推进。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	resp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST room message error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first room message status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var firstPayload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &firstPayload)
+	server.Close()
+
+	var blockedHandoff *store.AgentHandoff
+	for index := range firstPayload.State.Mailbox {
+		item := &firstPayload.State.Mailbox[index]
+		if item.RoomID == created.RoomID && item.Kind == "room-auto" {
+			blockedHandoff = item
+			break
+		}
+	}
+	if blockedHandoff == nil {
+		t.Fatalf("mailbox missing room-auto handoff: %#v", firstPayload.State.Mailbox)
+	}
+	if blockedHandoff.AutoFollowup == nil || blockedHandoff.AutoFollowup.Status != "blocked" {
+		t.Fatalf("handoff auto followup = %#v, want blocked durable followup state", blockedHandoff)
+	}
+	if !strings.Contains(blockedHandoff.AutoFollowup.Summary, "当前还未登录模型服务") {
+		t.Fatalf("handoff auto followup summary = %#v, want blocked error summary", blockedHandoff.AutoFollowup)
+	}
+
+	reloadedStore, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New(reload) error = %v", err)
+	}
+	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer reloadedServer.Close()
+
+	secondBody, err := json.Marshal(map[string]any{
+		"prompt": "现在我补一句，继续把上一轮卡住的复核做完。",
+	})
+	if err != nil {
+		t.Fatalf("Marshal(second) error = %v", err)
+	}
+	secondResp, err := http.Post(reloadedServer.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(secondBody))
+	if err != nil {
+		t.Fatalf("POST restarted room message error = %v", err)
+	}
+	defer secondResp.Body.Close()
+	if secondResp.StatusCode != http.StatusOK {
+		t.Fatalf("second room message status = %d, want %d", secondResp.StatusCode, http.StatusOK)
+	}
+
+	var secondPayload struct {
+		Output string      `json:"output"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, secondResp, &secondPayload)
+
+	if len(execRequests) != 3 {
+		t.Fatalf("exec requests = %#v, want resumed third request after restart", execRequests)
+	}
+	if execRequests[2].Provider != "claude" {
+		t.Fatalf("restart exec request = %#v, want current owner provider claude", execRequests[2])
+	}
+	for _, expected := range []string{
+		"你上一轮已正式接棒当前房间",
+		"自动继续时被阻塞",
+		"当前还未登录模型服务",
+	} {
+		if !strings.Contains(execRequests[2].Prompt, expected) {
+			t.Fatalf("restart exec prompt = %q, want %q", execRequests[2].Prompt, expected)
+		}
+	}
+
+	var resumedHandoff *store.AgentHandoff
+	for index := range secondPayload.State.Mailbox {
+		item := &secondPayload.State.Mailbox[index]
+		if item.ID == blockedHandoff.ID {
+			resumedHandoff = item
+			break
+		}
+	}
+	if resumedHandoff == nil || resumedHandoff.AutoFollowup == nil || resumedHandoff.AutoFollowup.Status != "completed" {
+		t.Fatalf("resumed handoff = %#v, want completed durable followup after restart", resumedHandoff)
+	}
+	if secondPayload.Output != "我接着上一轮没跑完的复核，先把恢复链路继续收口。" {
+		t.Fatalf("second payload output = %q, want resumed claude reply", secondPayload.Output)
+	}
+}
+
 func TestRoomMessageStreamCreatesMailboxHandoffFromDirective(t *testing.T) {
 	root := t.TempDir()
 	var seen ExecRequest

@@ -830,7 +830,14 @@ export type AgentHandoff = {
   updatedAt: string;
   lastAction: string;
   lastNote?: string;
+  autoFollowup?: AgentHandoffAutoFollowup;
   messages: MailboxMessage[];
+};
+
+export type AgentHandoffAutoFollowup = {
+  status?: string;
+  summary?: string;
+  updatedAt?: string;
 };
 
 export type InboxDecision =

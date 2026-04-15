@@ -821,6 +821,14 @@ function sanitizeAgentHandoff(item: AgentHandoff): AgentHandoff {
     toAgent: sanitizeDisplayText(item.toAgent, "目标智能体"),
     lastAction: sanitizeDisplayText(item.lastAction, "等待 handoff 同步。"),
     lastNote: sanitizeDisplayText(item.lastNote ?? "", ""),
+    autoFollowup: item.autoFollowup
+      ? {
+          ...item.autoFollowup,
+          status: sanitizeDisplayText(item.autoFollowup.status ?? "", ""),
+          summary: sanitizeDisplayText(item.autoFollowup.summary ?? "", "当前自动接棒摘要正在整理中。"),
+          updatedAt: sanitizeDisplayText(item.autoFollowup.updatedAt ?? "", ""),
+        }
+      : undefined,
     messages: item.messages.map(sanitizeMailboxMessage),
   };
 }

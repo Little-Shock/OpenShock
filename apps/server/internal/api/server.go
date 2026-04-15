@@ -682,6 +682,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 				visibleOutput = followupOutput
 			}
 		}
+		nextState = s.completeRoomAutoHandoffFollowupIfNeeded(nextState, roomID, replySpeaker, directives, visibleOutput)
 		writeJSON(w, http.StatusOK, map[string]any{"output": visibleOutput, "state": nextState})
 		return
 	}
@@ -1745,6 +1746,7 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 			visibleOutput = followupOutput
 		}
 	}
+	nextState = s.completeRoomAutoHandoffFollowupIfNeeded(nextState, roomID, replySpeaker, directives, visibleOutput)
 	_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "state", Output: visibleOutput, State: &nextState})
 }
 
@@ -1882,6 +1884,10 @@ func buildRoomExecPrompt(snapshot store.State, roomID, provider, userPrompt stri
 			builder.WriteString(fmt.Sprintf("- 中断前最后一段公开可见输出：%s\n", compactPromptLine(preview)))
 		}
 	}
+	if handoffHint := buildRoomAutoHandoffContinuationHint(snapshot, roomID, turnAgent, ownerAgent, hasTurnAgent, hasOwnerAgent); handoffHint != "" {
+		builder.WriteString("\n接棒提醒：\n")
+		builder.WriteString(handoffHint)
+	}
 
 	if recent := buildRoomPromptHistory(snapshot.RoomMessages[roomID], 6); recent != "" {
 		builder.WriteString("\n最近对话：\n")
@@ -2018,6 +2024,49 @@ func buildRoomWakeupHint(snapshot store.State, roomID, wakeupMode string, turnAg
 	default:
 		return ""
 	}
+}
+
+func buildRoomAutoHandoffContinuationHint(snapshot store.State, roomID string, turnAgent, ownerAgent store.Agent, hasTurnAgent, hasOwnerAgent bool) string {
+	if !hasOwnerAgent {
+		return ""
+	}
+	if hasTurnAgent && turnAgent.ID != "" && turnAgent.ID != ownerAgent.ID {
+		return ""
+	}
+	handoff := findLatestRoomAutoHandoffContinuation(snapshot, roomID, ownerAgent)
+	if handoff == nil || handoff.AutoFollowup == nil {
+		return ""
+	}
+
+	summary := compactPromptLine(strings.TrimSpace(handoff.AutoFollowup.Summary))
+	switch strings.TrimSpace(handoff.AutoFollowup.Status) {
+	case "pending":
+		return "- 你上一轮已正式接棒当前房间，但自动继续还没完成；这轮默认沿上次交棒继续，不要重讲背景或再把同一棒转交出去。\n- 默认直接沿当前 room / run / worktree 继续，不要重复“我已接手”这类铺垫。"
+	case "blocked":
+		if summary != "" {
+			return fmt.Sprintf("- 你上一轮已正式接棒当前房间，但自动继续时被阻塞：%s。\n- 这轮默认沿同一条 room / run / worktree 接着收口，不要重讲背景或再次转交同一棒。", summary)
+		}
+		return "- 你上一轮已正式接棒当前房间，但自动继续时被阻塞；这轮默认沿同一条 room / run / worktree 接着收口，不要重讲背景或再次转交同一棒。"
+	default:
+		return ""
+	}
+}
+
+func findLatestRoomAutoHandoffContinuation(snapshot store.State, roomID string, ownerAgent store.Agent) *store.AgentHandoff {
+	for index := range snapshot.Mailbox {
+		handoff := &snapshot.Mailbox[index]
+		if handoff.RoomID != roomID || handoff.Kind != "room-auto" || handoff.AutoFollowup == nil {
+			continue
+		}
+		if handoff.ToAgentID != ownerAgent.ID && !strings.EqualFold(strings.TrimSpace(handoff.ToAgent), strings.TrimSpace(ownerAgent.Name)) {
+			continue
+		}
+		switch strings.TrimSpace(handoff.AutoFollowup.Status) {
+		case "pending", "blocked":
+			return handoff
+		}
+	}
+	return nil
 }
 
 func findInterruptedRoomPendingTurn(snapshot store.State, roomID, provider string) *store.SessionPendingTurn {
@@ -2714,11 +2763,11 @@ func (s *Server) applyRoomResponseDirectives(current store.State, snapshot store
 	if !ok {
 		return current, ""
 	}
-	nextState, _, err := s.store.CreateHandoff(handoffInput)
+	nextState, createdHandoff, err := s.store.CreateHandoff(handoffInput)
 	if err != nil {
 		return current, ""
 	}
-	return s.continueRoomAutoHandoff(nextState, roomID, handoff.Title)
+	return s.continueRoomAutoHandoff(nextState, roomID, handoff.Title, createdHandoff.ID)
 }
 
 func buildRoomAutoHandoffInput(snapshot store.State, roomID, fromAgentName string, directive roomHandoffDirective) (store.MailboxCreateInput, bool) {
@@ -2744,7 +2793,7 @@ func buildRoomAutoHandoffInput(snapshot store.State, roomID, fromAgentName strin
 	}, true
 }
 
-func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTitle string) (store.State, string) {
+func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTitle, handoffID string) (store.State, string) {
 	room, _, _, ok := findRoomRunIssue(snapshot, roomID)
 	if !ok {
 		return snapshot, ""
@@ -2755,6 +2804,9 @@ func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTi
 
 	provider := resolveRoomExecProvider(snapshot, roomID, "")
 	if blocked := execProviderPreflightMessage("讨论间自动接棒", snapshot, provider); blocked != "" {
+		if nextState, _, err := s.store.UpdateRoomAutoHandoffFollowup(handoffID, "blocked", blocked); err == nil {
+			snapshot = nextState
+		}
 		message := fmt.Sprintf("%s 已接棒，但当前无法继续执行：%s", room.Topic.Owner, blocked)
 		nextState, err := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
 		if err != nil {
@@ -2771,7 +2823,11 @@ func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTi
 		TimeoutSeconds: roomMessageExecTimeoutSeconds,
 	})
 	if err != nil {
-		message := fmt.Sprintf("%s 已接棒，但继续推进失败：%s", room.Topic.Owner, execFailureMessage("讨论间自动接棒", err))
+		blocked := execFailureMessage("讨论间自动接棒", err)
+		if nextState, _, followupErr := s.store.UpdateRoomAutoHandoffFollowup(handoffID, "blocked", blocked); followupErr == nil {
+			snapshot = nextState
+		}
+		message := fmt.Sprintf("%s 已接棒，但继续推进失败：%s", room.Topic.Owner, blocked)
 		nextState, appendErr := s.store.AppendSystemRoomMessage(roomID, "System", message, "blocked")
 		if appendErr != nil {
 			return snapshot, ""
@@ -2781,6 +2837,9 @@ func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTi
 
 	directives := parseRoomResponseDirectives(strings.TrimSpace(payload.Output))
 	if directives.SuppressReply {
+		if nextState, _, err := s.store.UpdateRoomAutoHandoffFollowup(handoffID, "completed", "已静默继续当前房间，无需额外公开回复。"); err == nil {
+			snapshot = nextState
+		}
 		if nextState, _, err := s.store.SuppressRoomAutoHandoffAnnouncement(roomID, room.Topic.Owner, handoffTitle); err == nil {
 			return nextState, ""
 		}
@@ -2798,7 +2857,13 @@ func (s *Server) continueRoomAutoHandoff(snapshot store.State, roomID, handoffTi
 		nextState, err = s.store.AppendAgentRoomMessage(roomID, room.Topic.Owner, directives.DisplayOutput, provider)
 	}
 	if err != nil {
+		if blockedState, _, followupErr := s.store.UpdateRoomAutoHandoffFollowup(handoffID, "blocked", err.Error()); followupErr == nil {
+			return blockedState, ""
+		}
 		return snapshot, ""
+	}
+	if blockedState, _, followupErr := s.store.UpdateRoomAutoHandoffFollowup(handoffID, "completed", directives.DisplayOutput); followupErr == nil {
+		nextState = blockedState
 	}
 	return nextState, directives.DisplayOutput
 }
@@ -2809,6 +2874,22 @@ func buildRoomAutoFollowupPrompt(ownerName, handoffTitle string) string {
 		defaultString(strings.TrimSpace(handoffTitle), "继续当前房间"),
 		defaultString(strings.TrimSpace(ownerName), "当前接手智能体"),
 	)
+}
+
+func (s *Server) completeRoomAutoHandoffFollowupIfNeeded(snapshot store.State, roomID, replySpeaker string, directives roomResponseDirectives, visibleOutput string) store.State {
+	summary := strings.TrimSpace(visibleOutput)
+	if directives.SuppressReply {
+		summary = "已在显式触发下静默继续当前房间，无需额外公开回复。"
+	} else if directives.ReplyKind == "clarification_request" && summary == "" {
+		summary = "已接住当前房间，并继续发起必要澄清。"
+	} else if summary == "" {
+		return snapshot
+	}
+	nextState, _, updated, err := s.store.CompleteLatestRoomAutoHandoffFollowup(roomID, replySpeaker, summary)
+	if err != nil || !updated {
+		return snapshot
+	}
+	return nextState
 }
 
 func roomReplySpeaker(snapshot store.State, roomID, userPrompt string) string {
