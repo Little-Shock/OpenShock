@@ -3988,6 +3988,133 @@ func TestRunDetailRouteReturnsResumeContextAndRoomHistory(t *testing.T) {
 	}
 }
 
+func TestRunDetailRouteBuildsRecoveryAuditFromInterruptedSessionAndFollowupTruth(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, err := s.MarkRoomConversationInterrupted("room-runtime", "继续把这条 continuity 往前推。", "codex", "我先接住当前 continuity，已经完成第一段检查。"); err != nil {
+		t.Fatalf("MarkRoomConversationInterrupted() error = %v", err)
+	}
+
+	_, handoff, err := s.CreateHandoff(store.MailboxCreateInput{
+		Kind:        "room-auto",
+		RoomID:      "room-runtime",
+		Title:       "继续复核恢复链路",
+		Summary:     "请把恢复链路和副作用复核完。",
+		FromAgentID: "agent-codex-dockmaster",
+		ToAgentID:   "agent-claude-review-runner",
+	})
+	if err != nil {
+		t.Fatalf("CreateHandoff() error = %v", err)
+	}
+	if handoff.ID == "" {
+		t.Fatalf("room-auto handoff missing: %#v", handoff)
+	}
+	if _, _, err := s.UpdateRoomAutoHandoffFollowup(handoff.ID, "blocked", "当前还未登录模型服务"); err != nil {
+		t.Fatalf("UpdateRoomAutoHandoffFollowup() error = %v", err)
+	}
+	if _, err := s.PublishRuntimeEvent(store.RuntimePublishInput{
+		RuntimeID:      "shock-main",
+		RunID:          "run_runtime_01",
+		SessionID:      "session-runtime-01",
+		RoomID:         "room-runtime",
+		Cursor:         1,
+		Phase:          "closeout",
+		Status:         "blocked",
+		Summary:        "runtime closeout captured blocked recovery",
+		CloseoutReason: "pending_turn_interrupted",
+	}); err != nil {
+		t.Fatalf("PublishRuntimeEvent() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/runs/run_runtime_01/detail")
+	if err != nil {
+		t.Fatalf("GET run detail envelope error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET run detail envelope status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var detail store.RunDetail
+	decodeJSON(t, resp, &detail)
+	if detail.RecoveryAudit.Status != "interrupted" || detail.RecoveryAudit.Source != "session.pending_turn" {
+		t.Fatalf("run detail recovery audit = %#v, want interrupted session source", detail.RecoveryAudit)
+	}
+	if !detail.RecoveryAudit.ResumeEligible || !strings.Contains(detail.RecoveryAudit.Preview, "第一段检查") {
+		t.Fatalf("run detail recovery audit = %#v, want resume eligible preview", detail.RecoveryAudit)
+	}
+	if detail.RecoveryAudit.RoomAutoFollowup == nil || detail.RecoveryAudit.RoomAutoFollowup.Status != "blocked" {
+		t.Fatalf("run detail room-auto followup = %#v, want blocked followup", detail.RecoveryAudit.RoomAutoFollowup)
+	}
+	if !strings.Contains(detail.RecoveryAudit.RoomAutoFollowup.Summary, "未登录模型服务") {
+		t.Fatalf("run detail room-auto followup = %#v, want blocked summary", detail.RecoveryAudit.RoomAutoFollowup)
+	}
+	if detail.RecoveryAudit.RuntimeReplay == nil || detail.RecoveryAudit.RuntimeReplay.ReplayAnchor != "/v1/runtime/publish/replay?runId=run_runtime_01" {
+		t.Fatalf("run detail runtime replay = %#v, want runtime replay anchor", detail.RecoveryAudit.RuntimeReplay)
+	}
+	if detail.RecoveryAudit.RuntimeReplay.LastCursor != 1 || detail.RecoveryAudit.RuntimeReplay.CloseoutReason != "pending_turn_interrupted" {
+		t.Fatalf("run detail runtime replay = %#v, want closeout cursor/reason", detail.RecoveryAudit.RuntimeReplay)
+	}
+}
+
+func TestRunDetailRouteRecoveryAuditReadIsSideEffectFree(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, err := s.MarkRoomConversationInterrupted("room-runtime", "继续把这条 continuity 往前推。", "codex", "我先接住当前 continuity，已经完成第一段检查。"); err != nil {
+		t.Fatalf("MarkRoomConversationInterrupted() error = %v", err)
+	}
+	before := s.Snapshot()
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	for index := 0; index < 2; index++ {
+		resp, err := http.Get(server.URL + "/v1/runs/run_runtime_01/detail")
+		if err != nil {
+			t.Fatalf("GET run detail error = %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET run detail status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		resp.Body.Close()
+	}
+
+	after := s.Snapshot()
+	beforeRun := findRunSnapshotByID(before, "run_runtime_01")
+	afterRun := findRunSnapshotByID(after, "run_runtime_01")
+	if beforeRun == nil || afterRun == nil {
+		t.Fatalf("run snapshots missing: before=%#v after=%#v", beforeRun, afterRun)
+	}
+	if len(afterRun.Timeline) != len(beforeRun.Timeline) {
+		t.Fatalf("run timeline mutated after repeated detail reads: before=%#v after=%#v", beforeRun.Timeline, afterRun.Timeline)
+	}
+	if len(after.RoomMessages["room-runtime"]) != len(before.RoomMessages["room-runtime"]) {
+		t.Fatalf("room messages mutated after repeated detail reads: before=%#v after=%#v", before.RoomMessages["room-runtime"], after.RoomMessages["room-runtime"])
+	}
+	if len(after.Inbox) != len(before.Inbox) {
+		t.Fatalf("inbox mutated after repeated detail reads: before=%#v after=%#v", before.Inbox, after.Inbox)
+	}
+}
+
 func TestPullRequestRouteEscalatesBlockedOnGitHubSyncFailure(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")

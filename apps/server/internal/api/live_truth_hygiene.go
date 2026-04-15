@@ -29,6 +29,12 @@ func sanitizeLivePayload(payload any) any {
 		return sanitizeRoomDetail(typed)
 	case store.RunDetail:
 		return sanitizeRunDetail(typed)
+	case store.RunRecoveryAudit:
+		return sanitizeRunRecoveryAudit(typed)
+	case store.RunRecoveryRoomAutoFollowup:
+		return sanitizeRunRecoveryRoomAutoFollowup(typed)
+	case store.RunRecoveryRuntimeReplay:
+		return sanitizeRunRecoveryRuntimeReplay(typed)
 	case store.RunHistoryPage:
 		return sanitizeRunHistoryPage(typed)
 	case store.PullRequestDetail:
@@ -651,8 +657,43 @@ func sanitizeRunDetail(detail store.RunDetail) store.RunDetail {
 	detail.Room = sanitizeRoom(detail.Room)
 	detail.Issue = sanitizeIssue(detail.Issue)
 	detail.Session = sanitizeSession(detail.Session)
+	detail.RecoveryAudit = sanitizeRunRecoveryAudit(detail.RecoveryAudit)
 	detail.History = sanitizeLivePayload(detail.History).([]store.RunHistoryEntry)
 	return detail
+}
+
+func sanitizeRunRecoveryAudit(item store.RunRecoveryAudit) store.RunRecoveryAudit {
+	item.Status = sanitizeDisplayText(item.Status, "")
+	item.Source = sanitizeDisplayText(item.Source, "")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前恢复摘要正在整理中。")
+	item.Preview = sanitizeDisplayText(item.Preview, "当前恢复预览正在整理中。")
+	item.SessionReplay = sanitizeDisplayText(item.SessionReplay, "")
+	if item.RoomAutoFollowup != nil {
+		sanitized := sanitizeRunRecoveryRoomAutoFollowup(*item.RoomAutoFollowup)
+		item.RoomAutoFollowup = &sanitized
+	}
+	if item.RuntimeReplay != nil {
+		sanitized := sanitizeRunRecoveryRuntimeReplay(*item.RuntimeReplay)
+		item.RuntimeReplay = &sanitized
+	}
+	return item
+}
+
+func sanitizeRunRecoveryRoomAutoFollowup(item store.RunRecoveryRoomAutoFollowup) store.RunRecoveryRoomAutoFollowup {
+	item.ToAgentID = sanitizeDisplayText(item.ToAgentID, "")
+	item.ToAgent = sanitizeDisplayText(item.ToAgent, "")
+	item.Status = sanitizeDisplayText(item.Status, "")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前自动接棒摘要正在整理中。")
+	item.LastAction = sanitizeDisplayText(item.LastAction, "当前自动接棒动作正在整理中。")
+	return item
+}
+
+func sanitizeRunRecoveryRuntimeReplay(item store.RunRecoveryRuntimeReplay) store.RunRecoveryRuntimeReplay {
+	item.ReplayAnchor = sanitizeDisplayText(item.ReplayAnchor, "")
+	item.Status = sanitizeDisplayText(item.Status, "")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前 runtime replay 摘要正在整理中。")
+	item.CloseoutReason = sanitizeDisplayText(item.CloseoutReason, "")
+	return item
 }
 
 func sanitizeRunHistoryPage(page store.RunHistoryPage) store.RunHistoryPage {

@@ -1081,11 +1081,40 @@ type RunHistoryPage struct {
 }
 
 type RunDetail struct {
-	Run     Run               `json:"run"`
-	Room    Room              `json:"room"`
-	Issue   Issue             `json:"issue"`
-	Session Session           `json:"session"`
-	History []RunHistoryEntry `json:"history"`
+	Run           Run               `json:"run"`
+	Room          Room              `json:"room"`
+	Issue         Issue             `json:"issue"`
+	Session       Session           `json:"session"`
+	RecoveryAudit RunRecoveryAudit  `json:"recoveryAudit"`
+	History       []RunHistoryEntry `json:"history"`
+}
+
+type RunRecoveryAudit struct {
+	Status           string                       `json:"status,omitempty"`
+	Source           string                       `json:"source,omitempty"`
+	Summary          string                       `json:"summary,omitempty"`
+	Preview          string                       `json:"preview,omitempty"`
+	ResumeEligible   bool                         `json:"resumeEligible,omitempty"`
+	SessionReplay    string                       `json:"sessionReplay,omitempty"`
+	RoomAutoFollowup *RunRecoveryRoomAutoFollowup `json:"roomAutoFollowup,omitempty"`
+	RuntimeReplay    *RunRecoveryRuntimeReplay    `json:"runtimeReplay,omitempty"`
+}
+
+type RunRecoveryRoomAutoFollowup struct {
+	HandoffID  string `json:"handoffId,omitempty"`
+	ToAgentID  string `json:"toAgentId,omitempty"`
+	ToAgent    string `json:"toAgent,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+	LastAction string `json:"lastAction,omitempty"`
+}
+
+type RunRecoveryRuntimeReplay struct {
+	ReplayAnchor   string `json:"replayAnchor,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Summary        string `json:"summary,omitempty"`
+	LastCursor     int    `json:"lastCursor,omitempty"`
+	CloseoutReason string `json:"closeoutReason,omitempty"`
 }
 
 type PullRequestDetail struct {

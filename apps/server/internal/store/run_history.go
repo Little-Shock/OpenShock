@@ -1,6 +1,9 @@
 package store
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 const (
 	defaultRunHistoryPageSize = 3
@@ -29,11 +32,12 @@ func (s *Store) RunDetail(runID string) (RunDetail, bool) {
 	session, _ := findSessionForRunSnapshot(snapshot, run.ID)
 
 	return RunDetail{
-		Run:     run,
-		Room:    room,
-		Issue:   issue,
-		Session: session,
-		History: collectRunHistoryEntries(snapshot, run.RoomID),
+		Run:           run,
+		Room:          room,
+		Issue:         issue,
+		Session:       session,
+		RecoveryAudit: buildRunRecoveryAudit(snapshot, run, session),
+		History:       collectRunHistoryEntries(snapshot, run.RoomID),
 	}, true
 }
 
@@ -156,6 +160,69 @@ func findSessionForRunSnapshot(snapshot State, runID string) (Session, bool) {
 		UpdatedAt:    run.StartedAt,
 		MemoryPaths:  defaultSessionMemoryPaths(run.RoomID, run.IssueKey),
 	}, true
+}
+
+func buildRunRecoveryAudit(snapshot State, run Run, session Session) RunRecoveryAudit {
+	audit := RunRecoveryAudit{}
+
+	if session.PendingTurn != nil {
+		audit.Status = strings.TrimSpace(session.PendingTurn.Status)
+		audit.Source = "session.pending_turn"
+		audit.Summary = defaultString(strings.TrimSpace(session.ControlNote), strings.TrimSpace(session.Summary))
+		audit.Preview = strings.TrimSpace(session.PendingTurn.Preview)
+		audit.ResumeEligible = session.PendingTurn.ResumeEligible
+	}
+	if audit.Status == "" && session.Recovery != nil {
+		audit.Status = strings.TrimSpace(session.Recovery.Status)
+		audit.Source = "session.recovery"
+		audit.Summary = strings.TrimSpace(session.Recovery.Summary)
+		audit.Preview = strings.TrimSpace(session.Recovery.Preview)
+		audit.SessionReplay = defaultString(strings.TrimSpace(session.Recovery.ReplayAnchor), sessionRecoveryReplayAnchor(session.ID))
+	}
+	if audit.Source == "session.pending_turn" {
+		audit.SessionReplay = sessionRecoveryReplayAnchor(session.ID)
+	}
+
+	if followup, ok := findLatestRunRecoveryRoomAutoFollowup(snapshot, run.RoomID); ok {
+		audit.RoomAutoFollowup = &RunRecoveryRoomAutoFollowup{
+			HandoffID:  followup.ID,
+			ToAgentID:  strings.TrimSpace(followup.ToAgentID),
+			ToAgent:    strings.TrimSpace(followup.ToAgent),
+			Status:     strings.TrimSpace(followup.AutoFollowup.Status),
+			Summary:    strings.TrimSpace(followup.AutoFollowup.Summary),
+			LastAction: strings.TrimSpace(followup.LastAction),
+		}
+	}
+
+	if replay, ok := buildRuntimeReplayEvidence(snapshot, run.ID); ok {
+		audit.RuntimeReplay = &RunRecoveryRuntimeReplay{
+			ReplayAnchor:   strings.TrimSpace(replay.ReplayAnchor),
+			Status:         strings.TrimSpace(replay.Status),
+			Summary:        strings.TrimSpace(replay.Summary),
+			LastCursor:     replay.LastCursor,
+			CloseoutReason: strings.TrimSpace(replay.CloseoutReason),
+		}
+	}
+
+	return audit
+}
+
+func findLatestRunRecoveryRoomAutoFollowup(snapshot State, roomID string) (AgentHandoff, bool) {
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		return AgentHandoff{}, false
+	}
+	for index := range snapshot.Mailbox {
+		item := snapshot.Mailbox[index]
+		if item.RoomID != roomID || item.Kind != handoffKindRoomAuto || item.AutoFollowup == nil {
+			continue
+		}
+		switch strings.TrimSpace(item.AutoFollowup.Status) {
+		case "pending", "blocked", "completed":
+			return item, true
+		}
+	}
+	return AgentHandoff{}, false
 }
 
 func normalizeRunHistoryLimit(limit int) int {

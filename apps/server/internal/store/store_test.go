@@ -171,6 +171,33 @@ func TestPersistedStateIncludesDerivedRuntimeTruth(t *testing.T) {
 	}
 }
 
+func TestSnapshotKeepsGovernanceResponseAggregationAuditTimestampsStable(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	first := s.Snapshot()
+	firstAudit := findWorkspaceResponseAggregationAuditEntry(first.Workspace.Governance.ResponseAggregation.AuditTrail, "Final Response")
+	if firstAudit == nil || strings.TrimSpace(firstAudit.OccurredAt) == "" {
+		t.Fatalf("first response aggregation audit = %#v, want final response occurredAt", first.Workspace.Governance.ResponseAggregation.AuditTrail)
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+
+	second := s.Snapshot()
+	secondAudit := findWorkspaceResponseAggregationAuditEntry(second.Workspace.Governance.ResponseAggregation.AuditTrail, "Final Response")
+	if secondAudit == nil {
+		t.Fatalf("second response aggregation audit = %#v, want final response entry", second.Workspace.Governance.ResponseAggregation.AuditTrail)
+	}
+	if secondAudit.OccurredAt != firstAudit.OccurredAt {
+		t.Fatalf("final response occurredAt drifted across snapshots: first=%q second=%q", firstAudit.OccurredAt, secondAudit.OccurredAt)
+	}
+}
+
 func TestCreateIssueRejectsWhenAllRuntimesOffline(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -880,6 +907,15 @@ func findMemoryArtifactByPath(state State, path string) *MemoryArtifact {
 	for index := range state.Memory {
 		if state.Memory[index].Path == path {
 			return &state.Memory[index]
+		}
+	}
+	return nil
+}
+
+func findWorkspaceResponseAggregationAuditEntry(items []WorkspaceResponseAggregationAuditEntry, label string) *WorkspaceResponseAggregationAuditEntry {
+	for index := range items {
+		if items[index].Label == label {
+			return &items[index]
 		}
 	}
 	return nil

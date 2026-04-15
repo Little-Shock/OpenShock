@@ -1225,7 +1225,7 @@ func buildResponseAggregation(
 			Status:     deliveryDelegation.Status,
 			Actor:      defaultString(strings.TrimSpace(deliveryDelegation.TargetAgent), defaultString(strings.TrimSpace(currentOwner), "delivery closeout")),
 			Summary:    deliveryDelegation.Summary,
-			OccurredAt: responseAggregationDeliveryOccurredAt(state, deliveryDelegation),
+			OccurredAt: responseAggregationDeliveryOccurredAt(state, focus, deliveryDelegation),
 		})
 	}
 
@@ -1233,6 +1233,7 @@ func buildResponseAggregation(
 	status := "draft"
 	summary := "最终响应会把 issue、room、handoff、review 和 inbox signal 聚合到同一条 human-readable closeout。"
 	aggregator := defaultString(currentOwner, "workspace governance")
+	finalOccurredAt := responseAggregationFallbackOccurredAt(focus)
 
 	switch {
 	case deliveryDelegationActive:
@@ -1240,11 +1241,13 @@ func buildResponseAggregation(
 		finalResponse = deliveryDelegation.Summary
 		summary = "当前 final response 继续围 PR delivery closeout / release receipt truth 聚合。"
 		aggregator = defaultString(strings.TrimSpace(deliveryDelegation.TargetAgent), aggregator)
+		finalOccurredAt = responseAggregationDeliveryOccurredAt(state, focus, deliveryDelegation)
 	case governanceCompletionMatchesCurrentOwner(focus.LatestCompletion, currentOwner) && strings.TrimSpace(focus.LatestCompletion.LastNote) != "":
 		status = "ready"
 		finalResponse = focus.LatestCompletion.LastNote
 		summary = fmt.Sprintf("最新 closeout note 已从 mailbox 回写：%s。", focus.LatestCompletion.LastNote)
 		aggregator = focus.LatestCompletion.ToAgent
+		finalOccurredAt = defaultString(strings.TrimSpace(focus.LatestCompletion.UpdatedAt), finalOccurredAt)
 	case focus.Run != nil && strings.TrimSpace(focus.Run.NextAction) != "":
 		status = governanceStatusFromRun(focus.Run.Status)
 		finalResponse = focus.Run.NextAction
@@ -1255,6 +1258,7 @@ func buildResponseAggregation(
 		finalResponse = focus.PullRequest.ReviewSummary
 		summary = fmt.Sprintf("%s 当前把 reviewer verdict 留在同一条 aggregation surface 上。", focus.PullRequest.Label)
 		aggregator = defaultString(strings.TrimSpace(focus.PullRequest.Author), aggregator)
+		finalOccurredAt = defaultString(strings.TrimSpace(focus.PullRequest.UpdatedAt), finalOccurredAt)
 	}
 	auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
 		ID:         "audit-final-response",
@@ -1262,7 +1266,7 @@ func buildResponseAggregation(
 		Status:     status,
 		Actor:      aggregator,
 		Summary:    finalResponse,
-		OccurredAt: time.Now().UTC().Format(time.RFC3339),
+		OccurredAt: finalOccurredAt,
 	})
 
 	return WorkspaceResponseAggregation{
@@ -1288,7 +1292,7 @@ func responseAggregationStatusFromDeliveryDelegation(status string) string {
 	}
 }
 
-func responseAggregationDeliveryOccurredAt(state State, delegation PullRequestDeliveryDelegation) string {
+func responseAggregationDeliveryOccurredAt(state State, focus governanceFocus, delegation PullRequestDeliveryDelegation) string {
 	for _, handoff := range state.Mailbox {
 		if handoff.ID == delegation.ResponseHandoffID {
 			return handoff.UpdatedAt
@@ -1297,10 +1301,22 @@ func responseAggregationDeliveryOccurredAt(state State, delegation PullRequestDe
 			return handoff.UpdatedAt
 		}
 	}
-	if delegation.Status == "done" || delegation.Status == "ready" || delegation.Status == "blocked" {
-		return time.Now().UTC().Format(time.RFC3339)
+	return responseAggregationFallbackOccurredAt(focus)
+}
+
+func responseAggregationFallbackOccurredAt(focus governanceFocus) string {
+	switch {
+	case focus.LatestCompletion != nil && strings.TrimSpace(focus.LatestCompletion.UpdatedAt) != "":
+		return focus.LatestCompletion.UpdatedAt
+	case focus.LatestHandoff != nil && strings.TrimSpace(focus.LatestHandoff.UpdatedAt) != "":
+		return focus.LatestHandoff.UpdatedAt
+	case focus.PullRequest != nil && strings.TrimSpace(focus.PullRequest.UpdatedAt) != "":
+		return focus.PullRequest.UpdatedAt
+	case focus.Run != nil && strings.TrimSpace(focus.Run.StartedAt) != "":
+		return focus.Run.StartedAt
+	default:
+		return ""
 	}
-	return ""
 }
 
 func governanceCompletionMatchesCurrentOwner(item *AgentHandoff, currentOwner string) bool {
