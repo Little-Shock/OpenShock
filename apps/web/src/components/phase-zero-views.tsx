@@ -23,8 +23,8 @@ import type {
   Room,
   Run,
   RunHistoryEntry,
+  RunRecoveryAudit,
   RunStatus,
-  RuntimeReplayEvidencePacket,
   Session,
   SettingsSection,
   SetupStep,
@@ -84,21 +84,6 @@ function runStatusLabel(status: RunStatus) {
       return "待评审";
     case "done":
       return "已完成";
-  }
-}
-
-function runtimeReplayPhaseLabel(phase?: string) {
-  switch (phase) {
-    case "start":
-      return "启动";
-    case "progress":
-      return "处理中";
-    case "closeout":
-      return "收尾";
-    case "done":
-      return "完成";
-    default:
-      return phase || "待同步";
   }
 }
 
@@ -187,6 +172,40 @@ function settingsGroupLabel(id: SettingsSection["id"]) {
     default:
       return "通知";
   }
+}
+
+function recoveryAuditTone(audit?: RunRecoveryAudit | null): "white" | "paper" | "yellow" | "lime" | "pink" | "ink" {
+  if (audit?.resumeEligible === false) {
+    return "pink";
+  }
+  if (audit?.runtimeReplay?.status === "done" || audit?.status === "done") {
+    return "lime";
+  }
+  if (audit?.source || audit?.status || audit?.summary || audit?.preview) {
+    return "yellow";
+  }
+  return "paper";
+}
+
+function recoverySourceLabel(source?: string) {
+  switch (source) {
+    case "session.pending_turn":
+      return "待恢复回合";
+    case "session.recovery":
+      return "恢复事件";
+    default:
+      return source || "待同步";
+  }
+}
+
+function recoveryResumeEligibilityLabel(eligible?: boolean) {
+  if (eligible === true) {
+    return "可恢复";
+  }
+  if (eligible === false) {
+    return "需人工介入";
+  }
+  return "待同步";
 }
 
 export function Panel({
@@ -429,14 +448,14 @@ export function RunDetailView({
   session,
   history = [],
   guards = [],
-  runtimeReplay,
+  recoveryAudit,
 }: {
   run: Run;
   statusTestId?: string;
   session?: Session;
   history?: RunHistoryEntry[];
   guards?: DestructiveGuard[];
-  runtimeReplay?: RuntimeReplayEvidencePacket | null;
+  recoveryAudit?: RunRecoveryAudit | null;
 }) {
   const resumeSession = session ?? {
     id: `session-${run.id}`,
@@ -457,6 +476,14 @@ export function RunDetailView({
     updatedAt: run.startedAt,
     memoryPaths: [],
   };
+  const recoveryEvents = resumeSession.recovery?.events ?? [];
+  const recoveryStatus = recoveryAudit?.status ?? resumeSession.recovery?.status ?? resumeSession.pendingTurn?.status;
+  const recoverySource = recoveryAudit?.source ?? (resumeSession.recovery ? "session.recovery" : resumeSession.pendingTurn ? "session.pending_turn" : "");
+  const recoverySummary = recoveryAudit?.summary ?? resumeSession.recovery?.summary ?? "当前还没有恢复摘要。";
+  const recoveryPreview = recoveryAudit?.preview ?? resumeSession.recovery?.preview ?? resumeSession.pendingTurn?.preview;
+  const recoveryReplay = recoveryAudit?.sessionReplay ?? resumeSession.recovery?.replayAnchor;
+  const recoveryEligible =
+    recoveryAudit?.resumeEligible ?? resumeSession.pendingTurn?.resumeEligible;
 
   return (
     <div className="space-y-4">
@@ -632,67 +659,91 @@ export function RunDetailView({
         </Panel>
       </div>
 
-      {runtimeReplay ? (
-        <Panel tone={runtimeReplay.failureAnchor ? "pink" : runtimeReplay.status === "done" ? "lime" : "paper"}>
+      {(recoveryAudit || resumeSession.recovery || resumeSession.pendingTurn) ? (
+        <Panel tone={recoveryAuditTone(recoveryAudit)}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">执行回放</p>
-              <h3 className="mt-2 font-display text-2xl font-bold">机器执行与收尾记录</h3>
+              <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">恢复审计</p>
+              <h3 className="mt-2 font-display text-2xl font-bold">掉线恢复、接棒与回放真相</h3>
             </div>
-            <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
-              游标 {runtimeReplay.lastCursor}
+            <span
+              data-testid="run-detail-recovery-status"
+              className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+            >
+              {recoveryStatus || "待同步"}
             </span>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <Metric label="运行环境" value={runtimeReplay.runtimeId} />
-            <Metric label="状态" value={runtimeReplay.status} />
-            <Metric label="事件数" value={String(runtimeReplay.events.length)} />
-            <Metric label="回放锚点" value={runtimeReplay.replayAnchor || "待整理"} />
+            <Metric label="来源" value={recoverySourceLabel(recoverySource)} />
+            <Metric label="恢复状态" value={recoveryStatus || "待同步"} />
+            <Metric label="继续资格" value={recoveryResumeEligibilityLabel(recoveryEligible)} />
+            <Metric label="重放锚点" value={recoveryReplay || "待同步"} />
           </div>
-          <p className="mt-4 text-sm leading-6">{runtimeReplay.summary}</p>
-          {runtimeReplay.closeoutReason ? (
-            <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm leading-6">
-              收尾说明：{runtimeReplay.closeoutReason}
+          <p data-testid="run-detail-recovery-summary" className="mt-4 text-sm leading-6">
+            {recoverySummary}
+          </p>
+          {recoveryPreview ? (
+            <p
+              data-testid="run-detail-recovery-preview"
+              className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm leading-6"
+            >
+              恢复预览：{recoveryPreview}
             </p>
           ) : null}
-          {runtimeReplay.failureAnchor ? (
-            <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm leading-6">
-              失败锚点：{runtimeReplay.failureAnchor}
-            </p>
+          {recoveryAudit?.roomAutoFollowup ? (
+            <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-display text-lg font-semibold">Room Auto 接棒</p>
+                <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                  {recoveryAudit.roomAutoFollowup.status || "待同步"}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <Metric label="目标智能体" value={recoveryAudit.roomAutoFollowup.toAgent || "待同步"} />
+                <Metric label="Handoff" value={recoveryAudit.roomAutoFollowup.handoffId || "待同步"} />
+                <Metric label="最后动作" value={recoveryAudit.roomAutoFollowup.lastAction || "待同步"} />
+              </div>
+              <p className="mt-3 text-sm leading-6">{recoveryAudit.roomAutoFollowup.summary || "当前自动接棒摘要正在整理中。"}</p>
+            </div>
           ) : null}
-          <div className="mt-4 space-y-3">
-            {runtimeReplay.events.map((event) => (
-              <div key={event.id} className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+          {recoveryAudit?.runtimeReplay ? (
+            <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-display text-lg font-semibold">Runtime Replay</p>
+                <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                  游标 {recoveryAudit.runtimeReplay.lastCursor ?? "待同步"}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-4">
+                <Metric label="状态" value={recoveryAudit.runtimeReplay.status || "待同步"} />
+                <Metric label="回放锚点" value={recoveryAudit.runtimeReplay.replayAnchor || "待同步"} />
+                <Metric label="收尾原因" value={recoveryAudit.runtimeReplay.closeoutReason || "待同步"} />
+                <Metric label="摘要" value={recoveryAudit.runtimeReplay.summary || "待同步"} />
+              </div>
+            </div>
+          ) : null}
+          {recoveryEvents.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              {recoveryEvents.map((event) => (
+                <div key={event.id} className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-display text-lg font-semibold">
-                    记录 #{event.cursor} / {runtimeReplayPhaseLabel(event.phase)}
+                    恢复事件 #{event.cursor}
                   </p>
                   <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
-                    序号 {event.sequence}
+                    {event.status || "待同步"}
                   </span>
                 </div>
-                <p className="mt-2 text-sm leading-6">{event.summary}</p>
-                {(event.closeoutReason || event.failureAnchor || (event.evidenceLines ?? []).length > 0) ? (
-                  <div className="mt-3 space-y-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-                    {event.closeoutReason ? <p>收尾说明：{event.closeoutReason}</p> : null}
-                    {event.failureAnchor ? <p>失败锚点：{event.failureAnchor}</p> : null}
-                    {(event.evidenceLines ?? []).length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {(event.evidenceLines ?? []).map((line) => (
-                          <span
-                            key={line}
-                            className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]"
-                          >
-                            {line}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
+                <p className="mt-2 text-sm leading-6">{event.summary || "当前恢复事件摘要正在整理中。"}</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <Metric label="来源" value={event.source || "待同步"} />
+                  <Metric label="发生时间" value={event.occurredAt || "待同步"} />
+                  <Metric label="游标" value={String(event.cursor)} />
+                </div>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : null}
         </Panel>
       ) : null}
 

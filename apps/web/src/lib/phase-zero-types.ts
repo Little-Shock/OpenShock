@@ -1014,6 +1014,7 @@ export type RunDetail = {
   room: Room;
   issue: Issue;
   session: Session;
+  recoveryAudit: RunRecoveryAudit;
   history: RunHistoryEntry[];
 };
 
@@ -1027,6 +1028,7 @@ export type Session = {
   followThread?: boolean;
   continuityReady?: boolean;
   pendingTurn?: SessionPendingTurn;
+  recovery?: SessionRecovery;
   controlNote?: string;
   runtime: string;
   machine: string;
@@ -1047,6 +1049,56 @@ export type SessionPendingTurn = {
   startedAt?: string;
   updatedAt?: string;
   resumeEligible?: boolean;
+};
+
+export type SessionRecoveryEvent = {
+  id: string;
+  cursor: number;
+  status?: string;
+  source?: string;
+  summary?: string;
+  occurredAt?: string;
+};
+
+export type SessionRecovery = {
+  status?: string;
+  summary?: string;
+  preview?: string;
+  replayAnchor?: string;
+  lastSource?: string;
+  attemptCount?: number;
+  lastError?: string;
+  lastAttemptAt?: string;
+  lastRecoveredAt?: string;
+  events?: SessionRecoveryEvent[];
+};
+
+export type RunRecoveryRoomAutoFollowup = {
+  handoffId?: string;
+  toAgentId?: string;
+  toAgent?: string;
+  status?: string;
+  summary?: string;
+  lastAction?: string;
+};
+
+export type RunRecoveryRuntimeReplay = {
+  replayAnchor?: string;
+  status?: string;
+  summary?: string;
+  lastCursor?: number;
+  closeoutReason?: string;
+};
+
+export type RunRecoveryAudit = {
+  status?: string;
+  source?: string;
+  summary?: string;
+  preview?: string;
+  resumeEligible?: boolean;
+  sessionReplay?: string;
+  roomAutoFollowup?: RunRecoveryRoomAutoFollowup;
+  runtimeReplay?: RunRecoveryRuntimeReplay;
 };
 
 export type MemoryGovernance = {

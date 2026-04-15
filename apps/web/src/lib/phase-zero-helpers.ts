@@ -732,6 +732,7 @@ export function sanitizeRunDetail(detail: RunDetail): RunDetail {
     room: sanitizeRoom(detail.room),
     issue: sanitizeIssue(detail.issue),
     session: sanitizeSession(detail.session),
+    recoveryAudit: sanitizeRunRecoveryAudit(detail.recoveryAudit),
     history: detail.history.map(sanitizeRunHistoryEntry),
   };
 }
@@ -862,6 +863,22 @@ function sanitizePullRequestConversationEntry(item: PullRequestConversationEntry
 function sanitizeSession(session: Session): Session {
   return {
     ...session,
+    recovery: session.recovery
+      ? {
+          ...session.recovery,
+          summary: sanitizeDisplayText(session.recovery.summary ?? "", "当前恢复摘要正在整理中。"),
+          preview: sanitizeDisplayText(session.recovery.preview ?? "", "当前恢复预览正在整理中。"),
+          replayAnchor: sanitizeDisplayText(session.recovery.replayAnchor ?? "", ""),
+          lastSource: sanitizeDisplayText(session.recovery.lastSource ?? "", ""),
+          lastError: sanitizeDisplayText(session.recovery.lastError ?? "", ""),
+          events: (session.recovery.events ?? []).map((event) => ({
+            ...event,
+            status: sanitizeDisplayText(event.status ?? "", ""),
+            source: sanitizeDisplayText(event.source ?? "", ""),
+            summary: sanitizeDisplayText(event.summary ?? "", "当前恢复事件摘要正在整理中。"),
+          })),
+        }
+      : undefined,
     controlNote: sanitizeDisplayText(session.controlNote ?? "", "当前控制说明正在整理中。"),
     provider: sanitizeDisplayText(session.provider, ""),
     branch: sanitizeDisplayText(session.branch, "待整理分支"),
@@ -869,6 +886,36 @@ function sanitizeSession(session: Session): Session {
     worktreePath: sanitizeDisplayText(session.worktreePath, "当前 worktree 路径正在整理中。"),
     summary: sanitizeDisplayText(session.summary, "当前会话摘要正在整理中。"),
     memoryPaths: sanitizeTextLines(session.memoryPaths, "当前 session 记忆路径正在整理中。"),
+  };
+}
+
+function sanitizeRunRecoveryAudit(item: RunDetail["recoveryAudit"]): RunDetail["recoveryAudit"] {
+  return {
+    ...item,
+    status: sanitizeDisplayText(item.status ?? "", ""),
+    source: sanitizeDisplayText(item.source ?? "", ""),
+    summary: sanitizeDisplayText(item.summary ?? "", "当前恢复摘要正在整理中。"),
+    preview: sanitizeDisplayText(item.preview ?? "", "当前恢复预览正在整理中。"),
+    sessionReplay: sanitizeDisplayText(item.sessionReplay ?? "", ""),
+    roomAutoFollowup: item.roomAutoFollowup
+      ? {
+          ...item.roomAutoFollowup,
+          toAgentId: sanitizeDisplayText(item.roomAutoFollowup.toAgentId ?? "", ""),
+          toAgent: sanitizeDisplayText(item.roomAutoFollowup.toAgent ?? "", ""),
+          status: sanitizeDisplayText(item.roomAutoFollowup.status ?? "", ""),
+          summary: sanitizeDisplayText(item.roomAutoFollowup.summary ?? "", "当前自动接棒摘要正在整理中。"),
+          lastAction: sanitizeDisplayText(item.roomAutoFollowup.lastAction ?? "", "当前自动接棒动作正在整理中。"),
+        }
+      : undefined,
+    runtimeReplay: item.runtimeReplay
+      ? {
+          ...item.runtimeReplay,
+          replayAnchor: sanitizeDisplayText(item.runtimeReplay.replayAnchor ?? "", ""),
+          status: sanitizeDisplayText(item.runtimeReplay.status ?? "", ""),
+          summary: sanitizeDisplayText(item.runtimeReplay.summary ?? "", "当前 runtime replay 摘要正在整理中。"),
+          closeoutReason: sanitizeDisplayText(item.runtimeReplay.closeoutReason ?? "", ""),
+        }
+      : undefined,
   };
 }
 

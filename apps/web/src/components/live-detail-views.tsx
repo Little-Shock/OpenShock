@@ -21,7 +21,8 @@ import {
 } from "@/components/phase-zero-views";
 import { RunControlSurface } from "@/components/run-control-surface";
 import { usePhaseZeroState } from "@/lib/live-phase0";
-import { buildRunHistoryEntries, sanitizePlannerQueue, sanitizeRunHistoryPage } from "@/lib/phase-zero-helpers";
+import { buildRunHistoryEntries, sanitizePlannerQueue, sanitizeRunDetail, sanitizeRunHistoryPage } from "@/lib/phase-zero-helpers";
+import { resolveLiveRunDetail } from "@/lib/run-detail-view-model";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
 import type {
   AgentHandoff,
@@ -31,8 +32,8 @@ import type {
   PlannerQueueItem,
   Room,
   Run,
+  RunDetail,
   RunHistoryPage,
-  RuntimeReplayEvidencePacket,
   Session,
 } from "@/lib/phase-zero-types";
 
@@ -169,18 +170,18 @@ async function readPlannerQueue() {
   return sanitizePlannerQueue(Array.isArray(payload) ? payload : []);
 }
 
-async function readRuntimeReplayEvidence(runId: string) {
-  const response = await fetch(`${CONTROL_API_BASE}/v1/runtime/publish/replay?runId=${encodeURIComponent(runId)}`, {
+async function readRunDetail(runId: string) {
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/detail`, {
     cache: "no-store",
   });
   if (response.status === 404) {
     return null;
   }
-  const payload = (await response.json()) as RuntimeReplayEvidencePacket & { error?: string };
+  const payload = (await response.json()) as RunDetail & { error?: string };
   if (!response.ok) {
     throw new Error(requestErrorMessage(response.status, payload.error));
   }
-  return payload;
+  return sanitizeRunDetail(payload);
 }
 
 function readRuntimeRegistry(state: unknown): RuntimeRegistryRecord[] {
@@ -1426,7 +1427,7 @@ export function LiveRunPageContent({
   runId: string;
 }) {
   const { state, loading, error, controlRun, updateRunCredentialBindings } = usePhaseZeroState();
-  const [runtimeReplay, setRuntimeReplay] = useState<RuntimeReplayEvidencePacket | null>(null);
+  const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
 
   useEffect(() => {
     if (loading || error) {
@@ -1434,15 +1435,15 @@ export function LiveRunPageContent({
     }
     let cancelled = false;
     startTransition(() => {
-      setRuntimeReplay(null);
+      setRunDetail(null);
     });
-    readRuntimeReplayEvidence(runId)
+    readRunDetail(runId)
       .then((payload) => {
         if (cancelled) {
           return;
         }
         startTransition(() => {
-          setRuntimeReplay(payload);
+          setRunDetail(payload);
         });
       })
       .catch(() => {
@@ -1450,7 +1451,7 @@ export function LiveRunPageContent({
           return;
         }
         startTransition(() => {
-          setRuntimeReplay(null);
+          setRunDetail(null);
         });
       });
     return () => {
@@ -1490,8 +1491,9 @@ export function LiveRunPageContent({
     );
   }
 
-  const run = state.runs.find((candidate) => candidate.id === runId && (!roomId || candidate.roomId === roomId));
-  const room = state.rooms.find((candidate) => candidate.id === (roomId ?? run?.roomId));
+  const runModel = resolveLiveRunDetail(state, runId, roomId, runDetail);
+  const run = runModel.run;
+  const room = runModel.room;
   const session = state.sessions.find((candidate) => candidate.activeRunId === runId);
   const authSession = state.auth.session;
   const canControlRun = hasSessionPermission(authSession, "run.execute");
@@ -1517,9 +1519,9 @@ export function LiveRunPageContent({
   }
 
   const currentRun = run;
-  const currentSession = session;
-  const roomHistory = buildRunHistoryEntries(state, currentRun.roomId);
-  const issue = state.issues.find((candidate) => candidate.roomId === room.id || candidate.key === currentRun.issueKey);
+  const currentSession = runModel.session ?? session;
+  const roomHistory = runModel.history;
+  const issue = runModel.issue;
 
   async function handleRunControl(action: "stop" | "resume" | "follow_thread", note: string) {
     await controlRun(currentRun.id, { action, note });
@@ -1592,7 +1594,7 @@ export function LiveRunPageContent({
           session={currentSession}
           history={roomHistory}
           guards={state.guards.filter((guard) => guard.runId === currentRun.id)}
-          runtimeReplay={runtimeReplay}
+          recoveryAudit={runModel.recoveryAudit}
         />
       </div>
     </OpenShockShell>
