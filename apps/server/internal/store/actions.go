@@ -1146,6 +1146,7 @@ func (s *Store) MarkRoomConversationInterrupted(roomID, prompt, provider, previe
 		if len(item.MemoryPaths) == 0 {
 			item.MemoryPaths = defaultSessionMemoryPaths(item.RoomID, item.IssueKey)
 		}
+		item.Recovery = newSessionRecovery(item.ID, strings.TrimSpace(preview), controlNote, now)
 	})
 
 	if err := s.persistLocked(); err != nil {

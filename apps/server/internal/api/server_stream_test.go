@@ -414,6 +414,295 @@ func TestRoomMessageStreamDisconnectPersistsPendingTurnForResume(t *testing.T) {
 	}
 }
 
+func TestRoomMessageStreamDisconnectPersistsSessionRecoveryTruth(t *testing.T) {
+	root := t.TempDir()
+	var firstStream ExecRequest
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/exec/stream":
+			if err := json.NewDecoder(r.Body).Decode(&firstStream); err != nil {
+				t.Fatalf("decode stream payload: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			events := []DaemonStreamEvent{
+				{Type: "start", Provider: "codex", Command: []string{"codex", "exec"}},
+				{Type: "stdout", Provider: "codex", Delta: "我先接住当前 continuity，已经完成第一段检查。"},
+			}
+			for _, event := range events {
+				if err := json.NewEncoder(w).Encode(event); err != nil {
+					return
+				}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+			time.Sleep(250 * time.Millisecond)
+			_ = json.NewEncoder(w).Encode(DaemonStreamEvent{Type: "stdout", Provider: "codex", Delta: "第二段输出会在连接断开后丢失。"})
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Disconnect Recovery Truth", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续把这条 lane 往前推。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/v1/rooms/"+created.RoomID+"/messages/stream", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var event DaemonStreamEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if event.Type == "stdout" && strings.Contains(event.Delta, "第一段检查") {
+			break
+		}
+	}
+	cancel()
+	_ = resp.Body.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		session := findSessionByID(s.Snapshot(), created.SessionID)
+		if session != nil && session.PendingTurn != nil && session.PendingTurn.Status == "interrupted" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	recoveryResp, err := http.Get(server.URL + "/v1/sessions/" + created.SessionID + "/recovery")
+	if err != nil {
+		t.Fatalf("GET session recovery error = %v", err)
+	}
+	defer recoveryResp.Body.Close()
+	if recoveryResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET session recovery status = %d, want %d", recoveryResp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		SessionID      string `json:"sessionId"`
+		RunID          string `json:"runId"`
+		RoomID         string `json:"roomId"`
+		Status         string `json:"status"`
+		Summary        string `json:"summary"`
+		Preview        string `json:"preview"`
+		LastSource     string `json:"lastSource"`
+		AttemptCount   int    `json:"attemptCount"`
+		LastCursor     int    `json:"lastCursor"`
+		ReplayAnchor   string `json:"replayAnchor"`
+		ResumeEligible bool   `json:"resumeEligible"`
+		Events         []struct {
+			Cursor  int    `json:"cursor"`
+			Status  string `json:"status"`
+			Source  string `json:"source"`
+			Summary string `json:"summary"`
+		} `json:"events"`
+	}
+	decodeJSON(t, recoveryResp, &payload)
+	if payload.SessionID != created.SessionID || payload.RunID != created.RunID || payload.RoomID != created.RoomID {
+		t.Fatalf("session recovery identity = %#v, want session/run/room ids", payload)
+	}
+	if payload.Status != "interrupted" || payload.LastSource != "stream_disconnect" {
+		t.Fatalf("session recovery = %#v, want interrupted stream_disconnect truth", payload)
+	}
+	if payload.AttemptCount != 0 || payload.LastCursor != 1 {
+		t.Fatalf("session recovery cursor/attempts = %#v, want attempts=0 lastCursor=1", payload)
+	}
+	if payload.ReplayAnchor != "/v1/sessions/"+created.SessionID+"/recovery" {
+		t.Fatalf("replay anchor = %q, want session recovery anchor", payload.ReplayAnchor)
+	}
+	if !payload.ResumeEligible {
+		t.Fatalf("session recovery = %#v, want resume eligible", payload)
+	}
+	if !strings.Contains(payload.Preview, "第一段检查") {
+		t.Fatalf("session recovery preview = %q, want interrupted visible preview", payload.Preview)
+	}
+	if len(payload.Events) != 1 || payload.Events[0].Cursor != 1 || payload.Events[0].Status != "interrupted" || payload.Events[0].Source != "stream_disconnect" {
+		t.Fatalf("session recovery events = %#v, want one interrupted event", payload.Events)
+	}
+}
+
+func TestExplicitRoomResumePersistsSessionRecoveryReplay(t *testing.T) {
+	root := t.TempDir()
+	var resumed ExecRequest
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/exec/stream":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			events := []DaemonStreamEvent{
+				{Type: "start", Provider: "codex", Command: []string{"codex", "exec"}},
+				{Type: "stdout", Provider: "codex", Delta: "我先接住当前 continuity，已经完成第一段检查。"},
+			}
+			for _, event := range events {
+				if err := json.NewEncoder(w).Encode(event); err != nil {
+					return
+				}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+			time.Sleep(250 * time.Millisecond)
+			_ = json.NewEncoder(w).Encode(DaemonStreamEvent{Type: "stdout", Provider: "codex", Delta: "第二段输出会在连接断开后丢失。"})
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		case "/v1/exec":
+			if err := json.NewDecoder(r.Body).Decode(&resumed); err != nil {
+				t.Fatalf("decode resumed payload: %v", err)
+			}
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "我已经从刚才中断的位置续上，并把最后结论补齐。",
+				Duration: "0.7s",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer daemon.Close()
+
+	s, server := newContractTestServer(t, root, daemon.URL)
+	defer server.Close()
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Explicit Recovery Replay", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续把这条 lane 往前推。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/v1/rooms/"+created.RoomID+"/messages/stream", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var event DaemonStreamEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if event.Type == "stdout" && strings.Contains(event.Delta, "第一段检查") {
+			break
+		}
+	}
+	cancel()
+	_ = resp.Body.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		session := findSessionByID(s.Snapshot(), created.SessionID)
+		if session != nil && session.PendingTurn != nil && session.PendingTurn.Status == "interrupted" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	secondBody, err := json.Marshal(map[string]any{
+		"prompt":   "继续刚才中断的那一拍。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal(second) error = %v", err)
+	}
+	secondResp, err := http.Post(server.URL+"/v1/rooms/"+created.RoomID+"/messages", "application/json", bytes.NewReader(secondBody))
+	if err != nil {
+		t.Fatalf("POST resumed room message error = %v", err)
+	}
+	secondResp.Body.Close()
+
+	recoveryResp, err := http.Get(server.URL + "/v1/sessions/" + created.SessionID + "/recovery")
+	if err != nil {
+		t.Fatalf("GET session recovery error = %v", err)
+	}
+	defer recoveryResp.Body.Close()
+	if recoveryResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET session recovery status = %d, want %d", recoveryResp.StatusCode, http.StatusOK)
+	}
+	var payload struct {
+		Status       string `json:"status"`
+		Preview      string `json:"preview"`
+		LastSource   string `json:"lastSource"`
+		AttemptCount int    `json:"attemptCount"`
+		LastCursor   int    `json:"lastCursor"`
+		Events       []struct {
+			Cursor int    `json:"cursor"`
+			Status string `json:"status"`
+			Source string `json:"source"`
+		} `json:"events"`
+	}
+	decodeJSON(t, recoveryResp, &payload)
+	if payload.Status != "recovered" || payload.LastSource != "user_message" {
+		t.Fatalf("session recovery = %#v, want recovered by user_message", payload)
+	}
+	if payload.AttemptCount != 1 || payload.LastCursor != 3 {
+		t.Fatalf("session recovery replay = %#v, want attempts=1 lastCursor=3", payload)
+	}
+	if len(payload.Events) != 3 || payload.Events[1].Source != "user_message" || payload.Events[1].Status != "retrying" || payload.Events[2].Status != "recovered" {
+		t.Fatalf("session recovery events = %#v, want interrupted -> retrying -> recovered", payload.Events)
+	}
+	if !strings.Contains(payload.Preview, "第一段检查") {
+		t.Fatalf("session recovery preview = %q, want preserved interrupted preview", payload.Preview)
+	}
+
+	cursorResp, err := http.Get(server.URL + "/v1/sessions/" + created.SessionID + "/recovery?cursor=1")
+	if err != nil {
+		t.Fatalf("GET session recovery replay error = %v", err)
+	}
+	defer cursorResp.Body.Close()
+	if cursorResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET session recovery replay status = %d, want %d", cursorResp.StatusCode, http.StatusOK)
+	}
+	var replayPayload struct {
+		LastCursor int `json:"lastCursor"`
+		Events     []struct {
+			Cursor int    `json:"cursor"`
+			Source string `json:"source"`
+		} `json:"events"`
+	}
+	decodeJSON(t, cursorResp, &replayPayload)
+	if replayPayload.LastCursor != 3 || len(replayPayload.Events) != 2 || replayPayload.Events[0].Cursor != 2 || replayPayload.Events[0].Source != "user_message" {
+		t.Fatalf("session recovery replay payload = %#v, want replay from cursor 2", replayPayload)
+	}
+}
+
 func TestRoomAutoHandoffBlockedFollowupPersistsDurableContinuationAcrossRestart(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -1460,6 +1749,158 @@ func TestBackgroundRecoveryLoopAutonomouslyResumesInterruptedPendingTurnAfterRel
 	lastMessage := roomMessages[len(roomMessages)-1]
 	if lastMessage.Message != "我已经从刚才中断的位置续上，并把最后结论补齐。" {
 		t.Fatalf("last room message = %#v, want autonomous resumed reply", lastMessage)
+	}
+}
+
+func TestBackgroundRecoveryLoopPersistsSessionRecoveryReplay(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/exec/stream":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			events := []DaemonStreamEvent{
+				{Type: "start", Provider: "codex", Command: []string{"codex", "exec"}},
+				{Type: "stdout", Provider: "codex", Delta: "我先接住当前 continuity，已经完成第一段检查。"},
+			}
+			for _, event := range events {
+				if err := json.NewEncoder(w).Encode(event); err != nil {
+					return
+				}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+			time.Sleep(250 * time.Millisecond)
+			_ = json.NewEncoder(w).Encode(DaemonStreamEvent{Type: "stdout", Provider: "codex", Delta: "第二段输出会在连接断开后丢失。"})
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		case "/v1/exec":
+			writeJSON(w, http.StatusOK, DaemonExecResponse{
+				Provider: "codex",
+				Command:  []string{"codex", "exec"},
+				Output:   "我已经从刚才中断的位置续上，并把最后结论补齐。",
+				Duration: "0.7s",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer daemon.Close()
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	pairMainRuntime(t, s, daemon.URL)
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+
+	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Background Recovery Replay", "Codex Dockmaster")
+
+	body, err := json.Marshal(map[string]any{
+		"prompt":   "继续把这条 lane 往前推。",
+		"provider": "codex",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/v1/rooms/"+created.RoomID+"/messages/stream", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var event DaemonStreamEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		if event.Type == "stdout" && strings.Contains(event.Delta, "第一段检查") {
+			break
+		}
+	}
+	cancel()
+	_ = resp.Body.Close()
+	server.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		session := findSessionByID(s.Snapshot(), created.SessionID)
+		if session != nil && session.PendingTurn != nil && session.PendingTurn.Status == "interrupted" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	reloadedStore, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New(reload) error = %v", err)
+	}
+	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	})
+	reloadedServer := httptest.NewServer(reloadedAPI.Handler())
+	defer reloadedServer.Close()
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	defer loopCancel()
+	reloadedAPI.StartRoomAutoRecoveryLoop(loopCtx, 5*time.Millisecond)
+
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		session := findSessionByID(reloadedStore.Snapshot(), created.SessionID)
+		if session != nil && session.PendingTurn == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	recoveryResp, err := http.Get(reloadedServer.URL + "/v1/sessions/" + created.SessionID + "/recovery")
+	if err != nil {
+		t.Fatalf("GET session recovery error = %v", err)
+	}
+	defer recoveryResp.Body.Close()
+	if recoveryResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET session recovery status = %d, want %d", recoveryResp.StatusCode, http.StatusOK)
+	}
+	var payload struct {
+		Status       string `json:"status"`
+		Preview      string `json:"preview"`
+		LastSource   string `json:"lastSource"`
+		AttemptCount int    `json:"attemptCount"`
+		LastCursor   int    `json:"lastCursor"`
+		Events       []struct {
+			Cursor int    `json:"cursor"`
+			Status string `json:"status"`
+			Source string `json:"source"`
+		} `json:"events"`
+	}
+	decodeJSON(t, recoveryResp, &payload)
+	if payload.Status != "recovered" || payload.LastSource != "background_loop" {
+		t.Fatalf("session recovery = %#v, want recovered by background_loop", payload)
+	}
+	if payload.AttemptCount != 1 || payload.LastCursor != 3 {
+		t.Fatalf("session recovery replay = %#v, want attempts=1 lastCursor=3", payload)
+	}
+	if len(payload.Events) != 3 || payload.Events[1].Source != "background_loop" || payload.Events[1].Status != "retrying" || payload.Events[2].Status != "recovered" {
+		t.Fatalf("session recovery events = %#v, want interrupted -> background retry -> recovered", payload.Events)
+	}
+	if !strings.Contains(payload.Preview, "第一段检查") {
+		t.Fatalf("session recovery preview = %q, want preserved interrupted preview", payload.Preview)
 	}
 }
 

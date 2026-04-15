@@ -837,6 +837,7 @@ type Session struct {
 	FollowThread    bool                `json:"followThread"`
 	ContinuityReady bool                `json:"continuityReady,omitempty"`
 	PendingTurn     *SessionPendingTurn `json:"pendingTurn,omitempty"`
+	Recovery        *SessionRecovery    `json:"recovery,omitempty"`
 	ControlNote     string              `json:"controlNote,omitempty"`
 	Runtime         string              `json:"runtime"`
 	Machine         string              `json:"machine"`
@@ -857,6 +858,43 @@ type SessionPendingTurn struct {
 	StartedAt      string `json:"startedAt,omitempty"`
 	UpdatedAt      string `json:"updatedAt,omitempty"`
 	ResumeEligible bool   `json:"resumeEligible,omitempty"`
+}
+
+type SessionRecovery struct {
+	Status          string                 `json:"status,omitempty"`
+	Summary         string                 `json:"summary,omitempty"`
+	Preview         string                 `json:"preview,omitempty"`
+	ReplayAnchor    string                 `json:"replayAnchor,omitempty"`
+	LastSource      string                 `json:"lastSource,omitempty"`
+	AttemptCount    int                    `json:"attemptCount,omitempty"`
+	LastError       string                 `json:"lastError,omitempty"`
+	LastAttemptAt   string                 `json:"lastAttemptAt,omitempty"`
+	LastRecoveredAt string                 `json:"lastRecoveredAt,omitempty"`
+	Events          []SessionRecoveryEvent `json:"events,omitempty"`
+}
+
+type SessionRecoveryEvent struct {
+	ID         string `json:"id"`
+	Cursor     int    `json:"cursor"`
+	Status     string `json:"status,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+	OccurredAt string `json:"occurredAt,omitempty"`
+}
+
+type SessionRecoveryEvidencePacket struct {
+	SessionID      string                 `json:"sessionId"`
+	RunID          string                 `json:"runId,omitempty"`
+	RoomID         string                 `json:"roomId,omitempty"`
+	Status         string                 `json:"status,omitempty"`
+	Summary        string                 `json:"summary,omitempty"`
+	Preview        string                 `json:"preview,omitempty"`
+	ReplayAnchor   string                 `json:"replayAnchor,omitempty"`
+	LastSource     string                 `json:"lastSource,omitempty"`
+	AttemptCount   int                    `json:"attemptCount,omitempty"`
+	LastCursor     int                    `json:"lastCursor,omitempty"`
+	ResumeEligible bool                   `json:"resumeEligible,omitempty"`
+	Events         []SessionRecoveryEvent `json:"events"`
 }
 
 type AuthSession struct {

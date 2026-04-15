@@ -611,6 +611,10 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 		snapshot := s.store.Snapshot()
 		provider := resolveRoomTurnExecProvider(snapshot, roomID, req.Provider, prompt)
 		execPrompt := buildRoomExecPrompt(snapshot, roomID, provider, prompt)
+		recoverySource := ""
+		if findInterruptedRoomPendingTurn(snapshot, roomID, provider) != nil {
+			recoverySource = "user_message"
+		}
 		if blocked := execProviderPreflightMessage("讨论间消息", snapshot, provider); blocked != "" {
 			nextState, appendErr := s.store.AppendConversationFailure(roomID, prompt, blocked)
 			if appendErr != nil {
@@ -619,6 +623,12 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, http.StatusConflict, map[string]any{"error": blocked, "state": nextState})
 			return
+		}
+		if recoverySource != "" {
+			if _, err := s.store.RecordRoomConversationRecoveryAttempt(roomID, recoverySource, "用户新消息正在恢复上一条中断的房间执行。"); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
 		}
 
 		payload, err := s.runRoomDaemonExec(roomID, ExecRequest{
@@ -658,6 +668,11 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			payload := map[string]any{"error": message, "state": nextState}
 			if daemonErr != nil && daemonErr.Conflict != nil {
 				payload["conflict"] = daemonErr.Conflict
+			}
+			if recoverySource != "" {
+				if updatedState, recoveryErr := s.store.RecordRoomConversationRecoveryBlocked(roomID, recoverySource, message); recoveryErr == nil {
+					payload["state"] = updatedState
+				}
 			}
 			writeJSON(w, status, payload)
 			return
@@ -699,6 +714,12 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		nextState = s.completeRoomAutoHandoffFollowupIfNeeded(nextState, roomID, replySpeaker, directives, visibleOutput)
+		if recoverySource != "" {
+			recoverySummary := defaultString(strings.TrimSpace(visibleOutput), "已从中断位置继续当前房间，无需额外公开回复。")
+			if updatedState, recoveryErr := s.store.CompleteRoomConversationRecovery(roomID, recoverySource, recoverySummary); recoveryErr == nil {
+				nextState = updatedState
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"output": visibleOutput, "state": nextState})
 		return
 	}
@@ -1027,6 +1048,18 @@ func (s *Server) handleSessionRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID := strings.TrimPrefix(r.URL.Path, "/v1/sessions/")
+	if strings.HasSuffix(sessionID, "/recovery") {
+		sessionID = strings.TrimSuffix(sessionID, "/recovery")
+		afterCursor, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("cursor")))
+		limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+		packet, ok := s.store.SessionRecoveryEvidence(sessionID, afterCursor, limit)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session recovery not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, sanitizeLivePayload(packet))
+		return
+	}
 	for _, candidate := range snapshot.Sessions {
 		if candidate.ID == sessionID {
 			writeJSON(w, http.StatusOK, candidate)
@@ -3147,7 +3180,13 @@ func (s *Server) continueInterruptedPendingTurn(snapshot store.State, session st
 	if roomID == "" || provider == "" || session.PendingTurn == nil {
 		return snapshot, ""
 	}
+	if nextState, err := s.store.RecordRoomConversationRecoveryAttempt(roomID, "background_loop", "后台恢复 loop 正在自动续跑中断的房间执行。"); err == nil {
+		snapshot = nextState
+	}
 	if blocked := execProviderPreflightMessage("讨论间恢复执行", snapshot, provider); blocked != "" {
+		if nextState, err := s.store.RecordRoomConversationRecoveryBlocked(roomID, "background_loop", blocked); err == nil {
+			return nextState, ""
+		}
 		return snapshot, ""
 	}
 
@@ -3159,6 +3198,9 @@ func (s *Server) continueInterruptedPendingTurn(snapshot store.State, session st
 		TimeoutSeconds: roomMessageExecTimeoutSeconds,
 	})
 	if err != nil {
+		if nextState, recoveryErr := s.store.RecordRoomConversationRecoveryBlocked(roomID, "background_loop", execFailureMessage("讨论间恢复执行", err)); recoveryErr == nil {
+			return nextState, ""
+		}
 		return snapshot, ""
 	}
 
@@ -3199,6 +3241,10 @@ func (s *Server) continueInterruptedPendingTurn(snapshot store.State, session st
 		}
 	}
 	nextState = s.completeRoomAutoHandoffFollowupIfNeeded(nextState, roomID, replySpeaker, directives, visibleOutput)
+	recoverySummary := defaultString(strings.TrimSpace(visibleOutput), "已从中断位置继续当前房间，无需额外公开回复。")
+	if updatedState, recoveryErr := s.store.CompleteRoomConversationRecovery(roomID, "background_loop", recoverySummary); recoveryErr == nil {
+		nextState = updatedState
+	}
 	return nextState, visibleOutput
 }
 

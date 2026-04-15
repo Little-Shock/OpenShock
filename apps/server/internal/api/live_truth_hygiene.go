@@ -251,6 +251,18 @@ func sanitizeLivePayload(payload any) any {
 			items[index] = sanitizeSession(item)
 		}
 		return items
+	case store.SessionRecovery:
+		return sanitizeSessionRecovery(typed)
+	case store.SessionRecoveryEvidencePacket:
+		return sanitizeSessionRecoveryEvidencePacket(typed)
+	case store.SessionRecoveryEvent:
+		return sanitizeSessionRecoveryEvent(typed)
+	case []store.SessionRecoveryEvent:
+		items := make([]store.SessionRecoveryEvent, len(typed))
+		for index, item := range typed {
+			items[index] = sanitizeSessionRecoveryEvent(item)
+		}
+		return items
 	case store.AuthSnapshot:
 		return sanitizeAuthSnapshot(typed)
 	case store.MemoryArtifact:
@@ -852,8 +864,44 @@ func sanitizeSession(session store.Session) store.Session {
 		session.PendingTurn.Status = sanitizeDisplayText(session.PendingTurn.Status, "")
 		session.PendingTurn.Preview = sanitizeDisplayText(session.PendingTurn.Preview, "当前中断前公开摘要正在整理中。")
 	}
+	if session.Recovery != nil {
+		sanitized := sanitizeSessionRecovery(*session.Recovery)
+		session.Recovery = &sanitized
+	}
 	session.MemoryPaths = sanitizeTextLines(session.MemoryPaths, "当前 session 记忆路径正在整理中。")
 	return session
+}
+
+func sanitizeSessionRecovery(item store.SessionRecovery) store.SessionRecovery {
+	item.Status = sanitizeDisplayText(item.Status, "")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前恢复摘要正在整理中。")
+	item.Preview = sanitizeDisplayText(item.Preview, "当前中断预览正在整理中。")
+	item.ReplayAnchor = sanitizeDisplayText(item.ReplayAnchor, "")
+	item.LastSource = sanitizeDisplayText(item.LastSource, "")
+	item.LastError = sanitizeDisplayText(item.LastError, "")
+	for index := range item.Events {
+		item.Events[index] = sanitizeSessionRecoveryEvent(item.Events[index])
+	}
+	return item
+}
+
+func sanitizeSessionRecoveryEvent(item store.SessionRecoveryEvent) store.SessionRecoveryEvent {
+	item.Status = sanitizeDisplayText(item.Status, "")
+	item.Source = sanitizeDisplayText(item.Source, "")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前恢复事件摘要正在整理中。")
+	return item
+}
+
+func sanitizeSessionRecoveryEvidencePacket(item store.SessionRecoveryEvidencePacket) store.SessionRecoveryEvidencePacket {
+	item.Status = sanitizeDisplayText(item.Status, "")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前恢复摘要正在整理中。")
+	item.Preview = sanitizeDisplayText(item.Preview, "当前中断预览正在整理中。")
+	item.ReplayAnchor = sanitizeDisplayText(item.ReplayAnchor, "")
+	item.LastSource = sanitizeDisplayText(item.LastSource, "")
+	for index := range item.Events {
+		item.Events[index] = sanitizeSessionRecoveryEvent(item.Events[index])
+	}
+	return item
 }
 
 func sanitizeGuard(item store.DestructiveGuard) store.DestructiveGuard {
