@@ -102,6 +102,7 @@ type sessionWorkspace struct {
 	SessionFilePath string
 	CurrentTurnPath string
 	WorkLogPath     string
+	CodexHomePath   string
 }
 
 type sessionWorkspacePayload struct {
@@ -111,6 +112,7 @@ type sessionWorkspacePayload struct {
 	Provider          string `json:"provider,omitempty"`
 	Cwd               string `json:"cwd,omitempty"`
 	AppServerThreadID string `json:"appServerThreadId,omitempty"`
+	CodexHome         string `json:"codexHome,omitempty"`
 	UpdatedAt         string `json:"updatedAt,omitempty"`
 }
 
@@ -205,7 +207,8 @@ func (s *Service) Snapshot() Heartbeat {
 
 func (s *Service) RunPrompt(req ExecRequest) (ExecResponse, error) {
 	startedAt := time.Now()
-	if _, err := s.prepareSessionWorkspace(req); err != nil {
+	workspace, err := s.prepareSessionWorkspace(req)
+	if err != nil {
 		return ExecResponse{Provider: req.Provider}, err
 	}
 	plan, err := buildCommand(req)
@@ -221,7 +224,7 @@ func (s *Service) RunPrompt(req ExecRequest) (ExecResponse, error) {
 
 	cmd := exec.CommandContext(ctx, plan.command[0], plan.command[1:]...)
 	cmd.Dir = req.Cwd
-	cmd.Env = os.Environ()
+	cmd.Env = buildExecEnv(req, workspace)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -263,7 +266,8 @@ func (s *Service) RunPrompt(req ExecRequest) (ExecResponse, error) {
 
 func (s *Service) StreamPrompt(req ExecRequest, emit func(StreamEvent) error) (ExecResponse, error) {
 	startedAt := time.Now()
-	if _, err := s.prepareSessionWorkspace(req); err != nil {
+	workspace, err := s.prepareSessionWorkspace(req)
+	if err != nil {
 		return ExecResponse{Provider: req.Provider}, err
 	}
 	plan, err := buildCommand(req)
@@ -279,7 +283,7 @@ func (s *Service) StreamPrompt(req ExecRequest, emit func(StreamEvent) error) (E
 
 	cmd := exec.CommandContext(ctx, plan.command[0], plan.command[1:]...)
 	cmd.Dir = req.Cwd
-	cmd.Env = os.Environ()
+	cmd.Env = buildExecEnv(req, workspace)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -752,14 +756,18 @@ func (s *Service) prepareSessionWorkspace(req ExecRequest) (sessionWorkspace, er
 		SessionFilePath: filepath.Join(dir, "SESSION.json"),
 		CurrentTurnPath: filepath.Join(dir, "CURRENT_TURN.md"),
 		WorkLogPath:     filepath.Join(dir, "notes", "work-log.md"),
+		CodexHomePath:   filepath.Join(dir, "codex-home"),
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o755); err != nil {
+		return sessionWorkspace{}, err
+	}
+	if err := os.MkdirAll(workspace.CodexHomePath, 0o755); err != nil {
 		return sessionWorkspace{}, err
 	}
 	if err := ensureSessionMemoryFile(workspace.MemoryPath); err != nil {
 		return sessionWorkspace{}, err
 	}
-	if err := writeSessionWorkspaceFile(workspace.SessionFilePath, req); err != nil {
+	if err := writeSessionWorkspaceFile(workspace.SessionFilePath, req, workspace); err != nil {
 		return sessionWorkspace{}, err
 	}
 	if err := writeCurrentTurnFile(workspace.CurrentTurnPath, req); err != nil {
@@ -825,7 +833,7 @@ func ensureSessionMemoryFile(path string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-func writeSessionWorkspaceFile(path string, req ExecRequest) error {
+func writeSessionWorkspaceFile(path string, req ExecRequest, workspace sessionWorkspace) error {
 	payload := sessionWorkspacePayload{
 		SessionID:         strings.TrimSpace(req.SessionID),
 		RunID:             strings.TrimSpace(req.RunID),
@@ -833,6 +841,7 @@ func writeSessionWorkspaceFile(path string, req ExecRequest) error {
 		Provider:          strings.TrimSpace(req.Provider),
 		Cwd:               strings.TrimSpace(req.Cwd),
 		AppServerThreadID: "",
+		CodexHome:         strings.TrimSpace(workspace.CodexHomePath),
 		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
@@ -897,6 +906,25 @@ func appendSessionWorkLog(path string, req ExecRequest) error {
 	defer file.Close()
 	_, err = file.WriteString(builder.String())
 	return err
+}
+
+func buildExecEnv(req ExecRequest, workspace sessionWorkspace) []string {
+	env := append([]string{}, os.Environ()...)
+	if normalizedProviderID(req.Provider) == "codex" && strings.TrimSpace(workspace.CodexHomePath) != "" {
+		env = upsertEnv(env, "OPENSHOCK_CODEX_HOME", workspace.CodexHomePath)
+	}
+	return env
+}
+
+func upsertEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for index, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			env[index] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 func findClaudeCLI() (string, bool) {

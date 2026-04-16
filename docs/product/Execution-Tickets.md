@@ -1512,21 +1512,22 @@
 
 ## TKT-99 Local-First Provider Thread Continuity
 
-- 状态: `todo`
+- 状态: `done`
 - 优先级: `P0`
-- 目标: 把 provider transport continuity 做成 daemon 自己的本地真相，而不是把 session resume 建在聊天历史和脆弱默认值上。
+- 目标: 把 Codex resume continuity 做成 daemon 自己的本地真相，让 `resume --last` 只围当前 session 的本地 home 运作，而不是共享全局 CLI 状态。
 - 范围:
-  - `SESSION.json.appServerThreadId` 真正写回与复用
-  - 隔离 `OPENSHOCK_CODEX_HOME`
-  - daemon restart 后的 local thread reuse / resume proof
-  - provider transport drift / missing thread fail-loud contract
+  - session-scoped `OPENSHOCK_CODEX_HOME`
+  - `SESSION.json.codexHome`
+  - daemon restart 后的 local resume continuity
+  - runtime / API 回归
 - 依赖: `TKT-98`
 - Done When:
-  - 同一 session 的 provider thread id 会在 daemon restart 后继续复用
-  - `OPENSHOCK_CODEX_HOME` 不再污染宿主共享状态，而是和 session continuity 对齐
-  - 缺失 / 失效 thread 时会显式暴露恢复状态，不会静默回落成“新会话”
+  - 同一 `sessionId` 的 Codex 执行会稳定使用同一个 session-scoped `OPENSHOCK_CODEX_HOME`
+  - daemon restart 后再 resume，仍会落回同一个 local home，而不是继续吃全局 `--last`
+  - `SESSION.json` 会显式暴露 `codexHome`
 - 最新证据:
-  - 待补
+  - `bash -lc 'cd apps/daemon && ../../scripts/go.sh test ./internal/runtime -run "TestRunPromptUsesSessionScopedCodexHome|TestResumeSessionReusesSessionScopedCodexHomeAcrossRestart" -count=1'`
+  - `bash -lc 'cd apps/daemon && ../../scripts/go.sh test ./internal/api -run "TestExecRouteUsesSessionScopedCodexHome" -count=1'`
 - Checklist: `CHK-10` `CHK-14` `CHK-15`
 - Test Cases: `TC-094`
 
@@ -1573,6 +1574,26 @@
   - 待补
 - Checklist: `CHK-01` `CHK-16`
 - Test Cases: `TC-096`
+
+## TKT-102 Explicit Provider Thread State Persistence
+
+- 状态: `todo`
+- 优先级: `P0`
+- 目标: 把显式 provider thread state 做成 daemon-managed local truth，而不是让 `SESSION.json.appServerThreadId` 长期停在占位字段。
+- 范围:
+  - `SESSION.json.appServerThreadId` 真正写回与复用
+  - provider transport / conversation id drift detection
+  - daemon restart 后的 thread reuse / fail-loud recovery
+  - 与 session workspace continuity 对齐的 contract tests
+- 依赖: `TKT-99`
+- Done When:
+  - 同一 session 的真实 provider thread id 会在 daemon restart 后继续复用
+  - thread 丢失 / 损坏时 daemon 会显式暴露 degraded / recovery truth，而不是静默开新 thread
+  - `SESSION.json` 不再只有占位 `appServerThreadId`
+- 最新证据:
+  - 待补
+- Checklist: `CHK-14` `CHK-15`
+- Test Cases: `TC-097`
 
 ---
 

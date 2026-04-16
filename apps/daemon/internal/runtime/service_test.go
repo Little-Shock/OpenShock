@@ -315,6 +315,106 @@ func TestRunPromptSessionWorkspaceRootRespectsEnvOverride(t *testing.T) {
 	}
 }
 
+func TestRunPromptUsesSessionScopedCodexHome(t *testing.T) {
+	root := t.TempDir()
+	cwd := t.TempDir()
+	cliDir := t.TempDir()
+	writeRuntimeCLI(
+		t,
+		cliDir,
+		"codex",
+		"#!/bin/sh\nprintf 'home=%s|args=%s\\n' \"$OPENSHOCK_CODEX_HOME\" \"$*\"\n",
+		"@echo off\r\necho home=%OPENSHOCK_CODEX_HOME%^|args=%*\r\n",
+	)
+	t.Setenv("PATH", cliDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	service := NewService("daemon-test", root)
+	resp, err := service.RunPrompt(ExecRequest{
+		Provider:  "codex",
+		Prompt:    "session scoped codex home",
+		Cwd:       cwd,
+		SessionID: "session-runtime",
+		RunID:     "run-runtime-01",
+		RoomID:    "room-runtime",
+	})
+	if err != nil {
+		t.Fatalf("RunPrompt() error = %v", err)
+	}
+
+	sessionDir := filepath.Join(root, ".openshock", "agent-sessions", "session-runtime")
+	wantHome := filepath.Join(sessionDir, "codex-home")
+	if !strings.Contains(resp.Output, "home="+wantHome) {
+		t.Fatalf("RunPrompt() output = %q, want codex home %q", resp.Output, wantHome)
+	}
+
+	var payload struct {
+		CodexHome string `json:"codexHome,omitempty"`
+	}
+	data, err := os.ReadFile(filepath.Join(sessionDir, "SESSION.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(SESSION.json) error = %v", err)
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("Unmarshal(SESSION.json) error = %v", err)
+	}
+	if payload.CodexHome != wantHome {
+		t.Fatalf("SESSION.json codexHome = %q, want %q", payload.CodexHome, wantHome)
+	}
+}
+
+func TestResumeSessionReusesSessionScopedCodexHomeAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	cwd := t.TempDir()
+	cliDir := t.TempDir()
+	writeRuntimeCLI(
+		t,
+		cliDir,
+		"codex",
+		"#!/bin/sh\nprintf 'home=%s|args=%s\\n' \"$OPENSHOCK_CODEX_HOME\" \"$*\"\n",
+		"@echo off\r\necho home=%OPENSHOCK_CODEX_HOME%^|args=%*\r\n",
+	)
+	t.Setenv("PATH", cliDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	first := NewService("daemon-test", root)
+	firstResp, err := first.RunPrompt(ExecRequest{
+		Provider:  "codex",
+		Prompt:    "first codex turn",
+		Cwd:       cwd,
+		SessionID: "session-runtime",
+		RunID:     "run-runtime-01",
+		RoomID:    "room-runtime",
+	})
+	if err != nil {
+		t.Fatalf("first RunPrompt() error = %v", err)
+	}
+
+	second := NewService("daemon-test", root)
+	secondResp, err := second.RunPrompt(ExecRequest{
+		Provider:      "codex",
+		Prompt:        "resume codex turn",
+		Cwd:           cwd,
+		SessionID:     "session-runtime",
+		RunID:         "run-runtime-01",
+		RoomID:        "room-runtime",
+		ResumeSession: true,
+	})
+	if err != nil {
+		t.Fatalf("second RunPrompt() error = %v", err)
+	}
+
+	sessionDir := filepath.Join(root, ".openshock", "agent-sessions", "session-runtime")
+	wantHome := filepath.Join(sessionDir, "codex-home")
+	if !strings.Contains(firstResp.Output, "home="+wantHome) {
+		t.Fatalf("first RunPrompt() output = %q, want codex home %q", firstResp.Output, wantHome)
+	}
+	if !strings.Contains(secondResp.Output, "home="+wantHome) {
+		t.Fatalf("second RunPrompt() output = %q, want codex home %q", secondResp.Output, wantHome)
+	}
+	if !strings.Contains(secondResp.Output, "args=exec resume --last") {
+		t.Fatalf("second RunPrompt() output = %q, want resume command", secondResp.Output)
+	}
+}
+
 func writeExecutable(t *testing.T, path string) {
 	t.Helper()
 	content := []byte("#!/bin/sh\nexit 0\n")

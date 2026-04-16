@@ -227,6 +227,59 @@ func TestExecRoutePersistsSessionWorkspaceEnvelope(t *testing.T) {
 	}
 }
 
+func TestExecRouteUsesSessionScopedCodexHome(t *testing.T) {
+	root := t.TempDir()
+	dir := t.TempDir()
+	if goruntime.GOOS == "windows" {
+		if err := os.WriteFile(filepath.Join(dir, "codex.cmd"), []byte("@echo off\r\necho home=%OPENSHOCK_CODEX_HOME%^|args=%*\r\n"), 0o755); err != nil {
+			t.Fatalf("write fake codex cmd: %v", err)
+		}
+	} else {
+		if err := os.WriteFile(filepath.Join(dir, "codex"), []byte("#!/bin/sh\nprintf 'home=%s|args=%s\\n' \"$OPENSHOCK_CODEX_HOME\" \"$*\"\n"), 0o755); err != nil {
+			t.Fatalf("write fake codex cli: %v", err)
+		}
+	}
+	prependDaemonCLIPath(t, dir)
+
+	server := httptest.NewServer(New(runtime.NewService("daemon-test", root), root).Handler())
+	defer server.Close()
+
+	body, err := json.Marshal(map[string]any{
+		"provider":      "codex",
+		"prompt":        "resume local codex thread",
+		"cwd":           t.TempDir(),
+		"sessionId":     "session-runtime",
+		"runId":         "run-runtime-01",
+		"roomId":        "room-runtime",
+		"resumeSession": true,
+	})
+	if err != nil {
+		t.Fatalf("Marshal(body) error = %v", err)
+	}
+	resp, err := http.Post(server.URL+"/v1/exec", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /v1/exec error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/exec status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Output string `json:"output"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode response error = %v", err)
+	}
+	wantHome := filepath.Join(root, ".openshock", "agent-sessions", "session-runtime", "codex-home")
+	if !strings.Contains(payload.Output, "home="+wantHome) {
+		t.Fatalf("exec output = %q, want session-scoped codex home %q", payload.Output, wantHome)
+	}
+	if !strings.Contains(payload.Output, "args=exec resume --last") {
+		t.Fatalf("exec output = %q, want resume command", payload.Output)
+	}
+}
+
 func writeDaemonClaudeCLI(t *testing.T) string {
 	t.Helper()
 

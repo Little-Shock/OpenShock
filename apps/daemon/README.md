@@ -9,6 +9,7 @@ Current shape:
 - `GET /v1/runtime` reports detected local providers and runtime snapshot
 - `POST /v1/exec` and `POST /v1/exec/stream` execute prompts through local CLI tools
 - per-session execution now persists `MEMORY.md / SESSION.json / CURRENT_TURN.md / notes/work-log.md` under the daemon session workspace root
+- Codex session continuity now uses a session-scoped `OPENSHOCK_CODEX_HOME` under the same workspace root
 - detects local CLI binaries like `codex` and `claude`
 - reports runtime heartbeats back to the server
 - ensures `git worktree` lanes for issue execution

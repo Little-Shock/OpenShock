@@ -1317,16 +1317,16 @@
 
 ## TC-094 Local-First Provider Thread Resume
 
-- 业务目标: 确认 daemon restart 后，同一 session 的 provider thread continuity 仍然锚定本地 session workspace，而不是偷偷开一条新 transport。
-- 前置条件: session workspace 已持久化 `SESSION.json`；provider transport 支持暴露可复用 thread id。
+- 业务目标: 确认 daemon restart 后，同一 session 的 Codex resume continuity 仍然锚定本地 session workspace，而不是回落到全局共享 `--last` 状态。
+- 前置条件: session workspace 已持久化 `SESSION.json`；daemon 会为同一 session 派生本地 `codex-home`。
 - 测试步骤:
-  1. 对同一 `sessionId` 启动一轮 provider-backed 执行，并记录真实 thread id。
-  2. 停止 daemon，再次启动 daemon。
-  3. 继续对同一 `sessionId` 发第二轮执行。
-  4. 读取 `SESSION.json` 与 provider transport side effect，确认 thread id 仍为同一值。
-  5. 人为清空或损坏 thread id，再执行一轮，确认 daemon 显式暴露 degraded/recovery truth，而不是静默切新会话。
-- 预期结果: 本地 session workspace 必须成为 provider thread continuity 的唯一恢复锚点；丢失 thread 时必须 fail loud。
-- 业务结论: 待补 `TKT-99`。
+  1. 对同一 `sessionId` 发第一轮 Codex 执行，记录输出里的 `OPENSHOCK_CODEX_HOME`。
+  2. 重建 daemon service，再对同一 `sessionId` 发第二轮 `resumeSession=true` 的 Codex 执行。
+  3. 确认两轮输出里的 `OPENSHOCK_CODEX_HOME` 完全一致，且路径锚定在同一 session workspace 下。
+  4. 读取 `SESSION.json`，确认 `codexHome` 字段与上面的路径一致。
+  5. 经 `/v1/exec` 走同一条 resume 请求，确认 HTTP 路由也会把同一 session-scoped `OPENSHOCK_CODEX_HOME` 传给 Codex CLI。
+- 预期结果: 本地 session workspace 必须成为 Codex resume continuity 的恢复锚点；不同 session 不得共享全局 `--last` 状态。
+- 业务结论: 2026 年 4 月 16 日新增 `TestRunPromptUsesSessionScopedCodexHome`、`TestResumeSessionReusesSessionScopedCodexHomeAcrossRestart` 与 `TestExecRouteUsesSessionScopedCodexHome`。当前 targeted `go test ./apps/daemon/internal/runtime` 与 `go test ./apps/daemon/internal/api` 已确认 daemon 会为同一 session 派生稳定的 `OPENSHOCK_CODEX_HOME`，并在 restart 后继续复用，因此这条 local-first Codex continuity 用例当前转为 `Pass`。
 
 ## TC-095 Daemon Once System Continuity Harness
 
@@ -1353,3 +1353,16 @@
   5. 输出 headed walkthrough 与前后对照截图。
 - 预期结果: 主要路径必须更短、更顺，且不以加更多 panel、helper copy、summary 卡片为代价。
 - 业务结论: 待补 `TKT-101`。
+
+## TC-097 Explicit Provider Thread State Persistence
+
+- 业务目标: 确认真正的 provider thread / conversation id 会作为 daemon-managed local truth 被持久化，而不是长期留在占位字段里。
+- 前置条件: daemon session workspace 已存在 `SESSION.json`；provider transport 能暴露可复用 thread id。
+- 测试步骤:
+  1. 对同一 `sessionId` 启动一轮真实 provider transport 执行，记录 thread id。
+  2. 停止 daemon，再次启动 daemon。
+  3. 对同一 `sessionId` 发第二轮执行，确认复用同一 thread id。
+  4. 人为损坏或删除 `SESSION.json` 中的 thread id，再执行一轮。
+  5. 检查 daemon 是否显式暴露 degraded / recovery truth，而不是静默开启新 thread。
+- 预期结果: `SESSION.json.appServerThreadId` 或等价字段必须成为可验证的恢复锚点；thread 漂移不能静默发生。
+- 业务结论: 待补 `TKT-102`。

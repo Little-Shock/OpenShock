@@ -141,11 +141,13 @@
 - `GAP-67 / TKT-98`
   - daemon 现在必须补稳定的 agent session workspace envelope；同一 `sessionId` 要持续复用同一目录，并显式写出 `MEMORY.md / SESSION.json / CURRENT_TURN.md / notes/work-log.md`，让 turn continuity、文件级记忆和掉线恢复有本地锚点。
 - `GAP-68 / TKT-99`
-  - daemon 现在还要把 provider transport continuity 收成 local-first truth；`appServerThreadId`、隔离的 `OPENSHOCK_CODEX_HOME` 与 restart 后的 session resume 不能只靠最后一条消息猜，而要挂在同一份 session workspace 上。
+  - daemon 现在还要把 Codex resume continuity 收成 local-first truth；隔离的 session-scoped `OPENSHOCK_CODEX_HOME` 与 restart 后的 `resume --last` 不能再吃全局状态，而要稳定挂在同一份 session workspace 上。
 - `GAP-69 / TKT-100`
   - daemon 现在还要补真正的 system harness；`go run ./cmd/openshock-daemon --once`、httptest control plane、fake CLI 与 scenario snapshot 要一起证明“两轮复用同一 session、CURRENT_TURN 刷新、work-log 累积、恢复链不断裂”。
 - `GAP-70 / TKT-101`
   - Phase 0 shell 前端现在要持续做减法；房间、收件箱、运行与治理面要继续收掉重复状态、重复动作和过度解释，让 chat-first 路径更顺、更轻、更舒服，而不是继续加一层层次级面板。
+- `GAP-71 / TKT-102`
+  - daemon 现在还要把显式 provider thread state 做成 local-first truth；`SESSION.json.appServerThreadId` 不能一直是占位字段，后续真实 transport thread / conversation id 要能在 daemon restart 后继续复用、失效时显式告警。
 
 ### 当前必须先收的 GAP
 
@@ -155,11 +157,10 @@
 
 ## 四、推荐推进顺序
 
-1. 先收 `TKT-98`：把 daemon 的 session workspace envelope 站住，先用 TDD 锁住 `CURRENT_TURN.md / SESSION.json / work-log` 的持久化与同 session 复用。
-2. 再收 `TKT-99`：把 local-first provider thread continuity、隔离 `OPENSHOCK_CODEX_HOME` 与 daemon restart resume 接到同一份 session workspace。
-3. 再收 `TKT-100`：把 daemon system harness / scenario snapshot 做成默认回归入口，避免后续多智能体协同与恢复链只靠零散单测。
-4. 然后回到 `CHK-10` 的更重 memory compaction / retention / durable adapter。
-5. 前端持续并行做 `TKT-101` 的 subtractive polish，但不再靠加新面板解决流畅度问题。
+1. 先收 `TKT-99` 的后半段：把显式 provider thread state 从占位字段推进到真实 local-first continuity。
+2. 再收 `TKT-100`：把 daemon system harness / scenario snapshot 做成默认回归入口，避免后续多智能体协同与恢复链只靠零散单测。
+3. 然后回到 `CHK-10` 的更重 memory compaction / retention / durable adapter。
+4. 前端持续并行做 `TKT-101` 的 subtractive polish，但不再靠加新面板解决流畅度问题。
 
 ---
 
