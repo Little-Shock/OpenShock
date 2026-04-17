@@ -232,6 +232,10 @@ async function readTextIfPresent(page, testId) {
   return (await locator.first().textContent())?.trim() ?? "";
 }
 
+async function readLocatorText(locator) {
+  return (await locator.textContent())?.trim() ?? "";
+}
+
 async function waitForMailboxStatus(page, handoffId, expected) {
   const expectedLabel =
     expected === "requested"
@@ -423,6 +427,16 @@ try {
   assert(
     (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} rooms`,
     "cross-room rollup count should increase by one after runtime room becomes hot"
+  );
+  const compactRollupCard = page.getByTestId(`mailbox-governance-escalation-rollup-room-${targetRoom.id}`);
+  const compactRollupText = await readLocatorText(compactRollupCard);
+  assert(
+    !compactRollupText.includes("当前负责人"),
+    "mailbox cross-room rollup should not duplicate current-owner copy that is already owned by the dependency graph"
+  );
+  assert(
+    !compactRollupText.includes("下一步建议"),
+    "mailbox cross-room rollup should not duplicate next-route guidance that is already owned by the dependency graph"
   );
   await capture(page, "mailbox-cross-room-route-ready");
 

@@ -1581,15 +1581,23 @@
   - room `context` tab 已压成“当前焦点 + 待处理”，不再把 run / PR / 记忆 / timeline / guard / mailbox truth 在同一页重复铺开
   - `RoomWorkbenchRailSummary` 已把 `overview / delivery / system` 的重复双卡压回单卡表达，同时保住 `room-workbench-open-inbox`、`room-workbench-open-mailbox`、`room-workbench-pr-detail-link`、`room-workbench-run-status` 等稳定锚点
   - 房间右栏已补回 `room-workbench-machine-profile` 与 `room-workbench-active-agent-*`，保证减法后 agent / machine profile 仍能从房间工作面直接深链
+- 当前已收第三刀:
+  - `/mailbox` 的 cross-room governance rollup 已把 owner / current-lane / next-route 的解释收回 `GovernanceEscalationGraph` 主视图，rollup 列表卡只保留 room 热点、route 状态与动作入口
+  - `mailbox-governance-escalation-rollup-*`、`mailbox-governance-escalation-graph-*` 与 `route-create` 锚点保持不变；减法后仍能继续 `ready -> active -> done` 的治理前滚
+  - headed cross-room regression 已新增“rollup 卡不再重复 current-owner / next-route copy”断言，避免后续又把 graph 与列表卡的真相重新写两遍
 - 最新证据:
+  - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
   - `pnpm typecheck:web`
-  - `pnpm lint:web`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx'`
   - `pnpm build:web`
   - `pnpm test:headed-topic-route-resume-lifecycle`
   - `pnpm test:headed-stop-resume-follow-thread`
   - `pnpm test:headed-profile-surface`
   - `pnpm test:headed-room-workbench-topic-context`
   - `pnpm test:headed-agent-mailbox-handoff`
+  - `pnpm test:headed-governance-escalation-rollup`
+  - `pnpm test:headed-cross-room-governance-orchestration`
+  - `pnpm test:headed-cross-room-governance-auto-closeout`
 - Checklist: `CHK-01` `CHK-16`
 - Test Cases: `TC-096`
 
