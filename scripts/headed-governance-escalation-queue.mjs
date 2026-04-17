@@ -397,6 +397,22 @@ try {
     (await readText(page, `orchestration-governance-escalation-status-${handoffEntryId}`)) === governanceStatusLabel("active"),
     "orchestration page should mirror active handoff escalation entry"
   );
+  const orchestrationActiveEntryText =
+    (await page.getByTestId(`orchestration-governance-escalation-entry-${handoffEntryId}`).textContent())?.trim() ?? "";
+  assert(
+    !orchestrationActiveEntryText.includes("SLA 内继续围当前 handoff ledger 推进"),
+    "orchestration escalation queue should not keep standalone next-step helper copy once the governance surfaces already expose the same escalation intent"
+  );
+  assert(
+    !orchestrationActiveEntryText.includes("打开升级事项"),
+    "orchestration escalation queue should not keep a generic open-escalation CTA once the primary governance surfaces already own navigation"
+  );
+  const orchestrationEscalationPanelText =
+    (await page.getByText("升级时限").locator("..").textContent())?.trim() ?? "";
+  assert(
+    !orchestrationEscalationPanelText.includes("下一次升级："),
+    "orchestration escalation SLA panel should not keep next-escalation helper copy once the queue already exposes active escalation truth"
+  );
   await capture(page, "orchestration-escalation-requested");
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
@@ -433,6 +449,12 @@ try {
   await page.goto(`${webURL}/agents`, { waitUntil: "load" });
   await page.getByTestId(`orchestration-governance-escalation-entry-${handoffEntryId}`).waitFor({ state: "visible" });
   await page.getByTestId(`orchestration-governance-escalation-entry-${blockerEntryId}`).waitFor({ state: "visible" });
+  const orchestrationBlockedEntryText =
+    (await page.getByTestId(`orchestration-governance-escalation-entry-${blockerEntryId}`).textContent())?.trim() ?? "";
+  assert(
+    !orchestrationBlockedEntryText.includes("决定 unblock / reroute"),
+    "orchestration escalation queue should not repeat unblock helper copy that already belongs to inbox and human-override surfaces"
+  );
   await capture(page, "orchestration-escalation-blocked");
 
   await advanceMailbox(serverURL, handoff.id, {

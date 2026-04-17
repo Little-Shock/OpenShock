@@ -1610,7 +1610,12 @@
   - `/mailbox` 与 `/agents` 的 cross-room governance rollup 已删掉重复 `latestSummary` 和次级 `查看该讨论` 链接；列表卡继续只保留 room 热点、双状态与主推进动作，room 上下文与导航统一回到 `GovernanceEscalationGraph`
   - `mailbox-governance-escalation-rollup-room-*`、`orchestration-governance-escalation-rollup-room-*`、`...route-status-*`、`...graph-*` 与 `打开下一步` / `创建自动交接` 热路径保持不变；减法后 mailbox / agents 仍围同一份 cross-room governance truth 前滚
   - headed cross-room orchestration 已新增“rollup 卡不再重复 latest-summary，也不再渲染次级 room-link”断言，避免后续又把 graph 已持有的 room context / navigation 再堆回列表卡
+- 当前已收第十刀:
+  - `/agents` 的升级时限卡已删掉 `下一次升级` helper copy；升级节奏继续由 SLA 摘要和下方 escalation queue 持有，不再在卡头再写一层重复时间提示
+  - `orchestration-governance-escalation-entry-*`、`orchestration-governance-escalation-status-*`、`协作规则和通知一页看清`、`升级时限`、`通知策略` 与 escalation queue 主体锚点保持不变；减法后 `/agents` 仍围同一份治理镜像前滚
+  - headed escalation queue 已新增“升级时限卡不再渲染 `下一次升级：` helper copy”断言，避免后续又把 queue 已持有的升级真相重新堆回卡头
 - 最新证据:
+  - `node --check scripts/headed-governance-escalation-queue.mjs`
   - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
   - `node --check scripts/headed-planner-dispatch-replay.mjs`
   - `pnpm typecheck:web`

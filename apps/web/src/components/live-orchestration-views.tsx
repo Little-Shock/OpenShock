@@ -823,11 +823,6 @@ function GovernanceReplaySurface({ governance }: { governance: WorkspaceGovernan
                     {governance.escalationSla.timeoutMinutes} 分钟 / {governance.escalationSla.retryBudget} 次重试
                   </p>
                   <p className="mt-2 text-sm leading-6">{governance.escalationSla.summary}</p>
-                  {governance.escalationSla.nextEscalation ? (
-                    <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
-                      下一次升级：{governance.escalationSla.nextEscalation}
-                    </p>
-                  ) : null}
                   <div className="mt-3 space-y-2">
                     {escalationQueue.length === 0 ? (
                       <p className="text-sm leading-6 opacity-70">当前没有待升级事项。</p>
