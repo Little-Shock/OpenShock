@@ -357,6 +357,14 @@ try {
     !initialGovernancePageText.includes("接管记录"),
     "orchestration response aggregation should not duplicate override-trace copy that already belongs to the dedicated human-override surface"
   );
+  assert(
+    !initialGovernancePageText.includes("Mailbox ledger 会把 request / ack / blocked / complete 写成同一条对象。"),
+    "orchestration walkthrough should not keep standalone helper copy once handoff truth is already visible in mailbox and escalation surfaces"
+  );
+  assert(
+    !initialGovernancePageText.includes("review 会收 exact-head verdict，而不是只留口头结论。"),
+    "orchestration walkthrough should not keep standalone review helper copy once the governance mirror already exposes review truth"
+  );
   await capture(page, "agents-after-planner-assignment");
 
   const createHandoffPayload = await fetchJSON(`${serverURL}/v1/mailbox`, {

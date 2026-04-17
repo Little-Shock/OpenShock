@@ -777,16 +777,10 @@ function GovernanceReplaySurface({ governance }: { governance: WorkspaceGovernan
                   >
                     {step.summary}
                   </p>
-                  <p className="mt-2 text-sm leading-6">{step.detail}</p>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
                     <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
                       {governanceStatusLabel(step.status)}
                     </span>
-                    {step.href ? (
-                      <Link href={step.href} className="font-mono text-[10px] uppercase tracking-[0.16em] underline">
-                        打开
-                      </Link>
-                    ) : null}
                   </div>
                 </Panel>
               ))}

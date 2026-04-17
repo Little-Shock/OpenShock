@@ -1598,6 +1598,10 @@
   - `/agents` 右栏独立 `协作规则` 卡组已删除；`handoffRules` 不再作为第二块 standalone 面板重复渲染，formal handoff / review / test / blocked / human override 的治理真相继续由 walkthrough、escalation queue、human override 与 response aggregation 主面持有
   - `orchestration-governance-human-override`、`orchestration-governance-response-aggregation`、`orchestration-governance-step-*` 与 orchestration planner queue 锚点保持不变；减法后 `/agents` 仍围同一份治理镜像前滚
   - headed planner replay 已新增“`responseAggregation` 不再重复 `决策路径 / 接管记录` 文案，且 routing rules 已存在时不再渲染第二块 standalone `协作规则` 面板”断言，避免后续又把说明尾巴和辅助规则卡组堆回治理镜像
+- 当前已收第七刀:
+  - `/agents` 的 walkthrough 卡组已删掉逐步 helper/detail copy，只保留步骤标题、当前摘要和状态，不再把 `Mailbox ledger` / `review verdict` / `final-response aggregation` 这类说明层再重复一遍
+  - `orchestration-governance-step-*` 锚点保持不变；planner replay 仍能围 `issue / handoff` 当前摘要前滚，不需要额外 helper 文案才能理解当前治理状态
+  - headed planner replay 已新增“walkthrough 不再渲染 handoff / review helper copy”断言，避免后续又把第二层说明堆回关键流程卡
 - 最新证据:
   - `node --check scripts/headed-planner-dispatch-replay.mjs`
   - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
