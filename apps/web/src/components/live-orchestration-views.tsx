@@ -904,81 +904,60 @@ function GovernanceReplaySurface({ governance }: { governance: WorkspaceGovernan
                                   {escalationRoomRollupSummary(entry)}
                                   {entry.latestSource ? ` · 最近来源 ${entry.latestSource}` : ""}
                                 </p>
-                                {(entry.currentOwner || entry.currentLane) ? (
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {entry.currentOwner ? (
-                                      <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
-                                        当前负责人 {entry.currentOwner}
-                                      </span>
-                                    ) : null}
-                                    {entry.currentLane ? (
-                                      <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
-                                        当前分工 {entry.currentLane}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                ) : null}
                               </div>
-                              <span
-                                data-testid={`orchestration-governance-escalation-rollup-status-${entry.roomId}`}
-                                className={cn(
-                                  "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]",
-                                  governanceTone(entry.status) === "pink"
-                                    ? "bg-[var(--shock-pink)] text-white"
-                                    : governanceTone(entry.status) === "lime"
-                                      ? "bg-[var(--shock-lime)]"
-                                      : governanceTone(entry.status) === "yellow"
-                                        ? "bg-[var(--shock-yellow)]"
-                                        : "bg-white"
-                                )}
-                              >
-                                {governanceStatusLabel(entry.status)}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  data-testid={`orchestration-governance-escalation-rollup-status-${entry.roomId}`}
+                                  className={cn(
+                                    "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]",
+                                    governanceTone(entry.status) === "pink"
+                                      ? "bg-[var(--shock-pink)] text-white"
+                                      : governanceTone(entry.status) === "lime"
+                                        ? "bg-[var(--shock-lime)]"
+                                        : governanceTone(entry.status) === "yellow"
+                                          ? "bg-[var(--shock-yellow)]"
+                                          : "bg-white"
+                                  )}
+                                >
+                                  {governanceStatusLabel(entry.status)}
+                                </span>
+                                <span
+                                  data-testid={`orchestration-governance-escalation-rollup-route-status-${entry.roomId}`}
+                                  className={cn(
+                                    "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]",
+                                    governanceTone(entry.nextRouteStatus ?? "pending") === "pink"
+                                      ? "bg-[var(--shock-pink)] text-white"
+                                      : governanceTone(entry.nextRouteStatus ?? "pending") === "lime"
+                                        ? "bg-[var(--shock-lime)]"
+                                        : governanceTone(entry.nextRouteStatus ?? "pending") === "yellow"
+                                          ? "bg-[var(--shock-yellow)]"
+                                          : "bg-white"
+                                  )}
+                                >
+                                  {governanceStatusLabel(entry.nextRouteStatus ?? "pending")}
+                                </span>
+                              </div>
                             </div>
                             {entry.latestLabel ? <p className="mt-2 font-display text-base font-semibold">{entry.latestLabel}</p> : null}
                             {entry.latestSummary ? <p className="mt-2 text-sm leading-6 opacity-70">{entry.latestSummary}</p> : null}
-                            {(entry.nextRouteLabel || entry.nextRouteSummary) ? (
-                              <div className="mt-3 rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                  <div>
-                                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">下一步建议</p>
-                                    {entry.nextRouteLabel ? <p className="mt-2 font-display text-base font-semibold">{entry.nextRouteLabel}</p> : null}
-                                  </div>
-                                  <span
-                                    data-testid={`orchestration-governance-escalation-rollup-route-status-${entry.roomId}`}
-                                    className={cn(
-                                      "rounded-full border-2 border-[var(--shock-ink)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]",
-                                      governanceTone(entry.nextRouteStatus ?? "pending") === "pink"
-                                        ? "bg-[var(--shock-pink)] text-white"
-                                        : governanceTone(entry.nextRouteStatus ?? "pending") === "lime"
-                                          ? "bg-[var(--shock-lime)]"
-                                          : governanceTone(entry.nextRouteStatus ?? "pending") === "yellow"
-                                            ? "bg-[var(--shock-yellow)]"
-                                            : "bg-white"
-                                    )}
-                                  >
-                                    {governanceStatusLabel(entry.nextRouteStatus ?? "pending")}
-                                  </span>
-                                </div>
-                                {entry.nextRouteSummary ? <p className="mt-2 text-sm leading-6 opacity-70">{entry.nextRouteSummary}</p> : null}
-                                {entry.nextRouteHref ? (
-                                  <Link
-                                    href={entry.nextRouteHref}
-                                    className="mt-3 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                                  >
-                                    打开下一步
-                                  </Link>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {entry.href ? (
-                              <Link
-                                href={entry.href}
-                                className="mt-3 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                              >
-                                查看该讨论
-                              </Link>
-                            ) : null}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {entry.nextRouteHref ? (
+                                <Link
+                                  href={entry.nextRouteHref}
+                                  className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                                >
+                                  打开下一步
+                                </Link>
+                              ) : null}
+                              {entry.href ? (
+                                <Link
+                                  href={entry.href}
+                                  className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                                >
+                                  查看该讨论
+                                </Link>
+                              ) : null}
+                            </div>
                           </div>
                         ))
                       ) : null}

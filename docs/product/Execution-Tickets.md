@@ -1589,11 +1589,16 @@
   - `/inbox` 的 governed compose 已改成“自动建议优先、手动改写次级展开”；在 route 已可用时，首屏不再同时摊开自由表单与治理建议两套 source / target / title / summary truth
   - `mailbox-compose-governed-route*` 热路径保持不变，approval-center 的 `approval-center-action-*` 与 handoff ledger 的 `mailbox-card/status/action*` 也未受影响
   - headed governed-route regression 已新增“manual compose 默认收起，但可手动展开”断言，避免后续又把 inbox 首屏堆回长表单
+- 当前已收第五刀:
+  - `/agents` 的 cross-room governance rollup 已把 `current owner / current lane / next-route` 解释收回 `GovernanceEscalationGraph` 主视图，rollup 列表卡只保留 room 热点、双状态与 deep-link 动作入口
+  - `orchestration-governance-escalation-rollup-*`、`orchestration-governance-escalation-graph-*`、`orchestration-governance-summary`、`orchestration-governance-human-override` 与 `orchestration-governance-response-aggregation` 锚点保持不变；减法后仍能继续读取同一份治理镜像真相
+  - headed cross-room regression 已把 orchestration mirror 也锁进“rollup 卡不再重复 current-owner / next-route copy”断言，避免后续又把 graph 与列表卡的真相重新写两遍
 - 最新证据:
   - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
   - `node --check scripts/headed-governed-mailbox-route.mjs`
   - `pnpm typecheck:web`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx'`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-orchestration-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`
   - `pnpm build:web`
   - `pnpm test:headed-topic-route-resume-lifecycle`

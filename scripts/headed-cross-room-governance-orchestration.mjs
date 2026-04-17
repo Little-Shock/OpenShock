@@ -464,6 +464,16 @@ try {
     },
     "orchestration governance graph should surface a resolved next-route node for the hot room"
   );
+  const orchestrationRollupCard = page.getByTestId(`orchestration-governance-escalation-rollup-room-${targetRoom.id}`);
+  const orchestrationRollupText = await readLocatorText(orchestrationRollupCard);
+  assert(
+    !orchestrationRollupText.includes("当前负责人"),
+    "orchestration cross-room rollup should not duplicate current-owner copy that is already owned by the dependency graph"
+  );
+  assert(
+    !orchestrationRollupText.includes("下一步建议"),
+    "orchestration cross-room rollup should not duplicate next-route guidance that is already owned by the dependency graph"
+  );
   await capture(page, "orchestration-cross-room-route-ready");
 
   await page.goto(`${webURL}/mailbox?roomId=${targetRoom.id}`, { waitUntil: "load" });
