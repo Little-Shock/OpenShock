@@ -1189,12 +1189,6 @@ export function PullRequestDetailView({
                             <span className="border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px]">
                               {item.kind}
                             </span>
-                            <Link
-                              href={item.href}
-                              className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px]"
-                            >
-                              打开详情
-                            </Link>
                           </div>
                         </div>
                       ))

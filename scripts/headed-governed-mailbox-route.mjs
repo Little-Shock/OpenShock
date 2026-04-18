@@ -891,6 +891,12 @@ try {
           );
           return node?.textContent?.includes("Spec Captain") ?? false;
         });
+        const relatedInboxSignalText =
+          (await page.getByTestId("pull-request-related-inbox-inbox-delivery-delegation-pr-runtime-18").textContent())?.trim() ?? "";
+        assert(
+          !relatedInboxSignalText.includes("打开详情"),
+          "PR detail related inbox signal should not keep a generic open-detail CTA once the page-level inbox navigation already owns that jump"
+        );
         await capture(page, "pull-request-delivery-delegation");
 
         if (runMode === "delegate-auto-complete") {

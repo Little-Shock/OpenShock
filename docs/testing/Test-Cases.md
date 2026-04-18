@@ -1,6 +1,6 @@
 # OpenShock Test Cases
 
-**版本:** 1.33
+**版本:** 1.34
 **更新日期:** 2026 年 4 月 18 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
@@ -1353,7 +1353,7 @@
   4. 确认房间主面仍保持 chat-first，不把 `Topic / Run / PR / Context` 再抬回一级 IA。
   5. 输出 headed walkthrough 与前后对照截图。
 - 预期结果: 主要路径必须更短、更顺，且不以加更多 panel、helper copy、summary 卡片为代价。
-- 业务结论: 2026 年 4 月 18 日继续收第二十三刀：在前一轮 `/rooms/:roomId?tab=context` pending panel 已删掉 generic `打开交接箱` 的基础上，桌面端残留的 generic `打开收件箱` 也继续被收掉；桌面 inbox 主入口回到 `StitchSidebar` 的 `sidebar-inbox-link`，移动端因为 sidebar 隐藏，仍保留 `room-workbench-open-inbox` 作为局部逃生路径。当前 headed room workbench regression 已同时锁住“桌面端不再显示 room CTA，改走 sidebar”“`768px` 断点处 local CTA 已退出且 sidebar link 已接管”与“移动端必须显示 room CTA、sidebar link 不可见、点击后仍能回到同一条 context state”三条路径；`node --check scripts/headed-room-workbench-topic-context.mjs`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-chat-room-views.tsx'`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-shell-primitives.tsx'`、`pnpm typecheck:web`、`pnpm build:web` 与 `pnpm test:headed-room-workbench-topic-context` 已通过，因此这条 subtractive sweep 用例继续保持 `Pass`；下一轮优先继续压 room / mailbox / inbox 里仍重复的次级 deep-link、owner/status/action truth。
+- 业务结论: 2026 年 4 月 18 日继续收第二十四刀：在前一轮 `/rooms/:roomId?tab=context` 已把桌面端 generic `打开收件箱` 收回 shell sidebar 的基础上，`/pull-requests/:pullRequestId` 右栏 `相关收件箱提醒` 卡里的 generic `打开详情` 也继续被收掉；PR detail 页头已经持有 `返回收件箱` 主导航，所以 related inbox 卡现在只保留 signal summary 和 kind，不再把信息卡伪装成第二个 action strip。当前 headed governed mailbox delegation 已锁住“PR detail related inbox signal 不再包含 generic `打开详情` 文案”这条路径；`node --check scripts/headed-governed-mailbox-route.mjs`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/pull-request-detail-view.tsx'`、`pnpm typecheck:web`、`pnpm build:web` 与 `pnpm test:headed-governed-mailbox-delegation` 已通过，因此这条 subtractive sweep 用例继续保持 `Pass`；下一轮优先继续压 room / mailbox / inbox 里仍重复的次级 deep-link、owner/status/action truth。
 
 ## TC-097 Explicit Provider Thread State Persistence
 

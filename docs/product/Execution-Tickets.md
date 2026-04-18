@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.30
+**版本:** 1.31
 **更新日期:** 2026 年 4 月 18 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -1666,6 +1666,10 @@
   - `/rooms/:roomId?tab=context` 的 pending panel 不再在桌面端继续渲染泛化 `打开收件箱` CTA；桌面 inbox 主入口回到 shell sidebar，避免 room 信息区和全局壳同时重复暴露同一条导航
   - `room-workbench-open-inbox` 仍保留为移动端逃生路径，因为 `StitchSidebar` 在 `md` 以下隐藏；`sidebar-inbox-link` 成为桌面 headed regression 的正式 inbox 跳转锚点
   - headed room workbench topic context 已同时新增“桌面端 visible `room-workbench-open-inbox` 数量为 0，并通过 `sidebar-inbox-link` 打开 Inbox”、“`768px` 断点处 local CTA 已退出且 sidebar inbox link 已接管”以及“移动端必须显示 `room-workbench-open-inbox`，且 sidebar inbox link 不可见、点击后仍能回到同一条 room context state”的断言，避免后续把桌面重复 CTA 堆回 context panel，或误删移动端唯一逃生路径
+- 当前已收第二十四刀:
+  - `/pull-requests/:pullRequestId` 右栏的 `相关收件箱提醒` 卡不再继续渲染泛化 `打开详情` CTA；PR detail 页头已经持有 `返回收件箱` 主导航，这块现在只保留 reminder summary 和 kind，不再把同一条 inbox 跳转在信息卡里重复堆一层
+  - `pull-request-related-inbox-*` 锚点保持不变；减法后 related inbox 仍继续同步 delegation / reply / history truth，但导航职责交回 PR detail 主动作区，不再把摘要卡伪装成第二个 action strip
+  - headed governed mailbox delegation 已新增“PR detail related inbox signal 不再包含 generic `打开详情` 文案”的断言，避免后续又把页头 `返回收件箱` 已持有的导航重新堆回 summary card
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
@@ -1678,6 +1682,7 @@
   - `pnpm typecheck:web`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-chat-room-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-shell-primitives.tsx'`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/pull-request-detail-view.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-orchestration-views.tsx'`
@@ -1685,6 +1690,7 @@
   - `pnpm test:headed-governed-mailbox-delegate-visibility`
   - `pnpm test:headed-approval-center-lifecycle`
   - `pnpm test:headed-agent-mailbox-handoff`
+  - `pnpm test:headed-governed-mailbox-delegation`
   - `pnpm test:headed-room-workbench-topic-context`
   - `pnpm test:headed-planner-dispatch-replay`
   - `pnpm test:headed-governance-escalation-queue`
