@@ -1059,7 +1059,7 @@ function RoomRelatedSignalsPanel({
 }) {
   return (
     <Panel tone="white">
-      <div className="flex items-center justify-between gap-3">
+      <div>
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">
             收件箱回链
@@ -1068,13 +1068,6 @@ function RoomRelatedSignalsPanel({
             {relatedSignals.length} 条待处理 / {recentSignals.length} 条最近
           </p>
         </div>
-        <Link
-          href="/inbox"
-          data-testid="room-workbench-open-inbox"
-          className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-        >
-          打开收件箱
-        </Link>
       </div>
       <div className="mt-4 space-y-3">
         {(relatedSignals.length === 0 ? recentSignals.slice(0, 2) : relatedSignals.slice(0, 3)).map((item) => (

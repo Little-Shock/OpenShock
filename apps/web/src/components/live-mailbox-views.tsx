@@ -1598,13 +1598,6 @@ export function LiveMailboxPageContent() {
                         >
                           {room?.title ?? handoff.roomId}
                         </Link>
-                        <Link
-                          href={`/inbox?handoffId=${handoff.id}`}
-                          data-testid={`mailbox-inbox-link-${handoff.id}`}
-                          className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                        >
-                          打开收件箱
-                        </Link>
                         {parentHandoff ? (
                           <Link
                             href={`/inbox?handoffId=${parentHandoff.id}&roomId=${parentHandoff.roomId}`}

@@ -1650,9 +1650,18 @@
   - `/inbox` approval center 的 active signal 在移动端不再保留泛化 `打开详情` CTA；卡片继续保留批准 / 解除阻塞 / 评审这些主动作，辅助导航则统一收回 `更多信息` 折叠里的 `Room / Run / PR / PR Detail`
   - `approval-center-mobile-details-*`、`mobile-approval-center-room-link-*`、`mobile-approval-center-run-link-*`、`mobile-approval-center-pr-link-*` 与 `mobile-approval-center-pr-detail-link-*` 锚点保持不变；减法后移动端 triage 不再额外堆一层 generic jump，而是只暴露真实目的地
   - headed approval center lifecycle 现已补上移动端断言，明确禁止 active signal 再把 `打开详情` 这种泛化 CTA 堆回 cards，同时验证 mobile details drawer 里的 room/run/pr 真导航仍然可用
+- 当前已收第二十刀:
+  - `/rooms/:roomId?tab=pr` 的 `RoomRelatedSignalsPanel` 不再继续渲染泛化 `打开收件箱` CTA；PR 面板尾部这块现在只保留和当前 PR 直接相关的信号摘要，不再把 room context 已持有的 inbox 入口又堆回信息区
+  - `room-workbench-signal-*` 锚点保持不变；减法后 room context 面板里的 `打开收件箱 / 打开交接箱` 仍是正式主入口，PR 面板只做信号回看，不再伪装成第二套导航
+  - headed room workbench topic context 已新增“PR panel signal summary 不再保留 generic open-inbox CTA”断言，避免后续又把已被 context 面板持有的 inbox 入口重新堆回 PR 面板尾部
+- 当前已收第二十一刀:
+  - `/mailbox` focused handoff detail card 不再保留泛化 `打开收件箱` CTA；卡片继续保留 `room / parent / response` 这些具体 lineage 导航与正式推进动作，不再额外堆一层抽象 jump
+  - `mailbox-room-link-*`、`mailbox-parent-link-*`、`mailbox-response-link-*` 与各类 `mailbox-action-*` 锚点保持不变；减法后 focused mailbox card 只暴露具体目的地，而不是再把 inbox 当成通用中转层
+  - headed agent mailbox handoff 已新增“focused mailbox handoff card 不再渲染 generic open-inbox CTA”断言，并继续验证 handoff 完成后 `/inbox?handoffId=...` 里的 mailbox ledger truth 仍可见
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
+  - `node --check scripts/headed-agent-mailbox-handoff.mjs`
   - `node --check scripts/headed-governance-escalation-queue.mjs`
   - `node --check scripts/headed-room-workbench-topic-context.mjs`
   - `node --check scripts/headed-governed-mailbox-route.mjs`
@@ -1666,6 +1675,7 @@
   - `pnpm build:web`
   - `pnpm test:headed-governed-mailbox-delegate-visibility`
   - `pnpm test:headed-approval-center-lifecycle`
+  - `pnpm test:headed-agent-mailbox-handoff`
   - `pnpm test:headed-room-workbench-topic-context`
   - `pnpm test:headed-planner-dispatch-replay`
   - `pnpm test:headed-governance-escalation-queue`

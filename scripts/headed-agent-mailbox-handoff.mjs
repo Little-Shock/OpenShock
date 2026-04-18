@@ -453,8 +453,11 @@ try {
   );
   await capture(page, "mailbox-completed");
 
-  await page.getByTestId(`mailbox-inbox-link-${handoffId}`).click();
-  await page.waitForURL(new RegExp(`/inbox\\?handoffId=${handoffId}`), { timeout: 30_000 });
+  assert(
+    (await page.getByTestId(`mailbox-inbox-link-${handoffId}`).count()) === 0,
+    "focused mailbox handoff card should not keep a generic open-inbox CTA once room and lineage links already own navigation"
+  );
+  await page.goto(`${webURL}/inbox?handoffId=${handoffId}`, { waitUntil: "load" });
   await page.getByTestId(`mailbox-card-${handoffId}`).waitFor({ state: "visible" });
   assert(
     (await readText(page, `mailbox-status-${handoffId}`)) === "已完成",

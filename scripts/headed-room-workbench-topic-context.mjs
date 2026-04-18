@@ -283,6 +283,10 @@ try {
     (await page.getByTestId("room-workbench-pr-panel").getByRole("link", { name: "话题上下文", exact: true }).count()) === 0,
     "room PR sheet should not keep a context-tab CTA once the room workbench tabs already own that navigation"
   );
+  assert(
+    (await page.getByTestId("room-workbench-pr-panel").getByRole("link", { name: "打开收件箱", exact: true }).count()) === 0,
+    "room PR sheet signal summary should not keep a generic open-inbox CTA once room context already owns the inbox entry"
+  );
   await page.getByTestId("room-rail-summary-delivery").click();
   await waitForVisible(page.locator('[data-testid="room-rail-pr-panel"]'), "room delivery rail panel did not render");
   assert(
