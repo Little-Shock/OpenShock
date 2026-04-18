@@ -1618,7 +1618,12 @@
   - `/inbox` 的 approval-center 桌面信号卡已删掉右侧重复 `打开详情` 链接；在 `Room / Run / PR / PR Detail` 已经提供主导航时，不再额外堆同一张卡的次级 deep-link
   - `approval-center-room-link-*`、`approval-center-run-link-*`、`approval-center-pr-link-*`、`approval-center-pr-detail-link-*`、`approval-center-action-*` 与移动端 `approval-center-open-context-mobile-*` 热路径保持不变；减法后桌面 triage 仍围同一份 signal truth 前滚
   - headed approval-center lifecycle 已新增“桌面 signal 不再渲染重复 `打开详情` 次级入口”断言，避免后续又把已由 Room/Run/PR 链接持有的导航重复堆回右栏
+- 当前已收第十二刀:
+  - `/mailbox` 的人工确认卡已删掉泛化 `打开处理入口` 动作；blocked / required 状态继续由 escalation queue、Inbox 和 handoff ledger 持有主导航，不再在右栏再堆一层重复入口
+  - `mailbox-governance-human-override`、`mailbox-governance-escalation-queue`、`mailbox-card-*` 与 handoff action 热路径保持不变；减法后 `/mailbox` 仍围同一份治理镜像前滚
+  - headed multi-agent governance 已新增“mailbox human-override 不再渲染重复 open-link”断言，避免后续又把第二层人工确认入口堆回右栏
 - 最新证据:
+  - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
   - `node --check scripts/headed-governance-escalation-queue.mjs`
   - `node --check scripts/headed-cross-room-governance-orchestration.mjs`

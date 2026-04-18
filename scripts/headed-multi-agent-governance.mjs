@@ -361,6 +361,12 @@ try {
     (await readText(page, "mailbox-governance-human-override")) === "需要处理",
     "mailbox governance surface should expose the explicit human override gate"
   );
+  const mailboxHumanOverrideText =
+    (await page.getByTestId("mailbox-governance-human-override").locator("..").textContent())?.trim() ?? "";
+  assert(
+    !mailboxHumanOverrideText.includes("打开处理入口"),
+    "mailbox human-override card should not render a second generic open-link once escalation queue and inbox already hold the actionable navigation"
+  );
   await page.getByTestId("mailbox-governance-step-review").waitFor({ state: "visible" });
   await page.getByTestId("mailbox-governance-step-test").waitFor({ state: "visible" });
   await capture(page, "mailbox-governance-baseline");

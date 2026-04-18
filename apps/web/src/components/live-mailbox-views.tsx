@@ -800,14 +800,6 @@ export function LiveMailboxPageContent() {
                   {governanceStatusLabel(governance.humanOverride.status)}
                 </p>
                 <p className="mt-3 text-sm leading-6">{governance.humanOverride.summary}</p>
-                {governance.humanOverride.href ? (
-                  <Link
-                    href={governance.humanOverride.href}
-                    className="mt-4 inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                  >
-                    打开处理入口
-                  </Link>
-                ) : null}
               </Panel>
 
               <Panel tone={governanceTone(governance.responseAggregation.status)}>
