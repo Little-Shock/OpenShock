@@ -1646,6 +1646,10 @@
   - `/inbox` approval center 的 recent ledger 现在只保留历史状态摘要；移动端和桌面端 recent card 上泛化的 `打开上下文` CTA 已删除，避免把已完成/最近事项继续伪装成待处理动作
   - `approval-center-recent-*`、`approval-center-mobile-recent-*`、`approval-center-recent-count` 与所有 open signal 的 `Room / Run / PR / PR Detail` 主导航保持不变；减法后 active triage 仍有导航，recent ledger 只做回看
   - headed approval center lifecycle 已新增“recent ledger 不再渲染 generic open-context CTA”断言，避免后续又把信息历史区堆成第二个 action queue
+- 当前已收第十九刀:
+  - `/inbox` approval center 的 active signal 在移动端不再保留泛化 `打开详情` CTA；卡片继续保留批准 / 解除阻塞 / 评审这些主动作，辅助导航则统一收回 `更多信息` 折叠里的 `Room / Run / PR / PR Detail`
+  - `approval-center-mobile-details-*`、`mobile-approval-center-room-link-*`、`mobile-approval-center-run-link-*`、`mobile-approval-center-pr-link-*` 与 `mobile-approval-center-pr-detail-link-*` 锚点保持不变；减法后移动端 triage 不再额外堆一层 generic jump，而是只暴露真实目的地
+  - headed approval center lifecycle 现已补上移动端断言，明确禁止 active signal 再把 `打开详情` 这种泛化 CTA 堆回 cards，同时验证 mobile details drawer 里的 room/run/pr 真导航仍然可用
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`

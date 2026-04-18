@@ -1353,7 +1353,7 @@
   4. 确认房间主面仍保持 chat-first，不把 `Topic / Run / PR / Context` 再抬回一级 IA。
   5. 输出 headed walkthrough 与前后对照截图。
 - 预期结果: 主要路径必须更短、更顺，且不以加更多 panel、helper copy、summary 卡片为代价。
-- 业务结论: 2026 年 4 月 18 日继续收第十八刀：在前一轮 Inbox / Mailbox 合并面已删掉 focused handoff card 上自引用 `打开收件箱` 的基础上，approval center recent ledger 里的 generic `打开上下文` 也继续被收掉；recent card 现在只保留状态、房间、时间和摘要，不再把已经进入历史区的事项继续伪装成待处理动作，而 open signal 卡仍保留 `Room / Run / PR / PR Detail` 主导航。当前 `node --check scripts/headed-approval-center-lifecycle.mjs`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`、`pnpm typecheck:web`、`pnpm build:web` 与 `pnpm test:headed-approval-center-lifecycle` 已通过，因此这条 subtractive sweep 用例继续保持 `Pass`；下一轮优先继续压 room / mailbox / inbox 里仍重复的次级 deep-link、owner/status/action truth。
+- 业务结论: 2026 年 4 月 18 日继续收第十九刀：在前一轮 approval center recent ledger 已删掉历史区 generic `打开上下文` 的基础上，active signal 移动端里残留的 generic `打开详情` 也继续被收掉；移动端 triage 卡现在只保留批准 / 解除阻塞 / 评审这些主动作，辅助导航统一收回 `更多信息` 折叠里的 `Room / Run / PR / PR Detail` 真链接，不再单独堆一层泛化跳转。当前 `node --check scripts/headed-approval-center-lifecycle.mjs`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`、`pnpm typecheck:web`、`pnpm build:web` 与 `pnpm test:headed-approval-center-lifecycle` 已通过，因此这条 subtractive sweep 用例继续保持 `Pass`；下一轮优先继续压 room / mailbox / inbox 里仍重复的次级 deep-link、owner/status/action truth。
 
 ## TC-097 Explicit Provider Thread State Persistence
 

@@ -306,6 +306,35 @@ try {
   );
   await capture(page, screenshotsDir, "review-signal-backlinks");
 
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.getByTestId("approval-center-mobile-triage").waitFor({ state: "visible" });
+  await reviewSignal.waitFor({ state: "visible" });
+  assert(
+    (await reviewSignal.locator("a").evaluateAll((nodes) =>
+      nodes.filter((node) => {
+        const element = /** @type {HTMLElement} */ (node);
+        return element.textContent?.trim() === "打开详情" && element.offsetParent !== null;
+      }).length
+    )) === 0,
+    "approval center mobile signal should not keep a generic open-detail CTA when the detail drawer already owns real room/run/pr navigation"
+  );
+  await page.getByTestId("approval-center-mobile-details-inbox-review-copy").locator("summary").click();
+  assert(
+    (await page.getByTestId("mobile-approval-center-room-link-inbox-review-copy").getAttribute("href")) === "/rooms/room-inbox?tab=pr",
+    "mobile review signal should keep a room detail link after the generic CTA is removed"
+  );
+  assert(
+    (await page.getByTestId("mobile-approval-center-run-link-inbox-review-copy").getAttribute("href")) === "/rooms/room-inbox?tab=run",
+    "mobile review signal should keep a run detail link after the generic CTA is removed"
+  );
+  assert(
+    (await page.getByTestId("mobile-approval-center-pr-link-inbox-review-copy").getAttribute("href"))?.endsWith("/pull/22"),
+    "mobile review signal should keep a PR detail link after the generic CTA is removed"
+  );
+  await capture(page, screenshotsDir, "mobile-review-signal-backlinks");
+
+  await page.setViewportSize({ width: 1440, height: 1280 });
+
   await page.getByTestId("approval-center-filter-approval").click();
   await page.getByTestId("approval-center-action-approved-inbox-approval-runtime").click();
   await waitForText(page, "approval-center-open-count", "2 条待处理");

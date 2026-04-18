@@ -1264,14 +1264,7 @@ export function StitchInboxView() {
                             )
                           )}
                         </div>
-                        <div className="mt-4 space-y-3 md:hidden">
-                          <Link
-                            data-testid={`approval-center-open-context-mobile-${item.id}`}
-                            href={item.href}
-                            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                          >
-                            打开详情
-                          </Link>
+                        <div className="mt-4 md:hidden">
                           {guard || detailLinks.length > 0 ? (
                             <details
                               data-testid={`approval-center-mobile-details-${item.id}`}
