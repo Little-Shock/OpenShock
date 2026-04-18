@@ -1638,19 +1638,25 @@
   - room delivery rail 在用户已位于 PR tab 时，不再渲染自引用 `房间 PR` CTA；该入口只在其他 tab 里作为跳转保留，避免在同一屏里出现“自己跳自己”的无效导航
   - `room-rail-pr-panel`、`room-workbench-pr-panel`、`room-workbench-pr-primary-action` 与 `room-workbench-pr-detail-link` 锚点保持不变；减法后 PR tab 里仍保留 PR detail / remote PR 等真正专属导航
   - headed room workbench regression 已新增“PR tab 下的 delivery rail 不再渲染 self-referential room-pr CTA”断言，避免后续又把自引用导航堆回同一屏
+- 当前已收第十七刀:
+  - Inbox / Mailbox 合并面里的 focused handoff card 在已经带 `当前查看` 时，不再继续渲染自引用 `打开收件箱` CTA；focus link 只在非当前卡上保留，用来跳到对应 handoff
+  - `mailbox-card-*`、`mailbox-focus-link-*`、`mailbox-room-link-*`、`mailbox-parent-link-*` 与 `mailbox-response-link-*` 锚点保持不变；减法后 focused card 仍保留讨论 / 运行 / 事项 / 主交接 / 回复这些真正非自引用导航
+  - headed governed mailbox visibility regression 已新增“focused mailbox card 不再渲染 self-referential open-inbox CTA”断言，避免后续又把同一页内的 focus 自跳转堆回当前卡
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
   - `node --check scripts/headed-governance-escalation-queue.mjs`
   - `node --check scripts/headed-room-workbench-topic-context.mjs`
+  - `node --check scripts/headed-governed-mailbox-route.mjs`
   - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
   - `node --check scripts/headed-planner-dispatch-replay.mjs`
   - `pnpm typecheck:web`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-chat-room-views.tsx'`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-orchestration-views.tsx'`
-  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`
   - `pnpm build:web`
+  - `pnpm test:headed-governed-mailbox-delegate-visibility`
   - `pnpm test:headed-room-workbench-topic-context`
   - `pnpm test:headed-planner-dispatch-replay`
   - `pnpm test:headed-governance-escalation-queue`

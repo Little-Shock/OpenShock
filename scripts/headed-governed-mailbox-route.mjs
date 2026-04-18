@@ -1758,6 +1758,10 @@ try {
 
             await page.goto(responseURL.toString(), { waitUntil: "load" });
             await page.getByTestId(`mailbox-card-${responseHandoffID}`).waitFor({ state: "visible" });
+            assert(
+              (await page.getByTestId(`mailbox-focus-link-${responseHandoffID}`).count()) === 0,
+              "focused mailbox card should not keep a self-referential open-inbox CTA"
+            );
             const responseKindLabel = await readText(page, `mailbox-kind-${responseHandoffID}`);
             assert(
               responseKindLabel === mailboxKindLabel("delivery-reply"),

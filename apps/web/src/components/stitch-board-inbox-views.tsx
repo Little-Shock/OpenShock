@@ -1910,13 +1910,15 @@ export function StitchInboxView() {
                               ) : null}
 
                               <div className="mt-4 flex flex-wrap gap-2">
-                                <Link
-                                  data-testid={`mailbox-focus-link-${handoff.id}`}
-                                  href={`/inbox?handoffId=${handoff.id}&roomId=${handoff.roomId}`}
-                                  className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px]"
-                                >
-                                  打开收件箱
-                                </Link>
+                                {highlightedHandoffId === handoff.id ? null : (
+                                  <Link
+                                    data-testid={`mailbox-focus-link-${handoff.id}`}
+                                    href={`/inbox?handoffId=${handoff.id}&roomId=${handoff.roomId}`}
+                                    className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px]"
+                                  >
+                                    打开收件箱
+                                  </Link>
+                                )}
                                 <Link
                                   data-testid={`mailbox-room-link-${handoff.id}`}
                                   href={`/rooms/${handoff.roomId}?tab=context`}
