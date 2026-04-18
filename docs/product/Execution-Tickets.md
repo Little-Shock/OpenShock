@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.32
+**版本:** 1.33
 **更新日期:** 2026 年 4 月 18 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -1674,12 +1674,17 @@
   - `/topics/:topicId` overview 不再继续渲染泛化 `回到讨论间` CTA；topic route 已经通过 `打开讨论页话题` 持有回到 room topic workbench 的正式 backlink，不再把 room return path 在同一块 overview 里重复堆一层
   - `topic-route-overview` 与 `topic-open-room-workbench` 锚点保持不变；减法后 standalone topic route 仍继续保留 guidance、run control、reload continuity 和 room-topic backlink，不再把 overview 做成第二条导航条
   - headed topic-route resume lifecycle 已新增“topic-route-overview 不再包含 `回到讨论间` link”的断言，避免后续又把 room-topic backlink 已持有的返回路径重新堆回 topic overview
+- 当前已收第二十六刀:
+  - `/settings` 的“来源信号”面板不再继续渲染泛化 `打开收件箱` CTA；settings 本身已经挂在统一 `OpenShockShell` 内，Inbox 主入口继续由全局壳层导航持有，不再把同一条跳转在通知来源摘要上重复堆一层
+  - `notification-source-*` 锚点保持不变；减法后 settings 里的 routed signal 仍继续保留 kind / title / summary / time 这些通知真相，而账号恢复入口继续由 `打开账号中心` 持有，不再把 source panel 伪装成第二个 inbox action strip
+  - headed notification preference delivery 已新增“settings 页不再包含 generic `打开收件箱` link”的断言，并同时确认页面仍保留至少一条 `打开账号中心` 恢复路径，避免后续又把全局 Inbox 导航重新堆回设置摘要区
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
   - `node --check scripts/headed-agent-mailbox-handoff.mjs`
   - `node --check scripts/headed-governance-escalation-queue.mjs`
   - `node --check scripts/headed-room-workbench-topic-context.mjs`
+  - `node --check scripts/headed-notification-preference-delivery.mjs`
   - `node --check scripts/headed-governed-mailbox-route.mjs`
   - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
   - `node --check scripts/headed-planner-dispatch-replay.mjs`

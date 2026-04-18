@@ -2479,12 +2479,6 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
             </div>
             <div className="flex flex-wrap gap-3">
               <Link
-                href="/inbox"
-                className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
-              >
-                打开收件箱
-              </Link>
-              <Link
                 href="/access"
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
               >

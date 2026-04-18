@@ -258,6 +258,14 @@ try {
   await waitForContainsText(page, "notification-subscribers-count", "0");
   await waitForContainsText(page, "notification-browser-permission", "已授权");
   await capture(page, screenshotsDir, "initial-notification-settings");
+  assert(
+    (await page.getByRole("link", { name: "打开收件箱", exact: true }).count()) === 0,
+    "settings source signals should not repeat a generic open inbox CTA"
+  );
+  assert(
+    (await page.getByRole("link", { name: "打开账号中心", exact: true }).count()) > 0,
+    "settings should keep at least one access center recovery path"
+  );
 
   await page.getByTestId("notification-browser-policy-all").click();
   await page.getByTestId("notification-email-policy-all").click();
