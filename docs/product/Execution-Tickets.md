@@ -1630,6 +1630,10 @@
   - room PR sheet 已把重复 inbox / mailbox 导航统一做减法：卡头那组 `收件箱 / 交接箱` 快捷入口已删掉，signal 卡内逐条重复的 `收件箱详情 / 回到讨论间` 二级按钮也已一并收掉；PR sheet 只保留 `房间 PR / PR 详情` 主导航，room-level inbox / mailbox 入口继续由 context / 待处理主面持有
   - `room-workbench-pr-panel`、`room-workbench-pr-primary-action`、`room-workbench-pr-detail-link` 与 `room-workbench-signal-*` 锚点保持不变；减法后 PR sheet 仍保留 review / merge 主动作、PR 主导航和 signal 摘要
   - headed room workbench regression 已新增“PR sheet 不再渲染 duplicate inbox / mailbox CTA，也不再渲染 per-signal inbox-detail / return-to-room CTA”断言，避免后续又把同一条 room/inbox/navigation truth 重新堆回 PR sheet
+- 当前已收第十五刀:
+  - room PR panel 已继续只保留 PR 专属导航；泛化的 `收件箱评审` 与 `话题上下文` CTA 已删掉，Inbox 入口继续由 shell / room context 持有，context tab 切换继续由 room workbench 顶部 tabs 持有
+  - `room-workbench-pr-panel`、`room-workbench-pr-primary-action`、`room-pr-detail-link` 与 PR review summary 锚点保持不变；减法后 PR panel 仍可直接完成 review / merge、打开 PR detail 和远端 PR
+  - headed room workbench regression 已新增“PR panel 不再渲染 generic inbox-review / context-tab CTA”断言，避免后续又把 shell / tabs 已持有的导航重新堆回 PR panel
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`

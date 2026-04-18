@@ -1400,7 +1400,6 @@ function RoomTopicWorkbenchPanel({
 }
 
 function RoomPullRequestWorkbenchPanel({
-  roomId,
   pullRequest,
   actionLabel,
   actionDisabled,
@@ -1410,7 +1409,6 @@ function RoomPullRequestWorkbenchPanel({
   prError,
   relatedSignals,
 }: {
-  roomId: string;
   pullRequest?: PullRequest;
   actionLabel: string;
   actionDisabled: boolean;
@@ -1466,12 +1464,6 @@ function RoomPullRequestWorkbenchPanel({
               PR 详情
             </Link>
           ) : null}
-          <Link
-            href="/inbox"
-            className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-          >
-            收件箱评审
-          </Link>
           {pullRequest?.url ? (
             <Link
               href={pullRequest.url}
@@ -1482,12 +1474,6 @@ function RoomPullRequestWorkbenchPanel({
               打开远端 PR
             </Link>
           ) : null}
-          <Link
-            href={buildRoomWorkbenchHref(roomId, "context")}
-            className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-          >
-            话题上下文
-          </Link>
         </div>
       </Panel>
 
@@ -3776,7 +3762,6 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                     </div>
                   ) : activeWorkbenchTab === "pr" ? (
                     <RoomPullRequestWorkbenchPanel
-                      roomId={room.id}
                       pullRequest={pullRequest}
                       actionLabel={pullRequestActionLabel}
                       actionDisabled={pullRequestActionDisabled}
