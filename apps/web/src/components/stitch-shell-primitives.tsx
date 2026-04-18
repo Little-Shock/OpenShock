@@ -530,6 +530,7 @@ export function StitchSidebar({
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <Link
             href="/inbox"
+            data-testid="sidebar-inbox-link"
             className={cn(
               "flex min-h-[44px] items-center justify-between gap-2 rounded-[14px] border-2 px-2.5 py-2 text-sm shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-yellow)]",
               active === "inbox" ? "border-[var(--shock-ink)] bg-[var(--shock-pink)] text-white" : "bg-white"

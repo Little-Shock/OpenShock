@@ -1,7 +1,7 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.29
-**更新日期:** 2026 年 4 月 16 日
+**版本:** 1.30
+**更新日期:** 2026 年 4 月 18 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -1662,6 +1662,10 @@
   - `/rooms/:roomId?tab=context` 的 pending panel 不再保留泛化 `打开交接箱` CTA；当当前房间没有待跟进交接时，这块只明确显示“当前没有待跟进交接”，不再把 mailbox 当抽象兜底跳转
   - `room-workbench-open-inbox` 与 `room-workbench-handoff-*` 锚点保持不变；减法后 inbox 仍是 room 里的主 triage 入口，而 handoff 恢复继续由具体 card 深链持有，不再额外堆一层 generic mailbox jump
   - headed room workbench topic context 已新增“context panel 不再渲染 generic open-mailbox CTA”断言，并显式验证当前 fixture 会把“没有待跟进交接”写回 panel，避免后续又把空态信息区重新堆成导航区
+- 当前已收第二十三刀:
+  - `/rooms/:roomId?tab=context` 的 pending panel 不再在桌面端继续渲染泛化 `打开收件箱` CTA；桌面 inbox 主入口回到 shell sidebar，避免 room 信息区和全局壳同时重复暴露同一条导航
+  - `room-workbench-open-inbox` 仍保留为移动端逃生路径，因为 `StitchSidebar` 在 `md` 以下隐藏；`sidebar-inbox-link` 成为桌面 headed regression 的正式 inbox 跳转锚点
+  - headed room workbench topic context 已同时新增“桌面端 visible `room-workbench-open-inbox` 数量为 0，并通过 `sidebar-inbox-link` 打开 Inbox”、“`768px` 断点处 local CTA 已退出且 sidebar inbox link 已接管”以及“移动端必须显示 `room-workbench-open-inbox`，且 sidebar inbox link 不可见、点击后仍能回到同一条 room context state”的断言，避免后续把桌面重复 CTA 堆回 context panel，或误删移动端唯一逃生路径
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
@@ -1673,6 +1677,7 @@
   - `node --check scripts/headed-planner-dispatch-replay.mjs`
   - `pnpm typecheck:web`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-chat-room-views.tsx'`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-shell-primitives.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-orchestration-views.tsx'`

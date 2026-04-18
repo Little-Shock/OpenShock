@@ -216,6 +216,15 @@ async function waitForVisible(locator, message) {
   await waitFor(async () => (await locator.count()) > 0 && (await locator.first().isVisible()), message);
 }
 
+async function visibleCount(locator) {
+  return locator.evaluateAll((nodes) =>
+    nodes.filter((node) => {
+      const element = /** @type {HTMLElement} */ (node);
+      return element.offsetParent !== null;
+    }).length
+  );
+}
+
 async function waitForUrlIncludes(page, fragment) {
   await waitFor(() => page.url().includes(fragment), `expected URL to include ${fragment}, got ${page.url()}`);
 }
@@ -310,10 +319,14 @@ try {
     (await page.getByText("当前没有待跟进交接", { exact: true }).count()) > 0,
     "room context should make mailbox absence explicit instead of keeping a generic open-mailbox CTA"
   );
+  assert(
+    (await visibleCount(page.getByTestId("room-workbench-open-inbox"))) === 0,
+    "room context pending panel should not keep a desktop open-inbox CTA once the shell sidebar already owns inbox navigation"
+  );
   await capture(page, "room-context");
   results.push("- Context sheet 继续支持 query-state reload，并保留 issue / board / inbox back-links。");
 
-  await page.locator('[data-testid="room-workbench-open-inbox"]').first().click();
+  await page.getByTestId("sidebar-inbox-link").click();
   await waitForUrlIncludes(page, "/inbox");
   await waitForVisible(page.locator('[data-testid="approval-center-open-count"]'), "inbox did not open from room context link");
   await capture(page, "inbox-backlink");
@@ -321,6 +334,43 @@ try {
   await waitForUrlIncludes(page, "?tab=context");
   await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "room context did not restore after inbox backlink");
   results.push("- Inbox back-link 仍能把人带回同一条 room context state。");
+
+  await page.setViewportSize({ width: 768, height: 960 });
+  await page.goto(`${webURL}/rooms/room-runtime?tab=context`, { waitUntil: "domcontentloaded" });
+  await waitForUrlIncludes(page, "?tab=context");
+  await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "md breakpoint context workbench panel did not render");
+  assert(
+    (await visibleCount(page.getByTestId("room-workbench-open-inbox"))) === 0,
+    "md breakpoint room context should already retire the local open-inbox CTA once the desktop shell sidebar is available"
+  );
+  assert(
+    (await visibleCount(page.getByTestId("sidebar-inbox-link"))) === 1,
+    "md breakpoint room context should surface the desktop sidebar inbox link"
+  );
+  await capture(page, "room-context-md");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${webURL}/rooms/room-runtime?tab=context`, { waitUntil: "domcontentloaded" });
+  await waitForUrlIncludes(page, "?tab=context");
+  await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "mobile context workbench panel did not render");
+  assert(
+    (await visibleCount(page.getByTestId("room-workbench-open-inbox"))) === 1,
+    "mobile room context should keep exactly one visible open-inbox CTA when the shell sidebar is hidden"
+  );
+  assert(
+    (await visibleCount(page.getByTestId("sidebar-inbox-link"))) === 0,
+    "mobile room context should not rely on the desktop sidebar inbox link"
+  );
+  await capture(page, "room-context-mobile");
+
+  await page.getByTestId("room-workbench-open-inbox").click();
+  await waitForUrlIncludes(page, "/inbox");
+  await waitForVisible(page.locator('[data-testid="approval-center-open-count"]'), "mobile inbox did not open from room context CTA");
+  await capture(page, "inbox-mobile-backlink");
+  await page.goBack({ waitUntil: "domcontentloaded" });
+  await waitForUrlIncludes(page, "?tab=context");
+  await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "mobile room context did not restore after inbox backlink");
+  results.push("- 移动端在 sidebar 隐藏时仍保留 room context 的 inbox 逃生入口，并能从 Inbox 返回同一条 context state。");
 
   const report = [
     "# 2026-04-11 Room Simplified Sheet / Topic Context Report",

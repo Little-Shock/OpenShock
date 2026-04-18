@@ -1221,7 +1221,7 @@ function RoomContextPanels({
             <Link
               href="/inbox"
               data-testid="room-workbench-open-inbox"
-              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
+              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] md:hidden"
             >
               打开收件箱
             </Link>
