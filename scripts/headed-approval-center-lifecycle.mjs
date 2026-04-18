@@ -333,6 +333,20 @@ try {
   await waitForText(page, "approval-center-blocked-count", "0 条阻塞");
   await waitForText(page, "approval-center-recent-count", "4 条最近");
   await waitForRecentTitle(page, "PR #22 已合并");
+  assert(
+    (await page
+      .locator('[data-testid^="approval-center-recent-"]')
+      .evaluateAll((nodes) =>
+        nodes.reduce((count, node) => {
+          const visibleLinks = Array.from(node.querySelectorAll("a")).filter((link) => {
+            const element = /** @type {HTMLElement} */ (link);
+            return element.textContent?.trim() === "打开上下文" && element.offsetParent !== null;
+          });
+          return count + visibleLinks.length;
+        }, 0)
+      )) === 0,
+    "approval center recent ledger should not keep generic open-context CTA once items are already informational history"
+  );
   const stateAfterReview = await readState(page, services.serverURL);
   const inboxPullRequest = stateAfterReview.pullRequests.find((item) => item.id === "pr-inbox-22");
   const inboxIssue = stateAfterReview.issues.find((item) => item.key === "OPS-19");

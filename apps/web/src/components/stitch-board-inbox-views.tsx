@@ -1387,14 +1387,6 @@ export function StitchInboxView() {
                           </div>
                           <h3 className="mt-2 font-display text-[18px] font-bold">{item.title}</h3>
                           <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">{item.summary}</p>
-                          <div className="mt-3">
-                            <Link
-                              href={item.href}
-                              className="inline-flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                            >
-                              打开上下文
-                            </Link>
-                          </div>
                         </article>
                       ))
                     )}
@@ -2124,14 +2116,6 @@ export function StitchInboxView() {
                         </div>
                         <h3 className="mt-2 font-display text-[18px] font-bold">{item.title}</h3>
                         <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">{item.summary}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Link
-                            href={item.href}
-                            className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px]"
-                          >
-                            打开上下文
-                          </Link>
-                        </div>
                       </article>
                     ))
                   )}

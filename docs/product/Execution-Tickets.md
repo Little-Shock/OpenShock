@@ -1642,6 +1642,10 @@
   - Inbox / Mailbox 合并面里的 focused handoff card 在已经带 `当前查看` 时，不再继续渲染自引用 `打开收件箱` CTA；focus link 只在非当前卡上保留，用来跳到对应 handoff
   - `mailbox-card-*`、`mailbox-focus-link-*`、`mailbox-room-link-*`、`mailbox-parent-link-*` 与 `mailbox-response-link-*` 锚点保持不变；减法后 focused card 仍保留讨论 / 运行 / 事项 / 主交接 / 回复这些真正非自引用导航
   - headed governed mailbox visibility regression 已新增“focused mailbox card 不再渲染 self-referential open-inbox CTA”断言，避免后续又把同一页内的 focus 自跳转堆回当前卡
+- 当前已收第十八刀:
+  - `/inbox` approval center 的 recent ledger 现在只保留历史状态摘要；移动端和桌面端 recent card 上泛化的 `打开上下文` CTA 已删除，避免把已完成/最近事项继续伪装成待处理动作
+  - `approval-center-recent-*`、`approval-center-mobile-recent-*`、`approval-center-recent-count` 与所有 open signal 的 `Room / Run / PR / PR Detail` 主导航保持不变；减法后 active triage 仍有导航，recent ledger 只做回看
+  - headed approval center lifecycle 已新增“recent ledger 不再渲染 generic open-context CTA”断言，避免后续又把信息历史区堆成第二个 action queue
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
@@ -1657,6 +1661,7 @@
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-orchestration-views.tsx'`
   - `pnpm build:web`
   - `pnpm test:headed-governed-mailbox-delegate-visibility`
+  - `pnpm test:headed-approval-center-lifecycle`
   - `pnpm test:headed-room-workbench-topic-context`
   - `pnpm test:headed-planner-dispatch-replay`
   - `pnpm test:headed-governance-escalation-queue`
