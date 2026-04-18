@@ -1353,7 +1353,7 @@
   4. 确认房间主面仍保持 chat-first，不把 `Topic / Run / PR / Context` 再抬回一级 IA。
   5. 输出 headed walkthrough 与前后对照截图。
 - 预期结果: 主要路径必须更短、更顺，且不以加更多 panel、helper copy、summary 卡片为代价。
-- 业务结论: 2026 年 4 月 18 日继续收第十三刀：在前一轮 room `/context`、`/mailbox` rollup、`/inbox` governed compose、`/agents` governance mirror 与 `/mailbox` human-override 减法的基础上，`/mailbox` 的 governance escalation queue 单卡也已删掉重复 `nextStep` 和泛化 `打开详情` 入口；active / blocked entry 现在只保留 label、chips、status 与 summary，把下一步说明与导航统一收回 handoff ledger、Inbox 和 escalation graph 主路径。当前 `node --check scripts/headed-governance-escalation-queue.mjs`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx'`、`pnpm typecheck:web`、`pnpm build:web` 与 `pnpm test:headed-governance-escalation-queue` 已通过，因此这条 subtractive sweep 用例继续保持 `Pass`；下一轮优先继续压 room / mailbox / inbox 里仍重复的次级 deep-link、owner/status/action truth。
+- 业务结论: 2026 年 4 月 18 日继续收第十四刀：在前一轮 `/mailbox` governance escalation queue 减掉重复 `nextStep / 打开详情` 的基础上，room PR sheet 里的 duplicate inbox / mailbox 导航也继续被收掉；卡头那组 `收件箱 / 交接箱` 快捷入口已删除，signal 卡里逐条重复的 `收件箱详情 / 回到讨论间` 二级按钮也已一并删除，PR sheet 只保留 `房间 PR / PR 详情` 主导航与 signal 摘要，不再把同一条 room/inbox/navigation truth 反复堆回同一屏。当前 `node --check scripts/headed-room-workbench-topic-context.mjs`、`bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-chat-room-views.tsx'`、`pnpm typecheck:web`、`pnpm build:web` 与 `pnpm test:headed-room-workbench-topic-context` 已通过，因此这条 subtractive sweep 用例继续保持 `Pass`；下一轮优先继续压 room / mailbox / inbox 里仍重复的次级 deep-link、owner/status/action truth。
 
 ## TC-097 Explicit Provider Thread State Persistence
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { accessSync, constants as fsConstants, createWriteStream } from "node:fs";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
@@ -258,6 +259,22 @@ try {
   await waitForUrlIncludes(page, "?tab=pr");
   await waitForVisible(page.locator('[data-testid="room-workbench-pr-panel"]'), "PR workbench panel did not render");
   await waitForVisible(page.locator('[data-testid="room-workbench-pr-primary-action"]'), "PR primary action did not render");
+  assert(
+    (await page.getByTestId("room-workbench-pr-panel").getByRole("link", { name: "收件箱", exact: true }).count()) === 0,
+    "room PR sheet should not keep a duplicate inbox CTA once room signal/context surfaces already own that navigation"
+  );
+  assert(
+    (await page.getByTestId("room-workbench-pr-panel").getByRole("link", { name: "交接箱", exact: true }).count()) === 0,
+    "room PR sheet should not keep a duplicate mailbox CTA once room context surfaces already own that navigation"
+  );
+  assert(
+    (await page.getByTestId("room-workbench-pr-panel").getByText("收件箱详情", { exact: true }).count()) === 0,
+    "room PR sheet should not keep per-signal inbox-detail CTA once the room-level inbox entry already owns navigation"
+  );
+  assert(
+    (await page.getByTestId("room-workbench-pr-panel").getByText("回到讨论间", { exact: true }).count()) === 0,
+    "room PR sheet should not keep per-signal return-to-room CTA when the user is already inside the same room workbench"
+  );
   await capture(page, "room-pr");
   results.push("- PR sheet 继续保留在 room 语境里，可直接看到 review / merge 入口，而不是强制跳走。");
 

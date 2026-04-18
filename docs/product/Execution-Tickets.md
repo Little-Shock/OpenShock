@@ -1626,17 +1626,24 @@
   - `/mailbox` 的 governance escalation queue 单卡已删掉重复 `nextStep` 和泛化 `打开详情` 入口；active / blocked entry 现在只保留 label、chips、status 与 summary，不再把 handoff ledger、Inbox 已持有的下一步说明和导航再堆一层
   - `mailbox-governance-escalation-entry-*`、`mailbox-governance-escalation-status-*`、`mailbox-governance-escalation-chip-*` 与 escalation queue 主体锚点保持不变；减法后 `/mailbox` 仍能围同一份治理镜像继续 `requested -> blocked -> cleared` 前滚
   - headed escalation queue 已新增“mailbox escalation entry 不再渲染 standalone next-step helper copy，也不再渲染 generic `打开详情` CTA”断言，避免后续又把 queue、Inbox 与 handoff ledger 已持有的导航/动作真相重新堆回列表卡
+- 当前已收第十四刀:
+  - room PR sheet 已把重复 inbox / mailbox 导航统一做减法：卡头那组 `收件箱 / 交接箱` 快捷入口已删掉，signal 卡内逐条重复的 `收件箱详情 / 回到讨论间` 二级按钮也已一并收掉；PR sheet 只保留 `房间 PR / PR 详情` 主导航，room-level inbox / mailbox 入口继续由 context / 待处理主面持有
+  - `room-workbench-pr-panel`、`room-workbench-pr-primary-action`、`room-workbench-pr-detail-link` 与 `room-workbench-signal-*` 锚点保持不变；减法后 PR sheet 仍保留 review / merge 主动作、PR 主导航和 signal 摘要
+  - headed room workbench regression 已新增“PR sheet 不再渲染 duplicate inbox / mailbox CTA，也不再渲染 per-signal inbox-detail / return-to-room CTA”断言，避免后续又把同一条 room/inbox/navigation truth 重新堆回 PR sheet
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
   - `node --check scripts/headed-governance-escalation-queue.mjs`
+  - `node --check scripts/headed-room-workbench-topic-context.mjs`
   - `node --check scripts/headed-cross-room-governance-orchestration.mjs`
   - `node --check scripts/headed-planner-dispatch-replay.mjs`
   - `pnpm typecheck:web`
+  - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-chat-room-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-mailbox-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/live-orchestration-views.tsx'`
   - `bash -lc 'cd apps/web && pnpm exec eslint src/components/stitch-board-inbox-views.tsx'`
   - `pnpm build:web`
+  - `pnpm test:headed-room-workbench-topic-context`
   - `pnpm test:headed-planner-dispatch-replay`
   - `pnpm test:headed-governance-escalation-queue`
   - `pnpm test:headed-governance-escalation-rollup`

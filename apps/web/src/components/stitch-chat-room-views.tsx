@@ -1051,11 +1051,9 @@ function handoffStatusTone(status: AgentHandoff["status"]) {
 }
 
 function RoomRelatedSignalsPanel({
-  roomId,
   relatedSignals,
   recentSignals,
 }: {
-  roomId: string;
   relatedSignals: ApprovalCenterItem[];
   recentSignals: ApprovalCenterItem[];
 }) {
@@ -1093,20 +1091,6 @@ function RoomRelatedSignalsPanel({
             </div>
             <p className="mt-2 font-display text-[18px] font-bold leading-6">{item.title}</p>
             <p className="mt-2 text-[13px] leading-6 opacity-85">{item.summary}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Link
-                href="/inbox"
-                className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--shock-ink)]"
-              >
-                收件箱详情
-              </Link>
-              <Link
-                href={buildRoomWorkbenchHref(roomId, item.kind === "review" ? "pr" : "context")}
-                className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-              >
-                回到讨论间
-              </Link>
-            </div>
           </div>
         ))}
         {relatedSignals.length === 0 && recentSignals.length === 0 ? (
@@ -1579,7 +1563,7 @@ function RoomPullRequestWorkbenchPanel({
         </div>
       </Panel>
 
-      <RoomRelatedSignalsPanel roomId={roomId} relatedSignals={relatedSignals} recentSignals={[]} />
+      <RoomRelatedSignalsPanel relatedSignals={relatedSignals} recentSignals={[]} />
     </div>
   );
 }
@@ -1765,20 +1749,6 @@ function RoomWorkbenchRailSummary({
                   PR 详情
                 </Link>
               ) : null}
-              <Link
-                href="/inbox"
-                data-testid="room-workbench-open-inbox"
-                className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-              >
-                收件箱
-              </Link>
-              <Link
-                href={`/mailbox?roomId=${room.id}`}
-                data-testid="room-workbench-open-mailbox"
-                className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-              >
-                交接箱
-              </Link>
             </div>
           </div>
         </Panel>
