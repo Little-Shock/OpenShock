@@ -249,6 +249,14 @@ try {
   await page.goto(`${webURL}/rooms/room-runtime?tab=topic`, { waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=topic");
   await waitForVisible(page.locator('[data-testid="room-workbench-topic-panel"]'), "topic workbench panel did not render");
+  assert(
+    (await page.getByTestId("room-workbench-topic-panel").getByRole("link", { name: "回到聊天", exact: true }).count()) === 0,
+    "room topic sheet should not keep a generic return-to-chat CTA once the room shell already owns the chat-first return path"
+  );
+  assert(
+    (await page.getByTestId("room-workbench-topic-panel").getByRole("link", { name: "打开话题页", exact: true }).count()) === 1,
+    "room topic sheet should keep the concrete topic-route deep link"
+  );
   await capture(page, "room-topic");
   results.push("- Topic 继续作为 room 内的次级 sheet 保留，可从同一条 room URL 打开 topic summary 和最近 guidance。");
 

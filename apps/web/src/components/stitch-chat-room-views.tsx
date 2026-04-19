@@ -1357,12 +1357,6 @@ function RoomTopicWorkbenchPanel({
             >
               打开话题页
             </Link>
-            <Link
-              href={buildRoomWorkbenchHref(room.id, "chat")}
-              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-            >
-              回到聊天
-            </Link>
           </div>
         </div>
         <div className="mt-4 space-y-3">

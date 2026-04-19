@@ -1,6 +1,6 @@
 # OpenShock Execution Tickets
 
-**版本:** 1.38
+**版本:** 1.39
 **更新日期:** 2026 年 4 月 19 日
 **关联文档:** [PRD](./PRD.md) · [Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -1698,6 +1698,10 @@
   - `/agents` 的 orchestration cross-room rollup 在 route `ready` 时不再继续渲染 `打开下一步` CTA；当前 `/agents` 页里 governance graph 已经持有 next-route 说明和正式深链，所以 rollup summary 现在只保留 room/status/source 真相，不再和 graph 争夺同一条 route surface
   - `orchestration-governance-escalation-rollup-room-*`、`orchestration-governance-escalation-rollup-route-status-*` 与 `orchestration-governance-escalation-graph-route-*` 锚点保持不变；减法后 ready 态的 route deep-link 统一由 graph 持有，route 进入 active 后 rollup 仍可继续恢复 `打开下一步`
   - headed cross-room governance orchestration 已新增“`/agents` ready 态 rollup card 不再包含 `打开下一步`，但 active 态会恢复 next-step link”的断言，避免后续又把 ready-stage 的重复 route CTA 堆回 orchestration summary
+- 当前已收第三十二刀:
+  - `/rooms/:roomId?tab=topic` 的 topic 面板不再继续渲染泛化 `回到聊天` CTA；当前用户已经位于同一条 room 壳内，这条链接只会回到同一条 room chat shell，因此现在只保留具体的 `打开话题页` drill-out，不再把 topic sheet 堆成第二个壳内返回按钮
+  - `room-workbench-topic-panel` 与 `room-topic-open-route` 锚点保持不变；减法后 topic 面板仍继续保留 highlights 和 topic-route deep link，而 chat-first 返回路径继续由 room shell 本身持有
+  - headed room workbench topic context 已新增“topic sheet 不再包含 `回到聊天`，但仍保留 `打开话题页` deep link”的断言，避免后续又把同壳自引用按钮重新堆回 topic panel
 - 最新证据:
   - `node --check scripts/headed-multi-agent-governance.mjs`
   - `node --check scripts/headed-approval-center-lifecycle.mjs`
