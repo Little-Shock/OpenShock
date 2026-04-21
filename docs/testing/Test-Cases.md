@@ -1,7 +1,7 @@
 # OpenShock Test Cases
 
-**版本:** 1.41
-**更新日期:** 2026 年 4 月 18 日
+**版本:** 1.42
+**更新日期:** 2026 年 4 月 22 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
 ---
@@ -103,8 +103,8 @@
 - 对应 Checklist: `CHK-01`
 - 前置条件: web 服务在线。
 - 测试步骤:
-  1. 依次访问 `/`、`/setup`、`/chat/all`、`/board`、`/inbox`、`/issues`、`/rooms`、`/runs`、`/agents`、`/access`、`/memory`、`/settings`。
-  2. 抽查 issue、room、run、agent 详情页。
+  1. 依次访问 `/`、`/setup`、`/chat/all`、`/board`、`/inbox`、`/issues`、`/rooms`、`/runs`、`/agents`、`/mailbox`、`/onboarding`、`/access`、`/memory`、`/settings`。
+  2. 抽查 issue、room、run 与 canonical profile 详情页。
 - 预期结果: 主要页面可正常渲染，无整页崩溃。
 - 业务结论: 壳层路由基线可用。
 
@@ -116,10 +116,10 @@
 - 前置条件: 系统中存在预置 agent 数据。
 - 测试步骤:
   1. 打开 `/agents`。
-  2. 打开 `/agents/:agentId`。
+  2. 打开 `/profiles/agent/:agentId`，并确认历史 `/agents/:agentId` 仍会兼容跳转到同一详情页。
   3. 检查 agent 与 runtime / run / workspace 的可见关系。
 - 预期结果: 用户可以直接浏览 Agent 视图。
-- 业务结论: Agent 一等对象的壳层基线成立，但画像与策略能力还未完整。
+- 业务结论: Agent 一等对象的壳层基线成立；canonical detail route 已统一到 `/profiles/agent/:agentId`，历史 `/agents/:agentId` 只保留兼容跳转。
 
 ## TC-009 SSE 初始快照
 
@@ -310,7 +310,7 @@
   2. 再触发 PR sync / merge。
   3. 验证请求使用 installation token，并在 review-decision GraphQL 失败时返回 blocked escalation。
 - 预期结果: effective auth path 为 `github-app` 时，PR create / sync / merge 走 app-backed 逻辑，失败路径可被显式捕获。
-- 业务结论: 服务器端 GitHub App PR contract 已落地；2026 年 4 月 7 日又补齐了 Setup 对 preferred auth path、missing fields、installation URL 和 repo binding blocked contract 的浏览器级 onboarding 证据，但 webhook / live repo 回放仍未完成。
+- 业务结论: 服务器端 GitHub App PR contract 已落地；2026 年 4 月 7 日补齐了 Setup 对 preferred auth path、missing fields、installation URL 和 repo binding blocked contract 的浏览器级 onboarding 证据。Webhook public ingress、review/comment replay 和远端 PR browser loop 现已分别由 `TC-015`、`TC-016`、`TC-025`、`TC-045` 独立收口，因此这条用例不再把它们记作当前 GAP；后续若要补真正 Internet / DNS / TLS 级演练，属于环境运行项，不再算产品 contract 缺口。
 
 ## TC-023 Memory Version / Governance Contract
 

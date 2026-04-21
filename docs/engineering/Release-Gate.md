@@ -2,6 +2,8 @@
 
 这份文档只回答一件事：**当前 OpenShock 仓库怎么做发布前 gate，以及 gate 失败后怎么 rollback。**
 
+如果你只想记一条入口，先看 [Testing Index](../testing/README.md) 顶部的“最短信任路径”；这里负责把那条路径展开成 release contract 和 rollback 规则。
+
 ---
 
 ## 1. 当前 deploy target 怎么读

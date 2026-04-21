@@ -1,8 +1,8 @@
 # OpenShock Daemon
 
-Go local runtime bridge for the OpenShock Phase 0 machine lane.
+Go local runtime bridge for the OpenShock machine lane.
 
-Current shape:
+Current live baseline:
 
 - `cmd/openshock-daemon/main.go` exposes a local HTTP daemon
 - `GET /healthz` returns liveness
@@ -12,15 +12,15 @@ Current shape:
 - Codex session continuity now uses a session-scoped `OPENSHOCK_CODEX_HOME` under the same workspace root
 - provider thread state can now be written back through the daemon thread-state file contract and persisted into `SESSION.json.appServerThreadId`
 - detects local CLI binaries like `codex` and `claude`
-- reports runtime heartbeats back to the server
+- reports runtime heartbeats back to the server and participates in runtime registry truth
 - ensures `git worktree` lanes for issue execution
 - supports a `-once` mode for one-shot inspection output
 
-Still not complete:
+Still not production-grade:
 
-- multi-runtime scheduler participation and failover
-- stricter sandbox/policy enforcement
-- richer approval handoff and execution governance
+- deeper multi-machine scheduler operations, fleet failover, and hosted runtime lifecycle management
+- stricter sandbox / network / tool policy enforcement beyond the current baseline
+- richer approval handoff, operator controls, and cross-machine execution governance
 
 Run:
 

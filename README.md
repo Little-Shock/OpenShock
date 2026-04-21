@@ -49,9 +49,9 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
 - room-first `Chat / Topic / Run / PR / Context` workbench、DM、followed thread、saved later 和 quick search 都已经接上真实前台表面
 - server 有文件持久化状态、Issue 创建、Room/Run/Session 读取、PR 状态回写、runtime pairing、repo binding、GitHub readiness probe，以及 `gh CLI / GitHub App` 双 auth path 的 PR contract
 - server 已补齐版本化 `/v1/control-plane/*` command / event / debug read-model，以及 `/v1/runtime/publish*` replay evidence contract
-- memory center 已把 `workspace-file / search-sidecar / external-persistent` provider binding、health/recovery timeline、next-run preview 和 degraded fallback 收进同一份 durable truth
+- memory center 已把 `workspace-file / search-sidecar / external-persistent` provider binding、health/recovery timeline、next-run preview 和 degraded fallback 收进同一份可回放的工作区记忆基线
 - daemon 可以探测本地 `codex` / `claude`，支持同步执行、流式执行，以及 `git worktree` lane 创建
-- 当前 `main` 已经收住了 approval center、notification delivery、memory governance、stop/resume/follow-thread、agent mailbox / handoff、routing SLA / aggregation、profile editor、machine capability binding、workspace durable config，以及 multi-runtime scheduler / failover 的第一轮闭环
+- 当前 `main` 已经收住了 approval center、notification delivery、memory governance、stop/resume/follow-thread、agent mailbox / handoff、routing SLA / aggregation、profile editor、machine capability binding、workspace config，以及 multi-runtime scheduler / failover 的第一轮闭环
 
 ## 当前仓库真值
 
@@ -83,6 +83,8 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
 - Server 控制面：
   - `GET /healthz`
   - `GET /v1/state`
+  - `GET /v1/state/stream`
+  - `GET /v1/experience-metrics`
   - `GET /v1/workspace`
   - `GET /v1/channels`
   - `GET/POST /v1/issues`
@@ -90,20 +92,30 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
   - `POST /v1/rooms/:id/messages`
   - `POST /v1/rooms/:id/messages/stream`
   - `GET /v1/runs`、`GET /v1/runs/:id`
+  - `POST /v1/runs/:id/control`
   - `GET /v1/agents`
   - `GET /v1/sessions`、`GET /v1/sessions/:id`
   - `GET /v1/inbox`
+  - `GET/POST /v1/mailbox`
   - `GET /v1/memory`
+  - `GET /v1/memory-center`
   - `GET /v1/pull-requests`
   - `GET/POST /v1/pull-requests/:id`
+  - `GET /v1/auth/session`
+  - `GET/POST /v1/workspace/members`
+  - `GET /v1/notifications`
+  - `GET/POST /v1/credentials`
+  - `GET /v1/planner/queue`
   - `POST /v1/control-plane/commands`
   - `GET /v1/control-plane/events`
   - `GET /v1/control-plane/debug/commands/:id`
   - `GET /v1/control-plane/debug/rejections`
   - `GET/POST/DELETE /v1/runtime/pairing`
   - `GET /v1/runtime`
+  - `GET /v1/runtime/registry`
   - `GET/POST /v1/runtime/publish`
   - `GET /v1/runtime/publish/replay`
+  - `GET /v1/runtime/live-service`
   - `GET/POST /v1/repo/binding`
   - `GET /v1/github/connection`
   - `POST /v1/exec`
@@ -119,9 +131,9 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
   - issue 创建时会生成 room、run、session，并尝试创建对应 worktree lane
   - 工作区会生成 `MEMORY.md`、`notes/`、`decisions/`、`.openshock/agents/...`
   - memory artifact 已有 version / governance / detail contract
-  - workspace durable config 已能把 onboarding / browser push / memory mode / sandbox baseline 写回同一份状态快照
-  - profile / mailbox / runtime / approval 等前台都已经读同一份 live state，而不是各自 shadow state
-  - `pnpm verify:web` 已自带 live truth hygiene gate；dirty projection 会在前台 fail-closed，而不是继续漂成 shadow truth
+  - workspace config 已能把 onboarding / browser push / memory mode / sandbox baseline 写回同一份状态快照
+  - profile / mailbox / runtime / approval 等前台都已经读同一份 live state，而不是各自维护一套本地假状态
+  - `pnpm verify:web` 已自带 live truth hygiene gate；一旦投影数据不可信，前台会直接 fail-closed
 
 ### 插件状态
 
@@ -130,7 +142,7 @@ OpenShock 不是“聊天框 + 看板”的拼接物。
   - runtime provider catalog
   - agent provider/model/runtime affinity
   - 文件级记忆模式：`MEMORY.md / notes/ / decisions/`
-- memory center provider orchestration 已落地 `workspace-file / search-sidecar / external-persistent` binding truth；provider health/recovery 现已进入正式产品面，但真实 remote external durable adapter 和插件数据面仍未接上
+- memory center provider orchestration 已落地 `workspace-file / search-sidecar / external-persistent` binding state；provider health/recovery 现已进入正式产品面，但真实 remote external adapter 和插件数据面仍未接上
 - 如果你在设置页里看到“插件”相关表达，那是旧文案，不代表当前已经有可用插件数据面
 
 ### 还没有做成“完整产品闭环”的部分
@@ -275,67 +287,32 @@ go run ./cmd/openshock-daemon --workspace-root E:\00.Lark_Projects\00_OpenShock
 
 这是当前最接近“真实链路”的页面：repo、GitHub readiness、runtime pairing、bridge console 都在这里。
 
-## 发布前最小验证
+## 最短信任路径
 
-先跑静态门：
+根 README 只保留一条权威入口；更完整的说明分别在 [docs/testing/README.md](./docs/testing/README.md) 和 [docs/engineering/Release-Gate.md](./docs/engineering/Release-Gate.md)。
+
+先过 repo gate：
 
 ```bash
-pnpm lint:web
-pnpm typecheck:web
-pnpm build:web
-pnpm check:live-truth-hygiene
+pnpm verify:release
 ```
 
-再跑当前最有代表性的浏览器链路：
+再过 live stack gate：
 
 ```bash
-OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-board-planning-surface
-OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-notification-preference-delivery
-OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-restricted-sandbox-policy
+pnpm ops:smoke
 ```
 
-如果你在本地已经起好了 fresh stack，也可以继续用 HTTP 做最小活性确认：
-
-先检查 web / server / daemon 三段是否在线：
+如果这一拍要求 GitHub 也 ready，再补 strict gate：
 
 ```bash
-curl http://127.0.0.1:8080/healthz
-curl http://127.0.0.1:8090/healthz
-curl http://127.0.0.1:8080/v1/state
+OPENSHOCK_REQUIRE_GITHUB_READY=1 pnpm ops:smoke
 ```
 
-再看 runtime 和 GitHub readiness：
+最后补一条代表性的浏览器链路，确认前台主工作台没有漂：
 
 ```bash
-curl http://127.0.0.1:8080/v1/runtime
-curl http://127.0.0.1:8080/v1/runtime/pairing
-curl http://127.0.0.1:8080/v1/repo/binding
-curl http://127.0.0.1:8080/v1/github/connection
-```
-
-最后确认 bridge 能执行本地 CLI：
-
-```bash
-curl -X POST http://127.0.0.1:8080/v1/exec \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "provider": "codex",
-    "prompt": "Reply with exactly: OpenShock bridge online.",
-    "cwd": "/home/lark/OpenShock"
-  }'
-```
-
-如果你要验证 worktree lane，也可以直接创建一条 issue：
-
-```bash
-curl -X POST http://127.0.0.1:8080/v1/issues \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "title": "Probe issue creation",
-    "summary": "Verify room/run/session/worktree provisioning.",
-    "owner": "Codex Dockmaster",
-    "priority": "high"
-  }'
+OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-onboarding-studio
 ```
 
 ## 当前开发约束
@@ -351,6 +328,7 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
 - [PRD](./docs/product/PRD.md)
 - [Phase 0 MVP](./docs/product/Phase0-MVP.md)
 - [Runbook](./docs/engineering/Runbook.md)
+- [Testing Index](./docs/testing/README.md)
 - [Design Notes](./docs/design/README.md)
 - [Research Index](./docs/research/README.md)
 - [SOUL.md](./SOUL.md)
@@ -358,10 +336,10 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
 
 ## English
 
-OpenShock is currently a Phase 0 local-first baseline:
+OpenShock is currently a local-first Phase 0 product baseline:
 
 - Next.js web shell
 - Go control-plane server
 - Go local daemon for CLI execution and worktree lanes
 
-It already runs a real local stack, but it does not yet ship full auth, GitHub App flows, remote PR sync, or autonomous multi-agent orchestration. Use the docs above as the source of truth for what is live today.
+It already ships a real local stack with onboarding, rooms, runs, profiles, memory, mailbox handoff, GitHub setup readiness, runtime pairing, and browser-verified PR / notification / governance loops. It is still not a hosted SaaS or production deployment system. Use the docs above as the source of truth for what is live today.

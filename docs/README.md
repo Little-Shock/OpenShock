@@ -9,7 +9,7 @@
 ### 入口级
 
 - [README](../README.md)
-  - 项目是什么、当前仓库真值、产品入口、`pnpm dev:fresh:*` 启动方式、发布前最小验证
+  - 项目是什么、当前仓库真值、产品入口、`pnpm dev:fresh:*` 启动方式、最短信任路径
 - [Runbook](./engineering/Runbook.md)
   - Phase 0 本地怎么跑、怎么 pair runtime、当前真实路由/API 怎么看、怎么走最小验收链路
 
@@ -55,6 +55,16 @@
 
 ## 当前仓库真值应该怎么读
 
+### 文档真值矩阵
+
+| 你想确认什么 | 先看哪份文档 | 命令 / 证据入口 |
+| --- | --- | --- |
+| 产品现在能做什么 | [README](../README.md) | `pnpm dev:fresh:start` |
+| 当前发布前怎么判绿 | [Testing Index](./testing/README.md) | `pnpm verify:release` / `pnpm ops:smoke` |
+| 当前可用路由和 API 清单 | [Runbook](./engineering/Runbook.md) | `GET /v1/state` / `GET /v1/runtime/registry` |
+| 当前已完成和未完成边界 | [Product Checklist](./product/Checklist.md) | 对应 `CHK-*` 项 |
+| 当前完整验证证据 | [Test Cases](./testing/Test-Cases.md) | 对应 `TC-*` + 测试报告 |
+
 ### 已落地能力
 
 - web 壳：Next.js 16 / React 19，路由和控制面已接到当前 Phase 0 shell
@@ -93,6 +103,7 @@
 ## 文档维护规则
 
 - 根 README 只写入口级真值，不堆未来路线图
+- 发布前信任路径只保留一套 canonical 说法：`docs/testing/README.md` 顶部那条
 - PRD 写完整产品合同；当前仓库实现边界由 Phase 0 MVP 和 Checklist 承接
 - Phase 0 MVP 只写第一轮必须交付和验收门，不写超出当前 repo 的幻想
 - Checklist 必须把“已完成 / 部分完成 / 未完成”分清楚

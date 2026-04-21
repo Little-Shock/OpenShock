@@ -1,8 +1,25 @@
 # Testing Docs
 
-## 先看这 5 条
+## 先走最短信任路径
 
-如果你只是想快速判断“现在这套产品大体站没站住”，先跑下面这几条，再往下翻完整归档。
+如果你只想回答一个问题: “这个仓库现在能不能作为一条可验证的产品基线继续发布和演示”，先按这个顺序走。
+
+| 目的 | 命令 | 说明 |
+| --- | --- | --- |
+| repo gate | `pnpm verify:release` | 统一跑静态门、Go 测试和 release gate 自检 |
+| live stack gate | `pnpm ops:smoke` | 直接打当前 server / daemon live stack，检查 pairing、registry、repo、GitHub readiness |
+| strict GitHub gate | `OPENSHOCK_REQUIRE_GITHUB_READY=1 pnpm ops:smoke` | 只有这次发布明确要求 GitHub fully ready 才加这一条 |
+| 代表性浏览器链路 | `OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-onboarding-studio` | 确认首启、恢复和真实前台主链没漂 |
+
+说明：
+
+- 这条是当前唯一推荐的发布前信任路径。
+- 根 README 和 Release Gate 都以这里为索引，不再各自维护第三套最小命令集。
+- 如果你只是做前台快检，再继续看下面这组高频链路。
+
+## 前台高频链路快检
+
+如果你只是想快速判断“现在这套产品大体站没站住”，可以补跑下面这几条，再往下翻完整归档。
 
 | 场景 | 命令 | 当前推荐报告 | 结果 |
 | --- | --- | --- | --- |
@@ -14,7 +31,7 @@
 
 说明：
 
-- 上面这 5 条是当前最快的信任路径，不替代完整回归。
+- 上面这 5 条是前台高频链路快检，不替代上面的 release trust path。
 - 下面的长列表按时间与专题保留，适合查历史证据和深挖单能力。
 
 - [Verification Sweep Report 2026-04-13](./Test-Report-2026-04-13-verification-sweep.md)

@@ -54,7 +54,7 @@
 - 数据库驱动的控制面真相
 - 外部插件注册表与插件数据面
 - 生产级通知与更完整外部身份体系
-- GitHub App / webhook / remote PR 的更重生产闭环
+- GitHub App / webhook / remote PR 的更重生产闭环与真实 Internet / DNS / TLS 环境演练
 - 真实 remote external durable memory adapter
 - 更深的多 Agent 自治编排、agent-to-agent 通信与长期治理
 - 更完整的 onboarding 场景包、机器初始化与团队模板运营
@@ -213,14 +213,21 @@ Inbox 必须能把：
 
 - `GET /healthz`
 - `GET /v1/state`
+- `GET /v1/state/stream`
+- `GET /v1/experience-metrics`
 - `GET /v1/runtime`
+- `GET /v1/runtime/registry`
+- `GET /v1/runtime/live-service`
 - `GET /v1/repo/binding`
 - `GET /v1/github/connection`
 - `GET /v1/auth/session`
 - `GET /v1/workspace/members`
 - `GET /v1/mailbox`
 - `GET /v1/memory-center`
+- `GET /v1/notifications`
+- `GET /v1/credentials`
 - `GET /v1/planner/queue`
+- `POST /v1/runs/:id/control`
 - `POST /v1/runtime/pairing`
 - `POST /v1/control-plane/commands`
 - `GET /v1/control-plane/events`
