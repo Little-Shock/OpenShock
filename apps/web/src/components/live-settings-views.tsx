@@ -48,7 +48,7 @@ function quotaStatusLabel(status?: string) {
     case "near_limit":
       return "逼近上限";
     case "watch":
-      return "进入观察";
+      return "观察中";
     case "healthy":
       return "健康";
     default:
@@ -129,17 +129,17 @@ const DELIVERY_DELEGATION_MODE_OPTIONS: Array<{
   {
     mode: "formal-handoff",
     value: "formal-handoff",
-    label: "完成收尾后，自动创建一条交接任务，并继续放进交接箱和收件箱。",
+    label: "完成收尾后自动建交接，并放进交接箱和收件箱。",
   },
   {
     mode: "signal-only",
     value: "signal-only",
-    label: "完成收尾后只发出提醒，不自动创建交接任务，是否继续由人决定。",
+    label: "完成收尾后只发提醒，不自动建交接。",
   },
   {
     mode: "auto-complete",
     value: "auto-complete",
-    label: "完成收尾后直接标记结束，不额外创建交接任务，适合明确要自动收尾的团队。",
+    label: "完成收尾后直接结束，不再额外建交接。",
   },
 ];
 
@@ -683,7 +683,7 @@ function WorkspacePlanObservabilityPanel() {
         </span>
       </div>
       <p className="mt-3 max-w-4xl text-sm leading-6 text-white/84">
-        这里集中展示工作区的额度、保留期和最近使用情况。
+        工作区的额度、保留期和最近使用情况。
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -744,13 +744,13 @@ function WorkspacePlanObservabilityPanel() {
           />
           <StatusRow
             label="配额提醒"
-            value={metricValue(valueOrPlaceholder(quota?.warning, "当前没有配额提醒。"))}
+            value={metricValue(valueOrPlaceholder(quota?.warning, "目前没有配额提醒。"))}
             tone={metricTone(quotaTone)}
             testID="settings-workspace-quota-warning"
           />
           <StatusRow
             label="使用提醒"
-            value={metricValue(valueOrPlaceholder(usage?.warning, "当前没有使用提醒。"))}
+            value={metricValue(valueOrPlaceholder(usage?.warning, "目前没有使用提醒。"))}
             tone={metricTone(usageTone)}
             testID="settings-workspace-usage-warning"
           />
@@ -843,13 +843,13 @@ function WorkspaceDurableConfigPanel() {
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-        这里管理工作区模板、启动进度、仓库绑定、浏览器入口和安全范围。
+        模板、进度、仓库、入口和安全范围。
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <FactTile label="模板" value={valueOrPlaceholder(workspace.onboarding.templateId, "未选模板")} testID="settings-workspace-template-value" />
         <p className="hidden" data-testid="settings-workspace-template-text">{valueOrPlaceholder(workspace.onboarding.templateId, "未选模板")}</p>
-        <FactTile label="继续地址" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "未设置")} />
+        <FactTile label="回跳地址" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "未设置")} />
         <FactTile label="仓库同步" value={valueOrPlaceholder(workspace.repoBinding.syncedAt, "未回写")} />
         <FactTile label="安装状态" value={workspace.githubInstallation.connectionReady ? "已连接" : "待完成"} />
         <FactTile label="安全模式" value={sandboxProfileLabel(workspace.sandbox.profile)} testID="settings-workspace-sandbox-profile-value" />
@@ -901,7 +901,7 @@ function WorkspaceDurableConfigPanel() {
             />
           </label>
           <label className="grid gap-2 text-sm">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em]">继续地址</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em]">回跳地址</span>
             <input
               data-testid="settings-workspace-resume-url"
               value={resumeUrl}
@@ -1159,7 +1159,7 @@ function GovernanceTopologyPanel() {
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-        在这里调整团队模板、角色名称、默认 Agent 和交接方式。
+        调整团队模板、角色名称、默认 Agent 和交接方式。
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-4">
@@ -1183,7 +1183,7 @@ function GovernanceTopologyPanel() {
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">交接方式</p>
               <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                选择任务完成后如何继续交接，或者是否自动收尾。
+                选择任务完成后如何接续，或是否自动收尾。
               </p>
             </div>
             <span className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
@@ -1377,7 +1377,7 @@ function MemberPreferencePanel() {
         githubHandle,
       });
       setDirty(false);
-      setSuccess("成员偏好已保存，换设备后也会继续读取同一份设置。");
+      setSuccess("成员偏好已保存。");
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : "成员偏好保存失败");
     } finally {
@@ -1542,7 +1542,7 @@ function CredentialProfileCard({
       });
       setDirty(false);
       setSecretValue("");
-      setSuccess(secretValue.trim() ? "凭证说明和密钥已更新。" : "凭证说明已更新。");
+      setSuccess(secretValue.trim() ? "凭证已更新。" : "说明已更新。");
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : "凭据保存失败");
     } finally {
@@ -1570,7 +1570,7 @@ function CredentialProfileCard({
       </div>
 
       <p className="mt-4 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
-        {valueOrPlaceholder(profile.summary, "当前这条凭证还没有补齐说明。")} 这里只显示说明和状态，密钥明文不会返回到 `/v1/state`。
+        {valueOrPlaceholder(profile.summary, "这条凭证还没写说明。")} 密钥明文不会返回。
       </p>
 
       <form onSubmit={handleSubmit} className="mt-4 grid gap-3 rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
@@ -1623,7 +1623,7 @@ function CredentialProfileCard({
                 setDirty(true);
               }}
               disabled={!canEdit || pending}
-              placeholder="留空表示只更新说明；填写后会同步更新密钥。"
+              placeholder="留空只改说明；填写后同步更新密钥。"
               className="min-h-[84px] rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3 font-mono text-sm"
             />
           </label>
@@ -1689,7 +1689,7 @@ function CredentialProfilesPanel() {
       setSecretKind("api-token");
       setSecretValue("");
       setWorkspaceDefault(false);
-      setSuccess("新凭证已保存，并可在工作区、智能体和执行页中绑定使用。");
+      setSuccess("新凭证已保存，可去绑定范围。");
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : "新凭据创建失败");
     } finally {
@@ -1702,15 +1702,15 @@ function CredentialProfilesPanel() {
       <Panel tone="ink" className="shadow-[6px_6px_0_0_var(--shock-lime)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/72">凭证管理</p>
-            <h2 className="mt-2 font-display text-3xl font-bold">把密钥从隐性环境依赖收回到可审计的工作区配置中</h2>
+            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/72">凭证</p>
+            <h2 className="mt-2 font-display text-3xl font-bold">把密钥收回工作区配置</h2>
           </div>
           <span className="rounded-full border-2 border-white/70 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
             {state.credentials.length} 条凭证
           </span>
         </div>
         <p className="mt-3 text-sm leading-6 text-white/80">
-          这里只显示凭证说明和使用状态；真正的密钥内容会单独加密保存，不会通过 `/v1/state`、服务端渲染或浏览器报告泄漏。
+          只返回摘要和状态。密钥单独加密保存，不会通过 `/v1/state`、服务端渲染或浏览器报告返回。
         </p>
       </Panel>
 
@@ -1718,7 +1718,7 @@ function CredentialProfilesPanel() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">新增凭证</p>
-            <h3 className="mt-2 font-display text-3xl font-bold">新增一条可绑定到工作区、智能体或执行页的凭证</h3>
+            <h3 className="mt-2 font-display text-3xl font-bold">新增一条可绑定的凭证</h3>
           </div>
           <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
             {canEdit ? "可编辑" : "只读"}
@@ -1795,7 +1795,7 @@ function CredentialProfilesPanel() {
       </Panel>
 
       {state.credentials.length === 0 ? (
-        <EmptyState title="还没有凭证" message="先在这里创建第一条凭证，再到智能体档案和执行详情中绑定使用范围。" />
+        <EmptyState title="暂无凭证" message="先创建第一条凭证，再去绑定范围。" />
       ) : (
         state.credentials.map((profile) => (
           <CredentialProfileCard
@@ -2033,8 +2033,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
         <p className="font-mono text-[11px] uppercase tracking-[0.24em]">核心设置</p>
         <h2 className="mt-3 font-display text-4xl font-bold">先把 workspace 和当前成员的高频配置收在眼前</h2>
         <p className="mt-3 max-w-3xl text-base leading-7">
-          这一页优先展示套餐额度、引导状态、运行环境、常用智能体和默认入口。
-          治理、凭据和通知仍然完整保留，但默认收进高级区，避免第一次进入就信息过载。
+          先看套餐额度、引导状态、运行环境、常用智能体和默认入口。治理、凭据和通知放进高级区。
         </p>
       </Panel>
 
@@ -2043,7 +2042,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
 
       <SettingsDisclosureSection
         title="治理编排"
-        summary="团队分工、交接方式和治理链路仍然完整保留，但默认不抢占日常配置入口。"
+        summary="团队分工和交接规则默认折叠。"
         testId="governance"
         tone="paper"
       >
@@ -2052,7 +2051,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
 
       <SettingsDisclosureSection
         title="凭据配置"
-        summary="运行凭据、作用范围和默认配置继续保留在这里，但默认折叠，避免把所有人都带进高风险设置。"
+        summary="运行凭据默认折叠。"
         testId="credentials"
       >
         <CredentialProfilesPanel />
@@ -2060,16 +2059,16 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
 
       <SettingsDisclosureSection
         title="通知与送达"
-        summary="浏览器通知、邮件通知、身份模板和最近发送结果仍然完整保留，但不再占满整页。"
+        summary="通知和送达默认折叠。"
         testId="notifications"
         tone="yellow"
       >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_0.92fr]">
         <Panel tone="yellow">
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">通知概览</p>
-          <h2 className="mt-3 font-display text-4xl font-bold">在这里统一查看通知规则和发送情况</h2>
+          <h2 className="mt-3 font-display text-4xl font-bold">通知规则和发送情况</h2>
           <p className="mt-3 max-w-3xl text-base leading-7">
-            这里会集中展示浏览器通知、邮件通知和最近的发送结果，方便你直接确认哪些消息会被送达、哪些还需要处理。
+            浏览器通知、邮件通知和最近的发送结果，方便直接确认哪些消息会被送达、哪些还需要处理。
           </p>
           <div className="mt-5 grid gap-3 md:grid-cols-4">
             <FactTile label="接收端" value={notificationLoading ? "同步中" : String(center.subscribers.length)} testID="notification-subscribers-count" />
@@ -2083,8 +2082,8 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">当前状态</p>
           <h2 className="mt-3 font-display text-3xl font-bold">默认规则、当前浏览器与最近发送结果</h2>
           <div className="mt-4 space-y-3 text-sm leading-6 text-white/82">
-            <p>浏览器通知和邮件通知的默认值会直接保存到服务端。</p>
-            <p>最近一次发送的尝试数、送达数和失败数也会在这里实时显示。</p>
+            <p>默认值直接写回服务端。</p>
+            <p>最近发送结果保持同步。</p>
           </div>
           <div className="mt-5 grid gap-3">
             <StatusRow label="工作区浏览器通知" value={preferenceLabel(center.policy.browserPush)} tone="white" testID="notification-workspace-browser-policy" />
@@ -2105,11 +2104,11 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
             href="/access"
             className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--shock-ink)]"
           >
-            打开账号中心
+            账号中心
           </Link>
         </div>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-white/84">
-          邀请、邮箱验证、密码重置和跨设备恢复都会统一出现在这里，方便你确认身份相关通知是否已经进入发送流程。
+          邀请、邮箱验证、密码重置和跨设备恢复共用同一条发送状态。
         </p>
         <div className="mt-5 grid gap-3 md:grid-cols-4">
           <FactTile label="模板数" value={String(identityTemplateSummaries.length)} testID="notification-identity-template-count" />
@@ -2120,8 +2119,8 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
         <div className="mt-5 space-y-3">
           {identityTemplateSummaries.length === 0 ? (
             <EmptyState
-              title="当前没有身份通知记录"
-              message="先到账号中心触发邀请、邮箱验证、密码重置或恢复流程，这里会自动出现对应记录。"
+              title="暂无身份通知记录"
+              message="触发一次邀请、验证、重置或恢复后就会出现。"
             />
           ) : (
             identityTemplateSummaries.map((template) => (
@@ -2156,7 +2155,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">默认通知</p>
           <h3 className="mt-3 font-display text-3xl font-bold">通知默认策略</h3>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-            浏览器通知和邮件通知的默认偏好都会写回服务端。接收端若选择“继承工作区默认值”，这里就是实际生效的规则。
+            浏览器通知和邮件通知的默认偏好都会写回服务端。接收端选择“继承工作区默认值”时，会使用这组规则。
           </p>
           <div className="mt-5 space-y-4">
             <div>
@@ -2215,7 +2214,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">当前浏览器</p>
           <h3 className="mt-3 font-display text-3xl font-bold">接入当前浏览器通知</h3>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-            先授权通知，再启用浏览器接收，就能把发送到当前浏览器的消息直接显示为本地通知。
+            授权通知并启用浏览器接收后，发送到当前浏览器的消息会成为本地通知。
           </p>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             <StatusRow label="权限" value={permissionLabel(surface.permission)} tone={surface.permission === "granted" ? "lime" : surface.permission === "denied" ? "pink" : "white"} testID="notification-browser-permission" />
@@ -2297,7 +2296,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">邮件通知</p>
           <h3 className="mt-3 font-display text-3xl font-bold">保存邮件通知地址</h3>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-            在这里填写接收邮箱。地址无效时会明确报错，修正后再次发送即可看到恢复正常。
+            在此填写接收邮箱。地址无效时会明确报错，修正后再次发送即可看到恢复正常。
           </p>
           <label className="mt-5 block">
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">邮箱地址</span>
@@ -2369,7 +2368,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
             {notificationLoading ? (
               <EmptyState title="正在同步通知状态" message="正在读取通知规则、接收端、待发送内容和最近一次发送结果。" />
             ) : center.subscribers.length === 0 ? (
-              <EmptyState title="当前还没有接收端" message="先接入当前浏览器或保存邮箱地址，再发送通知。" />
+              <EmptyState title="暂无接收端" message="先接入浏览器或保存邮箱地址。" />
             ) : (
               center.subscribers.map((subscriber) => {
                 const subscriberDeliveries = center.deliveries.filter((delivery) => delivery.subscriberId === subscriber.id);
@@ -2421,7 +2420,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           </div>
           <div className="mt-5 space-y-3">
             {workerReceipts.length === 0 ? (
-              <EmptyState title="还没有发送记录" message="发送一次通知后，这里会显示送达、失败以及记录文件。" />
+              <EmptyState title="暂无发送记录" message="先发送一次通知。" />
             ) : (
               workerReceipts.map((receipt) => {
                 const delivery = center.deliveries.find((item) => item.id === receipt.deliveryId);
@@ -2482,7 +2481,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
                 href="/access"
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
-                打开账号中心
+                账号中心
               </Link>
             </div>
           </div>
@@ -2493,7 +2492,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           </div>
           <div className="mt-5 space-y-3">
             {routedSignals.length === 0 ? (
-              <EmptyState title="当前没有待发送信号" message="说明目前没有新的批准、评审或身份恢复通知需要触达。" />
+              <EmptyState title="目前没有待发送信号" message="没有新的批准、评审或身份恢复通知需要触达。" />
             ) : (
               routedSignals.map((item) => (
                 <article
@@ -2534,7 +2533,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
               {actionMessage}
             </p>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这里会显示最近一次通知相关操作的结果。
+              最近一次通知相关操作的结果。
             </p>
           </Panel>
         ) : null}
@@ -2553,7 +2552,7 @@ export function LiveSettingsRoute() {
       title="工作区设置"
       description="先处理启动、仓库和常用偏好；更深的团队协作和通知配置收在后面。"
       contextTitle="设置概览"
-      contextDescription="这里集中管理工作区额度、启动过程、默认入口和团队协作方式。"
+      contextDescription="工作区额度、启动过程、默认入口和团队协作方式。"
       contextBody={<LiveSettingsContextRail notifications={notifications} />}
     >
       <LiveSettingsView notifications={notifications} />

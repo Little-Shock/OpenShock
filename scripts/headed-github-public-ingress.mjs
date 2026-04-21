@@ -660,7 +660,7 @@ async function runCallbackPhase(chromiumExecutable) {
   await page.goto(`${ingressURL}/setup`, { waitUntil: "load" });
   await page.getByText("展开仓库与远端").click();
   await page.locator('[data-testid="setup-github-connection"]:visible').waitFor({ state: "visible" });
-  await page.getByText("查看回流地址").click();
+  await page.getByText("回流地址").click();
   await page.locator('[data-testid="setup-github-callback-link"]:visible').waitFor({ state: "visible" });
   await page.locator('[data-testid="setup-github-webhook-url"]:visible').waitFor({ state: "visible" });
 

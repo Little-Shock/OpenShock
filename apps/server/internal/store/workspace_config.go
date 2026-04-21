@@ -89,9 +89,9 @@ func workspaceOnboardingTemplateDefinition(templateID string) onboardingTemplate
 			ID:                 "dev-team",
 			Label:              "开发团队",
 			Channels:           []string{"#shiproom", "#review-lane", "#ops-watch"},
-			Roles:              []string{"PM", "Architect", "Developer", "Reviewer", "QA"},
-			Agents:             []string{"Spec Captain", "Build Pilot", "Review Runner", "QA Relay"},
-			NotificationPolicy: "blocked / review / release gate 优先推送",
+			Roles:              []string{"目标", "边界", "实现", "评审", "验证"},
+			Agents:             []string{"需求智能体", "开发智能体", "评审智能体", "测试智能体"},
+			NotificationPolicy: "优先推送阻塞、评审和发布门事件",
 			Notes: []string{
 				"系统会创建交付、评审和发布相关频道。",
 				"适合需要多人协作推进需求和发布的团队。",
@@ -103,13 +103,13 @@ func workspaceOnboardingTemplateDefinition(templateID string) onboardingTemplate
 			ID:                 "research-team",
 			Label:              "研究团队",
 			Channels:           []string{"#intake", "#evidence", "#synthesis"},
-			Roles:              []string{"Research Lead", "Collector", "Synthesizer", "Reviewer"},
-			Agents:             []string{"Lead Operator", "Collector", "Synthesizer", "Review Runner"},
-			NotificationPolicy: "evidence ready / synthesis blocked / reviewer feedback 优先推送",
+			Roles:              []string{"方向", "采集", "归纳", "复核"},
+			Agents:             []string{"总控智能体", "采集智能体", "归纳智能体", "评审智能体"},
+			NotificationPolicy: "优先推送证据就绪、综合阻塞和复核反馈",
 			Notes: []string{
 				"系统会创建输入、资料和综合相关频道。",
 				"适合研究、分析和结论整理类工作。",
-				"设置支持中断后继续。",
+				"支持续接。",
 			},
 		}
 	default:
@@ -117,12 +117,12 @@ func workspaceOnboardingTemplateDefinition(templateID string) onboardingTemplate
 			ID:                 "blank-custom",
 			Label:              "空白自定义",
 			Channels:           []string{"#all", "#roadmap", "#announcements"},
-			Roles:              []string{"Owner / Member / Viewer"},
+			Roles:              []string{"所有者", "成员", "访客"},
 			Agents:             []string{"启动智能体", "评审智能体"},
-			NotificationPolicy: "只推高优先级与显式 review 事件",
+			NotificationPolicy: "只推高优先级与显式评审事件",
 			Notes: []string{
 				"系统会先创建基础频道、角色和默认智能体。",
-				"首次设置支持中断后继续，后续可再补充更多协作规则。",
+				"首次设置支持续接，后续可再补更多协作规则。",
 				"适合从空白工作区开始搭建自己的协作方式。",
 			},
 		}

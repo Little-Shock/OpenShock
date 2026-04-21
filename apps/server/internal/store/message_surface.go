@@ -215,7 +215,7 @@ func (s *Store) findMessageSurfaceMessageLocked(channelID, messageID string) (Me
 func buildMessageSurfaceEntry(kind, channelID, channelLabel string, message Message) MessageSurfaceEntry {
 	note := "这条 thread 已被 follow，可从 sidebar 或 Followed tab 重新打开。"
 	if kind == "saved" {
-		note = "Later 队列保留“晚点回看”的消息，不把它伪装成新的 planning lane。"
+		note = "稍后查看保留“晚点回看”的消息，不单独再造一层待办。"
 	}
 	return MessageSurfaceEntry{
 		ID:           fmt.Sprintf("%s-%s-%s", kind, channelID, message.ID),

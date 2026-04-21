@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
 import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
+import { resolveProvidedServiceTargets } from "./lib/headed-service-targets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -27,6 +28,7 @@ function parseArgs(args) {
 }
 
 const parsedArgs = parseArgs(process.argv.slice(2));
+const providedServiceTargets = resolveProvidedServiceTargets(process.argv.slice(2), { requireServerURL: true });
 const evidenceRoot =
   process.env.OPENSHOCK_E2E_ARTIFACTS_DIR?.trim() ||
   (await mkdtemp(path.join(os.tmpdir(), "openshock-tkt03-headed-setup-")));
@@ -261,65 +263,71 @@ async function prepareWorkspace() {
 }
 
 async function main() {
-  const webPort = await freePort();
-  const serverPort = await freePort();
-  const daemonPort = await freePort();
-  const webURL = `http://127.0.0.1:${webPort}`;
-  const serverURL = `http://127.0.0.1:${serverPort}`;
-  const daemonURL = `http://127.0.0.1:${daemonPort}`;
-  const statePath = path.join(workspaceDir, "data", "phase0", "state.json");
   const chromiumExecutable = resolveChromiumExecutable();
   const issueTitle = `TKT-03 headed setup e2e ${Date.now()}`;
   const issueSummary = "Replay setup -> board -> room -> PR entry with headed Chromium evidence.";
+  let webURL = providedServiceTargets?.webURL ?? "";
+  let serverURL = providedServiceTargets?.serverURL ?? "";
 
-  await prepareWorkspace();
+  if (!providedServiceTargets) {
+    const webPort = await freePort();
+    const serverPort = await freePort();
+    const daemonPort = await freePort();
+    const daemonURL = `http://127.0.0.1:${daemonPort}`;
+    const statePath = path.join(workspaceDir, "data", "phase0", "state.json");
 
-  startProcess(
-    "daemon",
-    path.join(projectRoot, "scripts", "go.sh"),
-    [
-      "run",
-      "./cmd/openshock-daemon",
-      "--workspace-root",
-      workspaceDir,
-      "--addr",
-      `127.0.0.1:${daemonPort}`,
-      "--control-url",
-      serverURL,
-    ],
-    {
-      cwd: path.join(projectRoot, "apps", "daemon"),
+    webURL = `http://127.0.0.1:${webPort}`;
+    serverURL = `http://127.0.0.1:${serverPort}`;
+
+    await prepareWorkspace();
+
+    startProcess(
+      "daemon",
+      path.join(projectRoot, "scripts", "go.sh"),
+      [
+        "run",
+        "./cmd/openshock-daemon",
+        "--workspace-root",
+        workspaceDir,
+        "--addr",
+        `127.0.0.1:${daemonPort}`,
+        "--control-url",
+        serverURL,
+      ],
+      {
+        cwd: path.join(projectRoot, "apps", "daemon"),
+        env: {
+          ...process.env,
+          OPENSHOCK_DAEMON_HEARTBEAT_INTERVAL: "1s",
+          OPENSHOCK_DAEMON_HEARTBEAT_TIMEOUT: "10s",
+        },
+      }
+    );
+
+    startProcess("server", path.join(projectRoot, "scripts", "go.sh"), ["run", "./cmd/openshock-server"], {
+      cwd: path.join(projectRoot, "apps", "server"),
       env: {
         ...process.env,
-        OPENSHOCK_DAEMON_HEARTBEAT_INTERVAL: "1s",
-        OPENSHOCK_DAEMON_HEARTBEAT_TIMEOUT: "10s",
+        OPENSHOCK_SERVER_ADDR: `127.0.0.1:${serverPort}`,
+        OPENSHOCK_DAEMON_URL: daemonURL,
+        OPENSHOCK_WORKSPACE_ROOT: workspaceDir,
+        OPENSHOCK_STATE_FILE: statePath,
       },
-    }
-  );
+    });
 
-  startProcess("server", path.join(projectRoot, "scripts", "go.sh"), ["run", "./cmd/openshock-server"], {
-    cwd: path.join(projectRoot, "apps", "server"),
-    env: {
-      ...process.env,
-      OPENSHOCK_SERVER_ADDR: `127.0.0.1:${serverPort}`,
-      OPENSHOCK_DAEMON_URL: daemonURL,
-      OPENSHOCK_WORKSPACE_ROOT: workspaceDir,
-      OPENSHOCK_STATE_FILE: statePath,
-    },
-  });
+    startProcess("web", "pnpm", ["--dir", "apps/web", "exec", "next", "dev", "--hostname", "127.0.0.1", "--port", String(webPort)], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_OPENSHOCK_API_BASE: serverURL,
+      },
+    });
 
-  startProcess("web", "pnpm", ["--dir", "apps/web", "exec", "next", "dev", "--hostname", "127.0.0.1", "--port", String(webPort)], {
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      NEXT_PUBLIC_OPENSHOCK_API_BASE: serverURL,
-    },
-  });
-
-  await waitFor(async () => {
-    const response = await fetch(`${daemonURL}/healthz`);
-    return response.ok;
-  }, `daemon did not become healthy at ${daemonURL}/healthz`);
+    await waitFor(async () => {
+      const response = await fetch(`${daemonURL}/healthz`);
+      return response.ok;
+    }, `daemon did not become healthy at ${daemonURL}/healthz`);
+  }
 
   await waitFor(async () => {
     const response = await fetch(`${serverURL}/healthz`);

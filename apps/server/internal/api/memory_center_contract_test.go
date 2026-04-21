@@ -700,7 +700,7 @@ func TestMemoryCenterProviderPreviewTracksCurrentOwnerAcrossHandoffReload(t *tes
 	if !strings.Contains(preview.PromptSummary, "Memory Clerk") {
 		t.Fatalf("preview summary = %q, want current owner Memory Clerk", preview.PromptSummary)
 	}
-	if !strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+	if !strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 记在同一条记录里，方便回看。") {
 		t.Fatalf("preview summary = %q, want Memory Clerk prompt scaffold", preview.PromptSummary)
 	}
 	if !strings.Contains(preview.PromptSummary, "Search Sidecar") || !strings.Contains(preview.PromptSummary, "External Persistent Memory") {

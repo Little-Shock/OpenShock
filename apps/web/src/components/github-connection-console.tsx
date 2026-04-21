@@ -138,7 +138,7 @@ export function GitHubConnectionConsole() {
       }
       setStatus(payload);
       if (showFeedback) {
-        setSuccess(payload.ready ? "GitHub 状态已刷新，可以继续使用远端功能。" : "GitHub 状态已刷新，当前仍未完成连接。");
+        setSuccess(payload.ready ? "GitHub 状态已刷新。" : "GitHub 状态已刷新，当前仍未完成连接。");
       }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "GitHub 连接探测失败");
@@ -184,7 +184,7 @@ export function GitHubConnectionConsole() {
         </span>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">这里只显示 GitHub 是否已配置完成，不会自动发起远端操作。</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">只显示 GitHub 是否已配置完成，不会自动发起远端操作。</p>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
@@ -225,7 +225,7 @@ export function GitHubConnectionConsole() {
           </p>
           <details className="mt-4 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
-              查看连接细节
+              连接细节
             </summary>
             {status?.missing?.length ? (
               <p
@@ -267,10 +267,10 @@ export function GitHubConnectionConsole() {
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">安装动作</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
             {status?.appInstalled
-              ? "GitHub 应用安装已就绪，设置页已经能直接读到状态。"
+              ? "GitHub 应用已就绪，设置页可直接读状态。"
               : status?.appConfigured
                 ? "GitHub 应用已配置，但安装还没完成。"
-                : "当前还没有完成 GitHub 应用配置，请先补充设置。"}
+                : "GitHub 应用还没配好，先补全设置。"}
           </p>
           {status?.installationUrl ? (
             <a
@@ -280,12 +280,12 @@ export function GitHubConnectionConsole() {
               rel="noreferrer"
               className="mt-4 inline-flex rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5"
             >
-              打开安装页面
+              GitHub 安装页
             </a>
           ) : null}
           <details className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
-              查看回流地址
+              回流地址
             </summary>
             <div className="mt-3 space-y-3">
               <div>
@@ -302,14 +302,14 @@ export function GitHubConnectionConsole() {
                   </a>
                 ) : (
                   <p data-testid="setup-github-callback-missing" className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                    当前还没有配置公开回跳地址。
+                    公开回跳地址还没配置。
                   </p>
                 )}
               </div>
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">公开回调地址</p>
                 <p data-testid="setup-github-webhook-url" className="mt-2 break-all text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
-                  {valueOrFallback(status?.webhookUrl, "当前还没有配置公开回调地址")}
+                  {valueOrFallback(status?.webhookUrl, "公开回调地址还没配置")}
                 </p>
               </div>
             </div>

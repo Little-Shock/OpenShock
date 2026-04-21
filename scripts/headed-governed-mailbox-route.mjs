@@ -430,7 +430,7 @@ function mailboxKindLabel(kind) {
     case "delivery-closeout":
       return "交付收尾";
     case "delivery-reply":
-      return "收尾回复";
+      return "补充回复";
     default:
       return "手动交接";
   }

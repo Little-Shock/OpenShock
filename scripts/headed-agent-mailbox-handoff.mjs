@@ -454,7 +454,7 @@ try {
   await capture(page, "mailbox-completed");
 
   assert(
-    (await page.getByTestId(`mailbox-inbox-link-${handoffId}`).count()) === 0,
+    (await page.getByTestId(`mailbox-focus-link-${handoffId}`).count()) === 0,
     "focused mailbox handoff card should not keep a generic open-inbox CTA once room and lineage links already own navigation"
   );
   await page.goto(`${webURL}/inbox?handoffId=${handoffId}`, { waitUntil: "load" });

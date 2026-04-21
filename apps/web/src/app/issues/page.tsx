@@ -8,7 +8,7 @@ export default function IssuesPage() {
       view="issues"
       eyebrow="事项"
       title="所有事项"
-      description="这里集中查看当前事项，以及它对应的讨论间和执行记录。"
+      description="查看当前事项，以及它对应的讨论间和执行记录。"
       contextTitle="事项关联"
       contextDescription="每个事项都会关联对应的讨论间和执行记录，方便继续处理。"
       contextBody={

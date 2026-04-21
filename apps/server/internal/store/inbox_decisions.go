@@ -295,7 +295,7 @@ func (s *Store) prependStatusInboxLocked(title, roomTitle, summary, href string)
 		Room:    roomTitle,
 		Time:    "刚刚",
 		Summary: summary,
-		Action:  "打开房间",
+		Action:  InboxItemActionLabel(href),
 		Href:    href,
 	}}, s.state.Inbox...)
 }

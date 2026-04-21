@@ -1,7 +1,7 @@
 # OpenShock To Do List
 
-**版本:** 1.35
-**更新日期:** 2026 年 4 月 19 日
+**版本:** 1.58
+**更新日期:** 2026 年 4 月 20 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -139,7 +139,52 @@
 - `GAP-66 / TKT-97`
   - memory center 现在还补了正式 provider health / recovery；`workspace-file / search-sidecar / external-persistent` 的 `health summary / next action / failure count / activity timeline / recovery result` 会写回 durable truth，并在 `/memory` 与 preview prompt summary 同步投影。
 - `GAP-70 / TKT-101`
-  - Phase 0 shell 前端减法已收三十二刀；shared `RunControlSurface` 已压短，`/topics/:topicId` 的重复继续入口卡已删掉，room `context` tab 也已压成“当前焦点 + 待处理”，右侧 `RoomWorkbenchRailSummary` 把 `overview / delivery / system` 的重复双卡收回单卡表达，并补回房间内 agent / machine profile 深链锚点；`/mailbox` 的 cross-room governance rollup 与 `/agents` 的 orchestration governance rollup 现在都把 `current owner / current lane / next-route` 解释收回 `GovernanceEscalationGraph` 主视图，列表卡只保留 room 热点、双状态与主推进动作，`/mailbox` 升级队列单卡里重复的 `nextStep` 和泛化 `打开详情` 入口也已收掉，改为只保留 label / chips / status / summary，不再把 handoff ledger 和 Inbox 已持有的导航与下一步说明再堆一层；room PR sheet 上重复的 inbox / mailbox 导航也已一起减掉，卡头 `收件箱 / 交接箱` 快捷入口、`RoomRelatedSignalsPanel` 卡内逐条 `收件箱详情 / 回到讨论间` 按钮、PR panel 里的泛化 `收件箱评审 / 话题上下文` CTA、PR tab 下 delivery rail 里的自引用 `房间 PR` 入口，以及 Inbox / Mailbox 合并面里 focused handoff card 上自引用 `打开收件箱` CTA 都已删掉；PR 面只保留 `PR 详情 / 打开远端 PR` 这类 PR 专属导航，focused handoff 卡只保留非自引用的讨论 / 运行 / 事项 / 主交接 / 回复等深链；重复的 `latestSummary`、次级 `查看该讨论` 入口以及 `/agents` 升级时限卡里的 `下一次升级` helper copy 也都已删掉；`/inbox` 上 governed handoff compose 也已改成“自动建议优先、手动表单次级展开”，approval-center 桌面信号卡右侧重复的 `打开详情` 入口也已删除，改为只保留 `Room / Run / PR / PR Detail` 这些主导航，不再把同一张卡上的次级 deep-link 再堆一层；approval-center 移动端 active signal 上泛化 `打开详情` CTA 也已继续收掉，移动端现在统一通过 `更多信息` 折叠暴露真实 `Room / Run / PR / PR Detail` 目的地，不再单独堆一层 generic jump；`/rooms/:roomId?tab=pr` 的 `RoomRelatedSignalsPanel` 尾部泛化 `打开收件箱` 入口也已一并收掉，PR 面板里这块现在只保留 signal summary，不再在信息区重复堆一层 generic self-link；`/mailbox` focused handoff detail card 上泛化 `打开收件箱` CTA 也已继续收掉，focused card 现在只保留 room / parent / response 这些具体 lineage 导航与推进动作，不再把 inbox 当成抽象中转层；`/rooms/:roomId?tab=context` 的 pending panel 上泛化 `打开交接箱` CTA 也已继续收掉，当当前 room 没有待跟进交接时，这块现在只明确写出空态，不再把 mailbox 当成抽象兜底跳转；同一 context panel 上桌面端泛化 `打开收件箱` CTA 现在也已收掉，桌面 inbox 主入口交回 shell sidebar，移动端仍保留 `room-workbench-open-inbox` 作为 sidebar 隐藏后的局部逃生路径；PR detail 右栏 `相关收件箱提醒` 卡上的泛化 `打开详情` 现在也已收掉，页头 `返回收件箱` 继续持有正式 navigation，related inbox 卡只保留当前 signal summary 和 kind，不再把信息卡伪装成第二个 action strip；standalone topic route overview 上泛化 `回到讨论间` CTA 现在也已收掉，room return path 统一交回 `打开讨论页话题` 这条具体 backlink，topic overview 只保留 topic summary、run/deep-link 和 issue context，不再把同一条 room return path 再堆成第二条返回导航；`/settings` 的“来源信号”面板上泛化 `打开收件箱` CTA 现在也已收掉，settings 继续通过统一 shell 持有 Inbox 主入口，source panel 只保留 routed signal 真相和 `打开账号中心` 这条恢复路径，不再把通知摘要区伪装成第二个 inbox action strip；PR detail 的 `review-merge` gate 上泛化 `打开详情` CTA 现在也已收掉，这条 gate 不再自引用回当前 PR detail，release gate 区只保留真实跨页深链与状态说明，不再把当前页堆成第二个自链接动作；room run rail 上自引用 `房间执行` CTA 现在也已收掉，用户位于 `?tab=run` 时只保留 room 内 run truth 和真正出页的 `执行详情`，不再把当前 room run tab 堆成第二个 self-link；`/mailbox` 的 cross-room governance rollup 在 route `ready` 时现在也已收掉第二个 `打开下一步` CTA，compact rollup card 只保留 `创建自动交接` 这一个正式主动作，route 进入 active 后才继续通过 next-step deep link 跳入 governed handoff；PR detail 的 delivery template 卡上逐卡 `/settings` 泛化 `打开详情` 现在也已收掉，settings 正式入口统一交回 notification delivery gate，template 卡只保留 ready / blocked / sent / failed 聚合读数，不再把信息卡并排堆成多个设置入口；`/agents` 的 orchestration cross-room rollup 在 route `ready` 时现在也已收掉 `打开下一步` CTA，ready 态 route surface 统一交回 governance graph，route 进入 active 后 rollup 再恢复 next-step deep link，不再让 summary card 和 graph 同时争夺同一条 ready-stage 路由；room topic 面板上同壳自引用 `回到聊天` 现在也已收掉，topic sheet 只保留 `打开话题页` 这条具体 drill-out 和最近讨论 highlights，不再把 room shell 内已有的 chat-first 返回路径再堆一层；`/mailbox` 的人工确认卡上泛化 `打开处理入口` 动作现在也已收掉，blocked / required 的治理导航继续由 escalation queue、Inbox 和 handoff ledger 持有，不再在右栏重复堆一层 generic CTA；`/agents` 的 `responseAggregation` 里重复的 `决策路径 / 接管记录` 尾巴和独立 `协作规则` 卡组也已删除，walkthrough 也已进一步压回“步骤标题 + 当前摘要 + 状态”，人工接管卡上的泛化 `打开接管链路` 动作也已收掉，避免在人类已能从 escalation queue / Inbox 进入处理链路时再堆一层重复入口；approval center recent ledger 里泛化 `打开上下文` CTA 也已一并收掉，recent card 现在只保留状态、房间、时间和摘要，避免把历史区伪装成第二个 action queue。下一步优先继续评估 governance graph 在 ready 态里的 route CTA 是否还能继续减法；如果会切断 `/agents` 上最后一条直接路径，就先转去其他同壳自引用按钮，继续保持“一个主动作或零动作”的纪律。
+  - Phase 0 shell 前端减法已收九十三刀；room/context/pr/mailbox/governance 里的重复 self-link、generic CTA、双卡解释和旧 fallback 已大幅收回 contract-level 目标名，PR/detail/topic/run/settings/setup 这些 supporting flow 现在优先暴露 `执行详情 / 事项详情 / 话题详情 / 交付详情 / 交接详情 / 通知设置 / 账号中心 / 远端 PR / GitHub 安装页` 这类真实目标，而不是继续堆空泛按钮。
+  - 后端可用性这轮也继续前滚到 action semantics：delivery gate、governance route、delivery evidence、delegation/lineage deep-link 都已补 contract-level `hrefLabel` 并由 live truth hygiene 给旧 snapshot 自动回填，前端不再靠局部猜测决定动作名；当前页自链接也已继续从 PR detail evidence、多个 summary strip 和 governance rollup room action 里收掉。
+  - channel thread supporting flow 里的回访 rail 也已继续收口：列表卡上的 `打开原视图` 和 desktop 详情 rail 里的 `打开列表` 都已删掉，当前队列上下文只保留 `重新打开线程` 这一条真正改变位置的主动作，不再靠残留 `surfaceHref` 维持重复自链接。
+  - governance rollup / graph 的 room-side action 现在也不会再退回 `查看上下文`；即使旧 snapshot 没带 `hrefLabel / nextRouteHrefLabel`，sanitize 后的前端也会直接看到 `查看当前交接 / 查看交接箱 / 执行详情 / 交付详情` 这类真实目标名，不再靠图组件局部猜一个抽象入口。
+  - governed route closeout 的 action label 也已继续收回 contract；`WorkspaceGovernanceSuggestedHandoff.hrefLabel`、server hygiene 和 web sanitizer 会一起把 active / done 路径补成 `查看当前交接 / 交付详情 / 查看交接箱`，`/mailbox` 与 compose surface 不再各自维护一份 `governedCloseoutLabel` helper。
+  - governance next-route 的未知目标现在 fail-closed，不再把 opaque href 渲染成 `查看下一棒 / 查看收口详情`；graph、mailbox rollup 和 orchestration rollup 只在目标名可明确映射到真实页面时保留 deep-link。
+  - PR delivery gate / evidence 的未知目标现在也 fail-closed，不再渲染 `关联详情`；delivery detail 只在 href 能明确映射到真实页面时才保留链接，不再把 opaque route 伪装成辅助动作。
+  - `watch` 状态文案这轮也已继续从动作态压回状态态；`/chat`、`/setup`、`/settings` 和首页运行概览里的 `进入观察` 现在统一收成 `观察中`，避免 quota / budget badge 再像一个可点击动作。
+  - handoff kind label 这轮也已继续收回 contract；`AgentHandoff.kindLabel` 现在由后端显式产出并由 hygiene / web sanitizer 给旧 snapshot 回填，`delivery-reply` 在 `/mailbox`、`/inbox`、PR detail 上统一显示成更直白的 `补充回复`，不再让三个前端组件和 headed 脚本各自猜 `收尾回复`。
+  - supporting flow 里剩余的 section toggle 和 agent detail 次级入口这轮也继续压成目标名；Setup 里的 `查看连接细节 / 查看回流地址 / 查看绑定依据`、Onboarding 的 `查看高级选项` 和 agent detail 的 `查看该智能体交接` 现在统一收成 `连接细节 / 回流地址 / 绑定依据 / 高级选项 / 交接箱`，不再把折叠区标题和过滤后的 mailbox 深链伪装成动作句。
+  - detail surface 的描述文案这轮也继续去旁白；`live-detail-views` 里的 `这里查看... / 这里集中查看...` 现在统一压成直接对象描述，避免讨论间总览、智能体总览、执行总览、话题详情和执行详情继续带着解释性开头。
+  - PR 交付、Mailbox、Profile、Memory 和通知概览这轮也继续去掉 `在这里... / 这里可以... / 这里会...` 这类旁白式开头；首屏描述现在直接说对象本身，不再让用户先读一层界面说明。
+  - 空状态和帮助提示里的剩余 `这里会... / 这里可以...` 也继续收掉；Memory、Settings、Profile 和 PR detail 的等待态/空态现在直接说明结果何时出现或能做什么，不再把容器位置当成用户需要理解的动作。
+  - `access / orchestration / sandbox` 这轮也继续去掉剩余的容器式说明；身份恢复、成员偏好、调度队列、运行环境压力、治理指标和执行权限面板不再写 `在这里... / 这里会...`，`run-sandbox` 标题也从动作句压成 `这次执行的访问范围`。
+  - inbox signal 的链接文案这轮也继续收回目标名；当前生成中的 `/rooms / runs / setup / inbox focus` signal 不再写 `打开房间 / 打开评审 / 打开配置 / 打开 Mailbox / 重新配对 / 解除阻塞 / 查看批准`，统一按 `执行详情 / 进入讨论间 / 设置 / 收件箱定位` 这类真实目标名产出。server hygiene 和 web sanitizer 对空 `action` 也会按 `href` 回填，未知目标则 fail-closed，不再退回 `查看详情`。
+  - governance / delivery 的深链文案这轮也继续压成目标名；`/mailbox / inbox / settings / rooms tab` 现在由同一套 helper 统一产出 `当前交接 / 交接箱 / 交接建议 / 待处理升级 / 收件箱定位 / 收件箱 / 设置 / 讨论间执行面 / 讨论间上下文`，PR detail、governance graph、mailbox 和 board compose 不再各自猜一套 fallback。
+  - web sanitizer 这轮也补上了空 `hrefLabel` 的显式回填；`sanitizeDisplayText(..., fallback)` 不会自动替空字符串兜底的问题已在 governance suggested handoff 和 cross-room rollup 上修正，旧 snapshot 进入前端后也能直接恢复正式目标名，而不是继续依赖组件局部字符串。
+  - detail/profile/settings/mailbox/PR/governance 的剩余容器式说明这轮继续压短；空态和说明不再写“这里会显示 / 在这里处理 / 在这里调整”，而是直接说新交接、事项、说明记录、通知结果、治理链路何时出现或能做什么。
+  - 后端 live truth hygiene 的客户可见 fallback 也继续去内部词；issue/room 的脏数据兜底从 `live truth / 执行真相` 改成 `当前状态 / 最新执行状态`，对应 web sanitizer 和 state hygiene contract test 同步更新。
+  - memory/setup/github callback/chat room 的页面壳层这轮也继续减法；`/memory`、`/setup`、GitHub 安装回跳、branch-head 对齐和 room workbench 空态不再用“在这里/这里会”解释容器，统一改成资料、诊断、同步状态、PR 评审状态和频道摘要本身。
+  - 默认频道和空白工作区 seed 这轮也继续去容器味；`#all / #roadmap` 不再写“都在这里 / 先在这里”，而是直接说轻松聊天、路线讨论和“频道承载轻量讨论，正式工作升级成讨论间”。
+  - backend inbox 动作名这轮也继续收回统一 helper；runtime lease 冲突不再硬写 `查看冲突`，而是按 run href 回到 `InboxItemActionLabel`，用户只会看到和其他入口一致的 `执行详情`。
+  - issues / onboarding / quick search 的壳层说明也继续压短；`集中查看当前事项 / 打开聊天主界面 / 打开当前结果 / 需要时再打开即可` 已改成 `查看当前事项 / 进入聊天主界面 / 进入当前结果 / 按需展开` 这类更直接的对象名或结果名。
+  - 首页跳转和默认私聊文案这轮也继续去产品团队口吻；首页加载提示从“打开正确入口”压成“正在进入工作区”，`dm-mina` 的 summary / purpose / saved-later 文案改成更直接的“文案和稍后查看习惯”，不再写“收口面 / 一等入口需求”这类内部表达。
+  - 第七十二刀继续把 supporting flow 里的剩余内部味压回用户语言；GitHub 阻塞、delivery delegation 和账号恢复通知现在统一直接落成 `执行详情 / 交付详情 / 账号中心` 这类真实目标名，治理阻塞摘要、稍后查看说明和跨讨论间阻塞汇总也不再写 `blocked escalation / verify / recovery / planning lane / workspace truth / rooms` 这类内部词。
+  - 第七十三刀继续把治理图和规则卡的图例压成用户语言；治理规则不再显示 `Formal Handoff / Review Gate / Test / Verify Gate / Blocked Escalation / Human Override`，统一改成 `交接 / 评审 / 验证 / 阻塞 / 人工接管`，治理图上的 `多房间 / hot room / 当前负责人 / 下一棒 / rooms` 也改成 `讨论间 / 当前处理人 / 下一步 / 个讨论间`，避免主面再读起来像内部控制台。
+  - 第七十四刀继续把治理和交接的剩余内部词压回短中文；后端 `workspace governance` 输出给前端的模板、路由、升级、提醒、最终回复和 walkthrough 文案统一改成客户可读口径，前端 `/mailbox`、`/agents` 和旧 Phase 0 fallback 里的 `人工确认 / 当前治理升级队列 / 通知策略 / 回复聚合 / 当前负责人 / Runtime Replay / 泳道 / 人工闸门` 也同步收成 `待拍板 / 待处理升级 / 提醒设置 / 最终回复 / 当前处理人 / 执行回放 / 当前事项 / 待拍板事项`。
+  - 第七十五刀继续把 detail / orchestration / supporting flow 的残留控制台味压回短中文；`负责人 / 执行泳道 / 自动合并闸门 / 这里显示...` 这一批已在 `/agents`、detail、旧 Phase 0、board inbox、chat room、branch-head 与 setup 调度说明里收成 `当前处理人 / 执行信息 / 自动合并检查 / 直接对象描述`，后端 store helper 和 API sanitizer 里的 `治理阻塞 / 未命名治理角色 / 未命名治理步骤 / 当前多 Agent 治理摘要` 也同步改成 `待处理升级 / 未命名分工 / 未命名步骤 / 当前协作摘要`，避免旧 snapshot 再把前端刚减掉的词吐回来。
+  - 第七十六刀继续把 setup / board / room supporting flow 的容器旁白压成对象名；onboarding、GitHub connection、repo binding、board inbox 和 chat room 里的 `这里... / 交接列表 / 待处理列表 / 交接记录 / 回到这里` 现在统一收成 `这组仓库信息 / 先完成默认连接即可 / 当前仓库有没有接通 / 交接 / 待处理 / 回到任务板` 这类更直接的对象或目标名，不再把容器位置写成界面说明。
+  - 第七十七刀继续把 `交接记录` 这类剩余容器标题压成对象名；`live-detail / live-mailbox` 的标题、加载文案和说明现在统一收成 `交接 / 正在获取当前交接 / 交接会同步更新`，跨讨论间阻塞说明里的 `这里把...` 也改成直接描述，不再把列表容器写成界面说明。
+  - 第七十八刀继续沿 `slock.ai` 的频道目的和房间工作台减法往前推；`#announcements` 在 web mock 和 server seed 里的 purpose 已统一改成 `只发版本、Runtime 变化和制度公告，不在这里展开讨论`，room thread、频道 fallback 和暂停提示里的 `总览页 / 用途说明 / 控制面板` 也同步压成 `不再额外铺一层总览 / 当前还没有同步频道说明 / 先恢复当前执行` 这类直接说法。
+  - 第七十九刀继续把 fallback、默认提示和 seed/mock 里的内部口径压回用户语言；live truth hygiene、web sanitizer、Memory Clerk prompt 和 access / bridge supporting flow 里的 `真值 / Topic / Run / 控制说明 / 可解释真值 / 这里...` 已统一收成 `当前仓库信息 / 待整理话题 / 当前执行摘要 / 当前执行备注 / 记在同一条记录里，方便回看 / 直接确认连接与权限` 这类直接说法，旧 snapshot 和默认数据不会再把前端刚减掉的词回灌回来。
+  - 第八十刀继续把 `settings / profile` supporting flow 的容器旁白压成对象描述；凭据范围、沙箱策略、模型建议、工作区额度和设置概览里的 `这里显示 / 这里定义 / 这里管理 / 这里集中...` 已统一改成直接说明当前对象或状态，不再先解释容器位置。
+  - 第八十一刀继续把 `setup` 模板样板名和启动包口径压短，并让后端 materialization 同步跟上；开发/研究/空白模板里的 `角色 / 起步智能体 / Owner / Research Lead / Lead Operator / review` 这批样板名现在统一收成 `分工 / 默认智能体 / 所有者 / 方向 / 总控智能体 / 评审` 这类更直接的中文口径，模板卡、已落地启动包和默认空白工作区不会再前后端各说一套。
+  - 第八十二刀补上旧 snapshot 防回流；server live hygiene 和 web sanitizer 现在会把 onboarding materialization 里的 `Owner / Member / Viewer / Research Lead / Lead Operator / Review Runner / review 事件` 等历史样板名映射成 `所有者 / 成员 / 访客 / 方向 / 总控智能体 / 评审智能体 / 评审事件`，避免默认包已经改短但旧状态继续把英文和内部词吐回前台。
+  - 第八十三刀继续把 Settings 通知页的解释腔压成状态本身；身份通知、默认通知、当前浏览器接收和待发送信号里的 `会实时显示 / 统一显示 / 这里就是实际生效 / 直接显示 / 说明目前...` 已改成 `保持同步 / 共用同一条发送状态 / 使用这组规则 / 成为本地通知 / 目前没有...` 这类更直接的句子。
+  - 第八十四刀继续把 `profile / memory` 支持流的界面说明压成对象名；`管理资料来源 / 集中展示... / 会直接显示` 这批标题和描述已收成 `资料来源 / 心跳、命令环境... / 文件栈` 这类直接对象，不再先解释页面在做什么。
+  - 第八十五刀继续把 `orchestration / setup` 的调度摘要和空态压短，并把 runtime scheduler 的旧口径一并收掉；`/agents` 与 `/setup` 里的 `当前还没有... / 当前这一列... / 把...放到一个面板里` 已改成更直接的状态或对象描述，server runtime scheduler、web sanitizer 和 mock fallback 也会把 `fallback state / workspace selection / failover / active lease / Runtime 已...` 统一收成 `工作区默认运行环境 / 切到 / 条执行 / 运行环境已...`，旧 snapshot 不会再把英文和控制台词灌回前台。
+  - 第八十六刀继续把 `profile / settings / access / memory` 的剩余帮助文案和空态压短；`显示这个智能体... / 当前没有... / 请切换到管理员... / 当前成员还没有... / 把密钥从...收回到... / 邀请成员与角色管理` 这批句子已改成更直接的对象或状态描述，支持流首屏继续向 `slock.ai` 那种“直接说现在是什么、能做什么”收口。
+  - 第八十七刀继续把 `access / memory / orchestration / setup` 的剩余空态压短；`最近还没有... / 还没有状态说明 / 还没有检查记录 / 还没有清理记录 / 还没有已注册运行环境 / 成员管理` 这一批已收成 `最近没有... / 暂无... / 还没注册运行环境 / 成员` 这类更短的状态或对象名，supporting flow 继续减少解释成本。
+  - 第八十八刀继续把 `GitHub / onboarding` 支持流压短，并同步 seed/mock 默认口径；`当前还没有完成 GitHub 应用配置，请先补充设置 / 当前还没有配置公开回跳地址 / 当前还没有配置公开回调地址 / 可以先跳过，之后再补充 GitHub 配置 / 如果你当前就在目标项目目录中，可以直接读取` 这一批已收成 `GitHub 应用还没配好，先补全设置 / ...还没配置 / 之后再补 GitHub 配置 / 在目标项目目录中就直接读取`，默认数据里的连接说明也同步改短。
+  - mobile 房间逃生入口和 Viewer 摘要这轮也继续收口到目标名；`room-workbench-open-inbox` 的文案已压成 `收件箱`，Viewer 角色不再写“查看控制面 / 历史真值”，统一改成“只读控制面和历史记录”。
+  - 第九十四刀继续把 `setup / settings / mailbox / run control / shell primitives` 的剩余帮助句和 fallback 压成对象或状态本身；`继续入口 / 继续地址 / 打开 / 当前还没有同步频道说明 / 当前还没有明确的下一步建议 / 当前没有额外需要你拍板的事项 / 当前还没有验证结果` 这一批已统一收成 `回跳地址 / 切换 / 频道说明还没同步 / 暂无明确下一步建议 / 暂无需要你拍板的事项 / 暂无验证结果` 这类更短口径，前后端 sanitizer、workspace governance 和 seed 也同步跟上。
+  - 第九十五刀继续把 `board / chat / settings / setup` 的剩余说明腔压成状态句和动作句；`回到任务板排优先级 / 需要继续交接的事项 / 当前频道或私聊的说明会显示 / 当前讨论间的摘要会显示 / 这个消息面当前还没有内容 / 支持中断后继续 / 需要继续时回到 / 默认值会直接保存到服务端 / 还没有接收端` 这一批已统一收成 `来自…排完优先级就回去 / 待跟进交接 / 频道说明还没同步 / 讨论摘要还没同步 / 暂无消息 / 支持续接 / 回跳地址 / 默认值直接写回服务端 / 暂无接收端`，board/chat/settings/setup 首屏继续减少解释成本。
+  - 同轮顺手把 `headed-room-workbench-topic-context / headed-board-planning-surface / headed-notification-preference-delivery / headed-setup-e2e` 补成可复用外部 live stack 的运行器；现在可通过 `--web-url`、`--server-url` 或 `OPENSHOCK_E2E_WEB_URL`、`OPENSHOCK_E2E_SERVER_URL` 直连已有服务，不再硬绑脚本内本地起服。当前沙箱里验证后，失败点已经从本地 `listen EPERM` 前移成目标服务不可达 `fetch failed`。
+  - 仍保留的例外是合法主入口或真实操作，例如移动端 `room-workbench-open-inbox` 逃生路径、GitHub 安装外跳、正式 mutation CTA；减法只碰空动词和重复导航，不误删真正改变位置或状态的按钮。下一步优先继续扫 board / room / settings 剩余的帮助文案和空态边界，再回到 setup 里仍然过长的提示和治理摘要。
 
 ### 2026-04-16 已收口
 
@@ -248,3 +293,13 @@
 - 现在已经做完了什么
 - 还剩哪些 face
 - 下一张票该怎么开
+
+---
+
+## 九、最近进展
+
+- `2026-04-21`
+  - Setup 协作预览现在会直接显示每条 governance lane 的默认智能体，`Architect / Developer / Reviewer / QA` 不再只有抽象 lane 名。
+  - 新增 1 个真实 developer agent `Build Pilot`，让“网站需求 4 棒接力”不再卡死在 seed/mock 只有 3 个 agent 的缺口上。
+  - 新增 `scripts/headed-website-four-agent-delivery.mjs`，覆盖网站需求的 `setup -> board visible truth -> planner assignment -> architect -> developer -> reviewer -> qa -> final response` 链路。
+  - `scripts/headed-planner-dispatch-replay.mjs` 已补 external live stack 复用入口；当前沙箱里 failure point 已前移到外部 `healthz` 不可达，而不是本地 `listen EPERM`。

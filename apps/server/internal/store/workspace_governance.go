@@ -44,46 +44,46 @@ func governanceTemplateFor(templateID string) governanceTemplateDefinition {
 	case "research-team":
 		return governanceTemplateDefinition{
 			TemplateID:        "research-team",
-			Label:             "研究团队治理链",
+			Label:             "研究团队协作流",
 			Summary:           "研究团队模板会提供资料收集、分析整理和复核分工。",
 			TimeoutMinutes:    30,
 			RetryBudget:       2,
-			EscalationChannel: "mailbox -> inbox -> lead",
+			EscalationChannel: "交接箱 -> 收件箱 -> 当前处理人",
 			Topology: []governanceTemplateLaneDefinition{
-				{ID: "lead", Label: "Research Lead", Role: "方向与验收", DefaultAgent: "Lead Operator", Lane: "scope / final synthesis"},
-				{ID: "collector", Label: "Collector", Role: "证据收集", DefaultAgent: "Collector", Lane: "intake -> evidence"},
-				{ID: "synthesizer", Label: "Synthesizer", Role: "归纳与草案", DefaultAgent: "Synthesizer", Lane: "evidence -> synthesis"},
-				{ID: "reviewer", Label: "Reviewer", Role: "结论复核", DefaultAgent: "Review Runner", Lane: "review / publish"},
+				{ID: "lead", Label: "Research Lead", Role: "方向与结论", DefaultAgent: "Lead Operator", Lane: "目标确认 / 最终回复"},
+				{ID: "collector", Label: "Collector", Role: "资料收集", DefaultAgent: "Collector", Lane: "收集 / 整理"},
+				{ID: "synthesizer", Label: "Synthesizer", Role: "归纳与草案", DefaultAgent: "Synthesizer", Lane: "整理 / 草案"},
+				{ID: "reviewer", Label: "Reviewer", Role: "结论复核", DefaultAgent: "Review Runner", Lane: "复核 / 发布"},
 			},
 		}
 	case "blank-custom":
 		return governanceTemplateDefinition{
 			TemplateID:        "blank-custom",
-			Label:             "自定义治理链",
-			Summary:           "空白模板会提供最基础的分工和协作设置。",
+			Label:             "自定义协作流",
+			Summary:           "空白模板只提供最基础的分工和协作设置。",
 			TimeoutMinutes:    45,
 			RetryBudget:       1,
-			EscalationChannel: "mailbox -> inbox -> owner",
+			EscalationChannel: "交接箱 -> 收件箱 -> 当前处理人",
 			Topology: []governanceTemplateLaneDefinition{
-				{ID: "owner", Label: "Owner", Role: "目标与验收", DefaultAgent: "启动智能体", Lane: "scope / final response"},
-				{ID: "member", Label: "Member", Role: "执行与上下文整理", DefaultAgent: "启动智能体", Lane: "build / collect"},
-				{ID: "reviewer", Label: "Reviewer", Role: "复核与阻塞升级", DefaultAgent: "评审智能体", Lane: "review / unblock"},
+				{ID: "owner", Label: "Owner", Role: "目标与验收", DefaultAgent: "启动智能体", Lane: "目标确认 / 最终回复"},
+				{ID: "member", Label: "Member", Role: "执行与整理", DefaultAgent: "启动智能体", Lane: "处理 / 整理"},
+				{ID: "reviewer", Label: "Reviewer", Role: "复核与阻塞处理", DefaultAgent: "评审智能体", Lane: "复核 / 处理阻塞"},
 			},
 		}
 	default:
 		return governanceTemplateDefinition{
 			TemplateID:        "dev-team",
-			Label:             "开发团队治理链",
+			Label:             "开发团队协作流",
 			Summary:           "开发团队模板会提供产品、开发、评审和测试协作分工。",
 			TimeoutMinutes:    20,
 			RetryBudget:       2,
-			EscalationChannel: "mailbox -> inbox -> human override",
+			EscalationChannel: "交接箱 -> 收件箱 -> 人工接管",
 			Topology: []governanceTemplateLaneDefinition{
-				{ID: "pm", Label: "PM", Role: "目标与验收", DefaultAgent: "Spec Captain", Lane: "scope / final response"},
-				{ID: "architect", Label: "Architect", Role: "拆解与边界", DefaultAgent: "Spec Captain", Lane: "shape / split"},
-				{ID: "developer", Label: "Developer", Role: "实现与分支推进", DefaultAgent: "Build Pilot", Lane: "issue -> branch"},
-				{ID: "reviewer", Label: "Reviewer", Role: "exact-head verdict", DefaultAgent: "Review Runner", Lane: "review / blocker"},
-				{ID: "qa", Label: "QA", Role: "verify / release evidence", DefaultAgent: "QA Relay", Lane: "test / release gate"},
+				{ID: "pm", Label: "PM", Role: "目标与验收", DefaultAgent: "Spec Captain", Lane: "目标确认 / 最终回复"},
+				{ID: "architect", Label: "Architect", Role: "拆解与边界", DefaultAgent: "Spec Captain", Lane: "拆解 / 边界"},
+				{ID: "developer", Label: "Developer", Role: "实现与推进", DefaultAgent: "Build Pilot", Lane: "实现 / 提交"},
+				{ID: "reviewer", Label: "Reviewer", Role: "评审与结论", DefaultAgent: "Review Runner", Lane: "评审 / 回退"},
+				{ID: "qa", Label: "QA", Role: "验证与交付确认", DefaultAgent: "QA Relay", Lane: "验证 / 交付"},
 			},
 		}
 	}
@@ -160,19 +160,19 @@ func hydrateWorkspaceGovernance(workspace *WorkspaceSnapshot, state *State) {
 
 	summary := effectiveTemplate.Summary
 	if customizedTopology {
-		summary = fmt.Sprintf("%s 当前启用了 %d lane 的可配置 team topology；后续 lane、default agent 和 handoff route 会继续围同一份 durable truth 前滚。", template.Label, len(effectiveTemplate.Topology))
+		summary = fmt.Sprintf("%s 当前启用了 %d 个分工；后续会按同一套分工继续推进。", template.Label, len(effectiveTemplate.Topology))
 	}
 	if focus.Issue != nil {
 		if customizedTopology {
-			summary = fmt.Sprintf("%s 当前锚在 %s，并沿 %d lane configurable topology 推进 issue -> handoff -> review -> test -> final response。", template.Label, focus.Issue.Key, len(effectiveTemplate.Topology))
+			summary = fmt.Sprintf("%s 当前围绕 %s 推进，已按 %d 个分工串起事项、交接、评审、验证和最终回复。", template.Label, focus.Issue.Key, len(effectiveTemplate.Topology))
 		} else {
-			summary = fmt.Sprintf("%s 当前锚在 %s，并把 issue -> handoff -> review -> test -> final response 摆成同一条治理链。", template.Label, focus.Issue.Key)
+			summary = fmt.Sprintf("%s 当前围绕 %s 推进，已经把事项、交接、评审、验证和最终回复收成一条连续流程。", template.Label, focus.Issue.Key)
 		}
 	}
 	if deliveryDelegationMode == governanceDeliveryDelegationModeSignalOnly {
-		summary += " final closeout 当前只派 delivery signal，不自动起 delegated closeout handoff。"
+		summary += " 交付结果当前只发提醒，不再自动新建收尾交接。"
 	} else if deliveryDelegationMode == governanceDeliveryDelegationModeAutoComplete {
-		summary += " final closeout 当前会按 auto-complete policy 直接收口 delivery delegate，不再额外起 delegated closeout handoff。"
+		summary += " 交付结果当前会直接收口，不再额外新建收尾交接。"
 	}
 
 	workspace.Governance = WorkspaceGovernanceSnapshot{
@@ -345,50 +345,50 @@ func buildGovernanceRoutingPolicy(template governanceTemplateDefinition, state S
 		}
 		nextLane := template.Topology[index+1]
 		status := "pending"
-		summary := fmt.Sprintf("%s 默认把交接发往 %s，并沿 %s 推进。", lane.Label, nextLane.Label, nextLane.Lane)
+		summary := fmt.Sprintf("%s 默认会把当前事项交给 %s，并继续处理%s。", lane.Label, nextLane.Label, defaultString(strings.TrimSpace(nextLane.Role), "后续工作"))
 		if focus.LatestHandoff != nil && governanceRouteMatches(*focus.LatestHandoff, lane, nextLane) {
 			status = governanceStatusFromHandoff(focus.LatestHandoff.Status)
-			summary = fmt.Sprintf("最新 handoff 已按 %s -> %s 落账。", lane.Label, nextLane.Label)
+			summary = fmt.Sprintf("最新交接已经按 %s 交给 %s。", lane.Label, nextLane.Label)
 		} else if index == 0 && focus.Issue != nil {
 			status = "ready"
-			summary = fmt.Sprintf("%s 当前把 %s 正式路由到后续 lanes。", lane.Label, focus.Issue.Key)
+			summary = fmt.Sprintf("%s 已经接住 %s，接下来会继续往下分工。", lane.Label, focus.Issue.Key)
 		} else if isGovernanceReviewLane(nextLane) && (focus.PullRequest != nil || len(focus.ReviewInbox) > 0) {
 			status = "active"
-			summary = fmt.Sprintf("review gate 已显式出现，%s 将接住下一棒。", nextLane.Label)
+			summary = fmt.Sprintf("已经出现待评审事项，接下来会交给 %s。", nextLane.Label)
 		}
 		rules = append(rules, WorkspaceGovernanceRouteRule{
 			ID:       fmt.Sprintf("%s-to-%s", lane.ID, nextLane.ID),
 			Trigger:  fmt.Sprintf("%s_handoff", lane.ID),
 			FromLane: lane.Label,
 			ToLane:   nextLane.Label,
-			Policy:   nextLane.Lane,
+			Policy:   defaultString(strings.TrimSpace(nextLane.Role), strings.TrimSpace(nextLane.Lane)),
 			Summary:  summary,
 			Status:   status,
 		})
 	}
 
 	overrideStatus := humanOverride.Status
-	overrideSummary := "所有 blocked / approval 会沿 mailbox -> inbox -> human override 同一条 escalation chain 收口。"
+	overrideSummary := "所有阻塞和审批都会沿交接箱、收件箱和人工处理这条路径收口。"
 	if humanOverride.Status == "required" || humanOverride.Status == "watch" {
 		overrideSummary = humanOverride.Summary
 	}
 	rules = append(rules, WorkspaceGovernanceRouteRule{
 		ID:       "escalate-to-human",
 		Trigger:  "blocked_or_approval",
-		FromLane: "Any Lane",
-		ToLane:   "Human Override",
-		Policy:   "mailbox -> inbox -> human",
+		FromLane: "任意步骤",
+		ToLane:   "人工接管",
+		Policy:   "交接箱 -> 收件箱 -> 人工处理",
 		Summary:  overrideSummary,
 		Status:   overrideStatus,
 	})
 
 	status := "ready"
-	summary := fmt.Sprintf("默认 routing matrix = %s。", strings.Join(defaultRouteParts, " -> "))
+	summary := fmt.Sprintf("默认顺序：%s。", strings.Join(defaultRouteParts, " -> "))
 	for _, rule := range rules {
 		switch rule.Status {
 		case "blocked":
 			status = "blocked"
-			summary = fmt.Sprintf("routing 当前被 %s 挡住：%s。", rule.ID, rule.Summary)
+			summary = fmt.Sprintf("当前安排被 %s 卡住：%s。", rule.ID, rule.Summary)
 			return WorkspaceGovernanceRoutingPolicy{
 				Status:           status,
 				Summary:          summary,
@@ -398,7 +398,7 @@ func buildGovernanceRoutingPolicy(template governanceTemplateDefinition, state S
 			}
 		case "active":
 			status = "active"
-			summary = fmt.Sprintf("当前正在执行 %s。", rule.Summary)
+			summary = fmt.Sprintf("当前正在按这条顺序推进：%s。", rule.Summary)
 		}
 	}
 
@@ -414,7 +414,7 @@ func buildGovernanceRoutingPolicy(template governanceTemplateDefinition, state S
 func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDefinition, focus governanceFocus) WorkspaceGovernanceSuggestedHandoff {
 	result := WorkspaceGovernanceSuggestedHandoff{
 		Status: "pending",
-		Reason: "当前还没有可建议的 governed handoff。",
+		Reason: "暂无明确下一步建议。",
 	}
 
 	if focus.Room == nil || focus.Issue == nil {
@@ -427,9 +427,10 @@ func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDef
 	if focus.LatestHandoff != nil && focus.LatestHandoff.Status != "completed" {
 		fromLane := governanceLaneByAgentName(template.Topology, state.Agents, focus.LatestHandoff.FromAgent)
 		toLane := governanceLaneByAgentName(template.Topology, state.Agents, focus.LatestHandoff.ToAgent)
+		href := mailboxInboxHref(focus.LatestHandoff.ID, focus.LatestHandoff.RoomID)
 		return WorkspaceGovernanceSuggestedHandoff{
 			Status:        "active",
-			Reason:        fmt.Sprintf("当前 governed handoff 已在进行中；先围现有 %s -> %s ledger 推进，不要重复创建。", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent),
+			Reason:        fmt.Sprintf("交接已在进行中；先继续 %s -> %s，避免重复创建。", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent),
 			RoomID:        focus.LatestHandoff.RoomID,
 			IssueKey:      focus.LatestHandoff.IssueKey,
 			FromLaneID:    defaultString(laneIDOrEmpty(fromLane), ""),
@@ -443,34 +444,35 @@ func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDef
 			DraftTitle:    focus.LatestHandoff.Title,
 			DraftSummary:  focus.LatestHandoff.Summary,
 			HandoffID:     focus.LatestHandoff.ID,
-			Href:          mailboxInboxHref(focus.LatestHandoff.ID, focus.LatestHandoff.RoomID),
+			Href:          href,
+			HrefLabel:     WorkspaceGovernanceNextRouteHrefLabel("active", href),
 		}
 	}
 
 	currentOwner := governanceCurrentOwnerName(state, focus)
 	if currentOwner == "" {
-		result.Reason = "当前 room 还没有可映射到治理拓扑的 owner。"
+		result.Reason = "当前讨论还没定位到处理人。"
 		return result
 	}
 
 	fromLaneIndex := governanceSuggestedCurrentLaneIndex(template.Topology, state.Agents, focus, currentOwner)
 	if fromLaneIndex == -1 {
-		result.Reason = fmt.Sprintf("当前 owner %s 还没有被映射到已配置治理 lane；请先调整 team topology default agent 或继续手动交接。", currentOwner)
+		result.Reason = fmt.Sprintf("当前处理人 %s 还没对应到现有分工；请先调整默认智能体或手动交接。", currentOwner)
 		return result
 	}
 	if fromLaneIndex >= len(template.Topology)-1 {
 		fromLane := template.Topology[fromLaneIndex]
-		reason := fmt.Sprintf("%s 当前已经在最终 lane %s，不需要再发起新的 governed handoff。", currentOwner, fromLane.Label)
+		reason := fmt.Sprintf("%s 已经到了最后一步 %s，不需要再新建交接。", currentOwner, fromLane.Label)
 		href := fmt.Sprintf("/mailbox?roomId=%s", focus.Room.ID)
 		if focus.PullRequest != nil {
 			href = fmt.Sprintf("/pull-requests/%s", focus.PullRequest.ID)
-			reason = fmt.Sprintf("%s 当前已经完成最终 lane %s；下一步直接围 PR delivery entry 做 closeout。", currentOwner, fromLane.Label)
+			reason = fmt.Sprintf("%s 已经完成最后一步 %s；下一步直接查看交付详情。", currentOwner, fromLane.Label)
 		}
 		if focus.LatestCompletion != nil && strings.TrimSpace(focus.LatestCompletion.LastNote) != "" {
 			if focus.PullRequest != nil {
-				reason = fmt.Sprintf("%s 当前已经完成最终 lane %s；当前 closeout note 已准备好并回链到 delivery entry：%s", currentOwner, fromLane.Label, focus.LatestCompletion.LastNote)
+				reason = fmt.Sprintf("%s 已经完成最后一步 %s；最新结果已回到交付详情：%s", currentOwner, fromLane.Label, focus.LatestCompletion.LastNote)
 			} else {
-				reason = fmt.Sprintf("%s 当前已经完成最终 lane %s；当前治理链已收口：%s", currentOwner, fromLane.Label, focus.LatestCompletion.LastNote)
+				reason = fmt.Sprintf("%s 已经完成最后一步 %s；当前结果已收口：%s", currentOwner, fromLane.Label, focus.LatestCompletion.LastNote)
 			}
 		}
 		return WorkspaceGovernanceSuggestedHandoff{
@@ -482,6 +484,7 @@ func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDef
 			FromLaneLabel: fromLane.Label,
 			FromAgent:     currentOwner,
 			Href:          href,
+			HrefLabel:     WorkspaceGovernanceNextRouteHrefLabel("done", href),
 		}
 	}
 
@@ -491,22 +494,21 @@ func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDef
 	toAgent, toAgentFound := resolveGovernanceLaneAgent(state.Agents, toLane, currentOwner)
 	suggested := WorkspaceGovernanceSuggestedHandoff{
 		Status:        "ready",
-		Reason:        fmt.Sprintf("当前 owner %s 已落在 %s；按治理链下一棒应交给 %s。", currentOwner, fromLane.Label, toLane.Label),
+		Reason:        fmt.Sprintf("当前由 %s 负责，下一步建议交给 %s。", currentOwner, toLane.Label),
 		RoomID:        focus.Room.ID,
 		IssueKey:      focus.Issue.Key,
 		FromLaneID:    fromLane.ID,
 		FromLaneLabel: fromLane.Label,
 		ToLaneID:      toLane.ID,
 		ToLaneLabel:   toLane.Label,
-		DraftTitle:    fmt.Sprintf("把 %s lane 交给 %s", fromLane.Label, toLane.Label),
+		DraftTitle:    fmt.Sprintf("请 %s 接手当前事项", toLane.Label),
 		DraftSummary: fmt.Sprintf(
-			"%s 当前已把 %s 推到 %s；按治理链下一棒应由 %s 接住 %s，并沿 %s 继续推进。",
+			"%s 已经把 %s 推到 %s；下一步建议由 %s 接手，继续处理%s。",
 			currentOwner,
 			focus.Issue.Key,
 			focus.Room.Title,
 			defaultString(agentNameOrDefault(toAgent, toAgentFound), toLane.Label),
-			toLane.Label,
-			defaultString(strings.TrimSpace(toLane.Lane), "后续治理 lane"),
+			defaultString(strings.TrimSpace(toLane.Role), "后续工作"),
 		),
 	}
 	if fromAgentFound {
@@ -517,7 +519,7 @@ func buildGovernanceSuggestedHandoff(state State, template governanceTemplateDef
 	}
 	if !toAgentFound {
 		suggested.Status = "blocked"
-		suggested.Reason = fmt.Sprintf("%s 当前缺少可映射到 %s 的默认 Agent；请先补 default agent 或手动选择接收方。", toLane.Label, toLane.Label)
+		suggested.Reason = fmt.Sprintf("%s 当前还没有默认智能体；请先补充接手人或手动选择。", toLane.Label)
 		return suggested
 	}
 	suggested.ToAgentID = toAgent.ID
@@ -536,7 +538,7 @@ func governanceSuggestedHandoffLabel(item WorkspaceGovernanceSuggestedHandoff) s
 		case strings.TrimSpace(item.ToLaneLabel) != "":
 			return item.ToLaneLabel
 		default:
-			return "next governed handoff"
+			return "下一步"
 		}
 	case "blocked":
 		switch {
@@ -545,10 +547,10 @@ func governanceSuggestedHandoffLabel(item WorkspaceGovernanceSuggestedHandoff) s
 		case strings.TrimSpace(item.ToLaneLabel) != "":
 			return item.ToLaneLabel
 		default:
-			return "next lane blocked"
+			return "下一步受阻"
 		}
 	case "done":
-		return "delivery closeout"
+		return "交付详情"
 	default:
 		return ""
 	}
@@ -560,6 +562,26 @@ func governanceSuggestedHandoffHref(item WorkspaceGovernanceSuggestedHandoff, ro
 		return href
 	}
 	return governanceMailboxRoomHref(roomID)
+}
+
+func governanceSuggestedHandoffHrefLabel(item WorkspaceGovernanceSuggestedHandoff, roomID string) string {
+	if explicit := strings.TrimSpace(item.HrefLabel); explicit != "" {
+		return explicit
+	}
+	href := governanceSuggestedHandoffHref(item, roomID)
+	return WorkspaceGovernanceNextRouteHrefLabel(item.Status, href)
+}
+
+func WorkspaceGovernanceNextRouteHrefLabel(status, href string) string {
+	return MailboxHrefLabel(status, href)
+}
+
+func governanceEscalationRoomHrefLabel(href string) string {
+	return WorkspaceGovernanceEscalationRoomHrefLabel(href)
+}
+
+func WorkspaceGovernanceEscalationRoomHrefLabel(href string) string {
+	return HrefTargetLabel(href)
 }
 
 func governanceCurrentOwnerName(state State, focus governanceFocus) string {
@@ -763,22 +785,22 @@ func buildGovernanceEscalationSLA(template governanceTemplateDefinition, state S
 		activeEscalations++
 		elapsedMinutes := governanceMinutesSince(focus.LatestHandoff.UpdatedAt)
 		queueStatus := "active"
-		nextStep := fmt.Sprintf("在 %d 分钟 SLA 内继续围当前 handoff ledger 推进；超时后升级到 %s。", timeoutMinutes, template.EscalationChannel)
+		nextStep := fmt.Sprintf("请在 %d 分钟内继续处理；超时后按 %s 升级。", timeoutMinutes, template.EscalationChannel)
 		if focus.LatestHandoff.Status == "blocked" {
 			queueStatus = "blocked"
-			nextStep = fmt.Sprintf("当前 handoff 已 blocked；请尽快按 %s 决定 unblock / reroute。", template.EscalationChannel)
+			nextStep = fmt.Sprintf("当前交接已阻塞；请尽快按 %s 处理。", template.EscalationChannel)
 		}
 		if elapsedMinutes > timeoutMinutes {
 			breachedEscalations++
 			queueStatus = "blocked"
-			nextStep = fmt.Sprintf("当前 handoff 已超时；立即经 %s 升级。", template.EscalationChannel)
-			nextEscalation = fmt.Sprintf("%s overdue; escalate via %s", focus.LatestHandoff.ID, template.EscalationChannel)
+			nextStep = fmt.Sprintf("当前交接已超时；请立即按 %s 升级。", template.EscalationChannel)
+			nextEscalation = fmt.Sprintf("%s 已超时，请通过 %s 继续处理。", focus.LatestHandoff.ID, template.EscalationChannel)
 		}
 		queue = append(queue, WorkspaceGovernanceEscalationQueueEntry{
 			ID:               fmt.Sprintf("handoff:%s", focus.LatestHandoff.ID),
 			Label:            fmt.Sprintf("%s -> %s", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent),
 			Status:           queueStatus,
-			Source:           "mailbox handoff",
+			Source:           "交接",
 			Owner:            focus.LatestHandoff.ToAgent,
 			Summary:          focus.LatestHandoff.LastAction,
 			NextStep:         nextStep,
@@ -794,10 +816,10 @@ func buildGovernanceEscalationSLA(template governanceTemplateDefinition, state S
 			ID:               fmt.Sprintf("inbox:%s", item.ID),
 			Label:            item.Title,
 			Status:           "blocked",
-			Source:           "inbox blocker",
+			Source:           "收件箱",
 			Owner:            item.Room,
 			Summary:          item.Summary,
-			NextStep:         fmt.Sprintf("%s；按 %s 决定 unblock / reroute。", defaultString(item.Action, "打开 blocked signal"), template.EscalationChannel),
+			NextStep:         fmt.Sprintf("%s；按 %s 继续处理。", defaultString(item.Action, "打开当前提醒"), template.EscalationChannel),
 			Href:             defaultString(item.Href, "/inbox"),
 			TimeLabel:        item.Time,
 			ElapsedMinutes:   0,
@@ -806,14 +828,14 @@ func buildGovernanceEscalationSLA(template governanceTemplateDefinition, state S
 	}
 
 	status := "ready"
-	summary := fmt.Sprintf("当前 SLA = %d 分钟响应 / %d 次重试预算。", timeoutMinutes, retryBudget)
+	summary := fmt.Sprintf("当前时限为 %d 分钟响应 / %d 次重试。", timeoutMinutes, retryBudget)
 	switch {
 	case breachedEscalations > 0:
 		status = "blocked"
-		summary = fmt.Sprintf("已有 %d 条 governance escalation 超时，需要立即升级到 %s。", breachedEscalations, template.EscalationChannel)
+		summary = fmt.Sprintf("已有 %d 条事项超时，需要立即按 %s 升级。", breachedEscalations, template.EscalationChannel)
 	case activeEscalations > 0:
 		status = "active"
-		summary = fmt.Sprintf("当前有 %d 条 active escalation；下一跳 = %s。", activeEscalations, template.EscalationChannel)
+		summary = fmt.Sprintf("当前有 %d 条待处理升级；升级路径：%s。", activeEscalations, template.EscalationChannel)
 	}
 
 	return WorkspaceGovernanceEscalationSLA{
@@ -868,7 +890,7 @@ func buildGovernanceEscalationRoomRollup(
 		updateGovernanceEscalationRoomAccumulator(
 			accumulator,
 			entryStatus,
-			"mailbox handoff",
+			"交接",
 			fmt.Sprintf("%s -> %s", handoff.FromAgent, handoff.ToAgent),
 			handoff.LastAction,
 			mailboxInboxHref(handoff.ID, handoff.RoomID),
@@ -890,7 +912,7 @@ func buildGovernanceEscalationRoomRollup(
 		updateGovernanceEscalationRoomAccumulator(
 			accumulator,
 			"blocked",
-			"inbox blocker",
+			"收件箱",
 			item.Title,
 			item.Summary,
 			defaultString(item.Href, governanceMailboxRoomHref(roomID)),
@@ -912,21 +934,23 @@ func buildGovernanceEscalationRoomRollup(
 		}
 		suggested := buildGovernanceSuggestedHandoff(state, template, roomFocus)
 		items = append(items, WorkspaceGovernanceEscalationRoomRollup{
-			RoomID:           accumulator.RoomID,
-			RoomTitle:        accumulator.RoomTitle,
-			Status:           status,
-			EscalationCount:  accumulator.EscalationCount,
-			BlockedCount:     accumulator.BlockedCount,
-			CurrentOwner:     currentOwner,
-			CurrentLane:      currentLane,
-			LatestSource:     accumulator.LatestSource,
-			LatestLabel:      accumulator.LatestLabel,
-			LatestSummary:    accumulator.LatestSummary,
-			NextRouteStatus:  suggested.Status,
-			NextRouteLabel:   governanceSuggestedHandoffLabel(suggested),
-			NextRouteSummary: suggested.Reason,
-			NextRouteHref:    governanceSuggestedHandoffHref(suggested, accumulator.RoomID),
-			Href:             accumulator.Href,
+			RoomID:             accumulator.RoomID,
+			RoomTitle:          accumulator.RoomTitle,
+			Status:             status,
+			EscalationCount:    accumulator.EscalationCount,
+			BlockedCount:       accumulator.BlockedCount,
+			CurrentOwner:       currentOwner,
+			CurrentLane:        currentLane,
+			LatestSource:       accumulator.LatestSource,
+			LatestLabel:        accumulator.LatestLabel,
+			LatestSummary:      accumulator.LatestSummary,
+			NextRouteStatus:    suggested.Status,
+			NextRouteLabel:     governanceSuggestedHandoffLabel(suggested),
+			NextRouteSummary:   suggested.Reason,
+			NextRouteHref:      governanceSuggestedHandoffHref(suggested, accumulator.RoomID),
+			NextRouteHrefLabel: governanceSuggestedHandoffHrefLabel(suggested, accumulator.RoomID),
+			Href:               accumulator.Href,
+			HrefLabel:          governanceEscalationRoomHrefLabel(accumulator.Href),
 		})
 	}
 
@@ -1088,15 +1112,15 @@ func governanceParseTimestamp(value string) time.Time {
 }
 
 func buildGovernanceNotificationPolicy(workspace WorkspaceSnapshot, template governanceTemplateDefinition, focus governanceFocus) WorkspaceGovernanceNotificationPolicy {
-	targets := []string{"mailbox", "inbox"}
+	targets := []string{"交接箱", "收件箱"}
 	if strings.TrimSpace(workspace.BrowserPush) != "" {
-		targets = append(targets, "browser_push")
+		targets = append(targets, "浏览器提醒")
 	}
 	status := "ready"
-	summary := fmt.Sprintf("blocked / review / verify 默认沿 %s fanout。browser push 当前 = %s。", template.EscalationChannel, workspace.BrowserPush)
+	summary := fmt.Sprintf("阻塞、评审和需要拍板的事项都会按 %s 提醒。浏览器提醒当前：%s。", template.EscalationChannel, workspace.BrowserPush)
 	if len(focus.BlockedInbox)+len(focus.ReviewInbox)+len(focus.ApprovalInbox) > 0 {
 		status = "active"
-		summary = fmt.Sprintf("当前已有 live governance signal；通知策略继续沿 %s 回放到 mailbox / inbox / browser。", template.EscalationChannel)
+		summary = fmt.Sprintf("当前已有新的提醒；系统会继续按 %s 同步到交接箱、收件箱和浏览器提醒。", template.EscalationChannel)
 	}
 	return WorkspaceGovernanceNotificationPolicy{
 		Status:            status,
@@ -1112,7 +1136,7 @@ func buildHumanOverride(focus governanceFocus) WorkspaceHumanOverride {
 		item := focus.ApprovalInbox[0]
 		return WorkspaceHumanOverride{
 			Status:  "required",
-			Summary: fmt.Sprintf("当前有 %d 条显式 human override gate；最新一条是“%s”。", len(focus.ApprovalInbox), item.Title),
+			Summary: fmt.Sprintf("当前有 %d 条需要你拍板的事项；最新一条是“%s”。", len(focus.ApprovalInbox), item.Title),
 			Href:    defaultString(item.Href, "/inbox"),
 		}
 	}
@@ -1120,13 +1144,13 @@ func buildHumanOverride(focus governanceFocus) WorkspaceHumanOverride {
 		item := focus.BlockedInbox[0]
 		return WorkspaceHumanOverride{
 			Status:  "watch",
-			Summary: fmt.Sprintf("当前 blocker 已被升级到 Inbox；人类可以直接围“%s”决定 unblock。", item.Title),
+			Summary: fmt.Sprintf("当前阻塞已经进了收件箱；可以直接从“%s”开始处理。", item.Title),
 			Href:    defaultString(item.Href, "/inbox"),
 		}
 	}
 	return WorkspaceHumanOverride{
 		Status:  "ready",
-		Summary: "当前没有额外 human override gate；团队可以沿 mailbox / review / verify 继续推进。",
+		Summary: "暂无需要你拍板的事项；交接、评审和验证都会继续推进。",
 		Href:    "/inbox",
 	}
 }
@@ -1140,19 +1164,19 @@ func buildResponseAggregation(
 	currentOwner := governanceCurrentOwnerName(state, focus)
 	sources := []string{}
 	if focus.Issue != nil {
-		sources = append(sources, fmt.Sprintf("%s issue", focus.Issue.Key))
+		sources = append(sources, fmt.Sprintf("%s 事项", focus.Issue.Key))
 	}
 	if focus.Room != nil {
-		sources = append(sources, fmt.Sprintf("%s room context", focus.Room.Title))
+		sources = append(sources, fmt.Sprintf("%s 讨论", focus.Room.Title))
 	}
 	if focus.LatestHandoff != nil {
-		sources = append(sources, fmt.Sprintf("%s -> %s handoff", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent))
+		sources = append(sources, fmt.Sprintf("%s -> %s 交接", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent))
 	}
 	if focus.PullRequest != nil {
 		sources = append(sources, focus.PullRequest.Label)
 	}
 	if len(focus.RelatedInbox) > 0 {
-		sources = append(sources, fmt.Sprintf("%d inbox signals", len(focus.RelatedInbox)))
+		sources = append(sources, fmt.Sprintf("%d 条收件箱提醒", len(focus.RelatedInbox)))
 	}
 	deliveryDelegation := PullRequestDeliveryDelegation{}
 	deliveryDelegationActive := false
@@ -1160,24 +1184,24 @@ func buildResponseAggregation(
 		deliveryDelegation = buildPullRequestDeliveryDelegation(state, *focus.PullRequest, routingPolicy)
 		deliveryDelegationActive = deliveryDelegation.Status == "ready" || deliveryDelegation.Status == "blocked" || deliveryDelegation.Status == "done"
 		if deliveryDelegationActive {
-			sources = append(sources, "delivery closeout")
+			sources = append(sources, "交付收尾")
 		}
 	}
 	decisionPath := []string{}
 	if focus.Issue != nil {
-		decisionPath = append(decisionPath, fmt.Sprintf("issue:%s", focus.Issue.Key))
+		decisionPath = append(decisionPath, fmt.Sprintf("事项:%s", focus.Issue.Key))
 	}
 	if focus.LatestHandoff != nil {
-		decisionPath = append(decisionPath, fmt.Sprintf("handoff:%s->%s", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent))
+		decisionPath = append(decisionPath, fmt.Sprintf("交接:%s->%s", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent))
 	}
 	if focus.PullRequest != nil {
-		decisionPath = append(decisionPath, fmt.Sprintf("review:%s", focus.PullRequest.Label))
+		decisionPath = append(decisionPath, fmt.Sprintf("评审:%s", focus.PullRequest.Label))
 	}
 	if len(focus.RelatedInbox) > 0 {
-		decisionPath = append(decisionPath, fmt.Sprintf("inbox:%d", len(focus.RelatedInbox)))
+		decisionPath = append(decisionPath, fmt.Sprintf("收件箱:%d", len(focus.RelatedInbox)))
 	}
 	if deliveryDelegationActive {
-		decisionPath = append(decisionPath, fmt.Sprintf("delivery:%s", deliveryDelegation.Status))
+		decisionPath = append(decisionPath, fmt.Sprintf("交付:%s", deliveryDelegation.Status))
 	}
 	overrideTrace := []string{}
 	if humanOverride.Status == "required" || humanOverride.Status == "watch" {
@@ -1191,17 +1215,17 @@ func buildResponseAggregation(
 		}
 		auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
 			ID:         "audit-issue",
-			Label:      "Issue Truth",
+			Label:      "事项",
 			Status:     "ready",
 			Actor:      focus.Issue.Owner,
-			Summary:    fmt.Sprintf("%s anchors the target truth.", focus.Issue.Key),
+			Summary:    fmt.Sprintf("%s 记录了当前目标。", focus.Issue.Key),
 			OccurredAt: occurredAt,
 		})
 	}
 	if focus.LatestHandoff != nil {
 		auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
 			ID:         "audit-handoff",
-			Label:      "Handoff",
+			Label:      "交接",
 			Status:     governanceStatusFromHandoff(focus.LatestHandoff.Status),
 			Actor:      focus.LatestHandoff.ToAgent,
 			Summary:    fmt.Sprintf("%s -> %s", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent),
@@ -1211,7 +1235,7 @@ func buildResponseAggregation(
 	if focus.PullRequest != nil {
 		auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
 			ID:         "audit-review",
-			Label:      "Review",
+			Label:      "评审",
 			Status:     governanceStatusFromPullRequest(focus.PullRequest.Status),
 			Actor:      focus.PullRequest.Author,
 			Summary:    defaultString(focus.PullRequest.ReviewSummary, focus.PullRequest.Label),
@@ -1221,48 +1245,48 @@ func buildResponseAggregation(
 	if deliveryDelegationActive {
 		auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
 			ID:         "audit-delivery-closeout",
-			Label:      "Delivery Closeout",
+			Label:      "交付收尾",
 			Status:     deliveryDelegation.Status,
-			Actor:      defaultString(strings.TrimSpace(deliveryDelegation.TargetAgent), defaultString(strings.TrimSpace(currentOwner), "delivery closeout")),
+			Actor:      defaultString(strings.TrimSpace(deliveryDelegation.TargetAgent), defaultString(strings.TrimSpace(currentOwner), "交付收尾")),
 			Summary:    deliveryDelegation.Summary,
 			OccurredAt: responseAggregationDeliveryOccurredAt(state, focus, deliveryDelegation),
 		})
 	}
 
-	finalResponse := "等待当前 reviewer / tester loop 收口后再聚合最终响应。"
+	finalResponse := "等当前事项收口后再给出最终回复。"
 	status := "draft"
-	summary := "最终响应会把 issue、room、handoff、review 和 inbox signal 聚合到同一条 human-readable closeout。"
-	aggregator := defaultString(currentOwner, "workspace governance")
+	summary := "最终回复会把事项、讨论、交接、评审和收件箱里的结果收在一起。"
+	aggregator := defaultString(currentOwner, "当前协作")
 	finalOccurredAt := responseAggregationFallbackOccurredAt(focus)
 
 	switch {
 	case deliveryDelegationActive:
 		status = responseAggregationStatusFromDeliveryDelegation(deliveryDelegation.Status)
 		finalResponse = deliveryDelegation.Summary
-		summary = "当前 final response 继续围 PR delivery closeout / release receipt truth 聚合。"
+		summary = "当前最终回复会跟着交付结果一起更新。"
 		aggregator = defaultString(strings.TrimSpace(deliveryDelegation.TargetAgent), aggregator)
 		finalOccurredAt = responseAggregationDeliveryOccurredAt(state, focus, deliveryDelegation)
 	case governanceCompletionMatchesCurrentOwner(focus.LatestCompletion, currentOwner) && strings.TrimSpace(focus.LatestCompletion.LastNote) != "":
 		status = "ready"
 		finalResponse = focus.LatestCompletion.LastNote
-		summary = fmt.Sprintf("最新 closeout note 已从 mailbox 回写：%s。", focus.LatestCompletion.LastNote)
+		summary = fmt.Sprintf("最新结果已回写：%s。", focus.LatestCompletion.LastNote)
 		aggregator = focus.LatestCompletion.ToAgent
 		finalOccurredAt = defaultString(strings.TrimSpace(focus.LatestCompletion.UpdatedAt), finalOccurredAt)
 	case focus.Run != nil && strings.TrimSpace(focus.Run.NextAction) != "":
 		status = governanceStatusFromRun(focus.Run.Status)
 		finalResponse = focus.Run.NextAction
-		summary = "当前 final response 继续围同一条 run next-action truth 聚合，不需要再靠口头总结。"
+		summary = "当前最终回复会跟着这次执行的下一步一起更新。"
 		aggregator = defaultString(currentOwner, aggregator)
 	case focus.PullRequest != nil && strings.TrimSpace(focus.PullRequest.ReviewSummary) != "":
 		status = governanceStatusFromPullRequest(focus.PullRequest.Status)
 		finalResponse = focus.PullRequest.ReviewSummary
-		summary = fmt.Sprintf("%s 当前把 reviewer verdict 留在同一条 aggregation surface 上。", focus.PullRequest.Label)
+		summary = fmt.Sprintf("%s 的评审结果已经同步到这里。", focus.PullRequest.Label)
 		aggregator = defaultString(strings.TrimSpace(focus.PullRequest.Author), aggregator)
 		finalOccurredAt = defaultString(strings.TrimSpace(focus.PullRequest.UpdatedAt), finalOccurredAt)
 	}
 	auditTrail = append(auditTrail, WorkspaceResponseAggregationAuditEntry{
 		ID:         "audit-final-response",
-		Label:      "Final Response",
+		Label:      "最终回复",
 		Status:     status,
 		Actor:      aggregator,
 		Summary:    finalResponse,
@@ -1358,41 +1382,41 @@ func resolveGovernanceLaneState(lane governanceTemplateLaneDefinition, focus gov
 			return "active", humanOverride.Summary
 		}
 		if focus.Issue != nil {
-			return "ready", fmt.Sprintf("%s 当前把 %s 的 acceptance 和 final response 锚在同一条 issue truth 上。", lane.Label, focus.Issue.Key)
+			return "ready", fmt.Sprintf("%s 正在盯着 %s 的目标和最终回复。", lane.Label, focus.Issue.Key)
 		}
 	case isGovernanceArchitectureLane(lane):
 		if focus.Room != nil {
-			return "ready", fmt.Sprintf("%s 已把 room / run / PR 边界锚在 %s。", lane.Label, focus.Room.Title)
+			return "ready", fmt.Sprintf("%s 已经把 %s 的讨论、执行和交付边界收清。", lane.Label, focus.Room.Title)
 		}
 	case isGovernanceVerificationLane(lane):
 		status, summary := buildVerificationRule(focus)
 		return status, summary
 	case isGovernanceExecutionLane(lane):
 		if focus.Run != nil {
-			return governanceStatusFromRun(focus.Run.Status), fmt.Sprintf("当前 live lane 继续沿 %s 推进：%s。", defaultString(focus.Run.Owner, lane.DefaultAgent), focus.Run.Summary)
+			return governanceStatusFromRun(focus.Run.Status), fmt.Sprintf("当前由 %s 持续推进：%s。", defaultString(focus.Run.Owner, lane.DefaultAgent), focus.Run.Summary)
 		}
 	case isGovernanceSynthesisLane(lane):
 		if focus.LatestHandoff != nil {
-			return governanceStatusFromHandoff(focus.LatestHandoff.Status), fmt.Sprintf("handoff ledger 已把 %s -> %s 摆成 formal chain。", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent)
+			return governanceStatusFromHandoff(focus.LatestHandoff.Status), fmt.Sprintf("最近一条交接是 %s -> %s。", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent)
 		}
 		if focus.Room != nil {
-			return "ready", fmt.Sprintf("%s 会围 %s 的 room context 聚合结论。", lane.Label, focus.Room.Title)
+			return "ready", fmt.Sprintf("%s 会围绕 %s 汇总结论。", lane.Label, focus.Room.Title)
 		}
 	case isGovernanceReviewLane(lane):
 		switch {
 		case focus.LatestHandoff != nil:
-			return governanceStatusFromHandoff(focus.LatestHandoff.Status), fmt.Sprintf("当前 reviewer loop 由 handoff %s 驱动：%s。", focus.LatestHandoff.ID, focus.LatestHandoff.LastAction)
+			return governanceStatusFromHandoff(focus.LatestHandoff.Status), fmt.Sprintf("当前评审跟着交接推进：%s。", focus.LatestHandoff.LastAction)
 		case focus.PullRequest != nil:
-			return governanceStatusFromPullRequest(focus.PullRequest.Status), fmt.Sprintf("%s 当前围 %s 收 exact-head verdict。", lane.Label, focus.PullRequest.Label)
+			return governanceStatusFromPullRequest(focus.PullRequest.Status), fmt.Sprintf("%s 正在查看 %s。", lane.Label, focus.PullRequest.Label)
 		case len(focus.ReviewInbox) > 0:
-			return "active", fmt.Sprintf("Inbox 已摆出 reviewer gate：%s。", focus.ReviewInbox[0].Title)
+			return "active", fmt.Sprintf("收件箱里有待评审事项：%s。", focus.ReviewInbox[0].Title)
 		}
 	}
 
 	if focus.Issue != nil {
-		return "ready", fmt.Sprintf("%s 模板已围 %s 起链，等待当前 lane 前滚。", lane.Label, focus.Issue.Key)
+		return "ready", fmt.Sprintf("%s 已接入 %s，等待轮到这一步。", lane.Label, focus.Issue.Key)
 	}
-	return "pending", fmt.Sprintf("%s 还在等待第一条 live governance evidence。", lane.Label)
+	return "pending", fmt.Sprintf("%s 还在等待新进展。", lane.Label)
 }
 
 func governanceLaneSummaryText(lane governanceTemplateLaneDefinition) string {
@@ -1436,85 +1460,85 @@ func isGovernanceVerificationLane(lane governanceTemplateLaneDefinition) bool {
 func buildGovernanceRules(focus governanceFocus, stats WorkspaceGovernanceStats, humanOverride WorkspaceHumanOverride) []WorkspaceGovernanceRule {
 	verifyStatus, verifySummary := buildVerificationRule(focus)
 	reviewStatus := "pending"
-	reviewSummary := "当前还没有显式 review gate。"
+	reviewSummary := "当前还没有待评审事项。"
 	if focus.PullRequest != nil {
 		reviewStatus = governanceStatusFromPullRequest(focus.PullRequest.Status)
-		reviewSummary = fmt.Sprintf("%s 当前状态为 %s；review summary 会和 mailbox / inbox 同步聚合。", focus.PullRequest.Label, focus.PullRequest.Status)
+		reviewSummary = fmt.Sprintf("%s 当前状态为 %s；评审结果会同步到这里。", focus.PullRequest.Label, focus.PullRequest.Status)
 	} else if len(focus.ReviewInbox) > 0 {
 		reviewStatus = "active"
-		reviewSummary = fmt.Sprintf("Inbox review gate 已显式可见：%s。", focus.ReviewInbox[0].Title)
+		reviewSummary = fmt.Sprintf("当前有待评审事项：%s。", focus.ReviewInbox[0].Title)
 	}
 
 	blockedStatus := "ready"
-	blockedSummary := "当前没有新的 blocked escalation；若 handoff / verify 失败，会先被抬到 Inbox。"
+	blockedSummary := "当前没有新的阻塞项；如果交接或验证失败，会先进入收件箱。"
 	if len(focus.BlockedInbox) > 0 {
 		blockedStatus = "blocked"
-		blockedSummary = fmt.Sprintf("blocked escalation 当前有 %d 条，最新一条是“%s”。", len(focus.BlockedInbox), focus.BlockedInbox[0].Title)
+		blockedSummary = fmt.Sprintf("当前有 %d 条阻塞项，最新一条是“%s”。", len(focus.BlockedInbox), focus.BlockedInbox[0].Title)
 	}
 
 	handoffStatus := "ready"
-	handoffSummary := fmt.Sprintf("Mailbox ledger 已支持 formal request / ack / block / complete；当前 open handoff = %d。", stats.OpenHandoffs)
+	handoffSummary := fmt.Sprintf("当前还有 %d 条交接在进行。", stats.OpenHandoffs)
 	if focus.LatestHandoff != nil {
 		handoffStatus = governanceStatusFromHandoff(focus.LatestHandoff.Status)
-		handoffSummary = fmt.Sprintf("当前最新 handoff = %s -> %s / %s。", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent, focus.LatestHandoff.Status)
+		handoffSummary = fmt.Sprintf("最新交接：%s -> %s（%s）。", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent, focus.LatestHandoff.Status)
 	}
 
 	return []WorkspaceGovernanceRule{
-		{ID: "formal-handoff", Label: "Formal Handoff", Status: handoffStatus, Summary: handoffSummary, Href: "/mailbox"},
-		{ID: "review-gate", Label: "Review Gate", Status: reviewStatus, Summary: reviewSummary, Href: "/mailbox"},
-		{ID: "test-gate", Label: "Test / Verify Gate", Status: verifyStatus, Summary: verifySummary, Href: "/mailbox"},
-		{ID: "blocked-escalation", Label: "Blocked Escalation", Status: blockedStatus, Summary: blockedSummary, Href: "/inbox"},
-		{ID: "human-override", Label: "Human Override", Status: humanOverride.Status, Summary: humanOverride.Summary, Href: humanOverride.Href},
+		{ID: "formal-handoff", Label: "交接", Status: handoffStatus, Summary: handoffSummary, Href: "/mailbox"},
+		{ID: "review-gate", Label: "评审", Status: reviewStatus, Summary: reviewSummary, Href: "/mailbox"},
+		{ID: "test-gate", Label: "验证", Status: verifyStatus, Summary: verifySummary, Href: "/mailbox"},
+		{ID: "blocked-escalation", Label: "阻塞", Status: blockedStatus, Summary: blockedSummary, Href: "/inbox"},
+		{ID: "human-override", Label: "人工接管", Status: humanOverride.Status, Summary: humanOverride.Summary, Href: humanOverride.Href},
 	}
 }
 
 func buildVerificationRule(focus governanceFocus) (string, string) {
 	if len(focus.BlockedInbox) > 0 {
-		return "blocked", fmt.Sprintf("verify gate 当前被 blocker 挡住：%s。", focus.BlockedInbox[0].Summary)
+		return "blocked", fmt.Sprintf("当前验证被这条阻塞拦住：%s。", focus.BlockedInbox[0].Summary)
 	}
 	if focus.Run != nil {
 		switch focus.Run.Status {
 		case "review", "done":
-			return "ready", fmt.Sprintf("当前 run 已进入 %s；tester / release evidence 可以直接围 `%s` 收口。", focus.Run.Status, focus.Run.NextAction)
+			return "ready", fmt.Sprintf("当前执行已到 %s；可以直接围“%s”收结果。", focus.Run.Status, focus.Run.NextAction)
 		case "blocked", "paused":
-			return "blocked", fmt.Sprintf("当前 run 处于 %s；verify 会先 fail-closed，再走 escalation。", focus.Run.Status)
+			return "blocked", fmt.Sprintf("当前执行处于 %s；请先处理阻塞后再继续验证。", focus.Run.Status)
 		default:
-			return "active", fmt.Sprintf("当前 run 仍在推进 verify-ready evidence：%s。", focus.Run.NextAction)
+			return "active", fmt.Sprintf("当前执行还在推进，最新一步：%s。", focus.Run.NextAction)
 		}
 	}
 	if focus.PullRequest != nil {
-		return governanceStatusFromPullRequest(focus.PullRequest.Status), fmt.Sprintf("%s 当前继续挂着 verify / release gate。", focus.PullRequest.Label)
+		return governanceStatusFromPullRequest(focus.PullRequest.Status), fmt.Sprintf("%s 当前仍在等待验证结果。", focus.PullRequest.Label)
 	}
-	return "pending", "当前还没有 tester / verify evidence；后续会在 room / PR / Inbox 同步出现。"
+	return "pending", "暂无验证结果；后续会在讨论、PR 或收件箱里出现。"
 }
 
 func buildGovernanceWalkthrough(focus governanceFocus, responseAggregation WorkspaceResponseAggregation) []WorkspaceGovernanceWalkthrough {
-	issueSummary := "当前还没有 issue truth。"
-	issueDetail := "请先从模板起出第一条 issue / room。"
+	issueSummary := "暂无事项。"
+	issueDetail := "先创建事项，再进入讨论间。"
 	issueHref := "/rooms"
 	if focus.Issue != nil && focus.Room != nil {
 		issueSummary = fmt.Sprintf("%s / %s", focus.Issue.Key, focus.Issue.Title)
-		issueDetail = fmt.Sprintf("room = %s，owner = %s。", focus.Room.Title, focus.Issue.Owner)
+		issueDetail = fmt.Sprintf("讨论间：%s · 当前处理人：%s。", focus.Room.Title, focus.Issue.Owner)
 		issueHref = "/rooms/" + focus.Room.ID
 	}
 
 	handoffStatus := "pending"
-	handoffSummary := "等待第一条 formal handoff。"
-	handoffDetail := "Mailbox ledger 会把 request / ack / blocked / complete 写成同一条对象。"
+	handoffSummary := "等待第一条交接。"
+	handoffDetail := "新的交接会直接写进交接箱。"
 	if focus.LatestHandoff != nil {
 		handoffStatus = governanceStatusFromHandoff(focus.LatestHandoff.Status)
-		handoffSummary = fmt.Sprintf("%s -> %s / %s", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent, focus.LatestHandoff.Status)
+		handoffSummary = fmt.Sprintf("%s -> %s · %s", focus.LatestHandoff.FromAgent, focus.LatestHandoff.ToAgent, focus.LatestHandoff.Status)
 		handoffDetail = focus.LatestHandoff.LastAction
 	}
 
 	reviewStatus := "pending"
-	reviewSummary := "等待 current review gate。"
-	reviewDetail := "review 会收 exact-head verdict，而不是只留口头结论。"
+	reviewSummary := "等待待评审事项。"
+	reviewDetail := "评审结果会直接写回这里。"
 	reviewHref := "/mailbox"
 	if focus.PullRequest != nil {
 		reviewStatus = governanceStatusFromPullRequest(focus.PullRequest.Status)
 		reviewSummary = fmt.Sprintf("%s / %s", focus.PullRequest.Label, focus.PullRequest.Status)
-		reviewDetail = defaultString(focus.PullRequest.ReviewSummary, "review summary 正在聚合中。")
+		reviewDetail = defaultString(focus.PullRequest.ReviewSummary, "评审结果正在整理中。")
 		reviewHref = defaultString(focus.PullRequest.URL, "/mailbox")
 	} else if len(focus.ReviewInbox) > 0 {
 		reviewStatus = "active"
@@ -1524,17 +1548,17 @@ func buildGovernanceWalkthrough(focus governanceFocus, responseAggregation Works
 	}
 
 	testStatus, testDetail := buildVerificationRule(focus)
-	testSummary := "verify gate"
+	testSummary := "验证"
 	if focus.Run != nil {
 		testSummary = fmt.Sprintf("%s / %s", focus.Run.ID, focus.Run.Status)
 	}
 
 	return []WorkspaceGovernanceWalkthrough{
-		{ID: "issue", Label: "Issue", Status: "ready", Summary: issueSummary, Detail: issueDetail, Href: issueHref},
-		{ID: "handoff", Label: "Handoff", Status: handoffStatus, Summary: handoffSummary, Detail: handoffDetail, Href: "/mailbox"},
-		{ID: "review", Label: "Review", Status: reviewStatus, Summary: reviewSummary, Detail: reviewDetail, Href: reviewHref},
-		{ID: "test", Label: "Test", Status: testStatus, Summary: testSummary, Detail: testDetail, Href: "/mailbox"},
-		{ID: "final-response", Label: "Final Response", Status: responseAggregation.Status, Summary: responseAggregation.FinalResponse, Detail: responseAggregation.Summary, Href: "/mailbox"},
+		{ID: "issue", Label: "事项", Status: "ready", Summary: issueSummary, Detail: issueDetail, Href: issueHref},
+		{ID: "handoff", Label: "交接", Status: handoffStatus, Summary: handoffSummary, Detail: handoffDetail, Href: "/mailbox"},
+		{ID: "review", Label: "评审", Status: reviewStatus, Summary: reviewSummary, Detail: reviewDetail, Href: reviewHref},
+		{ID: "test", Label: "验证", Status: testStatus, Summary: testSummary, Detail: testDetail, Href: "/mailbox"},
+		{ID: "final-response", Label: "最终回复", Status: responseAggregation.Status, Summary: responseAggregation.FinalResponse, Detail: responseAggregation.Summary, Href: "/mailbox"},
 	}
 }
 

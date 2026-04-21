@@ -6,6 +6,77 @@ import (
 	"time"
 )
 
+func HrefTargetLabel(href string) string {
+	trimmedHref := strings.TrimSpace(href)
+	switch {
+	case trimmedHref == "":
+		return ""
+	case strings.HasPrefix(trimmedHref, "/rooms/") && strings.Contains(trimmedHref, "/runs/"):
+		return "执行详情"
+	case strings.HasPrefix(trimmedHref, "/rooms/") && strings.Contains(trimmedHref, "?tab=pr"):
+		return "讨论间 PR"
+	case strings.HasPrefix(trimmedHref, "/rooms/") && strings.Contains(trimmedHref, "?tab=run"):
+		return "讨论间执行面"
+	case strings.HasPrefix(trimmedHref, "/rooms/") && strings.Contains(trimmedHref, "?tab=context"):
+		return "讨论间上下文"
+	case strings.HasPrefix(trimmedHref, "/rooms/") && strings.Contains(trimmedHref, "?tab=topic"):
+		return "讨论间话题"
+	case strings.HasPrefix(trimmedHref, "/rooms/"):
+		return "进入讨论间"
+	case strings.HasPrefix(trimmedHref, "/runs/"):
+		return "执行详情"
+	case strings.HasPrefix(trimmedHref, "/issues/"):
+		return "事项详情"
+	case strings.HasPrefix(trimmedHref, "/topics/"):
+		return "话题详情"
+	case strings.HasPrefix(trimmedHref, "/pull-requests/"):
+		return "交付详情"
+	case strings.HasPrefix(trimmedHref, "/setup"), strings.HasPrefix(trimmedHref, "/settings"):
+		return "设置"
+	case strings.HasPrefix(trimmedHref, "/access"):
+		return "账号中心"
+	case strings.HasPrefix(trimmedHref, "/mailbox") && strings.Contains(trimmedHref, "handoffId="):
+		return "当前交接"
+	case strings.HasPrefix(trimmedHref, "/mailbox"):
+		return "交接箱"
+	case strings.HasPrefix(trimmedHref, "/inbox") && strings.Contains(trimmedHref, "handoffId="):
+		return "收件箱定位"
+	case strings.HasPrefix(trimmedHref, "/inbox"):
+		return "收件箱"
+	case strings.HasPrefix(trimmedHref, "/agents/"):
+		return "智能体详情"
+	case strings.HasPrefix(trimmedHref, "/memory"):
+		return "记忆中心"
+	default:
+		return ""
+	}
+}
+
+func MailboxHrefLabel(status, href string) string {
+	trimmedHref := strings.TrimSpace(href)
+	switch {
+	case trimmedHref == "":
+		return ""
+	case strings.HasPrefix(trimmedHref, "/mailbox") && strings.Contains(trimmedHref, "handoffId="):
+		return "当前交接"
+	case strings.HasPrefix(trimmedHref, "/mailbox"):
+		switch strings.TrimSpace(status) {
+		case "ready":
+			return "交接建议"
+		case "blocked":
+			return "待处理升级"
+		default:
+			return "交接箱"
+		}
+	default:
+		return HrefTargetLabel(trimmedHref)
+	}
+}
+
+func InboxItemActionLabel(href string) string {
+	return HrefTargetLabel(href)
+}
+
 func (s *Store) CreateIssue(req CreateIssueInput) (IssueCreationResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,7 +237,7 @@ func (s *Store) createIssueLocked(req CreateIssueInput) (IssueCreationResult, er
 		Room:    newRoom.Title,
 		Time:    "刚刚",
 		Summary: "新的需求已经进入队列，等待第一条执行指令。",
-		Action:  "打开房间",
+		Action:  InboxItemActionLabel(fmt.Sprintf("/rooms/%s", roomID)),
 		Href:    fmt.Sprintf("/rooms/%s", roomID),
 	}}, s.state.Inbox...)
 	s.appendChannelMessageLocked("announcements", Message{
@@ -321,7 +392,7 @@ func (s *Store) UpdateRuntimePairing(req RuntimePairingInput) (State, error) {
 		Room:    "Setup",
 		Time:    "刚刚",
 		Summary: "浏览器设备授权已经完成，可以直接从讨论间启动真实 Run。",
-		Action:  "打开配置",
+		Action:  InboxItemActionLabel("/setup"),
 		Href:    "/setup",
 	}}, s.state.Inbox...)
 
@@ -381,7 +452,7 @@ func (s *Store) UpdateRepoBinding(req RepoBindingInput) (State, error) {
 		Room:    "Setup",
 		Time:    "刚刚",
 		Summary: fmt.Sprintf("当前绑定仓库为 %s，分支 %s。", repo, branch),
-		Action:  "打开配置",
+		Action:  InboxItemActionLabel("/setup"),
 		Href:    "/setup",
 	}}, s.state.Inbox...)
 	s.recordMemoryArtifactWriteLocked("repo-binding", fmt.Sprintf("%s @ %s (%s)", repo, branch, detectedAt), "repo-binding-sync", "System")
@@ -429,7 +500,7 @@ func (s *Store) ClearRuntimePairing() (State, error) {
 		Room:    "Setup",
 		Time:    "刚刚",
 		Summary: "浏览器设备授权已撤销，需要重新配对后才能继续使用本地 CLI。",
-		Action:  "重新配对",
+		Action:  InboxItemActionLabel("/setup"),
 		Href:    "/setup",
 	}}, s.state.Inbox...)
 
@@ -1663,7 +1734,7 @@ func (s *Store) AppendConversationFailure(roomID, prompt, message string) (State
 		Room:    s.state.Rooms[roomIndex].Title,
 		Time:    "刚刚",
 		Summary: blockedMessage,
-		Action:  "解除阻塞",
+		Action:  InboxItemActionLabel(fmt.Sprintf("/rooms/%s", roomID)),
 		Href:    fmt.Sprintf("/rooms/%s", roomID),
 	}}, s.state.Inbox...)
 	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
@@ -1781,7 +1852,16 @@ func (s *Store) AppendSystemRoomMessage(roomID, speaker, text, tone string) (Sta
 	s.state.Runs[runIndex].Summary = text
 	s.state.Runs[runIndex].NextAction = "等待人工处理、重试 CLI，或切换 provider。"
 	s.state.Runs[runIndex].Stderr = append(s.state.Runs[runIndex].Stderr, fmt.Sprintf("[%s] %s", now, text))
-	s.state.Inbox = append([]InboxItem{{ID: fmt.Sprintf("inbox-blocked-%d", time.Now().UnixNano()), Title: "CLI 连接失败，等待人工处理", Kind: "blocked", Room: s.state.Rooms[roomIndex].Title, Time: "刚刚", Summary: text, Action: "解除阻塞", Href: fmt.Sprintf("/rooms/%s", roomID)}}, s.state.Inbox...)
+	s.state.Inbox = append([]InboxItem{{
+		ID:      fmt.Sprintf("inbox-blocked-%d", time.Now().UnixNano()),
+		Title:   "CLI 连接失败，等待人工处理",
+		Kind:    "blocked",
+		Room:    s.state.Rooms[roomIndex].Title,
+		Time:    "刚刚",
+		Summary: text,
+		Action:  InboxItemActionLabel(fmt.Sprintf("/rooms/%s", roomID)),
+		Href:    fmt.Sprintf("/rooms/%s", roomID),
+	}}, s.state.Inbox...)
 	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
 		item.Status = "blocked"
 		item.PendingTurn = nil
@@ -1863,6 +1943,7 @@ func (s *Store) AppendRuntimeLeaseConflict(roomID, speaker, text, inboxTitle, ne
 		At:    now,
 		Tone:  "pink",
 	})
+	conflictHref := fmt.Sprintf("/rooms/%s/runs/%s", roomID, s.state.Runs[runIndex].ID)
 	s.state.Inbox = append([]InboxItem{{
 		ID:      fmt.Sprintf("inbox-runtime-lease-%d", time.Now().UnixNano()),
 		Title:   title,
@@ -1870,8 +1951,8 @@ func (s *Store) AppendRuntimeLeaseConflict(roomID, speaker, text, inboxTitle, ne
 		Room:    s.state.Rooms[roomIndex].Title,
 		Time:    "刚刚",
 		Summary: text,
-		Action:  "查看冲突",
-		Href:    fmt.Sprintf("/rooms/%s/runs/%s", roomID, s.state.Runs[runIndex].ID),
+		Action:  InboxItemActionLabel(conflictHref),
+		Href:    conflictHref,
 	}}, s.state.Inbox...)
 	s.updateAgentStateLocked(s.state.Runs[runIndex].Owner, "blocked", title)
 	s.updateSessionLocked(s.state.Runs[runIndex].ID, func(item *Session) {
@@ -1947,7 +2028,7 @@ func (s *Store) AppendGitHubPullRequestFailure(roomID, operation, pullRequestLab
 			Room:    s.state.Rooms[roomIndex].Title,
 			Time:    "刚刚",
 			Summary: message,
-			Action:  "处理 GitHub 阻塞",
+			Action:  InboxItemActionLabel(failureHref),
 			Href:    failureHref,
 		}}, s.state.Inbox...)
 	}

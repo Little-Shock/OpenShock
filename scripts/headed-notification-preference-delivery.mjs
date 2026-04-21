@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
 import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
+import { resolveProvidedServiceTargets } from "./lib/headed-service-targets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -19,6 +20,7 @@ const evidenceRoot =
   (await mkdtemp(path.join(os.tmpdir(), "openshock-tkt11-notification-")));
 const artifactsDir = path.resolve(evidenceRoot);
 const parsedArgs = parseArgs(process.argv.slice(2));
+const providedServiceTargets = resolveProvidedServiceTargets(process.argv.slice(2), { requireServerURL: true });
 const reportPath = parsedArgs.reportPath ? path.resolve(projectRoot, parsedArgs.reportPath) : path.join(artifactsDir, "report.md");
 
 const screenshots = [];
@@ -166,6 +168,20 @@ async function capture(page, screenshotsDir, name) {
 }
 
 async function startServices(runDir) {
+  if (providedServiceTargets) {
+    await waitFor(async () => {
+      const response = await fetch(`${providedServiceTargets.serverURL}/healthz`);
+      return response.ok;
+    }, `external server did not become healthy at ${providedServiceTargets.serverURL}/healthz`);
+
+    await waitFor(async () => {
+      const response = await fetch(`${providedServiceTargets.webURL}/settings`);
+      return response.ok;
+    }, `external web did not become ready at ${providedServiceTargets.webURL}/settings`);
+
+    return providedServiceTargets;
+  }
+
   const logsDir = path.join(runDir, "logs");
   const workspaceRoot = path.join(runDir, "workspace");
   const statePath = path.join(runDir, "state.json");
@@ -263,7 +279,7 @@ try {
     "settings source signals should not repeat a generic open inbox CTA"
   );
   assert(
-    (await page.getByRole("link", { name: "打开账号中心", exact: true }).count()) > 0,
+    (await page.getByRole("link", { name: "账号中心", exact: true }).count()) > 0,
     "settings should keep at least one access center recovery path"
   );
 

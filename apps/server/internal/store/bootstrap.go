@@ -84,9 +84,9 @@ func freshState(workspaceRoot string) State {
 				Materialization: WorkspaceOnboardingMaterialization{
 					Label:              "空白自定义",
 					Channels:           []string{"#all"},
-					Roles:              []string{"Owner"},
+					Roles:              []string{"所有者"},
 					Agents:             []string{"启动智能体"},
-					NotificationPolicy: "只推高优先级与显式 review 事件",
+					NotificationPolicy: "只推高优先级与显式评审事件",
 					Notes:              []string{"这是一个全新的空白工作区，当前没有历史消息和历史房间。"},
 				},
 				UpdatedAt: now,
@@ -98,7 +98,7 @@ func freshState(workspaceRoot string) State {
 				Name:    "#all",
 				Summary: "全新工作区的默认频道，当前还没有历史消息。",
 				Unread:  0,
-				Purpose: "先在这里完成第一轮频道对话；后续再扩展正式频道。",
+				Purpose: "先完成第一轮频道对话；后续再扩展正式频道。",
 			},
 		},
 		ChannelMessages: map[string][]Message{

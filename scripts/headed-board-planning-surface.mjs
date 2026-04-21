@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
 import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
+import { resolveProvidedServiceTargets } from "./lib/headed-service-targets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -19,6 +20,7 @@ const evidenceRoot =
   (await mkdtemp(path.join(os.tmpdir(), "openshock-board-planning-")));
 const artifactsDir = path.resolve(evidenceRoot);
 const parsedArgs = parseArgs(process.argv.slice(2));
+const providedServiceTargets = resolveProvidedServiceTargets(process.argv.slice(2));
 const reportPath = parsedArgs.reportPath
   ? path.resolve(projectRoot, parsedArgs.reportPath)
   : path.join(artifactsDir, "report.md");
@@ -174,6 +176,22 @@ async function waitForPage(page, url, expectedText) {
 }
 
 async function startServices() {
+  if (providedServiceTargets) {
+    if (providedServiceTargets.serverURL) {
+      await waitFor(async () => {
+        const response = await fetch(`${providedServiceTargets.serverURL}/healthz`);
+        return response.ok;
+      }, `external server did not become healthy at ${providedServiceTargets.serverURL}/healthz`);
+    }
+
+    await waitFor(async () => {
+      const response = await fetch(`${providedServiceTargets.webURL}/rooms/room-runtime`);
+      return response.ok;
+    }, `external web did not become ready at ${providedServiceTargets.webURL}/rooms/room-runtime`);
+
+    return providedServiceTargets;
+  }
+
   const workspaceRoot = path.join(artifactsDir, "workspace");
   const statePath = path.join(artifactsDir, "state.json");
   const webPort = await freePort();
@@ -216,7 +234,7 @@ async function startServices() {
     return response.ok;
   }, `web did not become ready at ${webURL}/rooms/room-runtime`);
 
-  return { webURL };
+  return { webURL, serverURL };
 }
 
 let browser;
@@ -261,7 +279,7 @@ try {
     "",
     "- 从 `/rooms/room-runtime` 进入 `/board` 时，任务板会带上讨论间和事项上下文，并提供 `回讨论间 / 看事项` 回跳按钮 -> PASS",
     "- 任务板顶栏与摘要条已经压成次级镜像面，不再保留伪 tabs、宽黄条和超宽主工作台 -> PASS",
-    "- 任务板卡片已经收成轻量语言：保留状态、PR、负责人与 `回讨论间 / 看事项` 两个动作，不再堆重复的讨论间元数据 -> PASS",
+    "- 任务板卡片已经收成轻量语言：保留状态、PR、当前处理人与 `回讨论间 / 看事项` 两个动作，不再堆重复的讨论间元数据 -> PASS",
     "- 从任务板打开事项后，事项详情也能回到 `/board`，再返回同一条讨论间，不会把任务板变成默认首页 -> PASS",
     "",
     "## 截图",

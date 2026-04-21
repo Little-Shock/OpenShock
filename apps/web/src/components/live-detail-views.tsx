@@ -241,7 +241,7 @@ function AgentMailboxPanel({
     <Panel tone="paper">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接记录</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接</p>
           <h3 className="mt-2 font-display text-2xl font-bold">
             {handoffs.length} 条交接任务
           </h3>
@@ -250,13 +250,13 @@ function AgentMailboxPanel({
           href={`/mailbox?agentId=${agentId}`}
           className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em]"
         >
-          打开交接箱
+          交接箱
         </Link>
       </div>
       <div className="mt-4 space-y-3">
         {handoffs.length === 0 ? (
           <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            当前还没有需要这位智能体继续跟进的交接任务。后续一有新交接，这里会直接显示。
+            当前还没有需要这位智能体继续跟进的交接任务。新交接出现后会显示在列表中。
           </p>
         ) : (
           handoffs.slice(0, 3).map((handoff) => (
@@ -465,7 +465,7 @@ function RoomSnapshotCard({
       <p className="mt-2.5 text-sm leading-6">{room.summary}</p>
       <div className="mt-4 grid gap-2 md:grid-cols-3">
         <FactTile label="当前话题" value={room.topic.title} />
-        <FactTile label="负责人" value={room.topic.owner} />
+        <FactTile label="当前处理人" value={room.topic.owner} />
         <FactTile label="当前执行" value={run?.id ?? room.runId} />
       </div>
       <div className="mt-2 grid gap-2 md:grid-cols-3">
@@ -478,20 +478,20 @@ function RoomSnapshotCard({
           href={`/rooms/${room.id}`}
           className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
         >
-          打开讨论间
+          进入讨论间
         </Link>
         <Link
           href={`/topics/${room.topic.id}`}
           className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
         >
-          查看话题
+          话题详情
         </Link>
         {run ? (
           <Link
             href={`/runs/${run.id}`}
             className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
           >
-            查看执行
+            执行详情
           </Link>
         ) : null}
         {issue ? (
@@ -499,7 +499,7 @@ function RoomSnapshotCard({
             href={`/issues/${issue.key}`}
             className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
           >
-            查看事项
+            事项详情
           </Link>
         ) : null}
       </div>
@@ -540,7 +540,7 @@ function RunSnapshotCard({
       <div className="mt-4 grid gap-2 md:grid-cols-4">
         <FactTile label="运行环境" value={run.runtime} />
         <FactTile label="服务商" value={run.provider} />
-        <FactTile label="负责人" value={run.owner} />
+        <FactTile label="当前处理人" value={run.owner} />
         <FactTile label="时长" value={run.duration} />
       </div>
       <div className="mt-2 grid gap-2 md:grid-cols-3">
@@ -564,25 +564,25 @@ function RunSnapshotCard({
           data-testid={`run-history-open-${run.id}`}
           className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
         >
-          打开执行详情
+          执行详情
         </Link>
         <Link
           href={`/topics/${run.topicId}`}
           className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
         >
-          查看话题
+          话题详情
         </Link>
         <Link
           href={`/rooms/${run.roomId}`}
           className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
         >
-          回到讨论间
+          进入讨论间
         </Link>
         <Link
           href={`/issues/${run.issueKey}`}
           className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
         >
-          查看事项
+          事项详情
         </Link>
       </div>
     </Panel>
@@ -651,7 +651,7 @@ export function LiveIssuesListView() {
 
   if (state.issues.length === 0) {
     return (
-      <LiveStateNotice title="当前还没有事项" message="创建第一条事项后，这里会显示对应内容。" />
+      <LiveStateNotice title="暂无事项" message="创建事项后会显示内容。" />
     );
   }
 
@@ -672,7 +672,7 @@ export function LiveRoomsPageContent() {
       view="rooms"
       eyebrow="讨论间总览"
       title="所有讨论间"
-      description="这里查看当前讨论间、对应事项和执行状态。"
+      description="当前讨论间、对应事项和执行状态。"
       contextTitle="讨论间概览"
       contextDescription="每个讨论间都会关联事项和执行记录，方便直接继续处理。"
       contextBody={
@@ -695,7 +695,7 @@ export function LiveRoomsPageContent() {
       ) : error ? (
         <LiveStateNotice title="讨论间同步失败" message={error} />
       ) : rooms.length === 0 ? (
-        <LiveStateNotice title="当前还没有讨论间" message="创建第一条事项后，这里会显示对应讨论间。" />
+        <LiveStateNotice title="暂无讨论间" message="创建事项后会显示讨论间。" />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {rooms.map((room) => (
@@ -783,9 +783,9 @@ export function LiveAgentsPageContent() {
       view="agents"
       eyebrow="智能体"
       title="所有智能体"
-      description="这里查看智能体当前状态、最近执行和所用运行环境。"
+      description="智能体当前状态、最近执行和所用运行环境。"
       contextTitle="智能体概览"
-      contextDescription="可以在这里快速了解当前有哪些智能体正在运行、阻塞或空闲。"
+      contextDescription="快速了解当前哪些智能体正在运行、阻塞或空闲。"
       contextBody={
         <DetailRail
           label="调度基线"
@@ -803,7 +803,7 @@ export function LiveAgentsPageContent() {
       ) : error ? (
         <LiveStateNotice title="智能体载入失败" message={error} />
       ) : agents.length === 0 ? (
-        <LiveStateNotice title="当前还没有智能体" message="创建智能体后，这里会显示对应内容。" />
+        <LiveStateNotice title="暂无智能体" message="创建智能体后会显示内容。" />
       ) : (
         <div className="space-y-4">
           <LiveOrchestrationBoard
@@ -892,7 +892,7 @@ export function LiveAgentPageContent({ agentId }: { agentId: string }) {
       title={agent.name}
       description={agent.description}
       contextTitle={agent.lane}
-      contextDescription="这里显示这个智能体当前绑定的运行环境和相关信息。"
+      contextDescription="当前绑定的运行环境和服务偏好。"
       contextBody={
         <DetailRail
           label="绑定关系"
@@ -991,7 +991,7 @@ export function LiveRunsPageContent() {
       view="runs"
       eyebrow="执行总览"
       title="所有执行记录"
-      description="这里查看当前和历史执行记录，包括运行环境、分支、日志和状态。"
+      description="当前和历史执行记录，包括运行环境、分支、日志和状态。"
       contextTitle="执行概览"
       contextDescription="每条执行记录都保留对应的运行环境、状态和关联对象，方便排查和继续处理。"
       contextBody={
@@ -1013,7 +1013,7 @@ export function LiveRunsPageContent() {
       ) : historyLoading && historyPage.items.length === 0 && !historyError ? (
         <LiveStateNotice title="正在载入历史记录" message="正在获取较早的执行记录。" />
       ) : visibleHistory.length === 0 ? (
-        <LiveStateNotice title="当前还没有执行记录" message="执行开始后，这里会显示对应内容。" />
+        <LiveStateNotice title="暂无执行记录" message="执行开始后会显示内容。" />
       ) : (
         <div className="grid gap-4">
           {historyError ? (
@@ -1107,7 +1107,7 @@ export function LiveIssuePageContent({ issueKey }: { issueKey: string }) {
       description={issue.summary}
       selectedRoomId={issue.roomId}
       contextTitle={issue.owner}
-      contextDescription="这里显示这条事项的负责人、讨论间和执行记录。"
+      contextDescription="当前处理人、讨论间和执行记录。"
       contextBody={
         <DetailRail
           label="事项关联"
@@ -1194,7 +1194,7 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
   const runControlBoundary = permissionBoundaryCopy(authSession, "run.execute");
   const continuityLabel = session
     ? `${session.id} / ${session.worktree || session.runtime || "沿用当前上下文"}`
-    : "当前还没有可继续的上下文";
+    : "暂无可继续上下文";
 
   if (!room) {
     return (
@@ -1244,10 +1244,10 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
       view="topic"
       eyebrow="话题详情"
       title={room.topic.title}
-      description="这里集中查看这条话题的说明、当前执行和恢复入口。"
+      description="这条话题的说明、当前执行和恢复入口。"
       selectedRoomId={room.id}
       contextTitle={room.issueKey}
-      contextDescription="话题仍然绑定同一条讨论和执行记录，但现在可以直接在这里补充说明并继续处理。"
+      contextDescription="话题仍然绑定同一条讨论和执行记录，也支持直接补充说明并继续处理。"
       contextBody={
         <DetailRail
           label="话题关联"
@@ -1283,7 +1283,7 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
             <p className="mt-4 text-base leading-7">{room.topic.summary}</p>
             <div className="mt-5 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               <FactTile label="讨论间" value={room.title} />
-              <FactTile label="负责人" value={room.topic.owner} />
+              <FactTile label="当前处理人" value={room.topic.owner} />
               <FactTile label="当前执行" value={run?.id ?? room.runId} />
               <FactTile label="事项" value={issue?.title ?? room.issueKey} />
             </div>
@@ -1293,7 +1293,7 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
                 data-testid="topic-open-room-workbench"
                 className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
-                打开讨论页话题
+                讨论间话题
               </Link>
               {run ? (
                 <Link
@@ -1301,7 +1301,7 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
                   data-testid="topic-open-run-link"
                   className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
                 >
-                  打开当前执行
+                  执行详情
                 </Link>
               ) : null}
               {issue ? (
@@ -1309,7 +1309,7 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
                   href={`/issues/${issue.key}`}
                   className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
                 >
-                  查看事项
+                  事项详情
                 </Link>
               ) : null}
             </div>
@@ -1329,7 +1329,7 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
               </span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这里会把新的说明直接写回当前话题，方便后续继续处理或恢复执行。
+              新的说明会直接写回当前话题，方便后续继续处理或恢复执行。
             </p>
             <form className="mt-4 space-y-3" onSubmit={(event) => void handleGuidanceSubmit(event)}>
               <textarea
@@ -1369,9 +1369,9 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
                 recentGuidance.map((message) => <TopicGuidanceEntry key={message.id} message={message} />)
               ) : (
                 <div className="rounded-[18px] border-2 border-dashed border-[var(--shock-ink)] bg-white px-4 py-5">
-                  <p className="font-display text-lg font-bold">还没有说明记录</p>
+                  <p className="font-display text-lg font-bold">暂无说明记录</p>
                   <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">
-                    第一条说明保存后，这里会直接显示最近的补充记录。
+                    第一条说明保存后会显示最近的补充记录。
                   </p>
                 </div>
               )}
@@ -1513,15 +1513,15 @@ export function LiveRunPageContent({
       view="runs"
       eyebrow="执行详情"
       title={run.id}
-      description="这里查看这条执行记录的运行环境、分支、日志、工具调用和当前状态。"
+      description="这条执行记录的运行环境、分支、日志、工具调用和当前状态。"
       selectedRoomId={room.id}
       contextTitle={run.issueKey}
-      contextDescription="这里用于快速定位这条执行记录的问题和上下文。"
+      contextDescription="当前执行对应的事项和上下文。"
       contextBody={
         <DetailRail
-          label="执行泳道"
+          label="执行信息"
           items={[
-            { label: "负责人", value: run.owner },
+            { label: "当前处理人", value: run.owner },
             { label: "服务商", value: run.provider },
             { label: "开始时间", value: run.startedAt },
             { label: "时长", value: run.duration },
@@ -1536,20 +1536,20 @@ export function LiveRunPageContent({
             data-testid="run-detail-open-topic"
             className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
           >
-            打开话题页
+            话题详情
           </Link>
           <Link
             href={`/rooms/${room.id}?tab=topic`}
             className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
           >
-            打开讨论页话题
+            讨论间话题
           </Link>
           {issue ? (
             <Link
               href={`/issues/${issue.key}`}
               className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
             >
-              查看事项
+              事项详情
             </Link>
           ) : null}
         </div>

@@ -1042,7 +1042,7 @@ func TestCreatePullRequestRouteEscalatesBlockedOnGitHubCreateFailure(t *testing.
 	if !strings.Contains(run.NextAction, "PR 创建") || !strings.Contains(run.Summary, "GitHub PR 创建失败") {
 		t.Fatalf("run escalation malformed: %#v", run)
 	}
-	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "GitHub PR 创建失败" || payload.State.Inbox[0].Action != "处理 GitHub 阻塞" {
+	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "GitHub PR 创建失败" || payload.State.Inbox[0].Action != "执行详情" {
 		t.Fatalf("inbox escalation malformed: %#v", payload.State.Inbox)
 	}
 	if !roomMessagesContain(payload.State, created.RoomID, "GitHub PR 创建失败：gh auth missing") {
@@ -1307,8 +1307,17 @@ func TestPullRequestDetailRouteReturnsConversationAndBacklinks(t *testing.T) {
 	if gateByID["review-merge"].Href != "" {
 		t.Fatalf("review gate href = %#v, want empty self-link", gateByID["review-merge"])
 	}
+	if gateByID["run-usage"].HrefLabel != "执行详情" {
+		t.Fatalf("run usage gate href label = %#v, want explicit run-detail CTA", gateByID["run-usage"])
+	}
+	if gateByID["workspace-quota"].HrefLabel != "设置" {
+		t.Fatalf("workspace quota gate href label = %#v, want explicit settings CTA", gateByID["workspace-quota"])
+	}
 	if gateByID["notification-delivery"].Status != "ready" {
 		t.Fatalf("notification gate = %#v, want ready", gateByID["notification-delivery"])
+	}
+	if gateByID["notification-delivery"].HrefLabel != "通知设置" {
+		t.Fatalf("notification gate href label = %#v, want explicit notification settings CTA", gateByID["notification-delivery"])
 	}
 	if len(detail.Delivery.Templates) == 0 {
 		t.Fatalf("detail delivery templates = %#v, want review notification template", detail.Delivery.Templates)
@@ -1328,6 +1337,18 @@ func TestPullRequestDetailRouteReturnsConversationAndBacklinks(t *testing.T) {
 		if _, ok := evidenceByID[evidenceID]; !ok {
 			t.Fatalf("detail delivery evidence missing %q in %#v", evidenceID, detail.Delivery.Evidence)
 		}
+	}
+	if evidenceByID["room-pr-tab"].HrefLabel != "讨论间 PR" {
+		t.Fatalf("room pr evidence href label = %#v, want explicit room-pr CTA", evidenceByID["room-pr-tab"])
+	}
+	if evidenceByID["remote-pr"].HrefLabel != "远端 PR" {
+		t.Fatalf("remote pr evidence href label = %#v, want explicit remote-pr CTA", evidenceByID["remote-pr"])
+	}
+	if evidenceByID["review-conversation"].HrefLabel != "PR 详情" {
+		t.Fatalf("review conversation evidence href label = %#v, want explicit pr-detail CTA", evidenceByID["review-conversation"])
+	}
+	if evidenceByID["notification-templates"].HrefLabel != "通知设置" {
+		t.Fatalf("notification template evidence href label = %#v, want explicit notification-settings CTA", evidenceByID["notification-templates"])
 	}
 }
 
@@ -1409,6 +1430,12 @@ func TestPullRequestDetailRouteReflectsGovernedCloseout(t *testing.T) {
 	if detail.Delivery.Delegation.HandoffID == "" || detail.Delivery.Delegation.HandoffStatus != "requested" {
 		t.Fatalf("detail delegation = %#v, want auto-created requested closeout handoff", detail.Delivery.Delegation)
 	}
+	if detail.Delivery.Delegation.HrefLabel != "交付详情" {
+		t.Fatalf("detail delegation href label = %#v, want explicit delivery-detail CTA", detail.Delivery.Delegation)
+	}
+	if detail.Delivery.Delegation.HandoffHrefLabel != "交接详情" {
+		t.Fatalf("detail delegation handoff href label = %#v, want explicit handoff-detail CTA", detail.Delivery.Delegation)
+	}
 	noteLines := strings.Join(detail.Delivery.HandoffNote.Lines, "\n")
 	if !strings.Contains(noteLines, closeoutNote) || !strings.Contains(noteLines, "governed route 已到 done") {
 		t.Fatalf("detail handoff note lines = %#v, want closeout note + done hint", detail.Delivery.HandoffNote.Lines)
@@ -1422,9 +1449,15 @@ func TestPullRequestDetailRouteReflectsGovernedCloseout(t *testing.T) {
 	if !ok || closeoutEvidence.Href != "/pull-requests/pr-runtime-18" || !strings.Contains(closeoutEvidence.Summary, closeoutNote) {
 		t.Fatalf("detail delivery evidence = %#v, want governed closeout evidence", detail.Delivery.Evidence)
 	}
+	if closeoutEvidence.HrefLabel != "交付详情" {
+		t.Fatalf("governed closeout evidence href label = %#v, want explicit delivery-detail CTA", closeoutEvidence)
+	}
 	delegateEvidence, ok := evidenceByID["delivery-delegate"]
 	if !ok || delegateEvidence.Value != "Spec Captain" {
 		t.Fatalf("detail delivery evidence = %#v, want delivery delegate evidence", detail.Delivery.Evidence)
+	}
+	if delegateEvidence.HrefLabel != "交付详情" {
+		t.Fatalf("delivery delegate evidence href label = %#v, want explicit delivery-detail CTA", delegateEvidence)
 	}
 
 	relatedDelegation := false
@@ -1591,6 +1624,9 @@ func TestDelegatedCloseoutHandoffLifecycleReflectsInPullRequestDetail(t *testing
 	if blockedDetail.Delivery.Delegation.ResponseHandoffID == "" ||
 		blockedDetail.Delivery.Delegation.ResponseHandoffStatus != "requested" {
 		t.Fatalf("blocked delegation = %#v, want auto-created unblock response handoff", blockedDetail.Delivery.Delegation)
+	}
+	if blockedDetail.Delivery.Delegation.ResponseHandoffHrefLabel != "回复详情" {
+		t.Fatalf("blocked response href label = %#v, want explicit response-detail CTA", blockedDetail.Delivery.Delegation)
 	}
 	relatedBlocked := false
 	for _, item := range blockedDetail.RelatedInbox {
@@ -3683,6 +3719,12 @@ func TestAutoCompleteDeliveryDelegationKeepsBlockedRuntimeRoomHotButMarksRouteDo
 		runtimeBlockedRollup.NextRouteStatus != "active" {
 		t.Fatalf("blocked runtime rollup = %#v, want blocked hot room with active QA route", blockedState.Workspace.Governance.EscalationSLA.Rollup)
 	}
+	if runtimeBlockedRollup.HrefLabel != "收件箱定位" {
+		t.Fatalf("blocked runtime rollup room action = %#v, want explicit focused-handoff CTA", runtimeBlockedRollup)
+	}
+	if runtimeBlockedRollup.NextRouteHrefLabel != "收件箱定位" {
+		t.Fatalf("blocked runtime rollup next-route action = %#v, want explicit active handoff CTA", runtimeBlockedRollup)
+	}
 
 	completeQAResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+qaHandoff.ID, map[string]string{
 		"action":        "completed",
@@ -3700,9 +3742,15 @@ func TestAutoCompleteDeliveryDelegationKeepsBlockedRuntimeRoomHotButMarksRouteDo
 		runtimeFinalRollup.Status != "blocked" ||
 		runtimeFinalRollup.BlockedCount < 1 ||
 		runtimeFinalRollup.NextRouteStatus != "done" ||
-		runtimeFinalRollup.NextRouteLabel != "delivery closeout" ||
+		runtimeFinalRollup.NextRouteLabel != "交付详情" ||
 		!strings.Contains(runtimeFinalRollup.NextRouteHref, "/pull-requests/pr-runtime-18") {
 		t.Fatalf("final runtime rollup = %#v, want blocked room kept hot with done delivery route", finalState.Workspace.Governance.EscalationSLA.Rollup)
+	}
+	if runtimeFinalRollup.NextRouteHrefLabel != "交付详情" {
+		t.Fatalf("final runtime rollup next-route action = %#v, want explicit delivery detail CTA", runtimeFinalRollup)
+	}
+	if runtimeFinalRollup.HrefLabel == "" {
+		t.Fatalf("final runtime rollup room action = %#v, want explicit room-side action label", runtimeFinalRollup)
 	}
 	finalSecondRoomRollup := findEscalationRoomRollupByRoomID(finalState.Workspace.Governance.EscalationSLA.Rollup, secondRoomID)
 	if finalSecondRoomRollup == nil || finalSecondRoomRollup.Status != "active" || finalSecondRoomRollup.EscalationCount != 1 {
@@ -4266,7 +4314,7 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubSyncFailure(t *testing.T) {
 	if !strings.Contains(run.NextAction, "重试同步") {
 		t.Fatalf("run next action = %q, want GitHub sync retry guidance", run.NextAction)
 	}
-	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "PR #88 同步失败" || payload.State.Inbox[0].Kind != "blocked" || payload.State.Inbox[0].Action != "处理 GitHub 阻塞" {
+	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "PR #88 同步失败" || payload.State.Inbox[0].Kind != "blocked" || payload.State.Inbox[0].Action != "执行详情" {
 		t.Fatalf("sync failure inbox malformed: %#v", payload.State.Inbox)
 	}
 	if inboxHasKindAndHref(payload.State, "review", "/rooms/"+created.RoomID+"/runs/"+created.RunID) {
@@ -4603,7 +4651,7 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubMergeFailure(t *testing.T) {
 	if !strings.Contains(run.NextAction, "重试合并") {
 		t.Fatalf("run next action = %q, want GitHub merge retry guidance", run.NextAction)
 	}
-	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "PR #96 合并失败" || payload.State.Inbox[0].Kind != "blocked" || payload.State.Inbox[0].Action != "处理 GitHub 阻塞" {
+	if len(payload.State.Inbox) == 0 || payload.State.Inbox[0].Title != "PR #96 合并失败" || payload.State.Inbox[0].Kind != "blocked" || payload.State.Inbox[0].Action != "执行详情" {
 		t.Fatalf("merge failure inbox malformed: %#v", payload.State.Inbox)
 	}
 	if inboxHasKindAndHref(payload.State, "review", "/rooms/"+created.RoomID+"/runs/"+created.RunID) {

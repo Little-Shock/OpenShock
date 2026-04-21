@@ -339,7 +339,7 @@ function runBudgetStatusLabel(status?: string) {
     case "near_limit":
       return "逼近上限";
     case "watch":
-      return "进入观察";
+      return "观察中";
     case "healthy":
       return "健康";
     default:
@@ -566,8 +566,8 @@ const DIRECT_MESSAGES: SidebarDirectMessage[] = [
   {
     id: "dm-codex-dockmaster",
     name: "@Codex Dockmaster",
-    summary: "以对话为主的界面、线程重开和消息工作流的快速对齐面。",
-    purpose: "这条私聊用来快速对齐前台壳层和线程重开，不需要立刻升级成讨论间。",
+    summary: "消息工作流和线程回访的快速对齐。",
+    purpose: "这条私聊用来快速对齐前台壳层和线程回访，必要时再升级成讨论间。",
     unread: 2,
     presence: "running",
     counterpart: "Codex Dockmaster",
@@ -575,8 +575,8 @@ const DIRECT_MESSAGES: SidebarDirectMessage[] = [
   {
     id: "dm-mina",
     name: "@Mina",
-    summary: "文案、稍后查看队列和人类回访习惯的收口面。",
-    purpose: "产品文案和稍后查看队列先在这条私聊里收紧，再决定是否升级为正式讨论间。",
+    summary: "文案和稍后查看习惯的对齐私聊。",
+    purpose: "这条私聊用来确认文案和稍后查看习惯，必要时再升级为正式讨论间。",
     unread: 1,
     presence: "idle",
     counterpart: "Mina",
@@ -625,7 +625,7 @@ const DIRECT_MESSAGE_MESSAGES: Record<string, Message[]> = {
       speaker: "系统",
       role: "system",
       tone: "system",
-      message: "已记录：稍后查看用于回访，不伪装成新一层待办。",
+      message: "已记录：稍后查看用于回访，不单独再造一层待办。",
       time: "11:24",
     },
   ],
@@ -669,7 +669,7 @@ const DEFAULT_SAVED_LATER_ITEMS: MessageSurfaceEntry[] = [
     channelLabel: "#roadmap",
     title: "Longwen 默认入口备注",
     summary: "默认入口必须聊天优先，任务板只能是辅助视图。",
-    note: "稍后查看队列里保留的是“之后要重新打开的消息”，不是新的规划泳道。",
+    note: "稍后查看队列里保留的是“之后要重新打开的消息”，不是新的待办。",
     updatedAt: "10:06",
     unread: 1,
   },
@@ -679,8 +679,8 @@ const DEFAULT_SAVED_LATER_ITEMS: MessageSurfaceEntry[] = [
     messageId: "msg-dm-mina-1",
     channelLabel: "@Mina",
     title: "Mina 稍后查看准则",
-    summary: "稍后查看更像“晚点回来看这条线程”，不是第二个看板。",
-    note: "私聊里的轻量讨论也可以暂存，然后重新打开。",
+    summary: "稍后查看用于晚点回看线程，不是第二个任务板。",
+    note: "私聊里的轻量讨论也可以暂存，之后再重新打开。",
     updatedAt: "11:24",
     unread: 0,
   },
@@ -799,7 +799,7 @@ const CHANNEL_THREAD_REPLIES: Record<string, ThreadMap> = {
         speaker: "系统",
         role: "system",
         tone: "system",
-        message: "稍后查看已记录为当前消息工作流的一等入口需求。",
+        message: "已记录：稍后查看是当前消息工作流的正式入口。",
         time: "11:25",
       },
     ],
@@ -830,7 +830,7 @@ const ROOM_THREAD_REPLIES: Record<string, ThreadMap> = {
         speaker: "Larkspur",
         role: "human",
         tone: "human",
-        message: "房间里只保留当前讨论间的执行信息，不要再搞一个总览页。",
+        message: "房间里只保留当前讨论间的执行信息，不再额外铺一层总览。",
         time: "09:24",
       },
       {
@@ -1087,9 +1087,7 @@ function RoomRelatedSignalsPanel({
           </div>
         ))}
         {relatedSignals.length === 0 && recentSignals.length === 0 ? (
-          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">
-            当前这条讨论间还没有挂住新的审批、阻塞或评审信号。
-          </p>
+          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">当前没有新信号。</p>
         ) : null}
       </div>
     </Panel>
@@ -1183,7 +1181,7 @@ function RoomContextPanels({
             </span>
           </div>
           <div className="border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
-            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">负责人</p>
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">当前处理人</p>
             {topicOwnerProfileHref ? (
               <Link
                 href={topicOwnerProfileHref}
@@ -1213,9 +1211,7 @@ function RoomContextPanels({
             <p className="mt-2 font-display text-[20px] font-bold leading-6">
               {relatedSignals.length} 条收件箱 / {relatedHandoffs.length} 条交接
             </p>
-            <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
-              这里只保留当前房间最值得继续处理的信号和交接，不再把 run、PR、记忆和时间线重复铺一遍。
-            </p>
+            <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">只放当前待处理项。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
@@ -1223,7 +1219,7 @@ function RoomContextPanels({
               data-testid="room-workbench-open-inbox"
               className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] md:hidden"
             >
-              打开收件箱
+              收件箱
             </Link>
           </div>
         </div>
@@ -1232,7 +1228,7 @@ function RoomContextPanels({
             <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
               <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">收件箱信号</p>
               <p className="mt-1.5 text-sm font-semibold">
-                {previewSignals.length === 0 ? "当前没有待处理信号" : `优先看 ${previewSignals.length} 条`}
+                {previewSignals.length === 0 ? "暂无待处理信号" : `优先看 ${previewSignals.length} 条`}
               </p>
             </div>
             {previewSignals.map((item) => (
@@ -1257,7 +1253,7 @@ function RoomContextPanels({
             <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
               <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接跟进</p>
               <p className="mt-1.5 text-sm font-semibold">
-                {relatedHandoffs.length === 0 ? "当前没有待跟进交接" : `当前挂着 ${relatedHandoffs.length} 条`}
+                {relatedHandoffs.length === 0 ? "暂无待跟进交接" : `当前挂着 ${relatedHandoffs.length} 条`}
               </p>
             </div>
             {relatedHandoffs.slice(0, 3).map((handoff) => (
@@ -1286,11 +1282,7 @@ function RoomContextPanels({
             ))}
           </div>
         </div>
-        {!hasPendingItems ? (
-          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">
-            当前这条讨论间没有新的审批、阻塞、评审或交接需要继续处理。
-          </p>
-        ) : null}
+        {!hasPendingItems ? <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">暂无待处理信号或交接。</p> : null}
       </Panel>
     </div>
   );
@@ -1319,7 +1311,7 @@ function RoomTopicWorkbenchPanel({
         <p className="mt-4 text-base leading-7">{room.topic.summary}</p>
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">负责人</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">当前处理人</p>
             {topicOwnerProfileHref ? (
               <Link
                 href={topicOwnerProfileHref}
@@ -1355,7 +1347,7 @@ function RoomTopicWorkbenchPanel({
               data-testid="room-topic-open-route"
               className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
             >
-              打开话题页
+              话题详情
             </Link>
           </div>
         </div>
@@ -1427,9 +1419,9 @@ function RoomPullRequestWorkbenchPanel({
           actionStatus === "merged") ? (
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{actionBoundary}</p>
         ) : null}
-        <p className="mt-4 text-sm leading-6">{pullRequest?.title ?? "当前讨论间还没有远端或本地 PR 对象。"}</p>
+        <p className="mt-4 text-sm leading-6">{pullRequest?.title ?? "暂无 PR。"}</p>
         <p data-testid="room-workbench-pr-review-summary" className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-          {pullRequest?.reviewSummary ?? "创建 PR 后，这里会直接展示评审和合并的当前状态。"}
+          {pullRequest?.reviewSummary ?? "创建 PR 后显示评审和合并状态。"}
         </p>
         {prError ? (
           <p className="mt-3 font-mono text-[11px] text-[var(--shock-pink)]">{prError}</p>
@@ -1451,7 +1443,7 @@ function RoomPullRequestWorkbenchPanel({
               rel="noreferrer"
               className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
             >
-              打开远端 PR
+              远端 PR
             </Link>
           ) : null}
         </div>
@@ -1474,11 +1466,8 @@ function RoomPullRequestWorkbenchPanel({
         </div>
         <div className="mt-4 space-y-3">
           {conversation.length === 0 ? (
-            <p
-              data-testid="room-pr-conversation-empty"
-              className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]"
-            >
-              当前还没有 webhook 回流的评审会话；一旦评论或线程到达，这里会和 PR 详情共用同一份记录。
+            <p data-testid="room-pr-conversation-empty" className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+              还没收到评审回流。
             </p>
           ) : (
             conversation.map((entry) => (
@@ -2038,9 +2027,7 @@ function ThreadRail({
               {replies.length > 0 ? (
                 replies.map((reply) => <ThreadReplyRow key={reply.id} message={reply} />)
               ) : (
-                <div className="px-3 py-4 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
-                  当前还没有独立回复，下一条就从这里继续。
-                </div>
+                <div className="px-3 py-4 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">暂无独立回复。</div>
               )}
             </section>
           </div>
@@ -2074,7 +2061,6 @@ function MessageWorkbenchCollectionPanel({
   description: string;
   items: Array<
     MessageSurfaceEntry & {
-      surfaceHref: string;
       reopenHref: string;
       queueLabel: string;
       reopenTestId: string;
@@ -2127,20 +2113,14 @@ function MessageWorkbenchCollectionPanel({
               >
                 重新打开线程
               </Link>
-              <Link
-                href={item.surfaceHref}
-                className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-              >
-                打开原视图
-              </Link>
             </div>
           </section>
         ))
       ) : (
         <section className="border-2 border-dashed border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
-          <p className="font-display text-[18px] font-bold">当前还没有条目</p>
+          <p className="font-display text-[18px] font-bold">暂无条目</p>
           <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">
-            先在聊天里打开一条线程，再选择关注或稍后查看。
+            先打开一条线程，再选择关注或稍后查看。
           </p>
         </section>
       )}
@@ -2526,7 +2506,7 @@ function ClaudeCompactComposer({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                    当前等待补充
+                    等待补充
                   </p>
                   <h3
                     data-testid="room-clarification-wait-owner"
@@ -2535,10 +2515,10 @@ function ClaudeCompactComposer({
                     {clarificationWait.wait.agent}
                   </h3>
                   <p data-testid="room-clarification-wait-question" className="mt-2 text-[14px] leading-6 text-[color:rgba(24,20,14,0.84)]">
-                    {clarificationWait.message?.message ?? "当前问题正在同步中，直接补充这条信息后会继续推进。"}
+                    {clarificationWait.message?.message ?? "问题还在同步。补充后会往下推进。"}
                   </p>
                   <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.62)]">
-                    直接回复这条问题后，当前智能体会接着往下推进。
+                    回复这条问题后，当前智能体会往下推进。
                   </p>
                 </div>
                 {clarificationWait.message ? (
@@ -2683,14 +2663,12 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
   const followedItemsForSurface = followedThreads.map((item) => ({
     ...item,
     queueLabel: "关注中",
-    surfaceHref: buildChannelWorkbenchHref(item.channelId, "followed", item.messageId),
     reopenHref: buildThreadReopenHref(item.channelId, item.messageId),
     reopenTestId: `followed-thread-reopen-${item.id}`,
   }));
   const savedItemsForSurface = savedLaterItems.map((item) => ({
     ...item,
     queueLabel: "稍后看",
-    surfaceHref: buildChannelWorkbenchHref(item.channelId, "saved", item.messageId),
     reopenHref: buildThreadReopenHref(item.channelId, item.messageId),
     reopenTestId: `saved-later-reopen-${item.id}`,
   }));
@@ -2935,7 +2913,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                 ? "等待消息面真实状态返回。"
                 : error
                   ? error
-                  : channel?.purpose ?? "当前还没有拿到这条消息面的用途说明。"
+                  : channel?.purpose ?? (isDirectMessage ? "私聊说明还没同步。" : "频道说明还没同步。")
             }
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
             searchPlaceholder={isDirectMessage ? "搜索私聊 / 线程 / 稍后查看" : "搜索频道 / 线程 / 稍后查看"}
@@ -2999,7 +2977,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                       <div className="border-b-2 border-[var(--shock-ink)] px-4 py-3">
                         <p className="font-display text-[18px] font-bold">{channel?.name ?? "正在载入"}</p>
                         <p className="mt-1 text-[12px] leading-5 text-[color:rgba(24,20,14,0.64)]">
-                          {channel?.summary ?? channel?.purpose ?? "这里会显示当前频道或私聊的说明。"}
+                          {channel?.summary ?? channel?.purpose ?? (isDirectMessage ? "私聊说明还没同步。" : "频道说明还没同步。")}
                         </p>
                       </div>
                       {loading ? (
@@ -3016,8 +2994,8 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                         />
                       ) : messages.length === 0 ? (
                         <DiscussionStateMessage
-                          title="这个消息面当前还没有内容"
-                          message="发送第一条消息后，这里会显示对应内容。"
+                          title="暂无消息"
+                          message="先发第一条消息。"
                         />
                       ) : (
                         messages.map((message) => (
@@ -3099,7 +3077,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                 <div className="min-h-0 overflow-y-auto bg-[var(--shock-paper)] p-4">
                   <MessageWorkbenchCollectionPanel
                     title="关注中的线程"
-                    description="从这里重新打开你决定持续跟踪的线程，不必再从消息流里重新翻。"
+                    description="把要持续跟踪的线程留在回访区。"
                     items={followedItemsForSurface}
                     activeItemId={selectedFollowedEntry?.id}
                     testId="followed-thread-panel"
@@ -3109,7 +3087,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                 <div className="min-h-0 overflow-y-auto bg-[var(--shock-paper)] p-4">
                   <MessageWorkbenchCollectionPanel
                     title="稍后查看"
-                    description="这里只收“晚点再回看”的消息，不复制出第二个任务板。"
+                    description="只收“晚点再回看”的消息，不单独再造任务板。"
                     items={savedItemsForSurface}
                     activeItemId={selectedSavedEntry?.id}
                     testId="saved-later-panel"
@@ -3145,7 +3123,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                     testId: "channel-thread-save-later",
                   }}
                   emptyTitle="先选一条消息"
-                  emptyMessage="线程是频道消息的局部回复区。先在左侧消息流里点一条消息，再决定要不要关注或稍后回看。"
+                  emptyMessage="先在左侧点一条消息，再决定关注或暂存。"
                 />
               ) : (
                 <>
@@ -3182,12 +3160,6 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                             >
                               重新打开线程
                             </Link>
-                            <Link
-                              href={selectedCollectionEntry.surfaceHref}
-                              className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
-                            >
-                              打开列表
-                            </Link>
                           </div>
                         </section>
 
@@ -3205,14 +3177,14 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                           </p>
                           <p className="mt-2 font-display text-[18px] font-bold leading-none">{selectedCollectionReplies.length}</p>
                           <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">
-                            这条消息当前有 {selectedCollectionReplies.length} 条回复，重新打开后可以继续在线程层级回访。
+                            这条消息有 {selectedCollectionReplies.length} 条回复。重新打开后继续回看。
                           </p>
                         </section>
                       </div>
                     ) : (
                       <DiscussionStateMessage
                         title="暂无内容"
-                        message="先在聊天里选一条消息并关注或暂存，它就会进入这个回访队列。"
+                        message="先在聊天里选一条消息并关注或暂存。"
                       />
                     )}
                   </div>
@@ -3281,7 +3253,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
             ? "runtime_blocked"
             : "allowed";
   const roomReplyBoundary = runPaused && !hasClarificationWait
-    ? "当前执行已暂停。先在右侧控制面板里恢复，或先锁定当前线程再继续执行。"
+    ? "执行已暂停。先恢复执行，或先锁定当前线程。"
     : permissionReplyStatus !== "allowed"
       ? permissionReplyBoundary
       : roomRuntimeBoundary;
@@ -3552,7 +3524,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                 ? "正在获取讨论间和执行状态。"
                 : error
                   ? error
-                  : room?.summary ?? "这里会显示当前讨论间的摘要。"
+                  : room?.summary ?? "讨论摘要还没同步。"
             }
             searchPlaceholder="搜索讨论间 / 事项 / 执行"
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
@@ -3581,7 +3553,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                       {room?.topic.title ?? "等待讨论间同步"}
                     </p>
                     <p className="mt-1 text-[12px] leading-5 text-[color:rgba(24,20,14,0.66)]">
-                      {room?.topic.summary ?? "这里显示当前讨论主题的简要说明。"}
+                      {room?.topic.summary ?? "讨论主题摘要还在同步。"}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -3723,7 +3695,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                           </div>
                         </div>
                         <p data-testid="room-workbench-usage-warning" className="mt-3 text-[12px] leading-6 text-[color:rgba(24,20,14,0.7)]">
-                          {run.usage?.warning ?? room.usage?.warning ?? state.workspace.usage?.warning ?? state.workspace.quota?.warning ?? "当前没有用量或配额提醒。"}
+                          {run.usage?.warning ?? room.usage?.warning ?? state.workspace.usage?.warning ?? state.workspace.quota?.warning ?? "暂无用量或配额提醒。"}
                         </p>
                       </section>
 
@@ -3839,7 +3811,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
 
               <div className="flex-1 overflow-y-auto p-4">
                 {loading ? (
-                  <DiscussionStateMessage title="正在载入房间信息" message="右侧会显示当前讨论间、执行和会话信息。" />
+                  <DiscussionStateMessage title="正在载入房间信息" message="正在同步讨论间、执行和会话信息。" />
                 ) : error ? (
                   <DiscussionStateMessage title="上下文同步失败" message={error} />
                 ) : !room || !run ? (

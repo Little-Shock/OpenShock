@@ -267,6 +267,8 @@ try {
   await page.locator('[data-testid="channel-workbench-tab-followed"]').click();
   await waitForUrlIncludes(page, "tab=followed");
   await waitForVisible(page.locator('[data-testid="followed-thread-panel-card-followed-all-msg-all-1"]'), "followed thread panel did not render");
+  await waitFor(async () => (await page.getByRole("link", { name: "打开原视图", exact: true }).count()) === 0, "followed thread panel should not render a self-link back to the same view");
+  await waitFor(async () => (await page.getByRole("link", { name: "打开列表", exact: true }).count()) === 0, "followed thread rail should not render a duplicate list self-link");
   await capture(page, "followed-panel");
   await page.locator('[data-testid="followed-thread-reopen-followed-all-msg-all-1"]').click();
   await waitForUrlIncludes(page, "/chat/all?thread=msg-all-1");
@@ -277,6 +279,8 @@ try {
   await page.locator('[data-testid="channel-workbench-tab-saved"]').click();
   await waitForUrlIncludes(page, "tab=saved");
   await waitForVisible(page.locator('[data-testid="saved-later-panel-card-saved-all-msg-all-1"]'), "saved later panel did not render");
+  await waitFor(async () => (await page.getByRole("link", { name: "打开原视图", exact: true }).count()) === 0, "saved later panel should not render a self-link back to the same view");
+  await waitFor(async () => (await page.getByRole("link", { name: "打开列表", exact: true }).count()) === 0, "saved later rail should not render a duplicate list self-link");
   await capture(page, "saved-panel");
   await page.locator('[data-testid="saved-later-reopen-saved-all-msg-all-1"]').click();
   await waitForUrlIncludes(page, "/chat/all?thread=msg-all-1");

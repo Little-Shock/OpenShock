@@ -413,25 +413,25 @@ try {
   await waitFor(
     async () => {
       const ownerText = await readText(page, `mailbox-governance-escalation-graph-owner-${targetRoom.id}`);
-      return ownerText.includes("当前负责人") && !ownerText.includes("等待负责人") && !ownerText.includes("待补齐");
+      return ownerText.includes("当前处理人") && !ownerText.includes("等待处理人") && !ownerText.includes("待补齐");
     },
     "mailbox governance graph should surface a resolved current owner node for the hot room"
   );
   await waitFor(
     async () => {
       const routeText = await readText(page, `mailbox-governance-escalation-graph-route-${targetRoom.id}`);
-      return routeText.includes("下一棒") && !routeText.includes("等待下一棒") && !routeText.includes("正在整理中");
+      return routeText.includes("下一步") && !routeText.includes("等待下一步") && !routeText.includes("正在整理中");
     },
     "mailbox governance graph should surface a resolved next-route node for the hot room"
   );
   assert(
-    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} rooms`,
+    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} 个讨论间`,
     "cross-room rollup count should increase by one after runtime room becomes hot"
   );
   const compactRollupCard = page.getByTestId(`mailbox-governance-escalation-rollup-room-${targetRoom.id}`);
   const compactRollupText = await readLocatorText(compactRollupCard);
   assert(
-    !compactRollupText.includes("当前负责人"),
+    !compactRollupText.includes("当前处理人"),
     "mailbox cross-room rollup should not duplicate current-owner copy that is already owned by the dependency graph"
   );
   assert(
@@ -456,6 +456,14 @@ try {
     (await compactRollupCard.getByRole("link", { name: "打开下一步" }).count()) === 0,
     "mailbox cross-room rollup should not keep a second next-step CTA while route is only ready"
   );
+  assert(
+    (await page.getByTestId(`mailbox-governance-escalation-graph-route-${targetRoom.id}`).getByRole("link", { name: readyState.rollup.nextRouteHrefLabel }).count()) === 1,
+    "mailbox governance graph should expose an explicit ready-state route CTA"
+  );
+  assert(
+    (await page.getByTestId(`mailbox-governance-escalation-graph-room-${targetRoom.id}`).getByRole("link", { name: readyState.rollup.hrefLabel }).count()) === 1,
+    "mailbox governance graph should expose an explicit room-context CTA"
+  );
   await capture(page, "mailbox-cross-room-route-ready");
 
   await page.goto(`${webURL}/agents`, { waitUntil: "load" });
@@ -471,21 +479,21 @@ try {
   await waitFor(
     async () => {
       const ownerText = await readText(page, `orchestration-governance-escalation-graph-owner-${targetRoom.id}`);
-      return ownerText.includes("当前负责人") && !ownerText.includes("等待负责人") && !ownerText.includes("待补齐");
+      return ownerText.includes("当前处理人") && !ownerText.includes("等待处理人") && !ownerText.includes("待补齐");
     },
     "orchestration governance graph should surface a resolved current owner node for the hot room"
   );
   await waitFor(
     async () => {
       const routeText = await readText(page, `orchestration-governance-escalation-graph-route-${targetRoom.id}`);
-      return routeText.includes("下一棒") && !routeText.includes("等待下一棒") && !routeText.includes("正在整理中");
+      return routeText.includes("下一步") && !routeText.includes("等待下一步") && !routeText.includes("正在整理中");
     },
     "orchestration governance graph should surface a resolved next-route node for the hot room"
   );
   const orchestrationRollupCard = page.getByTestId(`orchestration-governance-escalation-rollup-room-${targetRoom.id}`);
   const orchestrationRollupText = await readLocatorText(orchestrationRollupCard);
   assert(
-    !orchestrationRollupText.includes("当前负责人"),
+    !orchestrationRollupText.includes("当前处理人"),
     "orchestration cross-room rollup should not duplicate current-owner copy that is already owned by the dependency graph"
   );
   assert(
@@ -505,6 +513,14 @@ try {
   assert(
     (await orchestrationRollupCard.getByRole("link", { name: "打开下一步" }).count()) === 0,
     "orchestration cross-room rollup should not keep a ready-state next-step CTA once the governance graph already owns that route surface"
+  );
+  assert(
+    (await page.getByTestId(`orchestration-governance-escalation-graph-route-${targetRoom.id}`).getByRole("link", { name: readyState.rollup.nextRouteHrefLabel }).count()) === 1,
+    "orchestration governance graph should expose an explicit ready-state route CTA"
+  );
+  assert(
+    (await page.getByTestId(`orchestration-governance-escalation-graph-room-${targetRoom.id}`).getByRole("link", { name: readyState.rollup.hrefLabel }).count()) === 1,
+    "orchestration governance graph should expose an explicit room-context CTA"
   );
   await capture(page, "orchestration-cross-room-route-ready");
 
@@ -545,10 +561,10 @@ try {
   await capture(page, "mailbox-cross-room-route-active");
 
   const roomRollupCard = page.getByTestId(`mailbox-governance-escalation-rollup-room-${targetRoom.id}`);
-  const nextRouteLink = roomRollupCard.getByRole("link", { name: "打开下一步" });
+  const nextRouteLink = roomRollupCard.getByRole("link", { name: activeState.rollup.nextRouteHrefLabel });
   await nextRouteLink.waitFor({ state: "visible" });
   const nextRouteHref = await nextRouteLink.getAttribute("href");
-  assert(nextRouteHref && nextRouteHref.includes(`handoffId=${activeState.handoff.id}`), "open next route link should deep-link to the created governed handoff");
+  assert(nextRouteHref && nextRouteHref.includes(`handoffId=${activeState.handoff.id}`), "active next-route CTA should deep-link to the created governed handoff");
   await nextRouteLink.click();
   await page.waitForURL((url) => url.toString().includes(`handoffId=${activeState.handoff.id}`), { timeout: 30_000 });
   await page.getByTestId(`mailbox-card-${activeState.handoff.id}`).waitFor({ state: "visible" });
@@ -567,8 +583,8 @@ try {
     "orchestration governance graph should flip the route node to active after create"
   );
   assert(
-    (await page.getByTestId(`orchestration-governance-escalation-rollup-room-${targetRoom.id}`).getByRole("link", { name: "打开下一步" }).count()) === 1,
-    "orchestration cross-room rollup should restore the next-step deep link after route becomes active"
+    (await page.getByTestId(`orchestration-governance-escalation-rollup-room-${targetRoom.id}`).getByRole("link", { name: activeState.rollup.nextRouteHrefLabel }).count()) === 1,
+    "orchestration cross-room rollup should restore the explicit next-route deep link after route becomes active"
   );
   await capture(page, "orchestration-cross-room-route-active");
 
@@ -648,7 +664,7 @@ try {
     await page.goto(`${webURL}/mailbox?roomId=${targetRoom.id}`, { waitUntil: "load" });
     await page.getByTestId("mailbox-governance-escalation-graph").waitFor({ state: "visible" });
     await waitFor(
-      async () => (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} rooms`,
+      async () => (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} 个讨论间`,
       "mailbox rollup count should keep the original runtime blocker hot after auto-closeout"
     );
     await waitFor(
@@ -662,7 +678,7 @@ try {
     );
     const visibleMailboxKinds = await page.locator('[data-testid^="mailbox-kind-"]').allTextContents();
     assert(
-      visibleMailboxKinds.every((label) => !label.includes("交付收尾") && !label.includes("收尾回复")),
+      visibleMailboxKinds.every((label) => !label.includes("交付收尾") && !label.includes("补充回复")),
       `mailbox should not surface delivery sidecar kinds after auto-closeout, received ${visibleMailboxKinds.join(", ")}`
     );
     await capture(page, "mailbox-cross-room-auto-closeout-done");
@@ -722,7 +738,7 @@ try {
       : "cross-room rollup route metadata, dependency graph surface, room-level governed create action, mailbox + orchestration mirror, inbox deep-link";
   const reportResults = [
     "- runtime room 通过真实 blocked inbox replay 进入 cross-room governance rollup 后，会带出 `current owner / current lane / next governed route` 元数据，不再只剩 room 状态摘要 -> PASS",
-    "- `/mailbox` 与 `/agents` 现在都会把 hot room 重新组织成 `room -> current owner/lane -> next route` 的 cross-room dependency graph；人类不必逐卡读长文也能看出哪一棒卡住、下一棒准备交给谁 -> PASS",
+    "- `/mailbox` 与 `/agents` 现在都会把 hot room 重新组织成 `room -> current owner/lane -> next route` 的 cross-room dependency graph；人类不必逐卡读长文也能看出哪里卡住、下一步交给谁 -> PASS",
     "- `/mailbox` 上的 cross-room rollup 在 route `ready` 时会开放 `Create Governed Handoff`，并通过正式 `POST /v1/mailbox/governed` 合同起单，而不是前端本地拼接 mutation -> PASS",
     "- governed create 成功后，runtime room 的 route metadata 会从 `ready` 切成 `active`，`Open Next Route` 也会深链到新建 handoff；说明 room-level orchestration 已进入正式产品面 -> PASS",
     "- `/agents` 会镜像同一份 route status 与 deep-link，不会出现 mailbox 已 active、orchestration 仍停在 ready 的分裂真相 -> PASS",
@@ -731,7 +747,7 @@ try {
     reportResults.push(
       "- reviewer -> QA -> delivery auto-complete 走完后，runtime room 仍会因为最初的 blocker 保持 hot，但 route 会同步切到 `done`，且不会额外长出 `delivery-closeout / delivery-reply` sidecar；说明 blocker truth 与 closeout truth 已被正确拆开 -> PASS",
       "- `/pull-requests/pr-runtime-18` 的 Delivery Delegation 会直接显示 `已完成`，并保留 auto-complete policy 摘要；用户能在交付面确认正式收口，而不是只在后台状态里猜测 -> PASS",
-      "- `/mailbox` 与 `/agents` 在 reload 后仍会维持同一条 `done` route truth，而且 Mailbox 当前 room ledger 不会露出 `交付收尾 / 收尾回复` sidecar 卡片 -> PASS"
+      "- `/mailbox` 与 `/agents` 在 reload 后仍会维持同一条 `done` route truth，而且 Mailbox 当前 room ledger 不会露出 `交付收尾 / 补充回复` sidecar 卡片 -> PASS"
     );
   }
   const reportAssertions = [

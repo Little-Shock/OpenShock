@@ -341,7 +341,7 @@ export function LiveBridgeConsole() {
       </div>
 
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-        这里用于确认当前浏览器已经连到哪台机器、哪条执行通道可用，以及发送测试请求后的返回结果。
+        确认当前浏览器连到哪台机器、哪条执行通道可用，以及测试请求是否返回。
       </p>
 
       {effectiveRuntime ? (

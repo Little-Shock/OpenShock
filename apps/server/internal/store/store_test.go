@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,7 +182,7 @@ func TestSnapshotKeepsGovernanceResponseAggregationAuditTimestampsStable(t *test
 	}
 
 	first := s.Snapshot()
-	firstAudit := findWorkspaceResponseAggregationAuditEntry(first.Workspace.Governance.ResponseAggregation.AuditTrail, "Final Response")
+	firstAudit := findWorkspaceResponseAggregationAuditEntry(first.Workspace.Governance.ResponseAggregation.AuditTrail, "最终回复")
 	if firstAudit == nil || strings.TrimSpace(firstAudit.OccurredAt) == "" {
 		t.Fatalf("first response aggregation audit = %#v, want final response occurredAt", first.Workspace.Governance.ResponseAggregation.AuditTrail)
 	}
@@ -189,7 +190,7 @@ func TestSnapshotKeepsGovernanceResponseAggregationAuditTimestampsStable(t *test
 	time.Sleep(1100 * time.Millisecond)
 
 	second := s.Snapshot()
-	secondAudit := findWorkspaceResponseAggregationAuditEntry(second.Workspace.Governance.ResponseAggregation.AuditTrail, "Final Response")
+	secondAudit := findWorkspaceResponseAggregationAuditEntry(second.Workspace.Governance.ResponseAggregation.AuditTrail, "最终回复")
 	if secondAudit == nil {
 		t.Fatalf("second response aggregation audit = %#v, want final response entry", second.Workspace.Governance.ResponseAggregation.AuditTrail)
 	}
@@ -312,7 +313,7 @@ func TestCreateIssueFailsOverToLeastLoadedRuntimeWhenPreferredRuntimeIsOffline(t
 
 	sidecarLoad, err := s.CreateIssue(CreateIssueInput{
 		Title:    "Sidecar Load",
-		Summary:  "occupy sidecar lease so failover has to choose spare",
+		Summary:  "占用 sidecar，让调度切到 spare。",
 		Owner:    "Claude Review Runner",
 		Priority: "high",
 	})
@@ -352,6 +353,9 @@ func TestCreateIssueFailsOverToLeastLoadedRuntimeWhenPreferredRuntimeIsOffline(t
 	if snapshot.RuntimeScheduler.FailoverFrom != "shock-main" {
 		t.Fatalf("scheduler failoverFrom = %q, want shock-main", snapshot.RuntimeScheduler.FailoverFrom)
 	}
+	if snapshot.RuntimeScheduler.Summary != "shock-main 当前不可用，已切到 shock-spare，当前有 0 条执行。" {
+		t.Fatalf("scheduler summary = %q, want customer-facing failover summary", snapshot.RuntimeScheduler.Summary)
+	}
 	var sidecarCandidate *RuntimeSchedulerCandidate
 	for index := range snapshot.RuntimeScheduler.Candidates {
 		if snapshot.RuntimeScheduler.Candidates[index].Runtime == "shock-sidecar" {
@@ -360,7 +364,10 @@ func TestCreateIssueFailsOverToLeastLoadedRuntimeWhenPreferredRuntimeIsOffline(t
 		}
 	}
 	if sidecarCandidate == nil || sidecarCandidate.ActiveLeaseCount < 1 {
-		t.Fatalf("sidecar candidate = %#v, want active lease pressure", sidecarCandidate)
+		t.Fatalf("sidecar candidate = %#v, want execution pressure", sidecarCandidate)
+	}
+	if wantReason := fmt.Sprintf("当前有 %d 条执行。", sidecarCandidate.ActiveLeaseCount); sidecarCandidate.Reason != wantReason {
+		t.Fatalf("sidecar reason = %q, want %q", sidecarCandidate.Reason, wantReason)
 	}
 	var spareCandidate *RuntimeSchedulerCandidate
 	for index := range snapshot.RuntimeScheduler.Candidates {
@@ -372,10 +379,13 @@ func TestCreateIssueFailsOverToLeastLoadedRuntimeWhenPreferredRuntimeIsOffline(t
 	if spareCandidate == nil || sidecarCandidate.ActiveLeaseCount <= spareCandidate.ActiveLeaseCount {
 		t.Fatalf("scheduler candidates = %#v, want sidecar pressure greater than spare", snapshot.RuntimeScheduler.Candidates)
 	}
+	if spareCandidate.Reason != "承接 shock-main 的切换，当前有 0 条执行。" {
+		t.Fatalf("spare reason = %q, want customer-facing switch reason", spareCandidate.Reason)
+	}
 
 	failoverResult, err := s.CreateIssue(CreateIssueInput{
 		Title:    "Offline Failover Lane",
-		Summary:  "verify scheduler chooses least-loaded runtime during failover",
+		Summary:  "验证调度会选择压力最低的运行环境。",
 		Owner:    "Codex Dockmaster",
 		Priority: "critical",
 	})
@@ -396,10 +406,10 @@ func TestCreateIssueFailsOverToLeastLoadedRuntimeWhenPreferredRuntimeIsOffline(t
 	if failoverRun.Runtime != "shock-spare" || failoverRun.Machine != "shock-spare" {
 		t.Fatalf("failover runtime = %#v, want shock-spare", failoverRun)
 	}
-	if !strings.Contains(failoverRun.NextAction, "已切换到 shock-spare") {
+	if !strings.Contains(failoverRun.NextAction, "已切到 shock-spare") {
 		t.Fatalf("run next action = %q, want failover switch wording", failoverRun.NextAction)
 	}
-	if len(failoverRun.Timeline) < 2 || failoverRun.Timeline[1].Label != "Runtime 已 failover 到 shock-spare" {
+	if len(failoverRun.Timeline) < 2 || failoverRun.Timeline[1].Label != "运行环境已切到 shock-spare" {
 		t.Fatalf("run timeline = %#v, want failover event", failoverRun.Timeline)
 	}
 
@@ -410,7 +420,7 @@ func TestCreateIssueFailsOverToLeastLoadedRuntimeWhenPreferredRuntimeIsOffline(t
 			break
 		}
 	}
-	if failoverSession == nil || !strings.Contains(failoverSession.Summary, "已切换到 shock-spare") {
+	if failoverSession == nil || !strings.Contains(failoverSession.Summary, "已切到 shock-spare") {
 		t.Fatalf("failover session = %#v, want runtime switch summary", failoverSession)
 	}
 }

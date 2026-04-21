@@ -311,7 +311,7 @@ function RelationshipList({
           ))
         ) : (
           <p className="rounded-[18px] border-2 border-dashed border-[var(--shock-ink)] bg-white px-3 py-3 text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">
-            当前还没有可回跳的最近关系。
+            最近还没有可回跳关系。
           </p>
         )}
       </div>
@@ -776,7 +776,7 @@ function AgentProfileSurface({
               </div>
             ) : (
               <p className="mt-3 rounded-[16px] border-2 border-dashed border-[var(--shock-ink)] bg-white px-3 py-3 text-sm leading-6">
-                当前草稿还没有匹配到可用运行环境；先从已连接机器里选一条运行环境偏好。
+                这份草稿还没匹配到运行环境；先从已连接机器里选一条。
               </p>
             )}
           </Panel>
@@ -794,7 +794,7 @@ function AgentProfileSurface({
               </span>
             </div>
             <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这里直接暴露智能体自己的 `SOUL.md / MEMORY.md / notes/*` 文件栈；当前会话或下一次执行预览若会读到这些文件，也会在这里同步标出。
+              智能体自己的 `SOUL.md / MEMORY.md / notes/*` 文件栈。当前会话或下一次执行预览若会读到这些文件，也会同步标出。
             </p>
             {agentFileStack.length > 0 ? (
               <div className="mt-3 space-y-2" data-testid="profile-agent-file-stack">
@@ -841,7 +841,7 @@ function AgentProfileSurface({
               </div>
             ) : (
               <p className="mt-3 rounded-[16px] border-2 border-dashed border-[var(--shock-ink)] bg-white px-3 py-3 text-sm leading-6">
-                当前智能体还没有暴露文件级记忆栈；先确认工作区 scaffold 和智能体目录已经初始化。
+                还没有文件栈；先确认目录已初始化。
               </p>
             )}
           </Panel>
@@ -849,7 +849,7 @@ function AgentProfileSurface({
           <Panel tone="paper">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">凭据范围</p>
             <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这里只显示智能体绑定了哪些凭据档案；真正的密钥内容仍保存在加密保险库里。执行时会再和工作区默认设置一起生效。
+              已绑定的凭据档案。密钥不显示。
             </p>
             <div className="mt-3 grid gap-2 md:grid-cols-4">
               <ProfileMetric label="已绑定" value={String(agent.credentialProfileIds?.length ?? 0)} testId="profile-credential-bound-count" />
@@ -883,7 +883,7 @@ function AgentProfileSurface({
               </span>
             </div>
             <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这里定义智能体默认的沙箱档位和白名单；新执行会先继承这些规则，再按当前任务范围收紧。
+              默认沙箱档位和白名单。新执行会先继承这些规则，再按任务范围收紧。
             </p>
             <div className="mt-3 grid gap-2 md:grid-cols-2">
               <CapabilityChips items={[sandboxPolicySummary(agent.sandbox)]} />
@@ -903,11 +903,11 @@ function AgentProfileSurface({
               </span>
             </div>
             <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这里可以直接修改角色、头像、提示词、供应商、模型、机器偏好、记忆绑定、召回策略和沙箱策略；保存后会立即刷新下一次执行预览。
+              可直接修改角色、头像、提示词、供应商、模型、机器偏好、记忆绑定、召回和沙箱策略。
             </p>
             {!canEdit ? (
               <p className="mt-3 rounded-[16px] border-2 border-dashed border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3 text-sm leading-6">
-                当前账号没有编辑权限。你仍然可以查看档案、预览和审计记录，但不能修改。
+                当前账号只能查看。
               </p>
             ) : null}
             <form className="mt-4 space-y-4" onSubmit={handleSave}>
@@ -1006,7 +1006,7 @@ function AgentProfileSurface({
                     ))}
                   </datalist>
                   <p className="mt-1.5 text-xs leading-5 text-[color:rgba(24,20,14,0.64)]">
-                    这里的模型列表只是建议，你也可以直接输入本机已配置的模型名称。
+                    模型列表只作建议。
                   </p>
                 </label>
               </div>
@@ -1108,7 +1108,7 @@ function AgentProfileSurface({
                 <div className="mt-2 grid gap-2 md:grid-cols-2">
                   {state.credentials.length === 0 ? (
                     <p className="rounded-[16px] border-2 border-dashed border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3 text-sm leading-6">
-                      先去设置页创建凭据档案，这里只负责选择要绑定哪几份。
+                      先去设置页创建凭据档案，然后再选择要绑定哪几份。
                     </p>
                   ) : (
                     state.credentials.map((profile) => (
@@ -1161,7 +1161,7 @@ function AgentProfileSurface({
           <Panel tone="paper">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">下一次执行预览</p>
             <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              这里会直接显示下一次执行会带上的提示词骨架、召回策略和挂载文件。档案保存后，预览会立刻更新。
+              下一次执行会带上的提示词骨架、召回策略和挂载文件。档案保存后，预览会立刻更新。
             </p>
             {centerLoading ? (
               <p className="mt-3 rounded-[16px] border border-[var(--shock-ink)] bg-white px-3 py-3 text-sm leading-6">正在同步下一次执行预览…</p>
@@ -1197,7 +1197,7 @@ function AgentProfileSurface({
               </div>
             ) : (
               <p className="mt-3 rounded-[16px] border border-[var(--shock-ink)] bg-white px-3 py-3 text-sm leading-6">
-                当前智能体还没有可对齐的会话预览。
+                这位智能体还没有会话预览。
               </p>
             )}
           </Panel>
@@ -1274,9 +1274,9 @@ function MachineProfileSurface({
       view="profiles"
       eyebrow="机器档案"
       title={machine.name}
-      description="机器档案集中展示心跳、命令环境、连接地址、模型目录、最近执行和已绑定智能体。"
+      description="心跳、命令环境、连接地址、模型目录、最近执行和已绑定智能体。"
       contextTitle="机器状态"
-      contextDescription="这里集中查看机器状态、模型目录、最近执行和已绑定智能体。"
+      contextDescription="机器状态、模型目录、最近执行和已绑定智能体。"
       contextBody={
         <DetailRail
           label="机器概览"
@@ -1398,9 +1398,9 @@ function HumanProfileSurface({
       view="profiles"
       eyebrow="成员档案"
       title={member.name}
-      description="成员档案集中展示会话、角色权限、最近执行、房间关系和在线状态。"
+      description="会话、角色权限、最近执行、房间关系和在线状态。"
       contextTitle="成员状态"
-      contextDescription="这里集中查看成员状态、权限和最近参与的工作。"
+      contextDescription="成员状态、权限和最近参与的工作。"
       contextBody={
         <DetailRail
           label="成员概览"
@@ -1522,9 +1522,9 @@ export function LiveProfilePageContent({
         view="profiles"
         eyebrow="档案"
         title="档案同步失败"
-        description="当前没有拿到档案数据。"
+        description="还没有拿到档案数据。"
         contextTitle="档案页面"
-        contextDescription="先检查服务端是否在线，再重新打开这页。"
+        contextDescription="先检查服务端是否在线，再刷新页面。"
       >
         <SurfaceNotice title="同步失败" message={error} />
       </OpenShockShell>

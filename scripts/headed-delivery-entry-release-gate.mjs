@@ -263,6 +263,14 @@ function templateTestID(template) {
     .replace(/^-+|-+$/g, "") || "untyped"}`;
 }
 
+function deliveryGateByID(detail, gateID) {
+  const gate = detail.delivery.gates.find((candidate) => candidate.id === gateID);
+  if (!gate) {
+    throw new Error(`missing delivery gate: ${gateID}`);
+  }
+  return gate;
+}
+
 let browser = null;
 let context = null;
 let page = null;
@@ -312,20 +320,59 @@ try {
   if (detail.delivery.evidence.some((item) => item.id === "review-conversation")) {
     await page.getByTestId("delivery-evidence-review-conversation").waitFor({ state: "visible" });
   }
+  assert(
+    (await page.getByRole("link", { name: "打开材料", exact: true }).count()) === 0,
+    "delivery evidence cards should no longer render a generic open-material CTA"
+  );
+  const selfLinkedEvidence = detail.delivery.evidence.filter((item) => item.href === `/pull-requests/${detail.pullRequest.id}`);
+  for (const item of selfLinkedEvidence) {
+    assert(
+      (await page.getByTestId(`delivery-evidence-${item.id}`).getByRole("link").count()) === 0,
+      `${item.id} evidence should not render a self-link back to the current PR detail page`
+    );
+  }
+  const roomPrEvidence = detail.delivery.evidence.find((item) => item.id === "room-pr-tab");
+  if (roomPrEvidence?.hrefLabel) {
+    assert(
+      (await page.getByTestId("delivery-evidence-room-pr-tab").getByRole("link", { name: roomPrEvidence.hrefLabel, exact: true }).count()) === 1,
+      "room PR evidence should keep an explicit room-pr deep link"
+    );
+  }
+  const notificationTemplatesEvidence = detail.delivery.evidence.find((item) => item.id === "notification-templates");
+  if (notificationTemplatesEvidence?.hrefLabel) {
+    assert(
+      (await page.getByTestId("delivery-evidence-notification-templates").getByRole("link", { name: notificationTemplatesEvidence.hrefLabel, exact: true }).count()) === 1,
+      "notification template evidence should keep an explicit settings deep link"
+    );
+  }
+  const remotePrEvidence = detail.delivery.evidence.find((item) => item.id === "remote-pr");
+  if (remotePrEvidence?.hrefLabel) {
+    assert(
+      (await page.getByTestId("delivery-evidence-remote-pr").getByRole("link", { name: remotePrEvidence.hrefLabel, exact: true }).count()) === 1,
+      "remote PR evidence should keep an explicit remote-pr deep link"
+    );
+  }
   assert((await readText(page, "delivery-handoff-status")) === liveHandoffStatusLabel, "handoff status should match API detail");
   const handoffLines = await page.locator('[data-testid="delivery-handoff-note"] li').count();
   assert(handoffLines === detail.delivery.handoffNote.lines.length, "handoff note line count should match API detail");
+  const runUsageGate = deliveryGateByID(detail, "run-usage");
+  const workspaceQuotaGate = deliveryGateByID(detail, "workspace-quota");
+  const notificationDeliveryGate = deliveryGateByID(detail, "notification-delivery");
   assert(
     (await page.getByTestId("delivery-gate-review-merge").getByRole("link", { name: "打开详情" }).count()) === 0,
     "review merge gate should not render a self-link back to the current PR detail page"
   );
   assert(
-    (await page.getByTestId("delivery-gate-run-usage").getByRole("link", { name: "打开详情" }).count()) === 1,
-    "run usage gate should keep its run-detail deep link"
+    (await page.getByTestId("delivery-gate-run-usage").getByRole("link", { name: runUsageGate.hrefLabel }).count()) === 1,
+    "run usage gate should keep an explicit run-detail deep link"
   );
   assert(
-    (await page.getByTestId("delivery-gate-notification-delivery").getByRole("link", { name: "打开详情" }).count()) === 1,
-    "notification delivery gate should keep the shared settings entry"
+    (await page.getByTestId("delivery-gate-workspace-quota").getByRole("link", { name: workspaceQuotaGate.hrefLabel }).count()) === 1,
+    "workspace quota gate should keep an explicit settings CTA"
+  );
+  assert(
+    (await page.getByTestId("delivery-gate-notification-delivery").getByRole("link", { name: notificationDeliveryGate.hrefLabel }).count()) === 1,
+    "notification delivery gate should keep the shared settings entry with an explicit action label"
   );
   assert(
     (await page.getByTestId(templateTestID(detail.delivery.templates[0])).getByRole("link", { name: "打开详情" }).count()) === 0,
@@ -336,7 +383,7 @@ try {
   const notificationGate = page.getByTestId("delivery-gate-notification-delivery");
   await Promise.all([
     page.waitForURL((url) => url.pathname === "/settings"),
-    notificationGate.getByRole("link", { name: "打开详情" }).click(),
+    notificationGate.getByRole("link", { name: notificationDeliveryGate.hrefLabel }).click(),
   ]);
   await page.getByTestId("settings-advanced-notifications-toggle").click();
   await page.getByTestId("notification-worker-summary").waitFor({ state: "visible" });
@@ -356,7 +403,7 @@ try {
   const runGate = page.getByTestId("delivery-gate-run-usage");
   await Promise.all([
     page.waitForURL((url) => url.pathname === `/runs/${detail.run.id}`),
-    runGate.getByRole("link", { name: "打开详情" }).click(),
+    runGate.getByRole("link", { name: runUsageGate.hrefLabel }).click(),
   ]);
   await page.getByTestId("run-detail-usage-panel").waitFor({ state: "visible" });
   await capture(page, "run-gate-context");
@@ -374,7 +421,7 @@ try {
     `- \`/pull-requests/${PULL_REQUEST_ID}\` 已把 delivery status、release ready、${detail.delivery.gates.length} 个 gate、${detail.delivery.templates.length} 个 template 和 ${detail.delivery.evidence.length} 条 evidence 收到同一页，不再散在 room / settings / runbook。当前判断结果 = \`${detail.delivery.status}\` / releaseReady=\`${detail.delivery.releaseReady}\`。`,
     `- release gate 当前全部可复核：${detail.delivery.gates.map((gate) => `${gate.id}:${gate.status}`).join(" / ")}。`,
     `- operator handoff note 已有 ${detail.delivery.handoffNote.lines.length} 条可执行说明，并且 UI 与 API 都把当前状态显示为 \`${liveHandoffStatusLabel}\`。`,
-    "- browser walkthrough 已验证 notification delivery gate 可回到 `/settings`，room PR backlink 可回到同一条 PR workbench，run usage gate 也能回到对应 run context。",
+    "- browser walkthrough 已验证 notification delivery gate 使用明确 `通知设置` CTA 回到 `/settings`，room PR backlink 可回到同一条 PR workbench，run usage gate 也通过明确 `执行详情` CTA 回到对应 run context。",
     "",
     "## Evidence",
     "",

@@ -46,6 +46,21 @@ func handoffKindSupportsAutoFollowup(kind string) bool {
 	}
 }
 
+func AgentHandoffKindLabel(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case handoffKindRoomAuto:
+		return "房间接棒"
+	case handoffKindGoverned:
+		return "自动交接"
+	case handoffKindDeliveryCloseout:
+		return "交付收尾"
+	case handoffKindDeliveryReply:
+		return "补充回复"
+	default:
+		return "手动交接"
+	}
+}
+
 func defaultHandoffAutoFollowupSummary(handoff AgentHandoff) string {
 	target := defaultString(strings.TrimSpace(handoff.ToAgent), "当前接手智能体")
 	return fmt.Sprintf("等待 %s 自动继续当前房间。", target)
@@ -391,6 +406,7 @@ func (s *Store) createHandoffLocked(input MailboxCreateInput) (AgentHandoff, err
 	handoff := AgentHandoff{
 		ID:              handoffID,
 		Kind:            handoffKind,
+		KindLabel:       AgentHandoffKindLabel(handoffKind),
 		ParentHandoffID: strings.TrimSpace(input.ParentHandoffID),
 		Title:           title,
 		Summary:         summary,
@@ -420,7 +436,7 @@ func (s *Store) createHandoffLocked(input MailboxCreateInput) (AgentHandoff, err
 		Room:      s.state.Rooms[roomIndex].Title,
 		Time:      "刚刚",
 		Summary:   summary,
-		Action:    "打开 Mailbox",
+		Action:    InboxItemActionLabel(mailboxInboxHref(handoffID, roomID)),
 		Href:      mailboxInboxHref(handoffID, roomID),
 		HandoffID: handoffID,
 	}}, s.state.Inbox...)
@@ -792,7 +808,7 @@ func (s *Store) syncDeliveryDelegationInboxLocked(roomID string) {
 		Room:    defaultString(roomTitle, pr.RoomID),
 		Time:    "刚刚",
 		Summary: delegation.Summary,
-		Action:  "Open Delivery Entry",
+		Action:  InboxItemActionLabel(delegation.Href),
 		Href:    delegation.Href,
 	}}, s.state.Inbox...)
 }
@@ -805,7 +821,7 @@ func (s *Store) updateHandoffInboxLocked(handoff AgentHandoff, title, summary st
 		s.state.Inbox[index].Title = title
 		s.state.Inbox[index].Summary = summary
 		s.state.Inbox[index].Time = "刚刚"
-		s.state.Inbox[index].Action = "打开 Mailbox"
+		s.state.Inbox[index].Action = InboxItemActionLabel(mailboxInboxHref(handoff.ID, handoff.RoomID))
 		s.state.Inbox[index].Href = mailboxInboxHref(handoff.ID, handoff.RoomID)
 		s.state.Inbox[index].HandoffID = handoff.ID
 		if handoff.Status == "blocked" || roomAutoHandoffFollowupInboxKind(handoff) == "blocked" {
@@ -1244,7 +1260,7 @@ func (s *Store) updateDeliveryDelegationParentInboxProgressLocked(parent AgentHa
 		}
 
 		s.state.Inbox[index].Time = "刚刚"
-		s.state.Inbox[index].Action = "打开 Mailbox"
+		s.state.Inbox[index].Action = InboxItemActionLabel(mailboxInboxHref(parent.ID, parent.RoomID))
 		s.state.Inbox[index].Href = mailboxInboxHref(parent.ID, parent.RoomID)
 		s.state.Inbox[index].HandoffID = parent.ID
 		if parent.Status == "blocked" {
@@ -1321,7 +1337,7 @@ func (s *Store) updateDeliveryDelegationResponseChildInboxProgressLocked(respons
 		}
 
 		s.state.Inbox[index].Time = "刚刚"
-		s.state.Inbox[index].Action = "打开 Mailbox"
+		s.state.Inbox[index].Action = InboxItemActionLabel(mailboxInboxHref(response.ID, response.RoomID))
 		s.state.Inbox[index].Href = mailboxInboxHref(response.ID, response.RoomID)
 		s.state.Inbox[index].HandoffID = response.ID
 		if response.Status == "blocked" {

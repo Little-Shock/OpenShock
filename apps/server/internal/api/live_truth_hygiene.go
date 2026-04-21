@@ -8,11 +8,28 @@ import (
 )
 
 var (
-	liveTruthQuestionBurstPattern = regexp.MustCompile(`\?{2,}`)
-	liveTruthE2EResiduePattern    = regexp.MustCompile(`(?i)\be2e\b.*\b20\d{6,}\b`)
-	liveTruthPlaceholderPattern   = regexp.MustCompile(`(?i)\bplaceholder\b|\bfixture\b|\btest-only\b`)
-	liveTruthMockPattern          = regexp.MustCompile(`本地 mock|还在 mock|mock 频道|mock room|mock 卡片|mock issue|mock run|mock agent|mock workspace`)
-	liveTruthPathPattern          = regexp.MustCompile(`[A-Za-z]:\\|/tmp/openshock|/home/lark/OpenShock|\.openshock-worktrees|\.slock/`)
+	liveTruthQuestionBurstPattern           = regexp.MustCompile(`\?{2,}`)
+	liveTruthE2EResiduePattern              = regexp.MustCompile(`(?i)\be2e\b.*\b20\d{6,}\b`)
+	liveTruthPlaceholderPattern             = regexp.MustCompile(`(?i)\bplaceholder\b|\bfixture\b|\btest-only\b`)
+	liveTruthMockPattern                    = regexp.MustCompile(`本地 mock|还在 mock|mock 频道|mock room|mock 卡片|mock issue|mock run|mock agent|mock workspace`)
+	liveTruthPathPattern                    = regexp.MustCompile(`[A-Za-z]:\\|/tmp/openshock|/home/lark/OpenShock|\.openshock-worktrees|\.slock/`)
+	runtimeSchedulerFallbackStatePattern    = regexp.MustCompile(`^当前 fallback state 仍按 workspace selection 指向 (.+)。$`)
+	runtimeSchedulerOwnerSummaryPattern     = regexp.MustCompile(`^已按 (.+) 的设置选择 (.+)，当前有 (\d+) 个运行任务。$`)
+	runtimeSchedulerSelectedPattern         = regexp.MustCompile(`^当前继续使用 (.+)，当前有 (\d+) 个运行任务。$`)
+	runtimeSchedulerFailoverPattern         = regexp.MustCompile(`^(.+?) 当前不可用，已切换到 (.+)，当前有 (\d+) 个运行任务。$`)
+	runtimeSchedulerLeastLoadedPattern      = regexp.MustCompile(`^当前已选择 (.+)，当前有 (\d+) 个运行任务。$`)
+	runtimeSchedulerOwnerReasonPattern      = regexp.MustCompile(`^按 owner runtime preference 选中；当前承载 (\d+) 条 active lease。$`)
+	runtimeSchedulerSelectedReasonPattern   = regexp.MustCompile(`^沿用当前 selection；当前承载 (\d+) 条 active lease。$`)
+	runtimeSchedulerFailoverReasonPattern   = regexp.MustCompile("^承接 `?([^`；]+)`? 的 failover；当前承载 (\\d+) 条 active lease。$")
+	runtimeSchedulerPressureReasonPattern   = regexp.MustCompile(`^按 lease 压力选中；当前承载 (\d+) 条 active lease。$`)
+	runtimeSchedulerStateReasonPattern      = regexp.MustCompile("^当前 `?([^`，]+)`?，(?:未进入可调度状态|不可调度)。$")
+	runtimeSchedulerPreferredSkipPattern    = regexp.MustCompile(`^preferred runtime 当前不可调度，已被 failover 跳过。$`)
+	runtimeSchedulerActiveLeasePattern      = regexp.MustCompile(`^当前承载 (\d+) 条 active lease。$`)
+	runtimeSchedulerUnavailablePattern      = regexp.MustCompile(`^当前没有可调度 runtime。$`)
+	runtimeSchedulerOpenLanePattern         = regexp.MustCompile(`^当前可接新 lane。$`)
+	runtimeSchedulerUnpairedPattern         = regexp.MustCompile(`^未配对 daemon，当前不可调度。$`)
+	runtimeSchedulerTimelineFailoverPattern = regexp.MustCompile(`^Runtime 已 failover 到 (.+)$`)
+	runtimeSchedulerTimelineAssignedPattern = regexp.MustCompile(`^Runtime 已分配到 (.+)$`)
 )
 
 // SanitizeLiveState exports the customer-visible hygiene contract so cleanup
@@ -365,15 +382,15 @@ func sanitizeLiveState(snapshot store.State) store.State {
 }
 
 func sanitizeWorkspace(workspace store.WorkspaceSnapshot) store.WorkspaceSnapshot {
-	workspace.Name = sanitizeDisplayText(workspace.Name, "当前工作区名称正在整理中。")
-	workspace.Repo = sanitizeDisplayText(workspace.Repo, "当前仓库真值正在整理中。")
+	workspace.Name = sanitizeDisplayText(workspace.Name, "当前工作区名称还没同步。")
+	workspace.Repo = sanitizeDisplayText(workspace.Repo, "当前仓库信息还没同步。")
 	workspace.RepoURL = sanitizeDisplayText(workspace.RepoURL, "")
 	workspace.Branch = sanitizeDisplayText(workspace.Branch, "待整理分支")
 	workspace.RepoProvider = sanitizeDisplayText(workspace.RepoProvider, "待整理仓库提供方")
 	workspace.RepoBindingStatus = sanitizeDisplayText(workspace.RepoBindingStatus, "当前绑定状态正在整理中。")
 	workspace.RepoAuthMode = sanitizeDisplayText(workspace.RepoAuthMode, "当前认证模式正在整理中。")
 	workspace.Plan = sanitizeDisplayText(workspace.Plan, "当前工作区计划正在整理中。")
-	workspace.PairedRuntime = sanitizeDisplayText(workspace.PairedRuntime, "当前 runtime 真值正在整理中。")
+	workspace.PairedRuntime = sanitizeDisplayText(workspace.PairedRuntime, "当前运行环境还没同步。")
 	workspace.PairedRuntimeURL = sanitizeDisplayText(workspace.PairedRuntimeURL, "")
 	workspace.PairingStatus = sanitizeDisplayText(workspace.PairingStatus, "当前配对状态正在整理中。")
 	workspace.DeviceAuth = sanitizeDisplayText(workspace.DeviceAuth, "当前设备认证状态正在整理中。")
@@ -387,8 +404,8 @@ func sanitizeWorkspace(workspace store.WorkspaceSnapshot) store.WorkspaceSnapsho
 }
 
 func sanitizeWorkspaceGovernance(governance store.WorkspaceGovernanceSnapshot) store.WorkspaceGovernanceSnapshot {
-	governance.Label = sanitizeDisplayText(governance.Label, "当前治理链正在整理中。")
-	governance.Summary = sanitizeDisplayText(governance.Summary, "当前多 Agent 治理摘要正在整理中。")
+	governance.Label = sanitizeDisplayTextOrFallback(governance.Label, "当前协作流程正在整理中。")
+	governance.Summary = sanitizeDisplayTextOrFallback(governance.Summary, "当前协作摘要正在整理中。")
 	governance.ConfiguredTopology = sanitizeWorkspaceGovernanceTopologyConfig(governance.ConfiguredTopology)
 	governance.TeamTopology = sanitizeLivePayload(governance.TeamTopology).([]store.WorkspaceGovernanceLane)
 	governance.HandoffRules = sanitizeLivePayload(governance.HandoffRules).([]store.WorkspaceGovernanceRule)
@@ -406,8 +423,8 @@ func sanitizeWorkspaceGovernanceTopologyConfig(items []store.WorkspaceGovernance
 	for _, item := range items {
 		sanitized = append(sanitized, store.WorkspaceGovernanceLaneConfig{
 			ID:           sanitizeDisplayText(item.ID, "lane"),
-			Label:        sanitizeDisplayText(item.Label, "未命名治理角色"),
-			Role:         sanitizeDisplayText(item.Role, "当前职责正在整理中。"),
+			Label:        sanitizeDisplayTextOrFallback(item.Label, "未命名分工"),
+			Role:         sanitizeDisplayTextOrFallback(item.Role, "当前职责正在整理中。"),
 			DefaultAgent: sanitizeDisplayText(item.DefaultAgent, ""),
 			Lane:         sanitizeDisplayText(item.Lane, ""),
 		})
@@ -416,37 +433,37 @@ func sanitizeWorkspaceGovernanceTopologyConfig(items []store.WorkspaceGovernance
 }
 
 func sanitizeWorkspaceGovernanceLane(item store.WorkspaceGovernanceLane) store.WorkspaceGovernanceLane {
-	item.Label = sanitizeDisplayText(item.Label, "未命名治理角色")
-	item.Role = sanitizeDisplayText(item.Role, "当前职责正在整理中。")
+	item.Label = sanitizeDisplayTextOrFallback(item.Label, "未命名分工")
+	item.Role = sanitizeDisplayTextOrFallback(item.Role, "当前职责正在整理中。")
 	item.DefaultAgent = sanitizeDisplayText(item.DefaultAgent, "")
 	item.Lane = sanitizeDisplayText(item.Lane, "")
-	item.Summary = sanitizeDisplayText(item.Summary, "当前治理 lane 正在整理中。")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前分工正在整理中。")
 	return item
 }
 
 func sanitizeWorkspaceGovernanceRule(item store.WorkspaceGovernanceRule) store.WorkspaceGovernanceRule {
-	item.Label = sanitizeDisplayText(item.Label, "未命名治理规则")
-	item.Summary = sanitizeDisplayText(item.Summary, "当前治理规则正在整理中。")
+	item.Label = sanitizeDisplayTextOrFallback(item.Label, "未命名规则")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前规则正在整理中。")
 	item.Href = sanitizeDisplayText(item.Href, "")
 	return item
 }
 
 func sanitizeWorkspaceRoutingPolicy(item store.WorkspaceGovernanceRoutingPolicy) store.WorkspaceGovernanceRoutingPolicy {
-	item.Summary = sanitizeDisplayText(item.Summary, "当前 routing policy 正在整理中。")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前安排正在整理中。")
 	item.DefaultRoute = sanitizeDisplayText(item.DefaultRoute, "")
 	item.SuggestedHandoff = sanitizeWorkspaceSuggestedHandoff(item.SuggestedHandoff)
 	for index := range item.Rules {
-		item.Rules[index].Trigger = sanitizeDisplayText(item.Rules[index].Trigger, "trigger")
-		item.Rules[index].FromLane = sanitizeDisplayText(item.Rules[index].FromLane, "未命名来源")
-		item.Rules[index].ToLane = sanitizeDisplayText(item.Rules[index].ToLane, "未命名目标")
-		item.Rules[index].Policy = sanitizeDisplayText(item.Rules[index].Policy, "当前路由策略正在整理中。")
-		item.Rules[index].Summary = sanitizeDisplayText(item.Rules[index].Summary, "当前 routing rule 正在整理中。")
+		item.Rules[index].Trigger = sanitizeDisplayTextOrFallback(item.Rules[index].Trigger, "trigger")
+		item.Rules[index].FromLane = sanitizeDisplayTextOrFallback(item.Rules[index].FromLane, "未命名来源")
+		item.Rules[index].ToLane = sanitizeDisplayTextOrFallback(item.Rules[index].ToLane, "未命名目标")
+		item.Rules[index].Policy = sanitizeDisplayTextOrFallback(item.Rules[index].Policy, "当前安排正在整理中。")
+		item.Rules[index].Summary = sanitizeDisplayTextOrFallback(item.Rules[index].Summary, "当前安排正在整理中。")
 	}
 	return item
 }
 
 func sanitizeWorkspaceSuggestedHandoff(item store.WorkspaceGovernanceSuggestedHandoff) store.WorkspaceGovernanceSuggestedHandoff {
-	item.Reason = sanitizeDisplayText(item.Reason, "当前 governed handoff 建议正在整理中。")
+	item.Reason = sanitizeDisplayTextOrFallback(item.Reason, "当前交接建议正在整理中。")
 	item.RoomID = sanitizeDisplayText(item.RoomID, "")
 	item.IssueKey = sanitizeDisplayText(item.IssueKey, "")
 	item.FromLaneID = sanitizeDisplayText(item.FromLaneID, "")
@@ -461,73 +478,88 @@ func sanitizeWorkspaceSuggestedHandoff(item store.WorkspaceGovernanceSuggestedHa
 	item.DraftSummary = sanitizeDisplayText(item.DraftSummary, "")
 	item.HandoffID = sanitizeDisplayText(item.HandoffID, "")
 	item.Href = sanitizeDisplayText(item.Href, "")
+	hrefLabelFallback := store.WorkspaceGovernanceNextRouteHrefLabel(item.Status, item.Href)
+	item.HrefLabel = sanitizeDisplayText(item.HrefLabel, hrefLabelFallback)
+	if strings.TrimSpace(item.HrefLabel) == "" {
+		item.HrefLabel = hrefLabelFallback
+	}
 	return item
 }
 
 func sanitizeWorkspaceEscalationSLA(item store.WorkspaceGovernanceEscalationSLA) store.WorkspaceGovernanceEscalationSLA {
-	item.Summary = sanitizeDisplayText(item.Summary, "当前 escalation SLA 正在整理中。")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前待处理事项正在整理中。")
 	item.NextEscalation = sanitizeDisplayText(item.NextEscalation, "")
 	for index := range item.Queue {
-		item.Queue[index].Label = sanitizeDisplayText(item.Queue[index].Label, "未命名 escalation")
+		item.Queue[index].Label = sanitizeDisplayTextOrFallback(item.Queue[index].Label, "未命名待处理事项")
 		item.Queue[index].Status = sanitizeDisplayText(item.Queue[index].Status, "pending")
-		item.Queue[index].Source = sanitizeDisplayText(item.Queue[index].Source, "governance")
+		item.Queue[index].Source = sanitizeDisplayTextOrFallback(item.Queue[index].Source, "当前状态")
 		item.Queue[index].Owner = sanitizeDisplayText(item.Queue[index].Owner, "")
-		item.Queue[index].Summary = sanitizeDisplayText(item.Queue[index].Summary, "当前 escalation 条目正在整理中。")
-		item.Queue[index].NextStep = sanitizeDisplayText(item.Queue[index].NextStep, "当前 escalation 下一步正在整理中。")
+		item.Queue[index].Summary = sanitizeDisplayTextOrFallback(item.Queue[index].Summary, "当前待处理事项正在整理中。")
+		item.Queue[index].NextStep = sanitizeDisplayTextOrFallback(item.Queue[index].NextStep, "当前下一步正在整理中。")
 		item.Queue[index].Href = sanitizeDisplayText(item.Queue[index].Href, "")
 		item.Queue[index].TimeLabel = sanitizeDisplayText(item.Queue[index].TimeLabel, "")
 	}
 	for index := range item.Rollup {
 		item.Rollup[index].RoomID = sanitizeDisplayText(item.Rollup[index].RoomID, "")
-		item.Rollup[index].RoomTitle = sanitizeDisplayText(item.Rollup[index].RoomTitle, "未命名讨论间")
+		item.Rollup[index].RoomTitle = sanitizeDisplayTextOrFallback(item.Rollup[index].RoomTitle, "未命名讨论间")
 		item.Rollup[index].Status = sanitizeDisplayText(item.Rollup[index].Status, "pending")
 		item.Rollup[index].CurrentOwner = sanitizeDisplayText(item.Rollup[index].CurrentOwner, "")
 		item.Rollup[index].CurrentLane = sanitizeDisplayText(item.Rollup[index].CurrentLane, "")
-		item.Rollup[index].LatestSource = sanitizeDisplayText(item.Rollup[index].LatestSource, "governance")
-		item.Rollup[index].LatestLabel = sanitizeDisplayText(item.Rollup[index].LatestLabel, "未命名 escalation")
-		item.Rollup[index].LatestSummary = sanitizeDisplayText(item.Rollup[index].LatestSummary, "当前 room escalation 正在整理中。")
+		item.Rollup[index].LatestSource = sanitizeDisplayTextOrFallback(item.Rollup[index].LatestSource, "当前状态")
+		item.Rollup[index].LatestLabel = sanitizeDisplayTextOrFallback(item.Rollup[index].LatestLabel, "未命名待处理事项")
+		item.Rollup[index].LatestSummary = sanitizeDisplayTextOrFallback(item.Rollup[index].LatestSummary, "当前讨论间提醒正在整理中。")
 		item.Rollup[index].NextRouteStatus = sanitizeDisplayText(item.Rollup[index].NextRouteStatus, "pending")
 		item.Rollup[index].NextRouteLabel = sanitizeDisplayText(item.Rollup[index].NextRouteLabel, "")
-		item.Rollup[index].NextRouteSummary = sanitizeDisplayText(item.Rollup[index].NextRouteSummary, "当前 governed route 正在整理中。")
+		item.Rollup[index].NextRouteSummary = sanitizeDisplayTextOrFallback(item.Rollup[index].NextRouteSummary, "当前下一步安排正在整理中。")
 		item.Rollup[index].NextRouteHref = sanitizeDisplayText(item.Rollup[index].NextRouteHref, "")
+		nextRouteHrefLabelFallback := store.WorkspaceGovernanceNextRouteHrefLabel(item.Rollup[index].NextRouteStatus, item.Rollup[index].NextRouteHref)
+		item.Rollup[index].NextRouteHrefLabel = sanitizeDisplayText(item.Rollup[index].NextRouteHrefLabel, nextRouteHrefLabelFallback)
+		if strings.TrimSpace(item.Rollup[index].NextRouteHrefLabel) == "" {
+			item.Rollup[index].NextRouteHrefLabel = nextRouteHrefLabelFallback
+		}
 		item.Rollup[index].Href = sanitizeDisplayText(item.Rollup[index].Href, "")
+		hrefLabelFallback := store.WorkspaceGovernanceEscalationRoomHrefLabel(item.Rollup[index].Href)
+		item.Rollup[index].HrefLabel = sanitizeDisplayText(item.Rollup[index].HrefLabel, hrefLabelFallback)
+		if strings.TrimSpace(item.Rollup[index].HrefLabel) == "" {
+			item.Rollup[index].HrefLabel = hrefLabelFallback
+		}
 	}
 	return item
 }
 
 func sanitizeWorkspaceNotificationPolicy(item store.WorkspaceGovernanceNotificationPolicy) store.WorkspaceGovernanceNotificationPolicy {
-	item.Summary = sanitizeDisplayText(item.Summary, "当前 notification policy 正在整理中。")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前提醒设置正在整理中。")
 	item.BrowserPush = sanitizeDisplayText(item.BrowserPush, "")
 	item.EscalationChannel = sanitizeDisplayText(item.EscalationChannel, "")
-	item.Targets = sanitizeTextLines(item.Targets, "target")
+	item.Targets = sanitizeTextLinesOrFallback(item.Targets, "当前提醒对象")
 	return item
 }
 
 func sanitizeWorkspaceResponseAggregation(item store.WorkspaceResponseAggregation) store.WorkspaceResponseAggregation {
-	item.Summary = sanitizeDisplayText(item.Summary, "当前 response aggregation 正在整理中。")
-	item.Sources = sanitizeTextLines(item.Sources, "live source")
-	item.FinalResponse = sanitizeDisplayText(item.FinalResponse, "等待当前治理链收口。")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前最终回复正在整理中。")
+	item.Sources = sanitizeTextLinesOrFallback(item.Sources, "当前来源")
+	item.FinalResponse = sanitizeDisplayTextOrFallback(item.FinalResponse, "等待当前事项收口。")
 	item.Aggregator = sanitizeDisplayText(item.Aggregator, "")
-	item.DecisionPath = sanitizeTextLines(item.DecisionPath, "live step")
-	item.OverrideTrace = sanitizeTextLines(item.OverrideTrace, "override trace")
+	item.DecisionPath = sanitizeTextLinesOrFallback(item.DecisionPath, "当前步骤")
+	item.OverrideTrace = sanitizeTextLinesOrFallback(item.OverrideTrace, "人工处理记录")
 	for index := range item.AuditTrail {
-		item.AuditTrail[index].Label = sanitizeDisplayText(item.AuditTrail[index].Label, "未命名聚合审计")
+		item.AuditTrail[index].Label = sanitizeDisplayTextOrFallback(item.AuditTrail[index].Label, "未命名记录")
 		item.AuditTrail[index].Actor = sanitizeDisplayText(item.AuditTrail[index].Actor, "")
-		item.AuditTrail[index].Summary = sanitizeDisplayText(item.AuditTrail[index].Summary, "当前 aggregation audit 正在整理中。")
+		item.AuditTrail[index].Summary = sanitizeDisplayTextOrFallback(item.AuditTrail[index].Summary, "当前记录正在整理中。")
 		item.AuditTrail[index].OccurredAt = sanitizeDisplayText(item.AuditTrail[index].OccurredAt, "")
 	}
 	return item
 }
 
 func sanitizeWorkspaceHumanOverride(item store.WorkspaceHumanOverride) store.WorkspaceHumanOverride {
-	item.Summary = sanitizeDisplayText(item.Summary, "当前 human override 状态正在整理中。")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前人工处理状态正在整理中。")
 	item.Href = sanitizeDisplayText(item.Href, "")
 	return item
 }
 
 func sanitizeWorkspaceGovernanceWalkthrough(item store.WorkspaceGovernanceWalkthrough) store.WorkspaceGovernanceWalkthrough {
-	item.Label = sanitizeDisplayText(item.Label, "未命名治理步骤")
-	item.Summary = sanitizeDisplayText(item.Summary, "当前治理步骤正在整理中。")
+	item.Label = sanitizeDisplayTextOrFallback(item.Label, "未命名步骤")
+	item.Summary = sanitizeDisplayTextOrFallback(item.Summary, "当前步骤正在整理中。")
 	item.Detail = sanitizeDisplayText(item.Detail, "")
 	item.Href = sanitizeDisplayText(item.Href, "")
 	return item
@@ -610,6 +642,11 @@ func sanitizePullRequestDeliveryGate(item store.PullRequestDeliveryGate) store.P
 	item.Label = sanitizeDisplayText(item.Label, "当前 gate 正在整理中。")
 	item.Summary = sanitizeDisplayText(item.Summary, "当前 gate 摘要正在整理中。")
 	item.Href = sanitizeDisplayText(item.Href, "")
+	hrefLabelFallback := store.PullRequestDeliveryHrefLabel(item.ID, item.Href)
+	item.HrefLabel = sanitizeDisplayText(item.HrefLabel, hrefLabelFallback)
+	if strings.TrimSpace(item.HrefLabel) == "" {
+		item.HrefLabel = hrefLabelFallback
+	}
 	return item
 }
 
@@ -624,15 +661,18 @@ func sanitizePullRequestDeliveryDelegation(item store.PullRequestDeliveryDelegat
 	item.TargetAgent = sanitizeDisplayText(item.TargetAgent, "")
 	item.Summary = sanitizeDisplayText(item.Summary, "当前 delivery delegation 正在整理中。")
 	item.Href = sanitizeDisplayText(item.Href, "")
+	item.HrefLabel = sanitizeDisplayText(item.HrefLabel, "")
 	item.InboxItemID = sanitizeDisplayText(item.InboxItemID, "")
 	item.HandoffID = sanitizeDisplayText(item.HandoffID, "")
 	item.HandoffHref = sanitizeDisplayText(item.HandoffHref, "")
+	item.HandoffHrefLabel = sanitizeDisplayText(item.HandoffHrefLabel, "")
 	item.HandoffStatus = sanitizeDisplayText(item.HandoffStatus, "")
 	if item.ResponseAttemptCount < 0 {
 		item.ResponseAttemptCount = 0
 	}
 	item.ResponseHandoffID = sanitizeDisplayText(item.ResponseHandoffID, "")
 	item.ResponseHandoffHref = sanitizeDisplayText(item.ResponseHandoffHref, "")
+	item.ResponseHandoffHrefLabel = sanitizeDisplayText(item.ResponseHandoffHrefLabel, "")
 	item.ResponseHandoffStatus = sanitizeDisplayText(item.ResponseHandoffStatus, "")
 	return item
 }
@@ -649,6 +689,11 @@ func sanitizePullRequestDeliveryEvidence(item store.PullRequestDeliveryEvidence)
 	item.Value = sanitizeDisplayText(item.Value, "当前证据值正在整理中。")
 	item.Summary = sanitizeDisplayText(item.Summary, "当前证据摘要正在整理中。")
 	item.Href = sanitizeDisplayText(item.Href, "")
+	hrefLabelFallback := store.PullRequestDeliveryEvidenceHrefLabel(item.ID, item.Href)
+	item.HrefLabel = sanitizeDisplayText(item.HrefLabel, hrefLabelFallback)
+	if strings.TrimSpace(item.HrefLabel) == "" {
+		item.HrefLabel = hrefLabelFallback
+	}
 	return item
 }
 
@@ -689,8 +734,8 @@ func sanitizeRunRecoveryHandoffAutoFollowup(item store.RunRecoveryHandoffAutoFol
 	item.ToAgentID = sanitizeDisplayText(item.ToAgentID, "")
 	item.ToAgent = sanitizeDisplayText(item.ToAgent, "")
 	item.Status = sanitizeDisplayText(item.Status, "")
-	item.Summary = sanitizeDisplayText(item.Summary, "当前交接继续摘要正在整理中。")
-	item.LastAction = sanitizeDisplayText(item.LastAction, "当前交接继续动作正在整理中。")
+	item.Summary = sanitizeDisplayText(item.Summary, "交接继续摘要正在整理中。")
+	item.LastAction = sanitizeDisplayText(item.LastAction, "交接继续动作正在整理中。")
 	return item
 }
 
@@ -717,14 +762,14 @@ func sanitizeRunHistoryEntry(entry store.RunHistoryEntry) store.RunHistoryEntry 
 
 func sanitizeChannel(channel store.Channel) store.Channel {
 	channel.Summary = sanitizeDisplayText(channel.Summary, "当前频道摘要正在整理中。")
-	channel.Purpose = sanitizeDisplayText(channel.Purpose, "当前频道说明正在整理中。")
+	channel.Purpose = sanitizeDisplayText(channel.Purpose, "频道说明还没同步。")
 	return channel
 }
 
 func sanitizeDirectMessage(item store.DirectMessage) store.DirectMessage {
 	item.Name = sanitizeDisplayText(item.Name, "@OpenShock Agent")
-	item.Summary = sanitizeDisplayText(item.Summary, "当前私聊摘要正在整理中。")
-	item.Purpose = sanitizeDisplayText(item.Purpose, "当前私聊说明正在整理中。")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前私聊摘要还没同步。")
+	item.Purpose = sanitizeDisplayText(item.Purpose, "私聊说明还没同步。")
 	item.Counterpart = sanitizeDisplayText(item.Counterpart, "OpenShock Agent")
 	return item
 }
@@ -737,20 +782,20 @@ func sanitizeMessage(message store.Message) store.Message {
 
 func sanitizeIssue(issue store.Issue) store.Issue {
 	issue.Title = sanitizeDisplayText(issue.Title, "待整理任务")
-	issue.Summary = sanitizeDisplayText(issue.Summary, "这条任务的上下文正在整理，先回到讨论间查看当前 live truth。")
+	issue.Summary = sanitizeDisplayText(issue.Summary, "这条任务的上下文正在整理，先回到讨论间确认当前状态。")
 	return issue
 }
 
 func sanitizeRoom(room store.Room) store.Room {
 	room.Title = sanitizeDisplayText(room.Title, "待整理讨论间")
-	room.Summary = sanitizeDisplayText(room.Summary, "当前讨论间的标题和摘要正在整理，先查看最新执行真相。")
+	room.Summary = sanitizeDisplayText(room.Summary, "当前讨论间的标题和摘要正在整理，先确认最新执行状态。")
 	room.Topic = sanitizeTopic(room.Topic)
 	return room
 }
 
 func sanitizeTopic(topic store.Topic) store.Topic {
-	topic.Title = sanitizeDisplayText(topic.Title, "待整理 Topic")
-	topic.Summary = sanitizeDisplayText(topic.Summary, "当前 Topic 的摘要正在整理中。")
+	topic.Title = sanitizeDisplayText(topic.Title, "待整理话题")
+	topic.Summary = sanitizeDisplayText(topic.Summary, "当前话题摘要还没同步。")
 	return topic
 }
 
@@ -758,8 +803,8 @@ func sanitizeRun(run store.Run) store.Run {
 	run.Branch = sanitizeDisplayText(run.Branch, "待整理分支")
 	run.Worktree = sanitizeDisplayText(run.Worktree, "当前 worktree 名称正在整理中。")
 	run.WorktreePath = sanitizeDisplayText(run.WorktreePath, "当前 worktree 路径正在整理中。")
-	run.Summary = sanitizeDisplayText(run.Summary, "当前 Run 正在整理执行摘要。")
-	run.NextAction = sanitizeDisplayText(run.NextAction, "等待当前执行真相同步。")
+	run.Summary = sanitizeDisplayText(run.Summary, "当前执行摘要还没同步。")
+	run.NextAction = sanitizeDisplayText(run.NextAction, "等待当前执行更新。")
 	run.PullRequest = sanitizeDisplayText(run.PullRequest, "待整理 PR")
 	run.CredentialProfileIDs = sanitizeTextLines(run.CredentialProfileIDs, "")
 	run.Stdout = sanitizeTextLines(run.Stdout, "这条执行日志包含测试残留或乱码，已在当前工作区隐藏。")
@@ -832,7 +877,11 @@ func sanitizeInboxItem(item store.InboxItem) store.InboxItem {
 	item.Title = sanitizeDisplayText(item.Title, "待整理信号")
 	item.Room = sanitizeDisplayText(item.Room, "待整理讨论间")
 	item.Summary = sanitizeDisplayText(item.Summary, "这条决策信号的摘要正在整理中。")
-	item.Action = sanitizeDisplayText(item.Action, "查看详情")
+	actionFallback := store.InboxItemActionLabel(item.Href)
+	item.Action = sanitizeDisplayText(item.Action, actionFallback)
+	if strings.TrimSpace(item.Action) == "" {
+		item.Action = actionFallback
+	}
 	return item
 }
 
@@ -840,6 +889,11 @@ func sanitizeAgentHandoff(item store.AgentHandoff) store.AgentHandoff {
 	item.Title = sanitizeDisplayText(item.Title, "待整理交接")
 	item.Summary = sanitizeDisplayText(item.Summary, "当前 handoff 摘要正在整理中。")
 	item.Kind = sanitizeDisplayText(item.Kind, "manual")
+	kindLabelFallback := store.AgentHandoffKindLabel(item.Kind)
+	item.KindLabel = sanitizeDisplayText(item.KindLabel, kindLabelFallback)
+	if strings.TrimSpace(item.KindLabel) == "" {
+		item.KindLabel = kindLabelFallback
+	}
 	item.ParentHandoffID = sanitizeDisplayText(item.ParentHandoffID, "")
 	item.FromAgent = sanitizeDisplayText(item.FromAgent, "来源 Agent")
 	item.ToAgent = sanitizeDisplayText(item.ToAgent, "目标 Agent")
@@ -888,11 +942,11 @@ func sanitizeRuntimeLease(item store.RuntimeLease) store.RuntimeLease {
 }
 
 func sanitizeRuntimeScheduler(item store.RuntimeScheduler) store.RuntimeScheduler {
-	item.PreferredRuntime = sanitizeDisplayText(item.PreferredRuntime, "当前首选 runtime 正在整理中。")
-	item.AssignedRuntime = sanitizeDisplayText(item.AssignedRuntime, "当前分配 runtime 正在整理中。")
+	item.PreferredRuntime = sanitizeDisplayText(item.PreferredRuntime, "当前首选运行环境正在整理中。")
+	item.AssignedRuntime = sanitizeDisplayText(item.AssignedRuntime, "当前分配运行环境正在整理中。")
 	item.AssignedMachine = sanitizeDisplayText(item.AssignedMachine, "当前分配机器正在整理中。")
 	item.FailoverFrom = sanitizeDisplayText(item.FailoverFrom, "")
-	item.Summary = sanitizeDisplayText(item.Summary, "当前 runtime 调度摘要正在整理中。")
+	item.Summary = sanitizeDisplayText(item.Summary, "当前运行环境调度摘要正在整理中。")
 	for index := range item.Candidates {
 		item.Candidates[index] = sanitizeRuntimeSchedulerCandidate(item.Candidates[index])
 	}
@@ -900,7 +954,7 @@ func sanitizeRuntimeScheduler(item store.RuntimeScheduler) store.RuntimeSchedule
 }
 
 func sanitizeSession(session store.Session) store.Session {
-	session.ControlNote = sanitizeDisplayText(session.ControlNote, "当前控制说明正在整理中。")
+	session.ControlNote = sanitizeDisplayText(session.ControlNote, "当前执行备注还没同步。")
 	session.Branch = sanitizeDisplayText(session.Branch, "待整理分支")
 	session.Worktree = sanitizeDisplayText(session.Worktree, "当前 worktree 名称正在整理中。")
 	session.WorktreePath = sanitizeDisplayText(session.WorktreePath, "当前 worktree 路径正在整理中。")
@@ -992,7 +1046,7 @@ func sanitizeWorkspaceGitHubInstall(item store.WorkspaceGitHubInstallSnapshot) s
 	item.InstallationID = sanitizeDisplayText(item.InstallationID, "")
 	item.InstallationURL = sanitizeDisplayText(item.InstallationURL, "")
 	item.Missing = sanitizeTextLines(item.Missing, "当前 GitHub 安装缺口正在整理中。")
-	item.ConnectionMessage = sanitizeDisplayText(item.ConnectionMessage, "当前 GitHub 连接说明正在整理中。")
+	item.ConnectionMessage = sanitizeDisplayText(item.ConnectionMessage, "GitHub 连接说明正在整理中。")
 	return item
 }
 
@@ -1009,11 +1063,104 @@ func sanitizeWorkspaceOnboarding(item store.WorkspaceOnboardingSnapshot) store.W
 func sanitizeWorkspaceOnboardingMaterialization(item store.WorkspaceOnboardingMaterialization) store.WorkspaceOnboardingMaterialization {
 	item.Label = sanitizeDisplayText(item.Label, "")
 	item.Channels = sanitizeTextLines(item.Channels, "")
-	item.Roles = sanitizeTextLines(item.Roles, "")
-	item.Agents = sanitizeTextLines(item.Agents, "")
-	item.NotificationPolicy = sanitizeDisplayText(item.NotificationPolicy, "")
-	item.Notes = sanitizeTextLines(item.Notes, "当前 onboarding 说明正在整理中。")
+	item.Roles = sanitizeOnboardingRoleLabels(item.Roles)
+	item.Agents = sanitizeOnboardingAgentLabels(item.Agents)
+	item.NotificationPolicy = rewriteOnboardingPackageText(sanitizeDisplayText(item.NotificationPolicy, ""))
+	item.Notes = sanitizeOnboardingPackageLines(item.Notes, "onboarding 说明正在整理中。")
 	return item
+}
+
+func sanitizeOnboardingRoleLabels(lines []string) []string {
+	items := make([]string, 0, len(lines))
+	for _, line := range lines {
+		sanitized := sanitizeDisplayText(line, "")
+		switch sanitized {
+		case "Owner / Member / Viewer":
+			items = append(items, "所有者", "成员", "访客")
+		case "PM":
+			items = append(items, "目标")
+		case "Architect":
+			items = append(items, "边界")
+		case "Developer":
+			items = append(items, "实现")
+		case "Reviewer", "Peer Reviewer":
+			items = append(items, "评审")
+		case "QA":
+			items = append(items, "验证")
+		case "Research Lead", "Lead Operator":
+			items = append(items, "方向")
+		case "Collector", "Field Collector":
+			items = append(items, "采集")
+		case "Synthesizer":
+			items = append(items, "归纳")
+		case "Owner":
+			items = append(items, "所有者")
+		case "Member":
+			items = append(items, "成员")
+		case "Viewer":
+			items = append(items, "访客")
+		default:
+			items = append(items, rewriteOnboardingPackageText(sanitized))
+		}
+	}
+	return items
+}
+
+func sanitizeOnboardingAgentLabels(lines []string) []string {
+	items := make([]string, 0, len(lines))
+	for _, line := range lines {
+		sanitized := sanitizeDisplayText(line, "")
+		switch sanitized {
+		case "Spec Captain":
+			items = append(items, "需求智能体")
+		case "Build Pilot":
+			items = append(items, "开发智能体")
+		case "Review Runner", "Reviewer", "Peer Reviewer":
+			items = append(items, "评审智能体")
+		case "QA Relay":
+			items = append(items, "测试智能体")
+		case "Lead Operator", "Research Lead":
+			items = append(items, "总控智能体")
+		case "Collector", "Field Collector":
+			items = append(items, "采集智能体")
+		case "Synthesizer":
+			items = append(items, "归纳智能体")
+		default:
+			items = append(items, rewriteOnboardingPackageText(sanitized))
+		}
+	}
+	return items
+}
+
+func sanitizeOnboardingPackageLines(lines []string, fallback string) []string {
+	items := make([]string, len(lines))
+	for index, line := range lines {
+		items[index] = rewriteOnboardingPackageText(sanitizeDisplayText(line, fallback))
+	}
+	return items
+}
+
+func rewriteOnboardingPackageText(value string) string {
+	replacements := []struct {
+		from string
+		to   string
+	}{
+		{"blocked / review / release gate 优先推送", "优先推送阻塞、评审和发布门事件"},
+		{"evidence ready / synthesis blocked / reviewer feedback 优先推送", "优先推送证据就绪、综合阻塞和复核反馈"},
+		{"只推高优先级与显式 review 事件", "只推高优先级与显式评审事件"},
+		{"Owner / Member / Viewer", "所有者 / 成员 / 访客"},
+		{"Research Lead", "方向"},
+		{"Lead Operator", "总控智能体"},
+		{"Spec Captain", "需求智能体"},
+		{"Build Pilot", "开发智能体"},
+		{"Review Runner", "评审智能体"},
+		{"QA Relay", "测试智能体"},
+	}
+	next := value
+	for _, replacement := range replacements {
+		next = strings.ReplaceAll(next, replacement.from, replacement.to)
+	}
+	return next
 }
 
 func sanitizeAgentProfileAuditEntry(item store.AgentProfileAuditEntry) store.AgentProfileAuditEntry {
@@ -1042,9 +1189,9 @@ func sanitizeRuntimeProvider(item store.RuntimeProvider) store.RuntimeProvider {
 }
 
 func sanitizeRuntimeSchedulerCandidate(item store.RuntimeSchedulerCandidate) store.RuntimeSchedulerCandidate {
-	item.Runtime = sanitizeDisplayText(item.Runtime, "待整理 runtime")
+	item.Runtime = sanitizeDisplayText(item.Runtime, "待整理运行环境")
 	item.Machine = sanitizeDisplayText(item.Machine, "待整理机器")
-	item.Reason = sanitizeDisplayText(item.Reason, "当前调度原因正在整理中。")
+	item.Reason = sanitizeDisplayText(item.Reason, "当前安排原因正在整理中。")
 	return item
 }
 
@@ -1096,7 +1243,7 @@ func sanitizeAuthSession(item store.AuthSession) store.AuthSession {
 
 func sanitizeWorkspaceRole(item store.WorkspaceRole) store.WorkspaceRole {
 	item.Label = sanitizeDisplayText(item.Label, "当前角色标签正在整理中。")
-	item.Summary = sanitizeDisplayText(item.Summary, "当前角色说明正在整理中。")
+	item.Summary = sanitizeDisplayText(item.Summary, "角色说明正在整理中。")
 	item.Permissions = sanitizeTextLines(item.Permissions, "")
 	return item
 }
@@ -1161,15 +1308,32 @@ func sanitizeTextLines(lines []string, fallback string) []string {
 	return items
 }
 
+func sanitizeTextLinesOrFallback(lines []string, fallback string) []string {
+	items := make([]string, len(lines))
+	for index, line := range lines {
+		items[index] = sanitizeDisplayTextOrFallback(line, fallback)
+	}
+	return items
+}
+
 func sanitizeDisplayText(value, fallback string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return trimmed
 	}
-	if looksLikeLiveTruthLeak(trimmed) {
+	rewritten := rewriteCustomerFacingText(trimmed)
+	if looksLikeLiveTruthLeak(rewritten) {
 		return fallback
 	}
-	return trimmed
+	return rewritten
+}
+
+func sanitizeDisplayTextOrFallback(value, fallback string) string {
+	sanitized := sanitizeDisplayText(value, fallback)
+	if strings.TrimSpace(sanitized) == "" {
+		return fallback
+	}
+	return sanitized
 }
 
 func looksLikeLiveTruthLeak(value string) bool {
@@ -1183,6 +1347,45 @@ func looksLikeLiveTruthLeak(value string) bool {
 		liveTruthPlaceholderPattern.MatchString(lower) ||
 		liveTruthMockPattern.MatchString(trimmed) ||
 		liveTruthPathPattern.MatchString(trimmed)
+}
+
+func rewriteCustomerFacingText(value string) string {
+	next := value
+	next = runtimeSchedulerFallbackStatePattern.ReplaceAllString(next, "当前仍指向工作区默认运行环境 $1。")
+	next = runtimeSchedulerOwnerSummaryPattern.ReplaceAllString(next, "已按 $1 偏好安排到 $2，当前有 $3 条执行。")
+	next = runtimeSchedulerSelectedPattern.ReplaceAllString(next, "继续使用 $1，当前有 $2 条执行。")
+	next = runtimeSchedulerFailoverPattern.ReplaceAllString(next, "$1 当前不可用，已切到 $2，当前有 $3 条执行。")
+	next = runtimeSchedulerLeastLoadedPattern.ReplaceAllString(next, "已安排到 $1，当前有 $2 条执行。")
+	next = runtimeSchedulerOwnerReasonPattern.ReplaceAllString(next, "按智能体偏好安排，当前有 $1 条执行。")
+	next = runtimeSchedulerSelectedReasonPattern.ReplaceAllString(next, "沿用当前选择，当前有 $1 条执行。")
+	next = runtimeSchedulerFailoverReasonPattern.ReplaceAllString(next, "承接 $1 的切换，当前有 $2 条执行。")
+	next = runtimeSchedulerPressureReasonPattern.ReplaceAllString(next, "按当前压力安排，当前有 $1 条执行。")
+	next = runtimeSchedulerStateReasonPattern.ReplaceAllStringFunc(next, func(text string) string {
+		matches := runtimeSchedulerStateReasonPattern.FindStringSubmatch(text)
+		if len(matches) != 2 {
+			return text
+		}
+		return "当前" + runtimeSchedulerStateLabel(matches[1]) + "，暂不可调度。"
+	})
+	next = runtimeSchedulerPreferredSkipPattern.ReplaceAllString(next, "首选运行环境暂不可调度，已跳过。")
+	next = runtimeSchedulerActiveLeasePattern.ReplaceAllString(next, "当前有 $1 条执行。")
+	next = runtimeSchedulerUnavailablePattern.ReplaceAllString(next, "当前没有可用运行环境。")
+	next = runtimeSchedulerOpenLanePattern.ReplaceAllString(next, "可以接新事项。")
+	next = runtimeSchedulerUnpairedPattern.ReplaceAllString(next, "还没配对，暂不可调度。")
+	next = runtimeSchedulerTimelineFailoverPattern.ReplaceAllString(next, "运行环境已切到 $1")
+	next = runtimeSchedulerTimelineAssignedPattern.ReplaceAllString(next, "运行环境已分配到 $1")
+	return next
+}
+
+func runtimeSchedulerStateLabel(state string) string {
+	switch strings.TrimSpace(state) {
+	case "offline":
+		return "离线"
+	case "stale":
+		return "心跳过期"
+	default:
+		return strings.TrimSpace(state)
+	}
 }
 
 func fallbackSpeaker(role string) string {

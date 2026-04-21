@@ -69,6 +69,8 @@
     "test:headed-mailbox-batch-policy": "node ./scripts/headed-mailbox-batch-policy.mjs",
     "test:headed-control-plane-runtime-governance": "node ./scripts/headed-control-plane-runtime-governance.mjs",
     "test:headed-planner-dispatch-replay": "node ./scripts/headed-planner-dispatch-replay.mjs",
+    "test:headed-website-four-agent-delivery": "node ./scripts/headed-website-four-agent-delivery.mjs",
+    "test:contract-website-four-agent-delivery": "bash -lc 'root=$(pwd); cd apps/server && GOCACHE=\"${GOCACHE:-/tmp/openshock-go-build-cache}\" GOMODCACHE=\"${GOMODCACHE:-/tmp/openshock-go-mod-cache}\" OPENSHOCK_WORKSPACE_ROOT=\"${OPENSHOCK_WORKSPACE_ROOT:-$root}\" \"$root/scripts/go.sh\" test ./internal/api -run TestWebsiteFourAgentDeliveryContractReplayWithoutListener -count=1'",
     "test:headed-memory-governance": "node ./scripts/headed-memory-governance.mjs",
     "test:headed-memory-provider-orchestration": "node ./scripts/headed-memory-provider-orchestration.mjs",
     "test:headed-memory-provider-health-recovery": "node ./scripts/headed-memory-provider-health-recovery.mjs",

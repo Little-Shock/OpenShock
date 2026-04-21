@@ -366,6 +366,7 @@ async function main() {
   const githubMessage = (await page.getByTestId("setup-github-message").textContent())?.trim() ?? "";
   const githubMissingFields = (await page.getByTestId("setup-github-missing-fields").textContent())?.trim() ?? "";
   const githubInstallLink = (await page.getByTestId("setup-github-install-link").getAttribute("href"))?.trim() ?? "";
+  const githubInstallLabel = (await page.getByTestId("setup-github-install-link").textContent())?.trim() ?? "";
   const githubReturnSteps = (await page.getByTestId("setup-github-return-steps").textContent())?.trim() ?? "";
 
   assert(
@@ -374,6 +375,7 @@ async function main() {
   );
   assert(githubMessage.includes("安装"), `expected github message to mention installation, got: ${githubMessage}`);
   assert(githubInstallLink === installURL, `expected github install link ${installURL}, got ${githubInstallLink}`);
+  assert(githubInstallLabel === "GitHub 安装页", `expected github install CTA label to match target page, got: ${githubInstallLabel}`);
   await capture(page, "github-app-onboarding");
 
   const repoBindButtonLabel = (await page.getByTestId("setup-repo-bind-button").textContent())?.trim() ?? "";
@@ -393,6 +395,7 @@ async function main() {
   const repoBindingError = (await page.getByTestId("setup-repo-binding-error").textContent())?.trim() ?? "";
   const repoBindingMissingFields = (await page.getByTestId("setup-repo-binding-missing-fields").textContent())?.trim() ?? "";
   const repoBindingInstallLink = (await page.getByTestId("setup-repo-binding-install-link").getAttribute("href"))?.trim() ?? "";
+  const repoBindingInstallLabel = (await page.getByTestId("setup-repo-binding-install-link").textContent())?.trim() ?? "";
   const repoBindingReturnSteps = (await page.getByTestId("setup-repo-binding-return-steps").textContent())?.trim() ?? "";
 
   assert(repoBindingStatus.includes("待补安装"), `expected repo binding status to be blocked, got: ${repoBindingStatus}`);
@@ -401,6 +404,10 @@ async function main() {
     `expected blocked contract to mention installation, got error=${repoBindingError} message=${repoBindingMessage}`
   );
   assert(repoBindingInstallLink === installURL, `expected repo binding install link ${installURL}, got ${repoBindingInstallLink}`);
+  assert(
+    repoBindingInstallLabel === "GitHub 安装页",
+    `expected repo binding install CTA label to match target page, got: ${repoBindingInstallLabel}`
+  );
   await capture(page, "repo-binding-blocked");
 
   await context.tracing.stop({ path: path.join(artifactsDir, "trace.zip") });

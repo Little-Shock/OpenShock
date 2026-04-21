@@ -425,21 +425,18 @@ func pullRequestInboxItem(pr PullRequest, roomTitle string) InboxItem {
 	case "merged":
 		item.Title = fmt.Sprintf("%s 已合并", pr.Label)
 		item.Kind = "status"
-		item.Action = "打开房间"
 		item.Href = fmt.Sprintf("/rooms/%s/runs/%s", pr.RoomID, pr.RunID)
 	case "changes_requested":
 		item.Title = fmt.Sprintf("%s 需要补充修改", pr.Label)
 		item.Kind = "blocked"
-		item.Action = "恢复执行"
 	case "draft":
 		item.Title = fmt.Sprintf("%s 草稿已同步", pr.Label)
 		item.Kind = "review"
-		item.Action = "打开评审"
 	default:
 		item.Title = fmt.Sprintf("%s 已准备评审", pr.Label)
 		item.Kind = "review"
-		item.Action = "打开评审"
 	}
+	item.Action = InboxItemActionLabel(item.Href)
 
 	return item
 }

@@ -75,9 +75,10 @@ func buildPullRequestDeliveryDelegation(
 ) PullRequestDeliveryDelegation {
 	delegationMode := workspaceGovernanceDeliveryDelegationMode(snapshot.Workspace)
 	result := PullRequestDeliveryDelegation{
-		Status:  "pending",
-		Summary: "等待 final verify / governed closeout 收口后，再明确最终 delivery delegate。",
-		Href:    fmt.Sprintf("/pull-requests/%s", pr.ID),
+		Status:    "pending",
+		Summary:   "等待 final verify / governed closeout 收口后，再明确最终 delivery delegate。",
+		Href:      fmt.Sprintf("/pull-requests/%s", pr.ID),
+		HrefLabel: "交付详情",
 	}
 
 	if governedCloseout.Status != "done" {
@@ -110,6 +111,7 @@ func buildPullRequestDeliveryDelegation(
 		responseHandoff, responseAttemptCount := findLatestDeliveryDelegationResponseHandoff(snapshot.Mailbox, handoff.ID)
 		result.HandoffID = handoff.ID
 		result.HandoffHref = mailboxInboxHref(handoff.ID, handoff.RoomID)
+		result.HandoffHrefLabel = "交接详情"
 		result.HandoffStatus = handoff.Status
 		result.ResponseAttemptCount = responseAttemptCount
 		result.Communication = buildPullRequestDeliveryDelegationCommunication(snapshot.Mailbox, *handoff)
@@ -117,6 +119,7 @@ func buildPullRequestDeliveryDelegation(
 		if responseHandoff != nil {
 			result.ResponseHandoffID = responseHandoff.ID
 			result.ResponseHandoffHref = mailboxInboxHref(responseHandoff.ID, responseHandoff.RoomID)
+			result.ResponseHandoffHrefLabel = "回复详情"
 			result.ResponseHandoffStatus = responseHandoff.Status
 		}
 		switch handoff.Status {
@@ -544,6 +547,38 @@ func buildPullRequestDeliveryReviewGate(snapshot State, pr PullRequest) PullRequ
 	}
 }
 
+// PullRequestDeliveryHrefLabel returns the customer-facing action name for a
+// delivery route. API sanitizers use the same helper to backfill old snapshots
+// that predate explicit hrefLabel fields.
+func PullRequestDeliveryHrefLabel(gateID string, href string) string {
+	trimmed := strings.TrimSpace(href)
+	switch {
+	case trimmed == "":
+		return ""
+	case strings.HasPrefix(trimmed, "/settings"):
+		if strings.TrimSpace(gateID) == "notification-delivery" {
+			return "通知设置"
+		}
+		return "设置"
+	default:
+		return HrefTargetLabel(trimmed)
+	}
+}
+
+func PullRequestDeliveryEvidenceHrefLabel(evidenceID string, href string) string {
+	switch strings.TrimSpace(evidenceID) {
+	case "remote-pr":
+		return "远端 PR"
+	case "delivery-delegate-handoff":
+		return "交接详情"
+	case "review-conversation":
+		return "PR 详情"
+	case "notification-templates":
+		return "通知设置"
+	}
+	return PullRequestDeliveryHrefLabel(evidenceID, href)
+}
+
 func buildPullRequestDeliveryUsageGate(run Run) PullRequestDeliveryGate {
 	status := deliveryEntryStatusReady
 	switch strings.TrimSpace(run.Usage.BudgetStatus) {
@@ -563,12 +598,14 @@ func buildPullRequestDeliveryUsageGate(run Run) PullRequestDeliveryGate {
 		)
 	}
 
+	href := fmt.Sprintf("/runs/%s", run.ID)
 	return PullRequestDeliveryGate{
-		ID:      "run-usage",
-		Label:   "Run Usage / Headroom",
-		Status:  status,
-		Summary: summary,
-		Href:    fmt.Sprintf("/runs/%s", run.ID),
+		ID:        "run-usage",
+		Label:     "Run Usage / Headroom",
+		Status:    status,
+		Summary:   summary,
+		Href:      href,
+		HrefLabel: PullRequestDeliveryHrefLabel("run-usage", href),
 	}
 }
 
@@ -599,11 +636,12 @@ func buildPullRequestDeliveryQuotaGate(workspace WorkspaceSnapshot) PullRequestD
 	}
 
 	return PullRequestDeliveryGate{
-		ID:      "workspace-quota",
-		Label:   "Workspace Plan / Quota",
-		Status:  status,
-		Summary: summary,
-		Href:    "/settings",
+		ID:        "workspace-quota",
+		Label:     "Workspace Plan / Quota",
+		Status:    status,
+		Summary:   summary,
+		Href:      "/settings",
+		HrefLabel: PullRequestDeliveryHrefLabel("workspace-quota", "/settings"),
 	}
 }
 
@@ -694,11 +732,12 @@ func buildPullRequestDeliveryNotificationGate(pr PullRequest, relatedInbox []Inb
 			summary = fmt.Sprintf("这条 PR 已有 %d 条 inbox signal，但还没有 template delivery / receipt 被统一收进 handoff contract。", len(relatedInbox))
 		}
 		return PullRequestDeliveryGate{
-			ID:      "notification-delivery",
-			Label:   "Notification / Handoff Delivery",
-			Status:  deliveryEntryStatusWarning,
-			Summary: summary,
-			Href:    "/settings",
+			ID:        "notification-delivery",
+			Label:     "Notification / Handoff Delivery",
+			Status:    deliveryEntryStatusWarning,
+			Summary:   summary,
+			Href:      "/settings",
+			HrefLabel: PullRequestDeliveryHrefLabel("notification-delivery", "/settings"),
 		}
 	}
 
@@ -739,11 +778,12 @@ func buildPullRequestDeliveryNotificationGate(pr PullRequest, relatedInbox []Inb
 	}
 
 	return PullRequestDeliveryGate{
-		ID:      "notification-delivery",
-		Label:   "Notification / Handoff Delivery",
-		Status:  status,
-		Summary: summary,
-		Href:    "/settings",
+		ID:        "notification-delivery",
+		Label:     "Notification / Handoff Delivery",
+		Status:    status,
+		Summary:   summary,
+		Href:      "/settings",
+		HrefLabel: PullRequestDeliveryHrefLabel("notification-delivery", "/settings"),
 	}
 }
 
@@ -953,6 +993,13 @@ func buildPullRequestDeliveryEvidence(
 			Value:   artifact.Path,
 			Summary: defaultString(strings.TrimSpace(artifact.LatestWrite), artifact.Summary),
 		})
+	}
+
+	for index := range items {
+		if strings.TrimSpace(items[index].HrefLabel) != "" {
+			continue
+		}
+		items[index].HrefLabel = PullRequestDeliveryEvidenceHrefLabel(items[index].ID, items[index].Href)
 	}
 
 	return items

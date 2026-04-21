@@ -349,7 +349,7 @@ try {
   await page.goto(`${webURL}/mailbox?roomId=${primaryRoom.id}`, { waitUntil: "load" });
   await page.getByTestId("mailbox-governance-escalation-rollup").waitFor({ state: "visible" });
   assert(
-    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount} rooms`,
+    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount} 个讨论间`,
     "baseline escalation rollup should match current workspace hot-room truth"
   );
   await capture(page, "mailbox-rollup-baseline");
@@ -410,7 +410,7 @@ try {
     "secondary room should appear as active in mailbox cross-room rollup"
   );
   assert(
-    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 2} rooms`,
+    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 2} 个讨论间`,
     "mailbox cross-room rollup should expose baseline hot rooms plus two new rooms"
   );
   await capture(page, "mailbox-rollup-hot-rooms");
@@ -449,7 +449,7 @@ try {
 
   await page.goto(`${webURL}/mailbox?roomId=${secondaryRoom.id}`, { waitUntil: "load" });
   assert(
-    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} rooms`,
+    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} 个讨论间`,
     "one newly added room should remain after primary closeout"
   );
   await capture(page, "mailbox-rollup-primary-cleared");
@@ -471,7 +471,7 @@ try {
 
   await page.goto(`${webURL}/mailbox?roomId=${primaryRoom.id}`, { waitUntil: "load" });
   assert(
-    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount} rooms`,
+    (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount} 个讨论间`,
     "mailbox cross-room rollup should return to baseline hot-room count after both rooms close"
   );
   await capture(page, "mailbox-rollup-cleared");

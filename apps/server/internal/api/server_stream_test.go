@@ -3448,7 +3448,7 @@ func TestRoomMessageRouteSequentialAutoHandoffUsesCurrentOwnerOnSecondTurn(t *te
 	if !strings.Contains(secondFollowup.Prompt, "你刚刚已经接住当前房间的正式交棒") {
 		t.Fatalf("second followup prompt = %q, want auto-handoff continuation hint", secondFollowup.Prompt)
 	}
-	if !strings.Contains(secondFollowup.Prompt, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+	if !strings.Contains(secondFollowup.Prompt, "把 next-run injection、promotion 和 version audit 记在同一条记录里，方便回看。") {
 		t.Fatalf("second followup prompt = %q, want Memory Clerk prompt scaffold after second handoff", secondFollowup.Prompt)
 	}
 	if strings.Contains(secondFollowup.Prompt, "优先给 exact-head reviewer verdict 和 scope-local blocker。") {
@@ -3663,7 +3663,7 @@ func TestRoomMessageRouteMemoryPreviewFollowsCurrentOwnerAcrossHandoffRestart(t 
 	if !strings.Contains(firstPreview.PromptSummary, "优先给 exact-head reviewer verdict 和 scope-local blocker。") {
 		t.Fatalf("first preview summary = %q, want Claude prompt scaffold", firstPreview.PromptSummary)
 	}
-	if strings.Contains(firstPreview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+	if strings.Contains(firstPreview.PromptSummary, "把 next-run injection、promotion 和 version audit 记在同一条记录里，方便回看。") {
 		t.Fatalf("first preview summary = %q, should not jump to Memory Clerk before second handoff", firstPreview.PromptSummary)
 	}
 
@@ -3722,7 +3722,7 @@ func TestRoomMessageRouteMemoryPreviewFollowsCurrentOwnerAcrossHandoffRestart(t 
 	if !strings.Contains(secondPreview.PromptSummary, "Memory Clerk") {
 		t.Fatalf("second preview summary = %q, want Memory Clerk after second handoff", secondPreview.PromptSummary)
 	}
-	if !strings.Contains(secondPreview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+	if !strings.Contains(secondPreview.PromptSummary, "把 next-run injection、promotion 和 version audit 记在同一条记录里，方便回看。") {
 		t.Fatalf("second preview summary = %q, want Memory Clerk prompt scaffold", secondPreview.PromptSummary)
 	}
 	if strings.Contains(secondPreview.PromptSummary, "优先给 exact-head reviewer verdict 和 scope-local blocker。") {
@@ -4608,7 +4608,7 @@ func TestRoomAutoHandoffClarificationMemoryCenterPreviewPersistsAcrossRestart(t 
 		if !strings.Contains(preview.PromptSummary, "Search Sidecar") || !strings.Contains(preview.PromptSummary, "External Persistent Memory") {
 			t.Fatalf("preview summary missing provider labels:\n%s", preview.PromptSummary)
 		}
-		if strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+		if strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 记在同一条记录里，方便回看。") {
 			t.Fatalf("preview summary = %q, should not drift to Memory Clerk", preview.PromptSummary)
 		}
 	}

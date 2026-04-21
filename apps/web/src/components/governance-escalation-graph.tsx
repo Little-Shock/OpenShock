@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 
+import {
+  governanceEscalationRoomHrefLabel,
+  governanceSuggestedHandoffHrefLabel,
+} from "@/lib/phase-zero-helpers";
 import type { WorkspaceGovernanceEscalationRoomRollup } from "@/lib/phase-zero-types";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -79,7 +83,7 @@ function escalationRoomRollupSummary(entry: {
 }
 
 function ownerLabel(entry: WorkspaceGovernanceEscalationRoomRollup) {
-  return entry.currentOwner?.trim() || "等待负责人";
+  return entry.currentOwner?.trim() || "等待处理人";
 }
 
 function ownerSummary(entry: WorkspaceGovernanceEscalationRoomRollup) {
@@ -89,21 +93,28 @@ function ownerSummary(entry: WorkspaceGovernanceEscalationRoomRollup) {
   return "当前分工待补齐";
 }
 
+export function governanceEscalationNextRouteHrefLabel(entry: WorkspaceGovernanceEscalationRoomRollup) {
+  if (entry.nextRouteHrefLabel?.trim()) {
+    return entry.nextRouteHrefLabel;
+  }
+  return governanceSuggestedHandoffHrefLabel(entry.nextRouteStatus, entry.nextRouteHref);
+}
+
 function routeLabel(entry: WorkspaceGovernanceEscalationRoomRollup) {
   if (entry.nextRouteLabel?.trim()) {
     return entry.nextRouteLabel;
   }
   switch (entry.nextRouteStatus) {
     case "blocked":
-      return "等待解除当前阻塞";
+      return "等待处理当前阻塞";
     case "done":
-      return "当前链路已收口";
+      return "当前接力已收口";
     case "ready":
-      return "下一棒已就绪";
+      return "下一步已准备好";
     case "active":
-      return "下一棒正在推进";
+      return "下一步正在推进";
     default:
-      return "等待下一棒";
+      return "等待下一步";
   }
 }
 
@@ -113,15 +124,15 @@ function routeSummary(entry: WorkspaceGovernanceEscalationRoomRollup) {
   }
   switch (entry.nextRouteStatus) {
     case "blocked":
-      return "当前仍有阻塞点，解除后会继续往下一棒推进。";
+      return "当前还有阻塞，处理后会继续推进。";
     case "done":
-      return "当前多房间治理链路已经收口。";
+      return "当前讨论间的接力已经收口。";
     case "ready":
-      return "当前房间已经满足起下一棒的条件。";
+      return "当前讨论间已经满足继续推进的条件。";
     case "active":
-      return "当前下一棒已经起单，正在沿治理链继续推进。";
+      return "下一步已经开始，正在继续推进。";
     default:
-      return "当前下一步治理建议正在整理中。";
+      return "下一步建议正在整理中。";
   }
 }
 
@@ -149,22 +160,22 @@ export function GovernanceEscalationGraph({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-            cross-room dependency graph
+            跨讨论间接力图
           </p>
-          <p className={cn("mt-2 font-display font-bold", compact ? "text-xl" : "text-2xl")}>多房间接力图</p>
+          <p className={cn("mt-2 font-display font-bold", compact ? "text-xl" : "text-2xl")}>讨论间接力图</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            把每个 hot room 重新整理成「讨论间 → 当前负责人/分工 → 下一棒」；不用逐条读长卡，也能一眼看出卡在哪、接给谁。
+            把每个仍需跟进的讨论间整理成「讨论间 → 当前处理人 → 下一步」，不用逐条翻卡也能一眼看出卡在哪、轮到谁。
           </p>
         </div>
         <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
-          {entries.length} rooms
+          {entries.length} 个讨论间
         </span>
       </div>
 
       <div className="mt-4 space-y-3">
         {entries.length === 0 ? (
           <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            当前没有需要跨房间治理的 hot room；新的治理链路会直接出现在这里。
+            当前没有需要继续跟进的讨论间；新的治理链路会直接出现在列表中。
           </p>
         ) : (
           entries.map((entry) => (
@@ -203,16 +214,22 @@ export function GovernanceEscalationGraph({
                   {entry.latestSummary ? (
                     <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{entry.latestSummary}</p>
                   ) : null}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {entry.href ? (
-                      <Link
-                        href={entry.href}
-                        className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                      >
-                        查看讨论
-                      </Link>
-                    ) : null}
-                  </div>
+                  {(() => {
+                    const roomHrefLabel = entry.hrefLabel?.trim() || governanceEscalationRoomHrefLabel(entry.href);
+                    if (!entry.href || !roomHrefLabel) {
+                      return null;
+                    }
+                    return (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          href={entry.href}
+                          className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                        >
+                          {roomHrefLabel}
+                        </Link>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div
@@ -220,7 +237,7 @@ export function GovernanceEscalationGraph({
                   className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
                 >
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                    当前负责人
+                    当前处理人
                   </p>
                   <p className={cn("mt-2 font-display font-semibold", compact ? "text-base" : "text-lg")}>{ownerLabel(entry)}</p>
                   <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{ownerSummary(entry)}</p>
@@ -234,23 +251,29 @@ export function GovernanceEscalationGraph({
                   )}
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.16em]">下一棒</p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em]">下一步</p>
                     <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
                       {governanceStatusLabel(entry.nextRouteStatus ?? "pending")}
                     </span>
                   </div>
                   <p className={cn("mt-2 font-display font-semibold", compact ? "text-base" : "text-lg")}>{routeLabel(entry)}</p>
                   <p className="mt-2 text-sm leading-6">{routeSummary(entry)}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {entry.nextRouteHref ? (
-                      <Link
-                        href={entry.nextRouteHref}
-                        className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                      >
-                        打开下一步
-                      </Link>
-                    ) : null}
-                  </div>
+                  {(() => {
+                    const nextRouteHrefLabel = governanceEscalationNextRouteHrefLabel(entry);
+                    if (!entry.nextRouteHref || !nextRouteHrefLabel) {
+                      return null;
+                    }
+                    return (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          href={entry.nextRouteHref}
+                          className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                        >
+                          {nextRouteHrefLabel}
+                        </Link>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

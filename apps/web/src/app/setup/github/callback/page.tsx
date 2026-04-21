@@ -138,7 +138,7 @@ function GitHubInstallationCallbackContent() {
 			title="同步 GitHub 连接结果"
 			description="页面会自动完成同步，然后返回设置页。"
 			contextTitle="当前回跳"
-			contextDescription="这里会显示本次回跳的安装编号和同步状态。"
+			contextDescription="本次回跳的安装编号和同步状态。"
 			contextBody={
 				<div className="space-y-2 rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm leading-6">
 					<p>

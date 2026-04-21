@@ -213,7 +213,7 @@ func TestMemoryCenterPreviewPrefersCurrentOwnerOverStaleRecentRunAgent(t *testin
 	if got := findMemoryProviderByKind(preview.Providers, memoryProviderKindExternalPersistent); got == nil || got.Status != memoryProviderStatusHealthy {
 		t.Fatalf("preview external provider = %#v, want healthy provider for current owner preview", got)
 	}
-	if !strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+	if !strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 记在同一条记录里，方便回看。") {
 		t.Fatalf("preview summary = %q, want Memory Clerk prompt scaffold", preview.PromptSummary)
 	}
 	if !strings.Contains(preview.PromptSummary, "Search sidecar index ready") {
@@ -703,7 +703,7 @@ func TestMemoryProviderPreviewFollowsCurrentOwnerAcrossHandoffReload(t *testing.
 	if !strings.Contains(preview.PromptSummary, "Memory Clerk") {
 		t.Fatalf("preview summary = %q, want current owner Memory Clerk", preview.PromptSummary)
 	}
-	if !strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 保持成可解释真值。") {
+	if !strings.Contains(preview.PromptSummary, "把 next-run injection、promotion 和 version audit 记在同一条记录里，方便回看。") {
 		t.Fatalf("preview summary = %q, want Memory Clerk prompt scaffold", preview.PromptSummary)
 	}
 	if !strings.Contains(preview.PromptSummary, "Search Sidecar") || !strings.Contains(preview.PromptSummary, "External Persistent Memory") {

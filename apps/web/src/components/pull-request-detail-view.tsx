@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import { OpenShockShell } from "@/components/open-shock-shell";
 import { Panel } from "@/components/phase-zero-views";
 import { usePhaseZeroState } from "@/lib/live-phase0";
+import { pullRequestDeliveryHrefLabel } from "@/lib/phase-zero-helpers";
 import type {
   AgentHandoff,
   PullRequestConversationEntry,
@@ -124,6 +125,56 @@ function deliveryPanelTone(status: PullRequestDeliveryEntry["status"]) {
     default:
       return "ink" as const;
   }
+}
+
+function deliveryGateHrefLabel(gate: PullRequestDeliveryGate) {
+  if (gate.hrefLabel?.trim()) {
+    return gate.hrefLabel;
+  }
+  return pullRequestDeliveryHrefLabel(gate.id, gate.href);
+}
+
+function deliveryEvidenceHrefLabel(item: PullRequestDeliveryEvidence) {
+  if (item.hrefLabel?.trim()) {
+    return item.hrefLabel;
+  }
+  if (item.id === "remote-pr") {
+    return "远端 PR";
+  }
+  if (item.id === "review-conversation") {
+    return "PR 详情";
+  }
+  if (item.id === "delivery-delegate-handoff") {
+    return "交接详情";
+  }
+  const href = item.href?.trim() || "";
+  switch (true) {
+    case href === "":
+      return "";
+    case href.startsWith("/pull-requests/"):
+      return "交付详情";
+    default:
+      return pullRequestDeliveryHrefLabel(item.id, href);
+  }
+}
+
+function isPullRequestDetailSelfHref(href: string | undefined, pullRequestID: string) {
+  return (href?.trim() || "") === `/pull-requests/${pullRequestID}`;
+}
+
+function deliveryDelegationHrefLabel(delegation: PullRequestDeliveryDelegation) {
+  if (delegation.handoffHref?.trim()) {
+    return delegation.handoffHrefLabel?.trim() || "交接详情";
+  }
+  return delegation.hrefLabel?.trim() || "交付详情";
+}
+
+function deliveryDelegationResponseHrefLabel(delegation: PullRequestDeliveryDelegation) {
+  return delegation.responseHandoffHrefLabel?.trim() || "回复详情";
+}
+
+function deliveryCommunicationHrefLabel(entry: PullRequestDeliveryCommunicationEntry) {
+  return entry.handoffKind === "delivery-reply" ? "回复详情" : "交接详情";
 }
 
 function delegationStatusLabel(status: PullRequestDeliveryDelegation["status"]) {
@@ -254,19 +305,6 @@ function delegationCommunicationKindTone(kind: PullRequestDeliveryCommunicationE
   }
 }
 
-function mailboxKindLabel(kind?: AgentHandoff["kind"]) {
-  switch (kind) {
-    case "governed":
-      return "自动交接";
-    case "delivery-closeout":
-      return "交付收尾";
-    case "delivery-reply":
-      return "收尾回复";
-    default:
-      return "手动交接";
-  }
-}
-
 function mailboxReplyStatusLabel(status: AgentHandoff["status"]) {
   switch (status) {
     case "acknowledged":
@@ -372,6 +410,7 @@ function FactTile({ label, value, testID }: { label: string; value: string; test
 }
 
 function DeliveryGateCard({ gate }: { gate: PullRequestDeliveryGate }) {
+  const hrefLabel = deliveryGateHrefLabel(gate);
   return (
     <article
       data-testid={`delivery-gate-${gate.id}`}
@@ -389,12 +428,12 @@ function DeliveryGateCard({ gate }: { gate: PullRequestDeliveryGate }) {
         <p className="font-display text-[20px] font-bold">{gate.label}</p>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{gate.summary}</p>
-      {gate.href ? (
+      {gate.href && hrefLabel ? (
         <Link
           href={gate.href}
           className="mt-4 inline-flex border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
         >
-          打开详情
+          {hrefLabel}
         </Link>
       ) : null}
     </article>
@@ -432,7 +471,17 @@ function DeliveryTemplateCard({ template }: { template: PullRequestDeliveryTempl
   );
 }
 
-function DeliveryEvidenceCard({ item }: { item: PullRequestDeliveryEvidence }) {
+function DeliveryEvidenceCard({
+  item,
+  pullRequestID,
+}: {
+  item: PullRequestDeliveryEvidence;
+  pullRequestID: string;
+}) {
+  const href = item.href?.trim() || "";
+  const hrefLabel = deliveryEvidenceHrefLabel(item);
+  const showLink = href !== "" && hrefLabel !== "" && !isPullRequestDetailSelfHref(href, pullRequestID);
+
   return (
     <article
       data-testid={`delivery-evidence-${item.id}`}
@@ -441,14 +490,14 @@ function DeliveryEvidenceCard({ item }: { item: PullRequestDeliveryEvidence }) {
       <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">{item.label}</p>
       <p className="mt-2 break-all font-display text-[18px] font-bold leading-6">{item.value}</p>
       <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{item.summary}</p>
-      {item.href ? (
+      {showLink ? (
         <Link
-          href={item.href}
-          target={item.href.startsWith("http") ? "_blank" : undefined}
-          rel={item.href.startsWith("http") ? "noreferrer" : undefined}
+          href={href}
+          target={href.startsWith("http") ? "_blank" : undefined}
+          rel={href.startsWith("http") ? "noreferrer" : undefined}
           className="mt-4 inline-flex border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
         >
-          打开材料
+          {hrefLabel}
         </Link>
       ) : null}
     </article>
@@ -493,7 +542,7 @@ function DeliveryCommunicationCard({ entry }: { entry: PullRequestDeliveryCommun
           href={entry.href}
           className="mt-4 inline-flex border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px]"
         >
-          打开交接项
+          {deliveryCommunicationHrefLabel(entry)}
         </Link>
       ) : null}
     </article>
@@ -542,7 +591,7 @@ function ThreadActionCard({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-              {mailboxKindLabel(handoff.kind)}
+              {handoff.kindLabel || "手动交接"}
             </span>
             <span
               data-testid={`thread-action-status-${handoff.id}`}
@@ -713,9 +762,9 @@ function DeliveryThreadActionSurface({ detail }: { detail: PullRequestDetail }) 
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
             当前操作
           </p>
-          <p className="mt-2 font-display text-[22px] font-bold">直接在这里处理当前交接</p>
+          <p className="mt-2 font-display text-[22px] font-bold">直接处理当前交接</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            当前的交接和回复可以直接在这里处理，不需要跳去别的页面。
+            当前的交接和回复可直接处理，不需要跳去别的页面。
           </p>
         </div>
         <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
@@ -753,14 +802,12 @@ function DeliveryThreadActionSurface({ detail }: { detail: PullRequestDetail }) 
               />
             );
           })
-        ) : detail.delivery.delegation.handoffId || detail.delivery.delegation.responseHandoffId ? (
-          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            正在同步，稍后这里会显示可操作的交接项。
-          </p>
+	        ) : detail.delivery.delegation.handoffId || detail.delivery.delegation.responseHandoffId ? (
+	          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+	            正在同步，稍后会显示可操作的交接项。
+	          </p>
         ) : (
-          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            当前还没有交接项。
-          </p>
+          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">暂无交接项。</p>
         )}
       </div>
     </Panel>
@@ -779,14 +826,14 @@ export function PullRequestDetailView({
     : "交付详情";
   const contextDescription = detail
     ? detail.delivery.summary
-    : "评审、交接和交付信息都会集中显示在这里。";
+    : "评审、交接和交付信息会集中显示。";
 
   return (
     <OpenShockShell
       view="runs"
       eyebrow="交付"
       title="PR 交付详情"
-      description="在这里查看评审、交接、发布条件和交付材料。"
+      description="评审、交接、发布条件和交付材料。"
       contextTitle={contextTitle}
       contextDescription={contextDescription}
       contextBody={
@@ -859,7 +906,7 @@ export function PullRequestDetailView({
                     rel="noreferrer"
                     className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                   >
-                    打开远端 PR
+                    远端 PR
                   </Link>
                 ) : null}
               </div>
@@ -1012,7 +1059,7 @@ export function PullRequestDetailView({
                         data-testid="delivery-delegation-open"
                         className="border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px]"
                       >
-                        {detail.delivery.delegation.handoffHref ? "打开交接项" : "打开交付详情"}
+                        {deliveryDelegationHrefLabel(detail.delivery.delegation)}
                       </Link>
                     ) : null}
                     {detail.delivery.delegation.responseHandoffHref ? (
@@ -1021,7 +1068,7 @@ export function PullRequestDetailView({
                         data-testid="delivery-delegation-response-open"
                         className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px]"
                       >
-                        打开回复
+                        {deliveryDelegationResponseHrefLabel(detail.delivery.delegation)}
                       </Link>
                     ) : null}
                   </div>
@@ -1123,7 +1170,7 @@ export function PullRequestDetailView({
                               rel="noreferrer"
                               className="border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-1 font-mono text-[10px]"
                             >
-                                打开原评论
+                                原评论
                               </Link>
                             ) : null}
                           </div>
@@ -1158,7 +1205,7 @@ export function PullRequestDetailView({
                   </p>
                   <div className="mt-4 space-y-3">
                     {detail.delivery.evidence.map((item) => (
-                      <DeliveryEvidenceCard key={item.id} item={item} />
+                      <DeliveryEvidenceCard key={item.id} item={item} pullRequestID={detail.pullRequest.id} />
                     ))}
                   </div>
                 </Panel>

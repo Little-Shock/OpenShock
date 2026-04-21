@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-import { GovernanceEscalationGraph } from "@/components/governance-escalation-graph";
+import { GovernanceEscalationGraph, governanceEscalationNextRouteHrefLabel } from "@/components/governance-escalation-graph";
 import { OpenShockShell } from "@/components/open-shock-shell";
 import { DetailRail, Panel } from "@/components/phase-zero-views";
 import { usePhaseZeroState } from "@/lib/live-phase0";
+import { governanceSuggestedHandoffHrefLabel } from "@/lib/phase-zero-helpers";
 import type { AgentHandoff, WorkspaceGovernanceSuggestedHandoff } from "@/lib/phase-zero-types";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus, permissionStatusSurfaceLabel } from "@/lib/session-authz";
 
@@ -96,43 +97,28 @@ function batchGovernedPolicySummary(input: {
   roomId: string;
 }) {
   if (input.selectedCount === 0) {
-    return "先选中当前讨论中的自动交接，再批量继续下一步。";
+    return "先选中当前讨论中的自动交接，再批量继续。";
   }
   if (input.governedCount !== input.selectedCount) {
-    return "当前选择里包含其他类型的交接，自动续下一步只会对纯自动交接生效。";
+    return "当前选择里包含其他类型的交接，自动续接只对纯自动交接生效。";
   }
   if (!input.canContinueGovernedRoute) {
     return "当前选择还不能批量完成，请先把状态推进到可完成。";
   }
   if (input.governedSuggestion.roomId !== input.roomId) {
-    return "当前讨论还没有现成的下一步建议，批量完成后系统会重新计算。";
+    return "当前讨论还没有现成下一步建议，批量完成后会重新计算。";
   }
   switch (input.governedSuggestion.status) {
     case "active":
-      return "当前下一步已经有人在处理。批量完成后系统会重新评估，避免重复创建。";
+      return "当前下一步已有人在处理。批量完成后会重新评估，避免重复创建。";
     case "blocked":
       return input.governedSuggestion.reason || "当前下一步仍被阻塞。批量完成后会重新计算，但不会绕过阻塞。";
     case "done":
-      return "当前流程已到最后阶段。批量完成后会继续处理剩余收尾动作。";
+      return "当前流程已到最后阶段。批量完成后会继续处理剩余事项。";
     case "ready":
       return input.governedSuggestion.reason || "系统已经给出下一步建议，批量完成后会自动接上。";
     default:
-      return "批量完成后系统会重新判断下一步，只在条件满足时自动接上。";
-  }
-}
-
-function mailboxKindLabel(kind?: AgentHandoff["kind"]) {
-  switch (kind) {
-    case "room-auto":
-      return "房间接棒";
-    case "governed":
-      return "自动交接";
-    case "delivery-closeout":
-      return "交付收尾";
-    case "delivery-reply":
-      return "收尾回复";
-    default:
-      return "手动交接";
+      return "批量完成后会重新判断下一步，只在条件满足时自动接上。";
   }
 }
 
@@ -279,10 +265,6 @@ function escalationRoomRollupSummary(entry: {
     return `${entry.escalationCount} 项 · ${entry.blockedCount} 项阻塞`;
   }
   return `${entry.escalationCount} 项 · 全部处理中`;
-}
-
-function governedCloseoutLabel(href: string) {
-  return href.startsWith("/pull-requests/") ? "打开交付详情" : "查看收尾结果";
 }
 
 function GovernanceMetric({
@@ -661,9 +643,9 @@ export function LiveMailboxPageContent() {
       view="mailbox"
       eyebrow="交接"
       title="所有交接"
-      description="这里查看和处理需要继续交接的事项。"
+      description="继续交接的事项。"
       contextTitle="交接概览"
-      contextDescription="可以在这里看到交接状态、阻塞情况和完成进度。"
+      contextDescription="交接状态、阻塞和完成进度。"
       contextBody={
         <DetailRail
           label="交接统计"
@@ -679,7 +661,7 @@ export function LiveMailboxPageContent() {
       {loading ? (
         <Panel tone="paper">
           <p className="font-display text-2xl font-bold">正在载入交接</p>
-          <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">正在获取当前交接记录。</p>
+          <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">正在获取当前交接。</p>
         </Panel>
       ) : error ? (
         <Panel tone="pink">
@@ -713,13 +695,13 @@ export function LiveMailboxPageContent() {
               <GovernanceMetric
                 label="待处理交接"
                 value={`${governance.stats.openHandoffs}`}
-                detail="这里显示还没处理完的交接。"
+                detail="未处理完的交接。"
                 testId="mailbox-governance-open-handoffs"
               />
               <GovernanceMetric
                 label="阻塞事项"
                 value={`${governance.stats.blockedEscalations}`}
-                detail="需要人工处理的阻塞会集中显示在这里。"
+                detail="需要人工处理的阻塞会集中显示。"
                 testId="mailbox-governance-blocked-escalations"
               />
               <GovernanceMetric
@@ -729,7 +711,7 @@ export function LiveMailboxPageContent() {
                 testId="mailbox-governance-review-gates"
               />
               <GovernanceMetric
-                label="人工确认"
+                label="待拍板"
                 value={`${governance.stats.humanOverrideGates}`}
                 detail="需要你拍板的步骤会一直保持可见。"
                 testId="mailbox-governance-human-override-gates"
@@ -791,7 +773,7 @@ export function LiveMailboxPageContent() {
             <div className="space-y-4">
               <Panel tone={governanceTone(governance.humanOverride.status)}>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                  人工确认
+                  需要你拍板
                 </p>
                 <p
                   data-testid="mailbox-governance-human-override"
@@ -810,7 +792,7 @@ export function LiveMailboxPageContent() {
                   data-testid="mailbox-governance-response-aggregation"
                   className="mt-2 font-display text-2xl font-bold"
                 >
-                  {governance.responseAggregation.finalResponse || "等待收尾"}
+                  {governance.responseAggregation.finalResponse || "等待结果"}
                 </p>
                 <p className="mt-3 text-sm leading-6">{governance.responseAggregation.summary}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -835,7 +817,7 @@ export function LiveMailboxPageContent() {
                       <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                         升级队列
                       </p>
-                      <p className="mt-2 font-display text-2xl font-bold">当前治理升级队列</p>
+                      <p className="mt-2 font-display text-2xl font-bold">待处理升级</p>
                       <p className="mt-3 text-sm leading-6">{governance.escalationSla.summary}</p>
                     </div>
                     <span
@@ -848,7 +830,7 @@ export function LiveMailboxPageContent() {
                   <div className="mt-4 space-y-3">
                     {escalationQueue.length === 0 ? (
                       <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                        当前没有需要升级处理的事项。新的阻塞或超时交接会显示在这里。
+                        暂无需要升级的事项。
                       </p>
                     ) : (
                       escalationQueue.map((entry) => (
@@ -906,18 +888,18 @@ export function LiveMailboxPageContent() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                        cross-room escalation rollup
+                        跨讨论间阻塞汇总
                       </p>
                       <p className="mt-2 font-display text-2xl font-bold">哪些讨论间还在冒烟</p>
                       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                        当前 queue 只显示治理焦点；这里把整个 workspace 里仍有 escalation 的 room 摆平，避免只盯一个 room 时漏看其他冒烟点。
+                        当前队列只显示手头焦点；整个工作区里仍有阻塞的讨论间会一起摊平，避免只盯一个讨论间时漏看其他问题。
                       </p>
                     </div>
                     <span
                       data-testid="mailbox-governance-escalation-rollup-count"
                       className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
                     >
-                      {escalationRollup.length} rooms
+                      {escalationRollup.length} 个讨论间
                     </span>
                   </div>
                   <div className="mt-4 space-y-3">
@@ -997,14 +979,20 @@ export function LiveMailboxPageContent() {
                                 {busyKey === `governed-rollup:${entry.roomId}` ? "创建中..." : "创建自动交接"}
                               </button>
                             ) : null}
-                            {entry.nextRouteHref && entry.nextRouteStatus !== "ready" ? (
-                              <Link
-                                href={entry.nextRouteHref}
-                                className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-                              >
-                                打开下一步
-                              </Link>
-                            ) : null}
+                            {(() => {
+                              const nextRouteHrefLabel = governanceEscalationNextRouteHrefLabel(entry);
+                              if (!entry.nextRouteHref || entry.nextRouteStatus === "ready" || !nextRouteHrefLabel) {
+                                return null;
+                              }
+                              return (
+                                <Link
+                                  href={entry.nextRouteHref}
+                                  className="inline-flex rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                                >
+                                  {nextRouteHrefLabel}
+                                </Link>
+                              );
+                            })()}
                           </div>
                           {actionError?.id === `governed-rollup:${entry.roomId}` ? (
                             <p className="mt-3 text-sm leading-6 text-[var(--shock-pink)]">{actionError.message}</p>
@@ -1018,7 +1006,7 @@ export function LiveMailboxPageContent() {
 
               <Panel tone="paper">
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                  协作规则
+                  当前规则
                 </p>
                 <div className="mt-3 space-y-2">
                   {governance.handoffRules.map((rule) => (
@@ -1089,7 +1077,7 @@ export function LiveMailboxPageContent() {
                 </p>
                 <h3 className="mt-2 font-display text-3xl font-bold">从当前讨论发起交接</h3>
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                  发起后，讨论、收件箱和交接记录会同步更新，接手人可以直接在这里继续处理。
+                  发起后，讨论、收件箱和交接会同步更新。
                 </p>
                 {governedSuggestion.roomId === roomId ? (
                   <div
@@ -1142,7 +1130,8 @@ export function LiveMailboxPageContent() {
                             data-testid="mailbox-governed-route-focus"
                             className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                           >
-                            打开当前交接
+                            {governedSuggestion.hrefLabel?.trim() ||
+                              governanceSuggestedHandoffHrefLabel(governedSuggestion.status, governedSuggestion.href)}
                           </Link>
                         ) : null}
                         {governedSuggestion.status === "done" && governedSuggestion.href ? (
@@ -1151,7 +1140,8 @@ export function LiveMailboxPageContent() {
                             data-testid="mailbox-governed-route-closeout"
                             className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                           >
-                            {governedCloseoutLabel(governedSuggestion.href)}
+                            {governedSuggestion.hrefLabel?.trim() ||
+                              governanceSuggestedHandoffHrefLabel(governedSuggestion.status, governedSuggestion.href)}
                           </Link>
                         ) : null}
                       </div>
@@ -1273,9 +1263,9 @@ export function LiveMailboxPageContent() {
           <div className="space-y-4">
             {mailboxForRoom.length === 0 ? (
               <Panel tone="white">
-                <p className="font-display text-2xl font-bold">当前还没有交接项</p>
+                <p className="font-display text-2xl font-bold">暂无交接项</p>
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                  可以直接从上方创建第一条交接，相关状态会同步到讨论和收件箱。
+                  先从上方创建第一条交接。
                 </p>
               </Panel>
             ) : (
@@ -1367,7 +1357,7 @@ export function LiveMailboxPageContent() {
                               <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
                                 自动续接
                               </p>
-                              <p className="mt-2 font-display text-lg font-semibold">批量收口时顺手续下一棒</p>
+                              <p className="mt-2 font-display text-lg font-semibold">批量完成后自动接上下一步</p>
                             </div>
                             <span
                               data-testid="mailbox-batch-policy-status"
@@ -1503,7 +1493,7 @@ export function LiveMailboxPageContent() {
                               data-testid={`mailbox-kind-${handoff.id}`}
                               className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
                             >
-                              {mailboxKindLabel(handoff.kind)}
+                              {handoff.kindLabel || "手动交接"}
                             </span>
                             {responseHandoff ? (
                               <span
@@ -1604,7 +1594,7 @@ export function LiveMailboxPageContent() {
                             data-testid={`mailbox-parent-link-${handoff.id}`}
                             className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                           >
-                            打开主交接
+                            主交接详情
                           </Link>
                         ) : null}
                         {responseHandoff ? (
@@ -1613,7 +1603,7 @@ export function LiveMailboxPageContent() {
                             data-testid={`mailbox-response-link-${handoff.id}`}
                             className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
                           >
-                            打开回复
+                            回复详情
                           </Link>
                         ) : null}
                         {canResumeParent ? (
@@ -1631,7 +1621,7 @@ export function LiveMailboxPageContent() {
 
                       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                         <div>
-                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">交接记录</p>
+                          <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">交接</p>
                           <div className="mt-3 space-y-3">
                             {handoff.messages.map((message) => (
                               <div

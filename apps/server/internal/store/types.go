@@ -197,6 +197,7 @@ type WorkspaceGovernanceSuggestedHandoff struct {
 	DraftSummary  string `json:"draftSummary,omitempty"`
 	HandoffID     string `json:"handoffId,omitempty"`
 	Href          string `json:"href,omitempty"`
+	HrefLabel     string `json:"hrefLabel,omitempty"`
 }
 
 type WorkspaceGovernanceEscalationSLA struct {
@@ -226,21 +227,23 @@ type WorkspaceGovernanceEscalationQueueEntry struct {
 }
 
 type WorkspaceGovernanceEscalationRoomRollup struct {
-	RoomID           string `json:"roomId"`
-	RoomTitle        string `json:"roomTitle"`
-	Status           string `json:"status"`
-	EscalationCount  int    `json:"escalationCount"`
-	BlockedCount     int    `json:"blockedCount"`
-	CurrentOwner     string `json:"currentOwner,omitempty"`
-	CurrentLane      string `json:"currentLane,omitempty"`
-	LatestSource     string `json:"latestSource,omitempty"`
-	LatestLabel      string `json:"latestLabel,omitempty"`
-	LatestSummary    string `json:"latestSummary,omitempty"`
-	NextRouteStatus  string `json:"nextRouteStatus,omitempty"`
-	NextRouteLabel   string `json:"nextRouteLabel,omitempty"`
-	NextRouteSummary string `json:"nextRouteSummary,omitempty"`
-	NextRouteHref    string `json:"nextRouteHref,omitempty"`
-	Href             string `json:"href,omitempty"`
+	RoomID             string `json:"roomId"`
+	RoomTitle          string `json:"roomTitle"`
+	Status             string `json:"status"`
+	EscalationCount    int    `json:"escalationCount"`
+	BlockedCount       int    `json:"blockedCount"`
+	CurrentOwner       string `json:"currentOwner,omitempty"`
+	CurrentLane        string `json:"currentLane,omitempty"`
+	LatestSource       string `json:"latestSource,omitempty"`
+	LatestLabel        string `json:"latestLabel,omitempty"`
+	LatestSummary      string `json:"latestSummary,omitempty"`
+	NextRouteStatus    string `json:"nextRouteStatus,omitempty"`
+	NextRouteLabel     string `json:"nextRouteLabel,omitempty"`
+	NextRouteSummary   string `json:"nextRouteSummary,omitempty"`
+	NextRouteHref      string `json:"nextRouteHref,omitempty"`
+	NextRouteHrefLabel string `json:"nextRouteHrefLabel,omitempty"`
+	Href               string `json:"href,omitempty"`
+	HrefLabel          string `json:"hrefLabel,omitempty"`
 }
 
 type WorkspaceGovernanceNotificationPolicy struct {
@@ -747,6 +750,7 @@ type RoomAgentWait struct {
 type AgentHandoff struct {
 	ID              string                    `json:"id"`
 	Kind            string                    `json:"kind,omitempty"`
+	KindLabel       string                    `json:"kindLabel,omitempty"`
 	ParentHandoffID string                    `json:"parentHandoffId,omitempty"`
 	Title           string                    `json:"title"`
 	Summary         string                    `json:"summary"`
@@ -1141,11 +1145,12 @@ type PullRequestDeliveryEntry struct {
 }
 
 type PullRequestDeliveryGate struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Status  string `json:"status"`
-	Summary string `json:"summary"`
-	Href    string `json:"href,omitempty"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Status    string `json:"status"`
+	Summary   string `json:"summary"`
+	Href      string `json:"href,omitempty"`
+	HrefLabel string `json:"hrefLabel,omitempty"`
 }
 
 type PullRequestDeliveryTemplate struct {
@@ -1160,20 +1165,23 @@ type PullRequestDeliveryTemplate struct {
 }
 
 type PullRequestDeliveryDelegation struct {
-	Status                string                                  `json:"status"`
-	TargetLane            string                                  `json:"targetLane,omitempty"`
-	TargetAgent           string                                  `json:"targetAgent,omitempty"`
-	Summary               string                                  `json:"summary"`
-	Href                  string                                  `json:"href,omitempty"`
-	InboxItemID           string                                  `json:"inboxItemId,omitempty"`
-	HandoffID             string                                  `json:"handoffId,omitempty"`
-	HandoffHref           string                                  `json:"handoffHref,omitempty"`
-	HandoffStatus         string                                  `json:"handoffStatus,omitempty"`
-	ResponseAttemptCount  int                                     `json:"responseAttemptCount,omitempty"`
-	ResponseHandoffID     string                                  `json:"responseHandoffId,omitempty"`
-	ResponseHandoffHref   string                                  `json:"responseHandoffHref,omitempty"`
-	ResponseHandoffStatus string                                  `json:"responseHandoffStatus,omitempty"`
-	Communication         []PullRequestDeliveryCommunicationEntry `json:"communication,omitempty"`
+	Status                   string                                  `json:"status"`
+	TargetLane               string                                  `json:"targetLane,omitempty"`
+	TargetAgent              string                                  `json:"targetAgent,omitempty"`
+	Summary                  string                                  `json:"summary"`
+	Href                     string                                  `json:"href,omitempty"`
+	HrefLabel                string                                  `json:"hrefLabel,omitempty"`
+	InboxItemID              string                                  `json:"inboxItemId,omitempty"`
+	HandoffID                string                                  `json:"handoffId,omitempty"`
+	HandoffHref              string                                  `json:"handoffHref,omitempty"`
+	HandoffHrefLabel         string                                  `json:"handoffHrefLabel,omitempty"`
+	HandoffStatus            string                                  `json:"handoffStatus,omitempty"`
+	ResponseAttemptCount     int                                     `json:"responseAttemptCount,omitempty"`
+	ResponseHandoffID        string                                  `json:"responseHandoffId,omitempty"`
+	ResponseHandoffHref      string                                  `json:"responseHandoffHref,omitempty"`
+	ResponseHandoffHrefLabel string                                  `json:"responseHandoffHrefLabel,omitempty"`
+	ResponseHandoffStatus    string                                  `json:"responseHandoffStatus,omitempty"`
+	Communication            []PullRequestDeliveryCommunicationEntry `json:"communication,omitempty"`
 }
 
 type PullRequestDeliveryCommunicationEntry struct {
@@ -1197,11 +1205,12 @@ type PullRequestDeliveryHandoffNote struct {
 }
 
 type PullRequestDeliveryEvidence struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Value   string `json:"value"`
-	Summary string `json:"summary"`
-	Href    string `json:"href,omitempty"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Value     string `json:"value"`
+	Summary   string `json:"summary"`
+	Href      string `json:"href,omitempty"`
+	HrefLabel string `json:"hrefLabel,omitempty"`
 }
 
 type CreateIssueInput struct {

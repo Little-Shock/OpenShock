@@ -335,6 +335,7 @@ const EMPTY_PHASE_ZERO_STATE: PhaseZeroState = {
           draftSummary: "",
           handoffId: "",
           href: "",
+          hrefLabel: "",
         },
       },
       escalationSla: {

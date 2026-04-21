@@ -203,6 +203,7 @@ export type WorkspaceGovernanceSuggestedHandoff = {
   draftSummary?: string;
   handoffId?: string;
   href?: string;
+  hrefLabel?: string;
 };
 
 export type WorkspaceGovernanceEscalationSLA = {
@@ -246,7 +247,9 @@ export type WorkspaceGovernanceEscalationRoomRollup = {
   nextRouteLabel?: string;
   nextRouteSummary?: string;
   nextRouteHref?: string;
+  nextRouteHrefLabel?: string;
   href?: string;
+  hrefLabel?: string;
 };
 
 export type WorkspaceGovernanceNotificationPolicy = {
@@ -814,6 +817,7 @@ export type RoomAgentWait = {
 export type AgentHandoff = {
   id: string;
   kind?: string;
+  kindLabel?: string;
   parentHandoffId?: string;
   title: string;
   summary: string;
@@ -951,6 +955,7 @@ export type PullRequestDeliveryGate = {
   status: "ready" | "warning" | "blocked";
   summary: string;
   href?: string;
+  hrefLabel?: string;
 };
 
 export type PullRequestDeliveryTemplate = {
@@ -970,13 +975,16 @@ export type PullRequestDeliveryDelegation = {
   targetAgent?: string;
   summary: string;
   href?: string;
+  hrefLabel?: string;
   inboxItemId?: string;
   handoffId?: string;
   handoffHref?: string;
+  handoffHrefLabel?: string;
   handoffStatus?: HandoffStatus;
   responseAttemptCount?: number;
   responseHandoffId?: string;
   responseHandoffHref?: string;
+  responseHandoffHrefLabel?: string;
   responseHandoffStatus?: HandoffStatus;
   communication?: PullRequestDeliveryCommunicationEntry[];
 };
@@ -1007,6 +1015,7 @@ export type PullRequestDeliveryEvidence = {
   value: string;
   summary: string;
   href?: string;
+  hrefLabel?: string;
 };
 
 export type RunDetail = {

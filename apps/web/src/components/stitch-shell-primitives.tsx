@@ -286,7 +286,7 @@ export function WorkspaceStatusStrip({
         href="/setup"
         className="ml-auto inline-flex min-h-[30px] items-center rounded-[10px] border border-[var(--shock-ink)] bg-white px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--shock-status)]"
       >
-        {disconnected ? "打开设置" : "设置"}
+        设置
       </Link>
     </div>
   );
@@ -697,7 +697,7 @@ export function StitchTopBar({
             aria-expanded={workspaceMenuOpen}
             className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
           >
-            <span className="text-[color:rgba(24,20,14,0.52)]">打开</span>
+            <span className="text-[color:rgba(24,20,14,0.52)]">切换</span>
             <span className="font-semibold text-[var(--shock-ink)]">
               {activeWorkspaceLink?.label ?? "工作区"}
             </span>
@@ -893,10 +893,8 @@ export function QuickSearchSurface({
               </div>
             ) : (
               <div className="border-2 border-dashed border-[var(--shock-ink)] bg-white px-4 py-5">
-                <p className="font-display text-[18px] font-bold">还没有匹配结果</p>
-                <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">
-                  试试输入频道、讨论间、话题、事项、运行或智能体关键词，直接跳到对应页面。
-                </p>
+                <p className="font-display text-[18px] font-bold">没有匹配结果</p>
+                <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">试试搜频道、讨论间、话题、事项、运行或智能体。</p>
               </div>
             )}
           </div>
@@ -905,9 +903,9 @@ export function QuickSearchSurface({
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.48)]">操作提示</p>
             <div className="mt-3 space-y-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.74)]">
               <p><span className="font-mono">↑ ↓</span> 上下选择</p>
-              <p><span className="font-mono">Enter</span> 打开当前结果</p>
+              <p><span className="font-mono">Enter</span> 进入当前结果</p>
               <p><span className="font-mono">Esc</span> 关闭搜索层</p>
-              <p><span className="font-mono">Ctrl/Cmd + K</span> 在任意页面重新打开</p>
+              <p><span className="font-mono">Ctrl/Cmd + K</span> 再次唤起</p>
             </div>
           </aside>
         </div>

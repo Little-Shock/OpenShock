@@ -12,7 +12,7 @@ import { permissionLabel } from "@/lib/session-authz";
 const MEMBER_STATUS_OPTIONS = [
   { value: "active", label: "在线成员", summary: "成员已可正常登录并使用对应角色权限。" },
   { value: "invited", label: "待接受", summary: "邀请已发出，成员接受后就会进入正常可用状态。" },
-  { value: "suspended", label: "已暂停", summary: "成员会保留在列表中，但无法登录和继续使用。" },
+  { value: "suspended", label: "已暂停", summary: "成员会保留在列表中，但无法登录和使用。" },
 ] as const;
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -326,7 +326,7 @@ function InviteMemberPanel({
     <Panel tone={manageAllowed ? "yellow" : "paper"}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">成员管理</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">成员</p>
           <h2 className="mt-2 font-display text-3xl font-bold">邀请新成员</h2>
         </div>
         <span
@@ -337,12 +337,12 @@ function InviteMemberPanel({
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-        在这里可以邀请成员，并调整角色和状态。
+        邀请成员，并调整角色和状态。
       </p>
       {!manageAllowed ? (
         <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
           <p data-testid="access-members-manage-boundary" className="font-mono text-[11px] uppercase tracking-[0.16em]">
-            当前账号没有成员管理权限，请切换到管理员账号后再操作。
+            当前账号不能管理成员。请切换管理员账号。
           </p>
         </div>
       ) : null}
@@ -661,7 +661,7 @@ function SessionActionPanel({
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">邮箱登录</p>
           <h3 className="mt-2 font-display text-2xl font-bold">用邮箱进入工作区</h3>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-            输入邮箱就能进入工作区；如果只是换成员，也在这里完成。
+            输入邮箱就能进入工作区；如果只是换成员，也能在这一页完成。
           </p>
           <div className="mt-4 grid gap-3">
             <input
@@ -867,7 +867,7 @@ function IdentityRecoveryPanel({
           {recoveryStatusLabel(session.recoveryStatus)}
         </span>
       </div>
-      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">在这里可以完成邮箱验证、设备授权、密码重置和外部身份绑定。</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">邮箱验证、设备授权、密码重置和外部身份绑定。</p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-4">
         <Metric label="邮箱验证" value={emailVerificationLabel(session.emailVerificationStatus)} />
@@ -1085,7 +1085,7 @@ function IdentityRecoveryPanel({
                 ))
               ) : (
                 <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-                  <p className="font-mono text-[11px] uppercase tracking-[0.16em]">当前成员还没有已授权设备。</p>
+                  <p className="font-mono text-[11px] uppercase tracking-[0.16em]">这位成员还没有已授权设备。</p>
                 </div>
               )}
             </div>
@@ -1142,7 +1142,7 @@ function DurableMemberPreferencePanel() {
           {member.email}
         </span>
       </div>
-      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">这里会显示当前成员保存的默认智能体、起始页面和 GitHub 身份。</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">当前成员保存的默认智能体、起始页面和 GitHub 身份。</p>
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         <Metric label="默认智能体" value={findAgentName(member.preferences.preferredAgentId, state.agents)} />
         <p className="sr-only" data-testid="access-durable-preferred-agent">{findAgentName(member.preferences.preferredAgentId, state.agents)}</p>
@@ -1346,11 +1346,11 @@ export function LiveAccessOverview() {
     <div className="space-y-4">
       {accessReady ? (
         <AccessReadyPanel
-          title={onboardingDone ? "你已经进入工作区" : "你已经登录，可以继续了"}
+          title={onboardingDone ? "你已经进入工作区" : "你已经登录"}
           summary={
             onboardingDone
-              ? "当前账号、邮箱和设备都没问题，不需要再做登录操作。直接回到聊天就行。"
-              : "当前账号、邮箱和设备都已经确认完毕。现在只需要继续完成工作区配置。"
+              ? "当前账号、邮箱和设备都没问题，回到聊天即可。"
+              : "当前账号、邮箱和设备都已确认，继续完成工作区配置。"
           }
           href={journey.nextHref}
           actionLabel={journey.nextLabel}
@@ -1383,35 +1383,33 @@ export function LiveAccessOverview() {
                   {session.permissions.length} 项权限
                 </span>
               </div>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-                这里只放高级权限信息。大多数情况下，你不需要先看这些再开始使用工作区。
-              </p>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">高级权限默认收起，先进入工作区即可。</p>
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <PermissionProbe
                   label="事项 / 看板"
                   permission="issue.create"
-                  summary="当前身份能不能新建事项并推进到执行。"
+                  summary="新建事项并推进执行"
                   href="/board"
                   session={session}
                 />
                 <PermissionProbe
                   label="讨论间 / 执行"
                   permission="room.reply"
-                  summary="当前身份能不能在房间里继续发言和驱动执行。"
+                  summary="在房间里发言并驱动执行"
                   href="/rooms"
                   session={session}
                 />
                 <PermissionProbe
                   label="收件箱 / 评审"
                   permission="inbox.review"
-                  summary="当前身份能不能处理评审和阻塞事项。"
+                  summary="处理评审和阻塞事项"
                   href="/inbox"
                   session={session}
                 />
                 <PermissionProbe
                   label="设置 / 运行环境"
                   permission="runtime.manage"
-                  summary="当前身份能不能改仓库和运行环境。"
+                  summary="修改仓库和运行环境"
                   href="/setup"
                   session={session}
                 />
@@ -1424,7 +1422,7 @@ export function LiveAccessOverview() {
                 <Metric label="在线成员" value={String(activeMembers)} />
                 <Metric label="待加入成员" value={String(invitedMembers)} />
                 <Metric label="停用成员" value={String(suspendedMembers)} />
-                <Metric label="成员管理" value={manageAllowed ? "所有者可管理" : "只读查看"} />
+                <Metric label="成员权限" value={manageAllowed ? "可管理" : "只读"} />
               </div>
             </Panel>
           </div>
@@ -1436,7 +1434,7 @@ export function LiveAccessOverview() {
           data-testid="access-member-admin-toggle"
           className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.72)]"
         >
-          邀请成员与角色管理
+          成员与角色
         </summary>
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.92fr)_1.08fr]">
           <div className="space-y-4">
@@ -1466,7 +1464,7 @@ export function LiveAccessOverview() {
               </span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-              只有需要管理成员时再展开这里。正常使用工作区时，你不需要先看这一层。
+              按需展开。日常使用工作区时，不需要先看这一层。
             </p>
             <div className="mt-5 space-y-3">
               {members.map((member) => (

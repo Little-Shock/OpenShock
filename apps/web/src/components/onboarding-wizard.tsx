@@ -566,7 +566,7 @@ function OnboardingWizard() {
         addCompleted: ["account-ready"],
       });
       setCurrentStep("template");
-    }, "账号已创建，继续选择模板。");
+    }, "账号已创建。");
   }
 
   async function handleTemplateSelect(templateID: string) {
@@ -590,7 +590,7 @@ function OnboardingWizard() {
         },
       });
       setCurrentStep("github");
-    }, "模板已保存，继续配置 GitHub。");
+    }, "模板已保存。");
   }
 
   async function handleRefreshGitHub() {
@@ -608,7 +608,7 @@ function OnboardingWizard() {
         });
         setCurrentStep("repo");
       }
-    }, state.workspace.githubInstallation.connectionReady ? "GitHub 已连接，可以继续。" : "GitHub 状态已刷新。");
+    }, state.workspace.githubInstallation.connectionReady ? "GitHub 已连接。" : "GitHub 状态已刷新。");
   }
 
   async function handleSkipGitHub() {
@@ -618,7 +618,7 @@ function OnboardingWizard() {
         addCompleted: ["github-choice"],
       });
       setCurrentStep("repo");
-    }, "已跳过 GitHub，继续下一步。");
+    }, "GitHub 已跳过。");
   }
 
   async function submitRepoBinding(input?: { repo?: string; repoUrl?: string; branch?: string }) {
@@ -651,7 +651,7 @@ function OnboardingWizard() {
         addCompleted: ["repo-bound"],
       });
       setCurrentStep("runtime");
-    }, "仓库已识别，继续连接运行环境。");
+    }, "仓库已识别。");
   }
 
   async function handleManualRepoBinding(event: FormEvent<HTMLFormElement>) {
@@ -681,7 +681,7 @@ function OnboardingWizard() {
         addCompleted: ["runtime-paired"],
       });
       setCurrentStep("agent");
-    }, "运行环境已连接，继续设置智能体。");
+    }, "运行环境已连接。");
   }
 
   async function handleSaveAgent(event: FormEvent<HTMLFormElement>) {
@@ -863,7 +863,7 @@ function OnboardingWizard() {
               </span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-              {valueOrFallback(state.workspace.githubInstallation.connectionMessage, "可以先跳过，之后再补充 GitHub 配置。")}
+              {valueOrFallback(state.workspace.githubInstallation.connectionMessage, "可以先跳过，之后再补 GitHub 配置。")}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
@@ -883,7 +883,7 @@ function OnboardingWizard() {
                   onClick={() => window.open(state.workspace.githubInstallation.installationUrl, "_blank", "noopener,noreferrer")}
                   className="min-h-[48px] rounded-[16px] border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-5 font-mono text-[11px] uppercase tracking-[0.18em] disabled:opacity-60"
                 >
-                  打开安装页面
+                  GitHub 安装页
                 </button>
               ) : null}
             </div>
@@ -892,7 +892,7 @@ function OnboardingWizard() {
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">跳过此步</p>
             <h3 className="mt-2 font-display text-[22px] font-bold leading-7">稍后再连接 GitHub</h3>
             <p className="mt-3 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-              可以先跳过这一步，之后再到设置页补充 GitHub 配置。
+              可以先跳过，之后再到设置页补 GitHub 配置。
             </p>
             <button
               data-testid="onboarding-github-skip"
@@ -909,7 +909,7 @@ function OnboardingWizard() {
     );
   } else if (currentStep === "repo") {
     content = (
-      <WizardCard title="确认仓库" description="如果你当前就在目标项目目录中，可以直接读取；否则手动填写仓库地址和分支。">
+      <WizardCard title="确认仓库" description="在目标目录中直接读取，否则手动填写仓库地址和分支。">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="space-y-4">
             <div className="rounded-[24px] border border-[rgba(24,20,14,0.12)] bg-white/86 p-5">
@@ -988,7 +988,7 @@ function OnboardingWizard() {
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">保存内容</p>
             <div className="mt-4 space-y-3 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
               <p>仓库地址、分支和认证方式会写入当前工作区。</p>
-              <p>后续从聊天发起任务、执行命令和处理 PR 时，都会使用这里的仓库信息。</p>
+              <p>后续从聊天发起任务、执行命令和处理 PR 时，都会使用这组仓库信息。</p>
               <p>如需更换目录或调整绑定规则，可在设置页修改。</p>
             </div>
           </div>
@@ -1087,7 +1087,7 @@ function OnboardingWizard() {
             <div className="mt-4 space-y-3 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
               <p>创建任务、执行命令和运行智能体时，都会优先使用这台机器。</p>
               <p>如需切换机器或调整调度策略，可在设置页修改。</p>
-              <p>这里先完成默认连接即可。</p>
+              <p>先完成默认连接即可。</p>
             </div>
           </div>
         </div>
@@ -1178,7 +1178,7 @@ function OnboardingWizard() {
               disabled={busy}
               className="min-h-[48px] rounded-[16px] border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-5 font-mono text-[11px] uppercase tracking-[0.18em] disabled:opacity-60"
             >
-              {busy ? "保存中..." : "保存智能体并继续"}
+              {busy ? "保存中..." : "保存并继续"}
             </button>
           </div>
           <div className="rounded-[24px] border border-[rgba(24,20,14,0.12)] bg-[rgba(255,248,230,0.76)] p-5">
@@ -1244,7 +1244,7 @@ function OnboardingWizard() {
           <div className="rounded-[24px] border border-[rgba(24,20,14,0.12)] bg-[rgba(255,248,230,0.76)] p-5">
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">进入后</p>
             <div className="mt-4 space-y-3 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-              <p>进入后会直接打开聊天主界面。</p>
+              <p>完成后进入聊天。</p>
               <p>仓库、GitHub、运行环境和智能体配置之后都可以修改。</p>
               <p>首次使用只完成最基本的设置。</p>
             </div>
@@ -1331,15 +1331,15 @@ function OnboardingWizard() {
                   href="/setup"
                   className="inline-flex min-h-[44px] items-center rounded-[14px] border border-[rgba(24,20,14,0.14)] bg-[rgba(255,248,230,0.76)] px-4 font-mono text-[11px] uppercase tracking-[0.18em]"
                 >
-                  打开设置
+                  设置
                 </Link>
               </div>
               <details className="max-w-[520px] rounded-[14px] border border-[rgba(24,20,14,0.1)] bg-white/72 px-4 py-2">
                 <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.56)]">
-                  查看高级选项
+                  高级选项
                 </summary>
                 <div className="mt-3 text-sm leading-6 text-[rgba(24,20,14,0.68)]">
-                  包含 GitHub、仓库、运行环境和诊断设置。需要时再打开即可。
+                  包含 GitHub、仓库、运行环境和诊断设置，按需展开即可。
                 </div>
               </details>
             </div>

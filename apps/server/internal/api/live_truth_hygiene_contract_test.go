@@ -96,6 +96,21 @@ func TestSanitizeLiveStateFailClosesGovernanceAndAdapterResidue(t *testing.T) {
 	if strings.Contains(sanitized.Workspace.Governance.Summary, "mock") {
 		t.Fatalf("governance = %#v, want dirty governance summary sanitized", sanitized.Workspace.Governance)
 	}
+	if sanitized.Workspace.Governance.Label != "当前协作流程正在整理中。" {
+		t.Fatalf("governance label = %q, want customer-facing fallback", sanitized.Workspace.Governance.Label)
+	}
+	if sanitized.Workspace.Governance.Summary != "当前协作摘要正在整理中。" {
+		t.Fatalf("governance summary = %q, want customer-facing fallback", sanitized.Workspace.Governance.Summary)
+	}
+	if sanitized.Workspace.Governance.RoutingPolicy.Summary != "当前安排正在整理中。" {
+		t.Fatalf("routing policy summary = %q, want customer-facing fallback", sanitized.Workspace.Governance.RoutingPolicy.Summary)
+	}
+	if sanitized.Workspace.Governance.ResponseAggregation.FinalResponse != "等待当前事项收口。" {
+		t.Fatalf("final response = %q, want customer-facing fallback", sanitized.Workspace.Governance.ResponseAggregation.FinalResponse)
+	}
+	if sanitized.Workspace.Governance.ResponseAggregation.AuditTrail[0].Label != "未命名记录" {
+		t.Fatalf("aggregation audit label = %q, want customer-facing fallback", sanitized.Workspace.Governance.ResponseAggregation.AuditTrail[0].Label)
+	}
 	if strings.Contains(sanitized.Workspace.Governance.RoutingPolicy.Rules[0].Summary, "placeholder") ||
 		strings.Contains(sanitized.Workspace.Governance.RoutingPolicy.Rules[0].Policy, "/tmp/openshock") {
 		t.Fatalf("routing rule = %#v, want dirty routing content sanitized", sanitized.Workspace.Governance.RoutingPolicy.Rules[0])

@@ -51,6 +51,12 @@ func TestStateRouteExposesGovernanceSnapshot(t *testing.T) {
 	if baselineRollup.NextRouteSummary == "" || baselineRollup.NextRouteHref == "" {
 		t.Fatalf("baseline escalation rollup routing = %#v, want next-route metadata for hot room", baselineRollup)
 	}
+	if baselineRollup.NextRouteHrefLabel == "" {
+		t.Fatalf("baseline escalation rollup action label = %#v, want explicit next-route action label", baselineRollup)
+	}
+	if baselineRollup.HrefLabel == "" {
+		t.Fatalf("baseline escalation rollup room link label = %#v, want explicit room-context action label", baselineRollup)
+	}
 	if state.Workspace.Governance.Stats.AggregationSources == 0 {
 		t.Fatalf("governance stats = %#v, want aggregation source count", state.Workspace.Governance.Stats)
 	}
@@ -77,12 +83,15 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 		t.Fatalf("governance stats after create = %#v, want 1 open handoff", afterCreate.Workspace.Governance.Stats)
 	}
 	if len(afterCreate.Workspace.Governance.EscalationSLA.Queue) == 0 ||
-		afterCreate.Workspace.Governance.EscalationSLA.Queue[0].Source != "mailbox handoff" {
-		t.Fatalf("escalation queue after create = %#v, want mailbox handoff entry", afterCreate.Workspace.Governance.EscalationSLA)
+		afterCreate.Workspace.Governance.EscalationSLA.Queue[0].Source != "交接" {
+		t.Fatalf("escalation queue after create = %#v, want customer-facing handoff entry", afterCreate.Workspace.Governance.EscalationSLA)
 	}
 	if afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff.Status != "active" ||
 		afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff.HandoffID != handoff.ID {
 		t.Fatalf("governed handoff after create = %#v, want active suggestion focused on current handoff", afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
+	}
+	if afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff.HrefLabel != "收件箱定位" {
+		t.Fatalf("governed handoff action label after create = %#v, want explicit active handoff CTA", afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff)
 	}
 	handoffStep := findGovernanceWalkthroughStep(afterCreate.Workspace.Governance.Walkthrough, "handoff")
 	if handoffStep == nil || handoffStep.Status != "active" {
@@ -104,8 +113,8 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 	if afterBlocked.Workspace.Governance.Stats.BlockedEscalations == 0 {
 		t.Fatalf("blocked governance stats = %#v, want blocked escalation count", afterBlocked.Workspace.Governance.Stats)
 	}
-	if findEscalationQueueEntryBySource(afterBlocked.Workspace.Governance.EscalationSLA.Queue, "inbox blocker") == nil {
-		t.Fatalf("blocked escalation queue = %#v, want inbox blocker entry", afterBlocked.Workspace.Governance.EscalationSLA.Queue)
+	if findEscalationQueueEntryBySource(afterBlocked.Workspace.Governance.EscalationSLA.Queue, "收件箱") == nil {
+		t.Fatalf("blocked escalation queue = %#v, want customer-facing inbox entry", afterBlocked.Workspace.Governance.EscalationSLA.Queue)
 	}
 	runtimeRollup := findEscalationRoomRollupByRoomID(afterBlocked.Workspace.Governance.EscalationSLA.Rollup, "room-runtime")
 	if runtimeRollup == nil || runtimeRollup.Status != "blocked" || runtimeRollup.EscalationCount != 2 || runtimeRollup.BlockedCount != 2 {
@@ -361,7 +370,7 @@ func TestGovernanceResponseAggregationTracksDeliveryDelegationLifecycle(t *testi
 		!strings.Contains(readyAggregation.FinalResponse, "formal delivery closeout handoff") {
 		t.Fatalf("ready response aggregation = %#v, want delivery delegation handoff summary owned by Spec Captain", readyAggregation)
 	}
-	readyAudit := findResponseAggregationAuditEntry(readyAggregation.AuditTrail, "Delivery Closeout")
+	readyAudit := findResponseAggregationAuditEntry(readyAggregation.AuditTrail, "交付收尾")
 	if readyAudit == nil || readyAudit.Actor != "Spec Captain" || !strings.Contains(readyAudit.Summary, "formal delivery closeout handoff") {
 		t.Fatalf("ready response aggregation audit = %#v, want delivery closeout audit entry", readyAggregation.AuditTrail)
 	}
@@ -419,15 +428,15 @@ func TestGovernanceResponseAggregationTracksDeliveryDelegationLifecycle(t *testi
 		!strings.Contains(responseCompleteAggregation.FinalResponse, "等待 Spec Captain 重新 acknowledge final delivery closeout") {
 		t.Fatalf("response-complete aggregation = %#v, want blocked delivery delegation summary with response progress", responseCompleteAggregation)
 	}
-	responseCompleteAudit := findResponseAggregationAuditEntry(responseCompleteAggregation.AuditTrail, "Delivery Closeout")
+	responseCompleteAudit := findResponseAggregationAuditEntry(responseCompleteAggregation.AuditTrail, "交付收尾")
 	if responseCompleteAudit == nil ||
 		responseCompleteAudit.Actor != "Spec Captain" ||
 		responseCompleteAudit.Status != "blocked" ||
 		responseCompleteAudit.Summary != responseCompleteAggregation.FinalResponse {
 		t.Fatalf("response-complete aggregation audit = %#v, want blocked delivery closeout audit entry synced to final response", responseCompleteAggregation.AuditTrail)
 	}
-	if !containsExactString(responseCompleteAggregation.DecisionPath, "delivery:blocked") {
-		t.Fatalf("response-complete decision path = %#v, want delivery:blocked marker", responseCompleteAggregation.DecisionPath)
+	if !containsExactString(responseCompleteAggregation.DecisionPath, "交付:blocked") {
+		t.Fatalf("response-complete decision path = %#v, want customer-facing delivery marker", responseCompleteAggregation.DecisionPath)
 	}
 
 	reAckResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+delegatedHandoff.ID, map[string]string{
@@ -448,15 +457,15 @@ func TestGovernanceResponseAggregationTracksDeliveryDelegationLifecycle(t *testi
 		strings.Contains(reAckAggregation.FinalResponse, blockNote) {
 		t.Fatalf("re-ack response aggregation = %#v, want resumed delivery delegation summary", reAckAggregation)
 	}
-	reAckAudit := findResponseAggregationAuditEntry(reAckAggregation.AuditTrail, "Delivery Closeout")
+	reAckAudit := findResponseAggregationAuditEntry(reAckAggregation.AuditTrail, "交付收尾")
 	if reAckAudit == nil ||
 		reAckAudit.Actor != "Spec Captain" ||
 		reAckAudit.Status != "ready" ||
 		reAckAudit.Summary != reAckAggregation.FinalResponse {
 		t.Fatalf("re-ack response aggregation audit = %#v, want resumed delivery closeout audit entry synced to final response", reAckAggregation.AuditTrail)
 	}
-	if !containsExactString(reAckAggregation.DecisionPath, "delivery:ready") {
-		t.Fatalf("re-ack decision path = %#v, want delivery:ready marker", reAckAggregation.DecisionPath)
+	if !containsExactString(reAckAggregation.DecisionPath, "交付:ready") {
+		t.Fatalf("re-ack decision path = %#v, want customer-facing delivery marker", reAckAggregation.DecisionPath)
 	}
 
 	parentCompleteResp := doMailboxRouteRequest(t, server.URL+"/v1/mailbox/"+delegatedHandoff.ID, map[string]string{
@@ -478,7 +487,7 @@ func TestGovernanceResponseAggregationTracksDeliveryDelegationLifecycle(t *testi
 		strings.Contains(completedAggregation.FinalResponse, blockNote) {
 		t.Fatalf("completed response aggregation = %#v, want completed delivery delegation summary", completedAggregation)
 	}
-	completedAudit := findResponseAggregationAuditEntry(completedAggregation.AuditTrail, "Delivery Closeout")
+	completedAudit := findResponseAggregationAuditEntry(completedAggregation.AuditTrail, "交付收尾")
 	if completedAudit == nil ||
 		completedAudit.Actor != "Spec Captain" ||
 		completedAudit.Status != "done" ||
@@ -486,8 +495,8 @@ func TestGovernanceResponseAggregationTracksDeliveryDelegationLifecycle(t *testi
 		!strings.Contains(completedAudit.Summary, "也已完成 final delivery closeout") {
 		t.Fatalf("completed response aggregation audit = %#v, want completed delivery closeout audit entry", completedAggregation.AuditTrail)
 	}
-	if !containsExactString(completedAggregation.DecisionPath, "delivery:done") {
-		t.Fatalf("completed decision path = %#v, want delivery:done marker", completedAggregation.DecisionPath)
+	if !containsExactString(completedAggregation.DecisionPath, "交付:done") {
+		t.Fatalf("completed decision path = %#v, want customer-facing delivery marker", completedAggregation.DecisionPath)
 	}
 }
 

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
 import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
+import { resolveProvidedServiceTargets } from "./lib/headed-service-targets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -19,6 +20,9 @@ const evidenceRoot =
   (await mkdtemp(path.join(os.tmpdir(), "openshock-tkt53-planner-dispatch-")));
 const artifactsDir = path.resolve(evidenceRoot);
 const parsedArgs = parseArgs(process.argv.slice(2));
+const providedServiceTargets = resolveProvidedServiceTargets(process.argv.slice(2), {
+  requireServerURL: true,
+});
 const reportPath = parsedArgs.reportPath
   ? path.resolve(projectRoot, parsedArgs.reportPath)
   : path.join(artifactsDir, "report.md");
@@ -206,6 +210,22 @@ async function readText(page, testId) {
 }
 
 async function startServices() {
+  if (providedServiceTargets) {
+    const { webURL, serverURL } = providedServiceTargets;
+
+    await waitFor(async () => {
+      const response = await fetch(`${serverURL}/healthz`);
+      return response.ok;
+    }, `external server did not become healthy at ${serverURL}/healthz`);
+
+    await waitFor(async () => {
+      const response = await fetch(`${webURL}/board`);
+      return response.ok;
+    }, `external web did not become ready at ${webURL}/board`);
+
+    return { webURL, serverURL };
+  }
+
   const workspaceRoot = path.join(artifactsDir, "workspace");
   const statePath = path.join(artifactsDir, "state.json");
   const webAppRoot = path.join(projectRoot, "apps", "web");
@@ -474,7 +494,7 @@ try {
     "",
     "## Results",
     "",
-    `- \`/board\` 真创建 issue 后，\`/v1/planner/queue\` 会立即露出同一条 visible item（本次 initial status = \`${initialPlannerStatus}\`）；随后把 session assignment 前滚后，\`/agents\` orchestration page 会直接显示负责人 / runtime / gate / auto-merge guard truth -> PASS`,
+    `- \`/board\` 真创建 issue 后，\`/v1/planner/queue\` 会立即露出同一条 visible item（本次 initial status = \`${initialPlannerStatus}\`）；随后把 session assignment 前滚后，\`/agents\` orchestration page 会直接显示当前处理人 / runtime / gate / auto-merge guard truth -> PASS`,
     "- orchestration page 现在不再只剩旧的 fail-closed copy；`planner queue + governed topology + issue -> handoff -> review -> test -> final response` walkthrough 已经同页可见 -> PASS",
     "- adversarial non-happy probe 已覆盖 `blocked` without note：`POST /v1/mailbox/:id` 在缺 note 时稳定返回 `400`，不会把 reviewer blocker 假绿吞掉 -> PASS",
     "- blocked escalation 与 final response aggregation 都能在同一条 orchestration page 上前滚：`human override = watch`，随后 closeout note 会进入 response aggregation 与 final-response step -> PASS",

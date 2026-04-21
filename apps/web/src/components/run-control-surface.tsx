@@ -48,14 +48,14 @@ function controlPermissionLabel(status: string) {
 
 function controlSummary(status: Run["status"] | Session["status"], followThread: boolean) {
   if (status === "done") {
-    return "当前执行已经收口，只保留状态回看，不再继续发控制动作。";
+    return "执行已收口，只保留状态回看。";
   }
 
   if (status === "paused") {
-    return followThread ? "当前已暂停；恢复后会继续沿这条线程往下走。" : "当前已暂停；恢复后会继续沿当前会话推进。";
+    return followThread ? "已暂停；恢复后继续沿这条线程。" : "已暂停；恢复后继续当前会话。";
   }
 
-  return followThread ? "当前已锁定线程，后续继续会贴着同一条讨论推进。" : "当前未锁定线程，后续继续时仍可能新开 follow-up。";
+  return followThread ? "已锁定线程，后续会贴着同一条讨论推进。" : "未锁定线程，后续仍可能新开 follow-up。";
 }
 
 type RunControlSurfaceProps = {
@@ -144,7 +144,7 @@ export function RunControlSurface({
         onChange={(event) => setNote(event.target.value)}
         disabled={busyAction !== null || hasGate || isDone}
         className="mt-3 min-h-[72px] w-full border-2 border-[var(--shock-ink)] bg-[#fafafa] px-3 py-3 text-[13px] outline-none disabled:opacity-60"
-        placeholder="补一句暂停、恢复或锁定线程的原因；留空则沿默认文案。"
+        placeholder="补一句原因；留空则沿默认文案。"
       />
 
       <div className="mt-3 grid gap-2 md:grid-cols-3">
@@ -179,7 +179,7 @@ export function RunControlSurface({
 
       {controlNote ? (
         <p data-testid={`${prefix}-control-note-preview`} className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-          当前控制说明：{controlNote}
+          当前执行备注：{controlNote}
         </p>
       ) : null}
       {actionError ? (

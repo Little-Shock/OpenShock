@@ -153,14 +153,14 @@ export function RunSandboxSurface({ run }: { run: Run }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">执行权限</p>
-          <h3 className="mt-2 font-display text-[24px] font-bold leading-7">查看并调整这次执行能访问什么</h3>
+          <h3 className="mt-2 font-display text-[24px] font-bold leading-7">这次执行的访问范围</h3>
         </div>
         <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]">
           {sandboxProfileLabel(run.sandbox.profile)}
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
-        这里集中显示当前执行允许访问的主机、命令和工具；如果需要人工放行，也会把判断结果留在这里。
+        当前执行允许访问的主机、命令和工具；如果需要人工放行，判断结果也会保留下来。
       </p>
 
       <div className="mt-4 grid gap-2 md:grid-cols-4">

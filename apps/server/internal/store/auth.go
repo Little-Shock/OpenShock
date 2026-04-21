@@ -124,7 +124,7 @@ func defaultWorkspaceRoles() []WorkspaceRole {
 		{
 			ID:          workspaceRoleViewer,
 			Label:       "Viewer",
-			Summary:     "只读查看控制面和历史真值，不做破坏性变更。",
+			Summary:     "只读控制面和历史记录，不做破坏性变更。",
 			Permissions: permissionsForRole(workspaceRoleViewer),
 		},
 	}

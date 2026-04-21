@@ -108,7 +108,7 @@ function runtimeSchedulerStrategyLabel(strategy: string) {
     case "selected_runtime":
       return "沿用当前选择";
     case "agent_preference":
-      return "按负责人偏好";
+      return "按当前处理人偏好";
     case "least_loaded":
       return "按负载最轻";
     case "failover":
@@ -138,7 +138,7 @@ function quotaStatusLabel(status?: string) {
     case "near_limit":
       return "逼近上限";
     case "watch":
-      return "进入观察";
+      return "观察中";
     case "healthy":
       return "健康";
     default:
@@ -324,8 +324,8 @@ const ONBOARDING_TEMPLATE_DEFINITIONS: OnboardingTemplateDefinition[] = [
     defaultBrowserPush: "阻塞 / 评审 / 发布门",
     defaultMemoryMode: "治理优先 / 交付笔记",
     channels: ["#shiproom", "#review-lane", "#ops-watch"],
-    roles: ["产品", "架构", "开发", "评审", "测试"],
-    agents: ["需求负责人", "构建执行", "评审助手", "测试接力"],
+    roles: ["目标", "边界", "实现", "评审", "验证"],
+    agents: ["需求智能体", "开发智能体", "评审智能体", "测试智能体"],
     notificationPolicy: "优先推送阻塞、评审和发布门事件",
     notes: [
       "系统会创建交付、评审和发布相关频道。",
@@ -341,13 +341,13 @@ const ONBOARDING_TEMPLATE_DEFINITIONS: OnboardingTemplateDefinition[] = [
     defaultBrowserPush: "证据就绪 / 综合阻塞 / 复核反馈",
     defaultMemoryMode: "证据优先 / 综合台账",
     channels: ["#intake", "#evidence", "#synthesis"],
-    roles: ["研究负责人", "资料收集", "综合整理", "复核"],
-    agents: ["研究负责人", "资料收集", "综合整理", "复核助手"],
+    roles: ["方向", "采集", "归纳", "复核"],
+    agents: ["总控智能体", "采集智能体", "归纳智能体", "评审智能体"],
     notificationPolicy: "优先推送证据就绪、综合阻塞和复核反馈",
     notes: [
       "系统会创建输入、资料和综合相关频道。",
       "适合研究、分析和结论整理类工作。",
-      "设置支持中断后继续。",
+      "支持续接。",
     ],
   },
   {
@@ -359,12 +359,12 @@ const ONBOARDING_TEMPLATE_DEFINITIONS: OnboardingTemplateDefinition[] = [
     defaultBrowserPush: "仅高优先级与显式评审",
     defaultMemoryMode: "笔记优先 / 最小启动",
     channels: ["#all", "#roadmap", "#announcements"],
-    roles: ["所有者 / 成员 / 访客"],
+    roles: ["所有者", "成员", "访客"],
     agents: ["启动智能体", "评审智能体"],
     notificationPolicy: "只推高优先级与显式评审事件",
     notes: [
       "系统会先创建基础频道、角色和默认智能体。",
-      "后续可按团队需要继续补充流程、协作角色和通知规则。",
+      "首次设置支持续接，后续可再补流程、角色和通知规则。",
       "适合从空白工作区开始搭建自己的协作方式。",
     ],
   },
@@ -517,7 +517,7 @@ export function SetupFirstStartJourneyPanel() {
           {journey.nextLabel}
         </Link>
         <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-          完成设置后会直接进入聊天。
+          完成后直接进入聊天。
         </p>
       </div>
     </Panel>
@@ -569,7 +569,7 @@ export function OnboardingStudioPanel() {
 
       setSuccess(
         finished
-          ? "设置已完成，默认会进入聊天页面。"
+          ? "设置已完成，默认进入聊天。"
           : syncTemplateDefaults
             ? `${definition.label} 模板已保存。`
             : "当前进度已更新。"
@@ -593,7 +593,7 @@ export function OnboardingStudioPanel() {
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-        你可以从开发团队、研究团队或空白开始，后续再继续完成仓库和运行环境设置。
+        可从开发、研究或空白开始，再补仓库和运行环境。
       </p>
 
       <div className="mt-5 grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
@@ -646,7 +646,7 @@ export function OnboardingStudioPanel() {
             <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前启动包</p>
             <div className="mt-3 grid gap-2">
               <WorkspaceMetric label="模板" value={valueOrPlaceholder(materialization?.label || currentTemplate.label, currentTemplate.label)} testID="setup-onboarding-template-package" />
-              <WorkspaceMetric label="继续设置入口" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")} />
+              <WorkspaceMetric label="回跳地址" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")} />
               <WorkspaceMetric label="通知策略" value={valueOrPlaceholder(materialization?.notificationPolicy, currentTemplate.notificationPolicy)} />
             </div>
             <div className="mt-3 space-y-2">
@@ -654,11 +654,11 @@ export function OnboardingStudioPanel() {
               <p data-testid="setup-onboarding-materialized-channels" className="text-sm leading-6">
                 {(materialization?.channels ?? currentTemplate.channels).join(" / ")}
               </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">已落地角色</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">已落地分工</p>
               <p data-testid="setup-onboarding-materialized-roles" className="text-sm leading-6">
                 {(materialization?.roles ?? currentTemplate.roles).join(" · ")}
               </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">起步智能体</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">默认智能体</p>
               <p data-testid="setup-onboarding-materialized-agents" className="text-sm leading-6">
                 {(materialization?.agents ?? currentTemplate.agents).join(" / ")}
               </p>
@@ -673,7 +673,7 @@ export function OnboardingStudioPanel() {
             <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]">团队分工预览</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]">协作预览</p>
                   <p
                     data-testid="setup-governance-summary"
                     className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]"
@@ -702,6 +702,12 @@ export function OnboardingStudioPanel() {
                       </div>
                       <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{governanceLaneStatusLabel(lane.status)}</span>
                     </div>
+                    <p
+                      data-testid={`setup-governance-lane-${lane.id}-agent`}
+                      className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]"
+                    >
+                      默认智能体：{valueOrPlaceholder(lane.defaultAgent, "未设置")}
+                    </p>
                     <p className="mt-2 text-sm leading-6">{lane.summary}</p>
                   </div>
                 ))}
@@ -714,7 +720,7 @@ export function OnboardingStudioPanel() {
               <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前进度</p>
                 <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
-                  当前步骤会根据仓库、GitHub 和运行环境状态自动更新。
+                  步骤会随仓库、GitHub 和运行环境更新。
                 </p>
               </div>
               <button
@@ -942,7 +948,7 @@ export function LiveSetupOverview() {
         />
         <SetupCheckpointCard
           title="首次引导"
-          summary={`当前模板 ${templateSurfaceLabel(workspace.onboarding.templateId)}，状态 ${onboardingStatusLabel(workspace.onboarding.status)}。需要继续时，会回到 ${valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")}。`}
+          summary={`模板 ${templateSurfaceLabel(workspace.onboarding.templateId)} · ${onboardingStatusLabel(workspace.onboarding.status)} · 回跳地址 ${valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")}。`}
           active={workspace.onboarding.status !== "not_started"}
         />
       </div>
@@ -952,9 +958,7 @@ export function LiveSetupOverview() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[0.24em]">工作区概览</p>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                先看仓库、运行环境和模板有没有准备好；更细的系统数据都退到后面。
-              </p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">先看仓库、运行环境和模板。</p>
             </div>
             <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
               {selectedRuntimeLabel} · {pairingStatusLabel(pairingStatus)}
@@ -972,7 +976,7 @@ export function LiveSetupOverview() {
               展开更多技术细节
             </summary>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              当前已检测到 {state.runtimes.length} 条运行环境记录，有 {selectableRuntimes} 台可以直接调度，默认使用 {selectedRuntimeLabel}
+              已检测到 {state.runtimes.length} 条运行环境记录，有 {selectableRuntimes} 台可调度，默认使用 {selectedRuntimeLabel}
               {selectedRuntimeCLI ? `，CLI 为 ${selectedRuntimeCLI}` : ""}
               {selectedRuntimeInventory ? `，可用模型包括 ${selectedRuntimeInventory}` : ""}。
             </p>
@@ -1001,7 +1005,7 @@ export function LiveSetupOverview() {
               />
             </dl>
             <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5 text-sm leading-6">
-              {scheduler.summary || "当前还没有运行环境调度信息。"}
+              {scheduler.summary || "调度摘要还没同步。"}
             </p>
           </details>
           {workspace.usage?.warning || workspace.quota?.warning ? (
@@ -1029,7 +1033,7 @@ export function LiveSetupOverview() {
           <div className="mt-3 space-y-2">
             {registryRuntimes.length === 0 ? (
               <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                当前还没有已注册运行环境。先完成本地桥接，再继续做选择和调度验证。
+                还没注册运行环境。先完成本地桥接。
               </p>
             ) : (
               registryRuntimes.map((runtime) => {

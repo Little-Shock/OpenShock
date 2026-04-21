@@ -96,7 +96,7 @@ function runBudgetStatusLabel(status?: string) {
     case "near_limit":
       return "逼近上限";
     case "watch":
-      return "进入观察";
+      return "观察中";
     case "healthy":
       return "健康";
     default:
@@ -280,7 +280,7 @@ function SetupStepCard({ step }: { step: SetupStep }) {
           href={step.href}
           className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5"
         >
-          打开
+          进入
         </Link>
       </div>
       <p className="mt-3 text-base leading-7">{step.summary}</p>
@@ -354,7 +354,7 @@ export function ChatFeed({ messages }: { messages: Message[] }) {
           <div>
             <p className="font-display text-xl font-semibold">把讨论升级成讨论间</p>
             <p className="mt-1 text-sm text-[color:rgba(24,20,14,0.72)]">
-              频道只负责轻量讨论。一旦上下文开始涉及 owner、branch、run 或 PR，就该进入专属讨论间干活。
+              频道只负责轻量讨论。一旦开始涉及分支、执行或 PR，就该进入专属讨论间干活。
             </p>
           </div>
           <Link
@@ -400,14 +400,14 @@ export function RoomOverview({ room }: { room: Room }) {
               href={`/runs/${room.runId}`}
               className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5"
             >
-              查看 Run 详情
+              执行详情
             </Link>
             {issue ? (
               <Link
                 href={`/issues/${issue.key}`}
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5"
               >
-                查看 Issue
+                事项详情
               </Link>
             ) : null}
           </div>
@@ -431,7 +431,7 @@ export function RoomOverview({ room }: { room: Room }) {
           </p>
         </Panel>
         <Panel tone="lime">
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前负责人</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前处理人</p>
           <p className="mt-2 font-display text-2xl font-bold">{room.topic.owner}</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
             当前由这位智能体负责推进。所有纠偏都会留在讨论里，不会散落到私聊和外部文档。
@@ -479,17 +479,17 @@ export function RunDetailView({
   const recoveryEvents = resumeSession.recovery?.events ?? [];
   const recoveryStatus = recoveryAudit?.status ?? resumeSession.recovery?.status ?? resumeSession.pendingTurn?.status;
   const recoverySource = recoveryAudit?.source ?? (resumeSession.recovery ? "session.recovery" : resumeSession.pendingTurn ? "session.pending_turn" : "");
-  const recoverySummary = recoveryAudit?.summary ?? resumeSession.recovery?.summary ?? "当前还没有恢复摘要。";
+  const recoverySummary = recoveryAudit?.summary ?? resumeSession.recovery?.summary ?? "暂无恢复摘要。";
   const recoveryPreview = recoveryAudit?.preview ?? resumeSession.recovery?.preview ?? resumeSession.pendingTurn?.preview;
   const recoveryReplay = recoveryAudit?.sessionReplay ?? resumeSession.recovery?.replayAnchor;
   const recoveryEligible =
     recoveryAudit?.resumeEligible ?? resumeSession.pendingTurn?.resumeEligible;
   const handoffFollowup = recoveryAudit?.handoffAutoFollowup ?? recoveryAudit?.roomAutoFollowup;
   const handoffFollowupTitle =
-    handoffFollowup?.kind === "room-auto" ? "Room Auto 接棒" : handoffFollowup ? "正式交接继续" : "";
+    handoffFollowup?.kind === "room-auto" ? "自动续接" : handoffFollowup ? "交接继续" : "";
   const handoffFollowupSummary =
     handoffFollowup?.summary ??
-    (handoffFollowup?.kind === "room-auto" ? "当前自动接棒摘要正在整理中。" : "当前交接继续摘要正在整理中。");
+    (handoffFollowup?.kind === "room-auto" ? "自动接棒摘要正在整理中。" : "交接继续摘要正在整理中。");
 
   return (
     <div className="space-y-4">
@@ -515,7 +515,7 @@ export function RunDetailView({
             <Metric label="工作目录" value={run.worktree} />
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <Metric label="负责人" value={run.owner} />
+            <Metric label="当前处理人" value={run.owner} />
             <Metric label="下一步" value={run.nextAction} />
           </div>
         </Panel>
@@ -526,7 +526,7 @@ export function RunDetailView({
           </p>
           <p className="mt-2 text-sm leading-6 opacity-80">
             {run.approvalRequired
-              ? "高风险动作已经暂停，必须等人类批准后才能继续。"
+              ? "高风险动作已暂停，等人类批准。"
               : "这个 Run 仍在本地可信沙盒内执行，不需要升级。"}
           </p>
         </Panel>
@@ -601,7 +601,7 @@ export function RunDetailView({
             <div>
               <h3 className="font-display text-2xl font-bold">房间执行历史</h3>
               <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-                先回看同一房间里的前序执行，再决定是否重新打开或继续当前链路。
+                先回看前序执行，再决定继续还是重开。
               </p>
             </div>
             <span
@@ -614,7 +614,7 @@ export function RunDetailView({
           <div data-testid="run-detail-history" className="mt-4 space-y-3">
             {history.length === 0 ? (
               <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-                当前还没有可回看的房间执行历史。
+                暂无可回看的执行历史。
               </p>
             ) : (
               history.map((entry) => (
@@ -655,7 +655,7 @@ export function RunDetailView({
                       data-testid={`run-history-room-tab-${entry.run.id}`}
                       className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em]"
                     >
-                      打开执行页签
+                      讨论间执行面
                     </Link>
                   </div>
                 </article>
@@ -706,7 +706,7 @@ export function RunDetailView({
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <Metric label="目标智能体" value={handoffFollowup.toAgent || "待同步"} />
-                <Metric label="Handoff" value={handoffFollowup.handoffId || "待同步"} />
+                <Metric label="交接" value={handoffFollowup.handoffId || "待同步"} />
                 <Metric label="最后动作" value={handoffFollowup.lastAction || "待同步"} />
               </div>
               <p className="mt-3 text-sm leading-6">{handoffFollowupSummary}</p>
@@ -715,7 +715,7 @@ export function RunDetailView({
           {recoveryAudit?.runtimeReplay ? (
             <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-display text-lg font-semibold">Runtime Replay</p>
+                <p className="font-display text-lg font-semibold">执行回放</p>
                 <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
                   游标 {recoveryAudit.runtimeReplay.lastCursor ?? "待同步"}
                 </span>
@@ -723,7 +723,7 @@ export function RunDetailView({
               <div className="mt-3 grid gap-3 md:grid-cols-4">
                 <Metric label="状态" value={recoveryAudit.runtimeReplay.status || "待同步"} />
                 <Metric label="回放锚点" value={recoveryAudit.runtimeReplay.replayAnchor || "待同步"} />
-                <Metric label="收尾原因" value={recoveryAudit.runtimeReplay.closeoutReason || "待同步"} />
+                <Metric label="结束原因" value={recoveryAudit.runtimeReplay.closeoutReason || "待同步"} />
                 <Metric label="摘要" value={recoveryAudit.runtimeReplay.summary || "待同步"} />
               </div>
             </div>
@@ -796,7 +796,7 @@ export function RunDetailView({
           <div>
             <h3 className="font-display text-2xl font-bold">用量与额度</h3>
             <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-              执行详情不只显示分支和工作目录，也会直接展示请求、回复、上下文和预算状态。
+              执行详情会直接展示请求、回复、上下文和预算。
             </p>
           </div>
           <span data-testid="run-detail-usage-status" className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
@@ -810,7 +810,7 @@ export function RunDetailView({
           <Metric label="上下文" value={formatCount(run.usage?.contextWindow)} />
         </div>
         <p data-testid="run-detail-usage-warning" className="mt-4 text-sm leading-6 opacity-85">
-          {run.usage?.warning ?? "当前还没有暴露 token / quota warning。"}
+          {run.usage?.warning ?? "暂无额度提醒。"}
         </p>
       </Panel>
 
@@ -855,13 +855,13 @@ export function RunDetailView({
               href={`/issues/${run.issueKey}`}
               className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
             >
-              打开 Issue
+              事项详情
             </Link>
             <Link
               href={`/rooms/${run.roomId}?tab=run`}
               className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
             >
-              回到讨论间
+              讨论间执行面
             </Link>
           </div>
         </Panel>
@@ -897,12 +897,14 @@ export function InboxGrid({ items }: { items: InboxItem[] }) {
           <p className="mt-3 text-sm leading-6 opacity-85">{item.summary}</p>
           <div className="mt-5 flex items-center justify-between gap-3">
             <span className="font-mono text-[11px] uppercase tracking-[0.16em]">{item.room}</span>
-            <Link
-              href={item.href}
-              className="rounded-2xl border-2 border-current bg-white/90 px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--shock-ink)] transition-transform hover:-translate-y-0.5"
-            >
-              {item.action}
-            </Link>
+            {item.href && item.action.trim() ? (
+              <Link
+                href={item.href}
+                className="rounded-2xl border-2 border-current bg-white/90 px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--shock-ink)] transition-transform hover:-translate-y-0.5"
+              >
+                {item.action}
+              </Link>
+            ) : null}
           </div>
         </article>
       ))}
@@ -972,7 +974,7 @@ export function IssuesListView({ issues: issueList }: { issues: Issue[] }) {
             </div>
             <p className="mt-2.5 text-sm leading-6">{issue.summary}</p>
             <div className="mt-4 grid gap-2 md:grid-cols-3">
-              <Metric label="负责人" value={issue.owner} />
+              <Metric label="当前处理人" value={issue.owner} />
               <Metric label="讨论间" value={issue.roomId} />
               <Metric label="PR" value={issue.pullRequest} />
             </div>
@@ -1020,13 +1022,13 @@ export function IssueDetailView({
                 href={`/rooms/${issue.roomId}?tab=context`}
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
-              打开讨论间
+              讨论间上下文
               </Link>
               <Link
                 href={`/runs/${issue.runId}`}
                 className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
-              打开 Run 详情
+              执行详情
               </Link>
               <Link
                 href={planningMirrorHref}
@@ -1052,10 +1054,10 @@ export function IssueDetailView({
 
       <div className="space-y-4">
         <Panel tone="lime">
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em]">负责人</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前处理人</p>
           <p className="mt-2 font-display text-2xl font-bold">{issue.owner}</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-            当前每个活跃事项都会保持一个可见负责人，执行过程会继续围绕这条主线推进。
+            这条事项现在由这位同学继续推进，后续执行也会围绕这条主线展开。
           </p>
         </Panel>
         <Panel tone="ink" className="shadow-[6px_6px_0_0_var(--shock-pink)]">
@@ -1090,7 +1092,7 @@ export function AgentsListView({ agentsList = agents }: { agentsList?: AgentStat
             </div>
             <p className="mt-3 text-base leading-7">{agent.description}</p>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <Metric label="泳道" value={agent.lane} />
+              <Metric label="当前事项" value={agent.lane} />
               <Metric label="通道 / 模型" value={`${agent.providerPreference} / ${agent.modelPreference}`} />
               <Metric label="运行环境" value={agent.runtimePreference} />
             </div>
@@ -1128,7 +1130,7 @@ export function AgentDetailView({
             <Metric label="通道偏好" value={agent.providerPreference} />
             <Metric label="模型偏好" value={agent.modelPreference} />
             <Metric label="运行环境偏好" value={agent.runtimePreference} />
-            <Metric label="当前泳道" value={agent.lane} />
+            <Metric label="当前事项" value={agent.lane} />
           </div>
         </Panel>
 

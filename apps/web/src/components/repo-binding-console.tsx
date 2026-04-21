@@ -223,7 +223,7 @@ export function RepoBindingConsole() {
         </span>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">这里只回答一件事：当前仓库有没有接通，以及还卡在哪一步。</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">当前仓库有没有接通，以及还卡在哪一步。</p>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
@@ -272,7 +272,7 @@ export function RepoBindingConsole() {
           </p>
           <details className="mt-4 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
-              查看绑定依据
+              绑定依据
             </summary>
             <p className="mt-3 font-mono text-xs leading-6 break-all text-[color:rgba(24,20,14,0.78)]">
               {valueOrFallback(binding?.repoUrl, "正在读取当前仓库远端地址")}
@@ -297,10 +297,10 @@ export function RepoBindingConsole() {
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">安装动作</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
             {binding?.appInstalled
-              ? "GitHub 应用安装已经完成，仓库状态可以直接回流。"
+              ? "GitHub 应用已完成，仓库状态可回流。"
               : binding?.appConfigured
                 ? "GitHub 应用已配置，但安装还没完成。"
-                : "当前还没有完成 GitHub 应用配置，请先补充设置。"}
+                : "GitHub 应用还没配好，先补全设置。"}
           </p>
           {binding?.installationUrl ? (
             <a
@@ -310,14 +310,14 @@ export function RepoBindingConsole() {
               rel="noreferrer"
               className="mt-4 inline-flex rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5"
             >
-              打开安装页面
+              GitHub 安装页
             </a>
           ) : null}
           <p
             data-testid="setup-repo-binding-return-steps"
             className="mt-4 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]"
           >
-            安装完成后会自动返回并更新仓库状态。如未自动更新，再回到这里手动同步。
+            安装完成后会自动返回并更新仓库状态。如未自动更新，再手动同步。
           </p>
         </div>
       </div>

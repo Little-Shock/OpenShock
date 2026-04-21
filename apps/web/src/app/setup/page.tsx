@@ -18,7 +18,7 @@ export default function SetupPage() {
         view="setup"
         eyebrow="高级设置"
         title="设置与诊断"
-        description="仓库、GitHub、运行环境和诊断都集中在这里。首次使用请先完成首页设置。"
+        description="仓库、GitHub、运行环境和诊断都会集中显示。首次使用请先完成首页设置。"
         contextTitle="当前是否可用"
         contextDescription="先看主链路状态，详细信息按需展开。"
         contextBody={<LiveSetupContextRail />}

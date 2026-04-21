@@ -96,7 +96,7 @@ func buildRuntimeScheduler(state State, owner string) runtimeSchedulerResult {
 		SelectedRuntime:  selectedRuntime,
 		PreferredRuntime: preferredRuntime,
 		Strategy:         runtimeSchedulerStrategyUnavailable,
-		Summary:          "当前没有可调度 runtime。",
+		Summary:          "当前没有可用运行环境。",
 		Candidates:       candidates,
 	}
 
@@ -186,28 +186,29 @@ func annotateRuntimeSchedulerCandidates(candidates []RuntimeSchedulerCandidate, 
 		case annotated[index].Assigned:
 			switch scheduler.Strategy {
 			case runtimeSchedulerStrategyAgentPreference:
-				annotated[index].Reason = fmt.Sprintf("按 owner runtime preference 选中；当前承载 %d 条 active lease。", annotated[index].ActiveLeaseCount)
+				annotated[index].Reason = fmt.Sprintf("按智能体偏好安排，当前有 %d 条执行。", annotated[index].ActiveLeaseCount)
 			case runtimeSchedulerStrategySelected:
-				annotated[index].Reason = fmt.Sprintf("沿用当前 selection；当前承载 %d 条 active lease。", annotated[index].ActiveLeaseCount)
+				annotated[index].Reason = fmt.Sprintf("沿用当前选择，当前有 %d 条执行。", annotated[index].ActiveLeaseCount)
 			case runtimeSchedulerStrategyFailover:
-				annotated[index].Reason = fmt.Sprintf("承接 `%s` 的 failover；当前承载 %d 条 active lease。", scheduler.FailoverFrom, annotated[index].ActiveLeaseCount)
+				annotated[index].Reason = fmt.Sprintf("承接 %s 的切换，当前有 %d 条执行。", scheduler.FailoverFrom, annotated[index].ActiveLeaseCount)
 			case runtimeSchedulerStrategyLeastLoaded:
-				annotated[index].Reason = fmt.Sprintf("按 lease 压力选中；当前承载 %d 条 active lease。", annotated[index].ActiveLeaseCount)
+				annotated[index].Reason = fmt.Sprintf("按当前压力安排，当前有 %d 条执行。", annotated[index].ActiveLeaseCount)
 			}
 		case !annotated[index].Schedulable && annotated[index].State != "":
+			stateLabel := runtimeSchedulerStateLabel(annotated[index].State)
 			if annotated[index].State == runtimeStateOffline || annotated[index].State == runtimeStateStale {
-				annotated[index].Reason = fmt.Sprintf("当前 `%s`，不可调度。", annotated[index].State)
+				annotated[index].Reason = fmt.Sprintf("当前%s，暂不可调度。", stateLabel)
 			} else {
-				annotated[index].Reason = fmt.Sprintf("当前 `%s`，未进入可调度状态。", annotated[index].State)
+				annotated[index].Reason = fmt.Sprintf("当前%s，暂不可调度。", stateLabel)
 			}
 		case !annotated[index].Schedulable:
-			annotated[index].Reason = "未配对 daemon，当前不可调度。"
+			annotated[index].Reason = "还没配对，暂不可调度。"
 		case annotated[index].Preferred && scheduler.Strategy == runtimeSchedulerStrategyFailover:
-			annotated[index].Reason = "preferred runtime 当前不可调度，已被 failover 跳过。"
+			annotated[index].Reason = "首选运行环境暂不可调度，已跳过。"
 		case annotated[index].ActiveLeaseCount > 0:
-			annotated[index].Reason = fmt.Sprintf("当前承载 %d 条 active lease。", annotated[index].ActiveLeaseCount)
+			annotated[index].Reason = fmt.Sprintf("当前有 %d 条执行。", annotated[index].ActiveLeaseCount)
 		default:
-			annotated[index].Reason = "当前可接新 lane。"
+			annotated[index].Reason = "可以接新事项。"
 		}
 	}
 
@@ -218,24 +219,35 @@ func runtimeSchedulerSummary(scheduler RuntimeScheduler, candidate RuntimeSchedu
 	label := defaultString(strings.TrimSpace(candidate.Machine), strings.TrimSpace(candidate.Runtime))
 	switch scheduler.Strategy {
 	case runtimeSchedulerStrategyAgentPreference:
-		return fmt.Sprintf("已按 %s 的设置选择 %s，当前有 %d 个运行任务。", defaultString(strings.TrimSpace(owner), "当前成员"), label, candidate.ActiveLeaseCount)
+		return fmt.Sprintf("已按 %s 偏好安排到 %s，当前有 %d 条执行。", defaultString(strings.TrimSpace(owner), "当前成员"), label, candidate.ActiveLeaseCount)
 	case runtimeSchedulerStrategySelected:
-		return fmt.Sprintf("当前继续使用 %s，当前有 %d 个运行任务。", label, candidate.ActiveLeaseCount)
+		return fmt.Sprintf("继续使用 %s，当前有 %d 条执行。", label, candidate.ActiveLeaseCount)
 	case runtimeSchedulerStrategyFailover:
-		return fmt.Sprintf("%s 当前不可用，已切换到 %s，当前有 %d 个运行任务。", scheduler.FailoverFrom, label, candidate.ActiveLeaseCount)
+		return fmt.Sprintf("%s 当前不可用，已切到 %s，当前有 %d 条执行。", scheduler.FailoverFrom, label, candidate.ActiveLeaseCount)
 	case runtimeSchedulerStrategyLeastLoaded:
-		return fmt.Sprintf("当前已选择 %s，当前有 %d 个运行任务。", label, candidate.ActiveLeaseCount)
+		return fmt.Sprintf("已安排到 %s，当前有 %d 条执行。", label, candidate.ActiveLeaseCount)
 	default:
-		return "当前没有可用的运行环境。"
+		return "当前没有可用运行环境。"
 	}
 }
 
 func runtimeSchedulerTimelineLabel(scheduler RuntimeScheduler) string {
 	switch scheduler.Strategy {
 	case runtimeSchedulerStrategyFailover:
-		return fmt.Sprintf("Runtime 已 failover 到 %s", defaultString(strings.TrimSpace(scheduler.AssignedMachine), strings.TrimSpace(scheduler.AssignedRuntime)))
+		return fmt.Sprintf("运行环境已切到 %s", defaultString(strings.TrimSpace(scheduler.AssignedMachine), strings.TrimSpace(scheduler.AssignedRuntime)))
 	default:
-		return fmt.Sprintf("Runtime 已分配到 %s", defaultString(strings.TrimSpace(scheduler.AssignedMachine), strings.TrimSpace(scheduler.AssignedRuntime)))
+		return fmt.Sprintf("运行环境已分配到 %s", defaultString(strings.TrimSpace(scheduler.AssignedMachine), strings.TrimSpace(scheduler.AssignedRuntime)))
+	}
+}
+
+func runtimeSchedulerStateLabel(state string) string {
+	switch strings.TrimSpace(state) {
+	case runtimeStateOffline:
+		return "离线"
+	case runtimeStateStale:
+		return "心跳过期"
+	default:
+		return strings.TrimSpace(state)
 	}
 }
 

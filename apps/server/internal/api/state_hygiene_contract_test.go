@@ -261,13 +261,13 @@ func TestStateEndpointSanitizesCustomerVisibleResidue(t *testing.T) {
 	if got := payload.Issues[0].Title; got != "待整理任务" {
 		t.Fatalf("issue title = %q, want sanitized fallback", got)
 	}
-	if got := payload.Issues[1].Summary; got != "这条任务的上下文正在整理，先回到讨论间查看当前 live truth。" {
+	if got := payload.Issues[1].Summary; got != "这条任务的上下文正在整理，先回到讨论间确认当前状态。" {
 		t.Fatalf("issue summary = %q, want sanitized fallback", got)
 	}
 	if got := payload.Rooms[0].Title; got != "待整理讨论间" {
 		t.Fatalf("room title = %q, want sanitized fallback", got)
 	}
-	if got := payload.Rooms[1].Topic.Title; got != "待整理 Topic" {
+	if got := payload.Rooms[1].Topic.Title; got != "待整理话题" {
 		t.Fatalf("topic title = %q, want sanitized fallback", got)
 	}
 	if got := payload.RoomMessages["room-e2e"][0].Message; got != "这条历史消息包含测试残留或乱码，已在当前工作区隐藏。" {
@@ -282,13 +282,13 @@ func TestStateEndpointSanitizesCustomerVisibleResidue(t *testing.T) {
 	if got := payload.Runs[0].WorktreePath; got != "当前 worktree 路径正在整理中。" {
 		t.Fatalf("run worktree path = %q, want sanitized fallback", got)
 	}
-	if got := payload.Runs[0].NextAction; got != "等待当前执行真相同步。" {
+	if got := payload.Runs[0].NextAction; got != "等待当前执行更新。" {
 		t.Fatalf("run nextAction = %q, want sanitized fallback", got)
 	}
 	if got := payload.Runtimes[0].WorkspaceRoot; got != "当前 runtime 工作区路径已隐藏。" {
 		t.Fatalf("runtime workspace root = %q, want sanitized fallback", got)
 	}
-	if got := payload.DirectMessages[0].Summary; got != "当前私聊摘要正在整理中。" {
+	if got := payload.DirectMessages[0].Summary; got != "当前私聊摘要还没同步。" {
 		t.Fatalf("direct message summary = %q, want sanitized fallback", got)
 	}
 	if got := payload.DirectMessageMessages["dm-e2e"][0].Message; got != "这条历史消息包含测试残留或乱码，已在当前工作区隐藏。" {

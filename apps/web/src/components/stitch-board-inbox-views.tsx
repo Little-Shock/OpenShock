@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { DestructiveGuardCard } from "@/components/destructive-guard-views";
 import { QuickSearchSurface, StitchSidebar, StitchTopBar, WorkspaceStatusStrip } from "@/components/stitch-shell-primitives";
-import { buildBoardColumns } from "@/lib/phase-zero-helpers";
+import { buildBoardColumns, governanceSuggestedHandoffHrefLabel } from "@/lib/phase-zero-helpers";
 import {
   type AgentHandoff,
   type ApprovalCenterItem,
@@ -35,19 +35,6 @@ function inboxKindLabel(kind: InboxItem["kind"]) {
       return "评审";
     default:
       return "状态";
-  }
-}
-
-function mailboxKindLabel(kind?: AgentHandoff["kind"]) {
-  switch (kind) {
-    case "governed":
-      return "自动交接";
-    case "delivery-closeout":
-      return "交付收尾";
-    case "delivery-reply":
-      return "收尾回复";
-    default:
-      return "手动交接";
   }
 }
 
@@ -221,10 +208,6 @@ function decisionTone(decision: InboxDecision) {
     default:
       return "bg-white";
   }
-}
-
-function governedCloseoutLabel(href: string) {
-  return href.startsWith("/pull-requests/") ? "打开交付详情" : "查看交付结果";
 }
 
 function signalIcon(kind: InboxItem["kind"]) {
@@ -483,7 +466,7 @@ export function StitchBoardView() {
           <StitchTopBar
             eyebrow="任务板"
             title="任务板"
-            description="这里只看优先级和推进状态，真正的讨论、执行和追问都回到讨论间。"
+            description="只保留优先级和推进状态，真正的讨论、执行和追问都回到讨论间。"
             searchPlaceholder="搜索事项 / 讨论 / 智能体"
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
           />
@@ -496,10 +479,10 @@ export function StitchBoardView() {
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
                     {sourceRoom
-                      ? `当前从 ${sourceRoom.title} 回到任务板排优先级，处理完可以直接回讨论继续推进。`
+                      ? `来自 ${sourceRoom.title}。排完优先级就回去。`
                       : sourceIssue
-                        ? `当前从 ${sourceIssue.key} 进入任务板，处理完可以直接回原事项继续。`
-                        : "当前任务板带着来源上下文打开，处理完请直接回原页面。"}
+                        ? `来自 ${sourceIssue.key}。排完优先级就回原事项。`
+                        : "带着来源上下文进入。排完优先级就回去。"}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -553,7 +536,7 @@ export function StitchBoardView() {
               ) : error ? (
                 <SurfaceStateMessage title="任务板同步失败" message={error} />
               ) : liveIssues.length === 0 ? (
-                <SurfaceStateMessage title="当前还没有事项" message="先新建一条事项，或从讨论间带着上下文回到这里排优先级。" />
+                <SurfaceStateMessage title="暂无事项" message="先新建事项，或回讨论间排优先级。" />
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                   {displayColumns.map((column) => (
@@ -605,7 +588,7 @@ export function StitchBoardView() {
                             </p>
                             <div className="mt-4 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.62)]">
                               <span className="rounded-full border border-[var(--shock-ink)] bg-[#f7f7f7] px-2 py-1">
-                                负责人 {card.owner}
+                                当前处理人 {card.owner}
                               </span>
                             </div>
                             <div className="mt-4 flex flex-wrap gap-2">
@@ -638,9 +621,7 @@ export function StitchBoardView() {
                 <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">快速新建</p>
                   <h3 className="mt-2 font-display text-[24px] font-bold leading-none">起一条新事项</h3>
-                  <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">
-                    先把事项建出来，再进入讨论间继续沟通、拆解和交付。
-                  </p>
+                  <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">先起事项，再去讨论间推进。</p>
                   <div className="mt-4 space-y-3">
                     <input data-testid="board-create-issue-title" value={title} onChange={(event) => setTitle(event.target.value)} disabled={!canCreateIssue} className="w-full rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="事项标题" />
                     <textarea data-testid="board-create-issue-summary" value={summary} onChange={(event) => setSummary(event.target.value)} disabled={!canCreateIssue} className="min-h-[120px] w-full rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="一句话说明要推进什么" />
@@ -692,7 +673,7 @@ export function StitchInboxView() {
   const [composeFromAgentId, setComposeFromAgentId] = useState("");
   const [composeToAgentId, setComposeToAgentId] = useState("");
   const [composeTitle, setComposeTitle] = useState("把当前任务交给下一位智能体");
-  const [composeSummary, setComposeSummary] = useState("请继续处理这条任务，并在交接箱里更新进展或结果。");
+  const [composeSummary, setComposeSummary] = useState("处理这条任务，并在交接箱回写进展。");
   const [manualComposeExpanded, setManualComposeExpanded] = useState(false);
   const [creatingHandoff, setCreatingHandoff] = useState(false);
   const [handoffNotes, setHandoffNotes] = useState<Record<string, string>>({});
@@ -721,7 +702,7 @@ export function StitchInboxView() {
         fromAgentId: governedSuggestion.fromAgentId ?? "",
         toAgentId: governedSuggestion.toAgentId ?? "",
         title: governedSuggestion.draftTitle ?? "把当前流程交给下一位智能体",
-        summary: governedSuggestion.draftSummary ?? "请按当前分工继续推进这条任务。",
+        summary: governedSuggestion.draftSummary ?? "按当前分工推进。",
       };
     }
     const room = state.rooms.find((candidate) => candidate.id === roomId);
@@ -734,7 +715,7 @@ export function StitchInboxView() {
       fromAgentId,
       toAgentId,
       title: "把当前任务交给下一位智能体",
-      summary: "请继续处理这条任务，并在交接箱里更新进展或结果。",
+      summary: "处理这条任务，并在交接箱回写进展。",
     };
   }, [governedSuggestion.draftSummary, governedSuggestion.draftTitle, governedSuggestion.fromAgentId, governedSuggestion.roomId, governedSuggestion.status, governedSuggestion.toAgentId, state.agents, state.rooms]);
 
@@ -757,7 +738,7 @@ export function StitchInboxView() {
     setComposeFromAgentId(governedSuggestion.fromAgentId ?? "");
     setComposeToAgentId(governedSuggestion.toAgentId ?? "");
     setComposeTitle(governedSuggestion.draftTitle ?? "把当前流程交给下一位智能体");
-    setComposeSummary(governedSuggestion.draftSummary ?? "请按当前分工继续推进这条任务。");
+    setComposeSummary(governedSuggestion.draftSummary ?? "按当前分工推进。");
   }
 
   function governedComposeInput() {
@@ -915,7 +896,7 @@ export function StitchInboxView() {
     try {
       await createHandoff(input);
       setComposeTitle("把当前任务交给下一位智能体");
-      setComposeSummary("请继续处理这条任务，并在交接箱里更新进展或结果。");
+      setComposeSummary("处理这条任务，并在交接箱回写进展。");
     } catch (handoffError) {
       setMailboxError({
         id: "compose",
@@ -1053,8 +1034,8 @@ export function StitchInboxView() {
             title={mailboxSurfaceActive ? "交接" : "收件箱"}
             description={
               mailboxSurfaceActive
-                ? "这里集中处理需要继续交接的事项。"
-                : "这里集中处理需要人工判断的提醒和待办。"
+                ? "待跟进交接。"
+                : "待拍板提醒。"
             }
             searchPlaceholder={mailboxSurfaceActive ? "搜索交接 / 讨论间 / 智能体" : "搜索审批 / 评审 / 讨论间"}
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
@@ -1065,15 +1046,15 @@ export function StitchInboxView() {
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
                   <div>
                     <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                      {mailboxSurfaceActive ? "交接列表" : "待处理列表"}
+                      {mailboxSurfaceActive ? "交接" : "待处理"}
                     </p>
                     <p className="mt-2 font-display text-[22px] font-bold">
-                      {mailboxSurfaceActive ? "先处理交接，再回到讨论间继续" : "先集中处理需要判断的事项"}
+                      {mailboxSurfaceActive ? "先处理交接" : "先处理待判断事项"}
                     </p>
                     <p className="mt-2 max-w-2xl text-[12px] leading-5 text-[color:rgba(24,20,14,0.62)]">
                       {mailboxSurfaceActive
-                        ? "这里显示需要继续交接和跟进的内容。"
-                        : "这里显示需要人工决定的审批、阻塞和评审提醒。"}
+                        ? "待跟进交接。"
+                        : "审批、阻塞和评审提醒。"}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1126,9 +1107,7 @@ export function StitchInboxView() {
                       <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">移动端提醒</p>
                       
                       <h2 className="mt-2 font-display text-[22px] font-bold leading-6">手机端先看收件箱。</h2>
-                      <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">
-                        手机端只保留待处理、未读和阻塞提醒，以及直接处理动作。更完整的设置仍在设置页。
-                      </p>
+                      <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">手机端先处理待处理、未读和阻塞；更完整的设置在设置页。</p>
                     </div>
                     <Link
                       href="/settings"
@@ -1150,9 +1129,9 @@ export function StitchInboxView() {
                 ) : error ? (
                   <SurfaceStateMessage title="收件箱同步失败" message={error} />
                 ) : approvalCenterError ? (
-                  <SurfaceStateMessage title="待处理列表同步失败" message={approvalCenterError} />
+                  <SurfaceStateMessage title="待处理同步失败" message={approvalCenterError} />
                 ) : openSignals.length === 0 ? (
-                  <SurfaceStateMessage title="当前没有待处理提醒" message="现在没有需要人工判断的事项。" />
+                  <SurfaceStateMessage title="暂无待处理提醒" message="现在没有要你处理的事项。" />
                 ) : filteredSignals.length === 0 ? (
                   <SurfaceStateMessage title="当前筛选下没有结果" message="换个筛选试试。" />
                 ) : (
@@ -1363,7 +1342,7 @@ export function StitchInboxView() {
                     {centerLoading ? (
                       <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">正在同步最近更新。</p>
                     ) : recentSignals.length === 0 ? (
-                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">当前还没有最近更新。</p>
+                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">暂无最近更新。</p>
                     ) : (
                       recentSignals.slice(0, 3).map((item) => (
                         <article
@@ -1388,11 +1367,9 @@ export function StitchInboxView() {
                 <div className="hidden md:block">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">交接记录</p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">交接</p>
                     <h2 className="mt-2 font-display text-[20px] font-bold">当前交接</h2>
-                    <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
-                      这里集中显示每一条交接的状态、说明和后续动作。
-                    </p>
+                    <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">每条交接的状态和动作。</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <span
@@ -1471,7 +1448,8 @@ export function StitchInboxView() {
                                   data-testid="mailbox-compose-governed-route-focus"
                                   className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px]"
                                 >
-                                  打开交接
+                                  {governedSuggestion.hrefLabel?.trim() ||
+                                    governanceSuggestedHandoffHrefLabel(governedSuggestion.status, governedSuggestion.href)}
                                 </Link>
                               ) : null}
                               {governedSuggestion.status === "done" && governedSuggestion.href ? (
@@ -1480,7 +1458,8 @@ export function StitchInboxView() {
                                   data-testid="mailbox-compose-governed-route-closeout"
                                   className="border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[10px]"
                                 >
-                                  {governedCloseoutLabel(governedSuggestion.href)}
+                                  {governedSuggestion.hrefLabel?.trim() ||
+                                    governanceSuggestedHandoffHrefLabel(governedSuggestion.status, governedSuggestion.href)}
                                 </Link>
                               ) : null}
                             </div>
@@ -1506,9 +1485,7 @@ export function StitchInboxView() {
                               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                                 手动改写
                               </p>
-                              <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
-                                自动建议已经覆盖默认 source / target / 说明；只有需要偏离治理建议时再展开手动表单。
-                              </p>
+                              <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">自动建议已覆盖默认路由；只有要改写时再展开。</p>
                             </div>
                             <button
                               type="button"
@@ -1590,7 +1567,7 @@ export function StitchInboxView() {
                               disabled={!canManageMailbox}
                               onChange={(event) => setComposeSummary(event.target.value)}
                               className="mt-2 min-h-[132px] w-full border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none disabled:opacity-60"
-                              placeholder="把交接背景写清楚"
+                              placeholder="写清交接背景"
                             />
                           </label>
                           <button
@@ -1635,9 +1612,7 @@ export function StitchInboxView() {
                             批量处理
                           </p>
                           <h3 className="mt-2 font-display text-[18px] font-bold">批量处理当前交接</h3>
-                          <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
-                            先勾选多条交接，再统一执行接手、留言、阻塞或完成。
-                          </p>
+                          <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">先勾选多条交接，再统一接手、留言、阻塞或完成。</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <span
@@ -1674,7 +1649,7 @@ export function StitchInboxView() {
                             disabled={!canManageMailbox}
                             onChange={(event) => setMailboxBatchNote(event.target.value)}
                             className="min-h-[108px] w-full border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none disabled:opacity-60"
-                            placeholder="批量阻塞或留言时，会把这段说明写入所有选中的交接。"
+                            placeholder="这段话会写入所有选中的交接。"
                           />
                           <label className="block">
                             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
@@ -1703,7 +1678,7 @@ export function StitchInboxView() {
                             ))}
                             {selectedMailboxHandoffs.length === 0 ? (
                               <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.56)]">
-                                还没有选中交接。先从右侧列表勾选。
+                                先从右侧勾选交接。
                               </span>
                             ) : null}
                           </div>
@@ -1748,9 +1723,9 @@ export function StitchInboxView() {
                       </div>
                     </div>
                     {loading ? (
-                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">正在同步交接记录。</p>
+                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">正在同步交接。</p>
                     ) : orderedMailboxHandoffs.length === 0 ? (
-                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">当前还没有交接项；创建后会直接显示在这里。</p>
+                      <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">暂无交接项。</p>
                     ) : (
                       orderedMailboxHandoffs.map((handoff) => {
                         const room = findRoomForHandoff(handoff);
@@ -1811,7 +1786,7 @@ export function StitchInboxView() {
                                   data-testid={`mailbox-kind-${handoff.id}`}
                                   className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em]"
                                 >
-                                  {mailboxKindLabel(handoff.kind)}
+                                  {handoff.kindLabel || "手动交接"}
                                 </span>
                                 {highlightedHandoffId === handoff.id ? (
                                   <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em]">
@@ -1901,7 +1876,7 @@ export function StitchInboxView() {
                                     href={`/inbox?handoffId=${handoff.id}&roomId=${handoff.roomId}`}
                                     className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px]"
                                   >
-                                    打开收件箱
+                                    收件箱定位
                                   </Link>
                                 )}
                                 <Link
@@ -1931,7 +1906,7 @@ export function StitchInboxView() {
                                     href={`/inbox?handoffId=${parentHandoff.id}&roomId=${parentHandoff.roomId}`}
                                     className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px]"
                                   >
-                                    打开主交接
+                                    主交接详情
                                   </Link>
                                 ) : null}
                                 {responseHandoff ? (
@@ -1940,7 +1915,7 @@ export function StitchInboxView() {
                                     href={`/inbox?handoffId=${responseHandoff.id}&roomId=${responseHandoff.roomId}`}
                                     className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px]"
                                   >
-                                    打开回复
+                                    回复详情
                                   </Link>
                                 ) : null}
                                 {canResumeParent ? (
@@ -1958,7 +1933,7 @@ export function StitchInboxView() {
 
                               <div className="mt-5 border-2 border-[var(--shock-ink)] bg-white p-3">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接记录</p>
+                                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接</p>
                                   {inboxItem ? (
                                     <span className="font-mono text-[10px] text-[color:rgba(24,20,14,0.56)]">
                                       收件箱：{inboxKindLabel(inboxItem.kind)}
@@ -2092,7 +2067,7 @@ export function StitchInboxView() {
                   {centerLoading ? (
                     <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">正在同步最近更新。</p>
                   ) : recentSignals.length === 0 ? (
-                    <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">当前还没有最近更新。</p>
+                    <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">暂无最近更新。</p>
                   ) : (
                     recentSignals.slice(0, 6).map((item) => (
                       <article

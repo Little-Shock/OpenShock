@@ -285,7 +285,7 @@ export function BranchHeadTruthConsole() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">仓库对齐</p>
-          <h3 className="mt-2 font-display text-3xl font-bold">查看仓库、GitHub 和本地运行环境是否一致</h3>
+          <h3 className="mt-2 font-display text-3xl font-bold">确认仓库、GitHub 和本地运行环境是否一致</h3>
         </div>
         <span
           data-testid="setup-branch-head-truth-status"
@@ -336,7 +336,7 @@ export function BranchHeadTruthConsole() {
             {formatBranchHead(snapshot?.liveService.branch, snapshot?.liveService.head, snapshot?.liveService.managed ? "正在读取实时服务分支" : "未托管")}
           </p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-            {snapshot?.liveService.managed ? valueOrFallback(snapshot?.liveService.owner, "未知负责人") : valueOrFallback(snapshot?.liveService.status, "未托管")}
+            {snapshot?.liveService.managed ? valueOrFallback(snapshot?.liveService.owner, "未知处理人") : valueOrFallback(snapshot?.liveService.status, "未托管")}
           </p>
         </div>
       </div>

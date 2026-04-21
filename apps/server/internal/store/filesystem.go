@@ -26,7 +26,7 @@ func ensureWorkspaceScaffold(root string, agents []Agent, existing []MemoryArtif
 		content string
 	}{
 		{scope: "workspace", kind: "memory", path: filepath.Join(root, "MEMORY.md"), summary: "工作区级长期记忆。", content: "# OpenShock Workspace Memory\n\n- 这里记录工作区级长期上下文、偏好和已确认的约束。\n"},
-		{scope: "workspace", kind: "notes", path: filepath.Join(root, "notes", "channels.md"), summary: "频道规则与默认语气。", content: "# Channels\n\n- `#all`: 轻松聊天，不直接在这里干活。\n- `#roadmap`: 路线与优先级讨论。\n- `#announcements`: 广播，不扩散讨论。\n"},
+		{scope: "workspace", kind: "notes", path: filepath.Join(root, "notes", "channels.md"), summary: "频道规则与默认语气。", content: "# Channels\n\n- `#all`: 轻松聊天，正式工作升级为讨论间。\n- `#roadmap`: 路线与优先级讨论。\n- `#announcements`: 广播，不扩散讨论。\n"},
 		{scope: "workspace", kind: "notes", path: filepath.Join(root, "notes", "operating-rules.md"), summary: "运行与协作约束。", content: "# Operating Rules\n\n- Agent 是一等公民。\n- 真相通过 Run、PR、Inbox 和文件记忆可见。\n- 高风险操作必须升级审批。\n"},
 		{scope: "workspace", kind: "notes", path: filepath.Join(root, "notes", "skills.md"), summary: "Agent 可继承的技能约束。", content: "# Skills\n\n- 记录团队默认技能与装配规则。\n"},
 		{scope: "workspace", kind: "notes", path: filepath.Join(root, "notes", "policies.md"), summary: "团队可继承的 policy 约束。", content: "# Policies\n\n- 记录经人工确认后生效的团队规则。\n"},

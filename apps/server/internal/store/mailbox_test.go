@@ -30,6 +30,9 @@ func TestCreateHandoffPersistsMailboxInboxAndRoomTruth(t *testing.T) {
 	if handoff.Status != "requested" || handoff.ID == "" {
 		t.Fatalf("handoff = %#v, want requested status with generated id", handoff)
 	}
+	if handoff.KindLabel != "手动交接" {
+		t.Fatalf("handoff kind label = %q, want manual kind label", handoff.KindLabel)
+	}
 	if len(nextState.Mailbox) == 0 || nextState.Mailbox[0].ID != handoff.ID {
 		t.Fatalf("mailbox = %#v, want new handoff at front", nextState.Mailbox)
 	}
@@ -568,8 +571,8 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 		t.Fatalf("governance stats = %#v, want 1 open handoff", nextState.Workspace.Governance.Stats)
 	}
 	if len(nextState.Workspace.Governance.EscalationSLA.Queue) == 0 ||
-		nextState.Workspace.Governance.EscalationSLA.Queue[0].Source != "mailbox handoff" {
-		t.Fatalf("escalation queue after create = %#v, want mailbox handoff entry", nextState.Workspace.Governance.EscalationSLA)
+		nextState.Workspace.Governance.EscalationSLA.Queue[0].Source != "交接" {
+		t.Fatalf("escalation queue after create = %#v, want handoff entry", nextState.Workspace.Governance.EscalationSLA)
 	}
 	handoffStep := findGovernanceStep(nextState.Workspace.Governance.Walkthrough, "handoff")
 	if handoffStep == nil || handoffStep.Status != "active" {
@@ -587,12 +590,12 @@ func TestMailboxLifecycleHydratesWorkspaceGovernance(t *testing.T) {
 	if blockedState.Workspace.Governance.Stats.BlockedEscalations == 0 {
 		t.Fatalf("blocked governance stats = %#v, want blocked escalation count", blockedState.Workspace.Governance.Stats)
 	}
-	if findEscalationQueueEntryBySource(blockedState.Workspace.Governance.EscalationSLA.Queue, "inbox blocker") == nil {
-		t.Fatalf("blocked escalation queue = %#v, want inbox blocker entry", blockedState.Workspace.Governance.EscalationSLA.Queue)
+	if findEscalationQueueEntryBySource(blockedState.Workspace.Governance.EscalationSLA.Queue, "收件箱") == nil {
+		t.Fatalf("blocked escalation queue = %#v, want inbox entry", blockedState.Workspace.Governance.EscalationSLA.Queue)
 	}
 	runtimeRollup := findEscalationRoomRollupByRoomID(blockedState.Workspace.Governance.EscalationSLA.Rollup, "room-runtime")
 	if runtimeRollup == nil || runtimeRollup.Status != "blocked" || runtimeRollup.EscalationCount != 2 || runtimeRollup.BlockedCount != 2 {
-		t.Fatalf("runtime escalation rollup after block = %#v, want blocked rollup with handoff + inbox blocker", blockedState.Workspace.Governance.EscalationSLA.Rollup)
+		t.Fatalf("runtime escalation rollup after block = %#v, want blocked rollup with handoff + inbox entry", blockedState.Workspace.Governance.EscalationSLA.Rollup)
 	}
 	reviewerLane := findGovernanceLane(blockedState.Workspace.Governance.TeamTopology, "reviewer")
 	if reviewerLane == nil || reviewerLane.Status != "blocked" {
@@ -670,7 +673,7 @@ func TestGovernanceSuggestedHandoffTracksDefaultRoleRoute(t *testing.T) {
 	}
 
 	activeSuggestion := afterCreate.Workspace.Governance.RoutingPolicy.SuggestedHandoff
-	if activeSuggestion.Status != "active" || activeSuggestion.HandoffID != handoff.ID || !strings.Contains(activeSuggestion.Reason, "不要重复创建") {
+	if activeSuggestion.Status != "active" || activeSuggestion.HandoffID != handoff.ID || !strings.Contains(activeSuggestion.Reason, "避免重复创建") {
 		t.Fatalf("active governed handoff = %#v, want active suggestion pointing at the open handoff", activeSuggestion)
 	}
 
@@ -694,7 +697,7 @@ func TestGovernanceSuggestedHandoffTracksDefaultRoleRoute(t *testing.T) {
 	if blockedNextSuggestion.Status != "blocked" ||
 		blockedNextSuggestion.FromLaneLabel != "Reviewer" ||
 		blockedNextSuggestion.ToLaneLabel != "QA" ||
-		!strings.Contains(blockedNextSuggestion.Reason, "缺少可映射") {
+		!strings.Contains(blockedNextSuggestion.Reason, "还没有默认智能体") {
 		t.Fatalf("post-complete governed handoff = %#v, want blocked reviewer -> QA route due to missing target agent", blockedNextSuggestion)
 	}
 }
@@ -1048,6 +1051,7 @@ func TestDeliveryDelegationHandoffLifecycleSyncsBackToPullRequest(t *testing.T) 
 	responseHandoff := findHandoffByID(blockedState.Mailbox, blockedDetail.Delivery.Delegation.ResponseHandoffID)
 	if responseHandoff == nil ||
 		responseHandoff.Kind != handoffKindDeliveryReply ||
+		responseHandoff.KindLabel != "补充回复" ||
 		responseHandoff.ParentHandoffID != delegatedHandoffID ||
 		responseHandoff.FromAgentID != delegatedHandoff.ToAgentID ||
 		responseHandoff.ToAgentID != delegatedHandoff.FromAgentID {
@@ -2640,9 +2644,12 @@ func TestAutoCompleteDeliveryDelegationKeepsBlockedRuntimeRoomHotButMarksRouteDo
 		runtimeFinalRollup.Status != "blocked" ||
 		runtimeFinalRollup.BlockedCount < 1 ||
 		runtimeFinalRollup.NextRouteStatus != "done" ||
-		runtimeFinalRollup.NextRouteLabel != "delivery closeout" ||
+		runtimeFinalRollup.NextRouteLabel != "交付详情" ||
 		!strings.Contains(runtimeFinalRollup.NextRouteHref, "/pull-requests/pr-runtime-18") {
 		t.Fatalf("final runtime rollup = %#v, want blocked room kept hot with done delivery route", finalState.Workspace.Governance.EscalationSLA.Rollup)
+	}
+	if runtimeFinalRollup.NextRouteHrefLabel != "交付详情" {
+		t.Fatalf("final runtime rollup next-route action = %#v, want explicit delivery detail CTA", runtimeFinalRollup)
 	}
 	finalSecondRoomRollup := findEscalationRoomRollupByRoomID(finalState.Workspace.Governance.EscalationSLA.Rollup, secondRoomID)
 	if finalSecondRoomRollup == nil || finalSecondRoomRollup.Status != "active" || finalSecondRoomRollup.EscalationCount != 1 {

@@ -774,7 +774,7 @@ export function LiveMemoryView() {
             </span>
           </div>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
-            这里可以查看资料内容、调整来源，并预览下一次任务会带上哪些上下文。
+            资料、来源和下一次任务预览。
           </p>
 
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-1">
@@ -787,7 +787,7 @@ export function LiveMemoryView() {
 
           <div className="mt-4 space-y-2">
             {memory.length === 0 ? (
-              <EmptyState title="还没有资料" message="等同步完成后，这里会显示已有资料和历史记录。" />
+              <EmptyState title="暂无资料" message="同步后会显示资料和历史。" />
             ) : (
               memory.map((artifact) => {
                 const active = artifact.id === selectedArtifact?.id;
@@ -901,7 +901,7 @@ export function LiveMemoryView() {
               <div className="rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
                 <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">版本差异</p>
                 <p className="mt-3 text-sm leading-6">
-                  {previousVersion ? `v${previousVersion.version} -> v${latestVersion?.version ?? "?"}` : "只有基线版本，还没有上一版可对比。"}
+                  {previousVersion ? `v${previousVersion.version} -> v${latestVersion?.version ?? "?"}` : "暂无上一版可对比。"}
                 </p>
                 <p className="mt-2 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]">
                   {diff.summary}
@@ -978,7 +978,7 @@ export function LiveMemoryView() {
                   </span>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
-                  不会删除历史，只是不再把这条内容带进后续任务。
+                  不会删历史，只是不再带进后续任务。
                 </p>
                 {selectedArtifact?.forgotten ? (
                   <div className="mt-4 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-3 py-3 text-sm leading-6 text-white">
@@ -1015,14 +1015,14 @@ export function LiveMemoryView() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">记忆来源</p>
-                <h2 className="mt-1.5 font-display text-[24px] font-bold leading-7">管理资料来源</h2>
+                <h2 className="mt-1.5 font-display text-[24px] font-bold leading-7">资料来源</h2>
               </div>
               <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
                 {centerLoading ? "同步中" : `${activeProviders} 可用 / ${degradedProviders} 异常`}
               </span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-              可以在这里管理本地文件、搜索索引和外部记忆来源。
+              本地文件、搜索索引和外部记忆来源。
             </p>
 
             <div className="mt-5 space-y-4">
@@ -1087,7 +1087,7 @@ export function LiveMemoryView() {
                     <div className="mt-4 grid gap-2 md:grid-cols-2">
                       <StatusRow
                         label="当前状态"
-                        value={valueOrFallback(provider.lastSummary, "还没有状态说明")}
+                        value={valueOrFallback(provider.lastSummary, "暂无状态说明")}
                         tone={provider.status === "degraded" ? "pink" : provider.status === "healthy" ? "lime" : "white"}
                         testID={`memory-provider-health-summary-${provider.id}`}
                       />
@@ -1130,7 +1130,7 @@ export function LiveMemoryView() {
                       <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
                         {provider.failureCount && provider.failureCount > 0
                           ? `已连续 ${provider.failureCount} 次异常。`
-                          : "当前没有连续异常记录。"}
+                          : "目前没有连续异常。"}
                       </p>
                     </div>
 
@@ -1252,7 +1252,7 @@ export function LiveMemoryView() {
                       </div>
                       <div className="mt-3 space-y-2" data-testid={`memory-provider-activity-${provider.id}`}>
                         {provider.activity.length === 0 ? (
-                          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">还没有检查记录。可以先运行一次检查或恢复。</p>
+                          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">暂无检查记录。先运行一次检查或恢复。</p>
                         ) : (
                           provider.activity.map((event) => (
                             <div
@@ -1320,7 +1320,7 @@ export function LiveMemoryView() {
             {!canMutate ? (
               <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
                 <p className="font-mono text-[11px] uppercase tracking-[0.16em]">
-                  当前账号没有修改权限，只能查看。
+                  当前账号只读，不能修改。
                 </p>
               </div>
             ) : null}
@@ -1594,7 +1594,7 @@ export function LiveMemoryView() {
                     </div>
                   </>
                 ) : (
-                  <EmptyState title="预览暂不可用" message="等同步完成后，这里会显示下一次任务会带上的内容。" />
+                  <EmptyState title="预览暂不可用" message="同步后会显示下一次任务预览。" />
                 )}
               </div>
             </div>
@@ -1633,8 +1633,8 @@ export function LiveMemoryView() {
                   center.cleanup.due && center.cleanup.dueCount > 0
                     ? `有 ${center.cleanup.dueCount} 条待清理项，建议现在执行。`
                     : center.cleanup.nextRunAt
-                      ? `当前没有待清理项，下一次建议检查时间为 ${formatTimestamp(center.cleanup.nextRunAt)}。`
-                      : "当前没有待清理项。"
+                      ? `目前没有待清理项，下一次建议检查时间为 ${formatTimestamp(center.cleanup.nextRunAt)}。`
+                      : "目前没有待清理项。"
                 }
                 tone={center.cleanup.due ? "yellow" : "white"}
                 testID="memory-cleanup-schedule"
@@ -1668,7 +1668,7 @@ export function LiveMemoryView() {
               <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4">
                 <StatusRow
                   label="摘要"
-                  value={valueOrFallback(center.cleanup.lastSummary, "还没有清理记录")}
+                  value={valueOrFallback(center.cleanup.lastSummary, "暂无清理记录")}
                   tone={cleanupTone(center.cleanup.lastStatus)}
                   testID="memory-cleanup-last-summary"
                 />
@@ -1685,7 +1685,7 @@ export function LiveMemoryView() {
                 <div className="mt-3 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">处理建议</p>
                   <p data-testid="memory-cleanup-last-recovery" className="mt-3 text-sm leading-6">
-                    {valueOrFallback(center.cleanup.lastRecovery, "当前无需处理，已有内容可以继续使用。")}
+                    {valueOrFallback(center.cleanup.lastRecovery, "当前无需处理。")}
                   </p>
                 </div>
               </div>
@@ -1703,11 +1703,11 @@ export function LiveMemoryView() {
 
                 <div className="mt-4 space-y-3">
                   {center.cleanup.ledger.length === 0 ? (
-                    <EmptyState
-                      title="还没有清理记录"
-                      message="运行一次清理后，这里会显示处理结果。"
-                      testID="memory-cleanup-empty"
-                    />
+	                    <EmptyState
+	                      title="暂无清理记录"
+	                      message="运行清理后会显示结果。"
+	                      testID="memory-cleanup-empty"
+	                    />
                   ) : (
                     center.cleanup.ledger.map((entry) => (
                       <div key={entry.id} className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4">
@@ -1751,7 +1751,7 @@ export function LiveMemoryView() {
               </span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-              把有价值的内容整理成技能或规则，方便后续任务直接使用。
+              把有价值的内容整理成技能或规则。
             </p>
 
             <div className="mt-5 grid gap-4 xl:grid-cols-[0.9fr_minmax(0,1.1fr)]">
@@ -1808,7 +1808,7 @@ export function LiveMemoryView() {
                     onChange={(event) => setPromotionRationale(event.target.value)}
                     disabled={!canMutate || busyAction !== null}
                     className="min-h-[140px] w-full rounded-[10px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm leading-6 outline-none disabled:opacity-60"
-                    placeholder="说明为什么这条内容值得长期复用。"
+                    placeholder="说明为什么值得长期复用。"
                   />
                 </div>
 
@@ -1840,7 +1840,7 @@ export function LiveMemoryView() {
 
                 <div className="mt-4 space-y-3">
                   {center.promotions.length === 0 ? (
-                    <EmptyState title="还没有审核项" message="先从左侧内容发起一条技能或规则申请。" testID="memory-promotion-empty" />
+                    <EmptyState title="暂无审核项" message="先从左侧内容发起一条技能或规则申请。" testID="memory-promotion-empty" />
                   ) : (
                     center.promotions.map((promotion) => {
                       const slug = toTestID(promotion.title);
@@ -1867,7 +1867,7 @@ export function LiveMemoryView() {
                             </span>
                           </div>
 
-                          <p className="mt-3 text-sm leading-6">{promotion.rationale || "没有补充说明。"}</p>
+                          <p className="mt-3 text-sm leading-6">{promotion.rationale || "暂无补充说明。"}</p>
                           <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.62)]">
                             提交人：{promotion.proposedBy} / {formatTimestamp(promotion.proposedAt)}
                           </p>
@@ -1927,7 +1927,7 @@ export function LiveMemoryView() {
 
             <div className="mt-5 space-y-3">
               {versions.length === 0 ? (
-                <EmptyState title="还没有历史版本" message="等同步完成后，这里会显示版本变化。" />
+	                <EmptyState title="暂无历史版本" message="同步后会显示版本变化。" />
               ) : (
                 [...versions].reverse().map((version) => (
                   <div key={`${version.version}-${version.updatedAt}`} className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">

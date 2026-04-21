@@ -599,15 +599,15 @@ try {
   await dirtyPage.goto(`${webURL}/agents`, { waitUntil: "load" });
   await dirtyPage.getByTestId("orchestration-governance-summary").waitFor({ state: "visible" });
   assert(
-    (await readText(dirtyPage, "orchestration-governance-template")) === "当前治理链正在整理中。",
+    (await readText(dirtyPage, "orchestration-governance-template")) === "当前协作流程正在整理中。",
     "dirty governance label should fail closed in browser adapter"
   );
   assert(
-    (await readText(dirtyPage, "orchestration-governance-summary")) === "当前多智能体治理摘要正在整理中。",
+    (await readText(dirtyPage, "orchestration-governance-summary")) === "当前协作摘要正在整理中。",
     "dirty governance summary should fail closed in browser adapter"
   );
   assert(
-    (await readText(dirtyPage, "orchestration-governance-response-aggregation")) === "等待当前治理链收口。",
+    (await readText(dirtyPage, "orchestration-governance-response-aggregation")) === "等待当前事项收口。",
     "dirty response aggregation should fail closed in browser adapter"
   );
   await capture(dirtyPage, "dirty-projection-fail-closed");

@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
 import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
+import { resolveProvidedServiceTargets } from "./lib/headed-service-targets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -20,6 +21,7 @@ const evidenceRoot =
   (await mkdtemp(path.join(os.tmpdir(), "openshock-room-workbench-")));
 const artifactsDir = path.resolve(evidenceRoot);
 const parsedArgs = parseArgs(process.argv.slice(2));
+const providedServiceTargets = resolveProvidedServiceTargets(process.argv.slice(2));
 const reportPath = parsedArgs.reportPath
   ? path.resolve(projectRoot, parsedArgs.reportPath)
   : path.join(artifactsDir, "report.md");
@@ -167,6 +169,22 @@ async function capture(page, name) {
 }
 
 async function startServices() {
+  if (providedServiceTargets) {
+    if (providedServiceTargets.serverURL) {
+      await waitFor(async () => {
+        const response = await fetch(`${providedServiceTargets.serverURL}/healthz`);
+        return response.ok;
+      }, `external server did not become healthy at ${providedServiceTargets.serverURL}/healthz`);
+    }
+
+    await waitFor(async () => {
+      const response = await fetch(`${providedServiceTargets.webURL}/rooms/room-runtime`);
+      return response.ok;
+    }, `external web did not become ready at ${providedServiceTargets.webURL}/rooms/room-runtime`);
+
+    return providedServiceTargets;
+  }
+
   const workspaceRoot = path.join(artifactsDir, "workspace");
   const statePath = path.join(artifactsDir, "state.json");
   const webPort = await freePort();
@@ -209,7 +227,7 @@ async function startServices() {
     return response.ok;
   }, `web did not become ready at ${webURL}/rooms/room-runtime`);
 
-  return { webURL };
+  return { webURL, serverURL };
 }
 
 async function waitForVisible(locator, message) {
@@ -254,7 +272,7 @@ try {
     "room topic sheet should not keep a generic return-to-chat CTA once the room shell already owns the chat-first return path"
   );
   assert(
-    (await page.getByTestId("room-workbench-topic-panel").getByRole("link", { name: "打开话题页", exact: true }).count()) === 1,
+    (await page.getByTestId("room-workbench-topic-panel").getByRole("link", { name: "话题详情", exact: true }).count()) === 1,
     "room topic sheet should keep the concrete topic-route deep link"
   );
   await capture(page, "room-topic");
