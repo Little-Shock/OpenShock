@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.59
+**版本:** 1.60
 **更新日期:** 2026 年 4 月 21 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -306,3 +306,6 @@
   - 任务板卡片继续做前端减法：每张事项卡只保留 `讨论间` 一个主动作，事项详情改走上下文回跳，不再在卡片上重复渲染第二个 CTA。
   - Agent 档案页继续压短解释文案：文件记忆、凭据范围、沙箱策略、编辑区和下一次执行预览都改成对象 / 结果本身，减少“页面在解释自己”的阅读成本。
   - `headed-board-planning-surface` 和 `headed-website-four-agent-delivery` 已跟随单 CTA 任务板更新断言，负向 DOM 检查确认 board 卡片没有 `board-card-issue-*` 第二按钮，Agent 档案页没有 disabled 假按钮。
+  - `settings` 里的凭证 / 通知支持流继续做减法：`工作区凭证 / 默认策略 / 当前浏览器接收 / 邮件接收 / 接收端列表 / 待发送来源` 这批标题、摘要和空态已改成对象或状态本身，不再反复解释页面怎么工作。
+  - `run sandbox` 这轮顺手补齐了同页真相一致性：权限检查返回后，右侧 `当前判断`、放行条件和 `approval_required -> overridden` 状态现在会立刻读同一份最新 decision，不再出现顶部提示已更新但判断卡还停在旧状态的分裂。
+  - `headed-notification-preference-delivery` 与 `headed-restricted-sandbox-policy` 已再次验证这两条 supporting flow；通知链路覆盖无效邮箱失败后修正恢复，sandbox 链路覆盖 `allowed -> approval_required -> same-target override -> reload persisted`。

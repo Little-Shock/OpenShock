@@ -19,7 +19,7 @@ import {
   permissionStatus,
   permissionStatusSurfaceLabel,
 } from "@/lib/session-authz";
-import type { Run, SandboxActionKind, SandboxProfile } from "@/lib/phase-zero-types";
+import type { Run, SandboxActionKind, SandboxDecision, SandboxProfile } from "@/lib/phase-zero-types";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -91,10 +91,11 @@ export function RunSandboxSurface({ run }: { run: Run }) {
   const [allowedTools, setAllowedTools] = useState((run.sandbox.allowedTools ?? []).join(", "));
   const [actionKind, setActionKind] = useState<SandboxActionKind>("command");
   const [actionTarget, setActionTarget] = useState("");
+  const [currentDecision, setCurrentDecision] = useState<SandboxDecision>(run.sandboxDecision);
   const overrideReady =
-    run.sandboxDecision.status === "approval_required" &&
-    run.sandboxDecision.kind === actionKind &&
-    run.sandboxDecision.target?.trim().toLowerCase() === actionTarget.trim().toLowerCase();
+    currentDecision.status === "approval_required" &&
+    currentDecision.kind === actionKind &&
+    currentDecision.target?.trim().toLowerCase() === actionTarget.trim().toLowerCase();
   const [pendingSave, setPendingSave] = useState(false);
   const [pendingCheck, setPendingCheck] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -108,6 +109,10 @@ export function RunSandboxSurface({ run }: { run: Run }) {
     setAllowedCommands((run.sandbox.allowedCommands ?? []).join(", "));
     setAllowedTools((run.sandbox.allowedTools ?? []).join(", "));
   }, [run.id, run.sandbox.allowedCommands, run.sandbox.allowedHosts, run.sandbox.allowedTools, run.sandbox.profile]);
+
+  useEffect(() => {
+    setCurrentDecision(run.sandboxDecision);
+  }, [run.id, run.sandboxDecision]);
 
   async function handleSave() {
     setPendingSave(true);
@@ -140,7 +145,9 @@ export function RunSandboxSurface({ run }: { run: Run }) {
         target: actionTarget.trim(),
         override,
       });
-      setCheckStatus(sandboxDecisionHeadline(payload.decision ?? run.sandboxDecision));
+      const nextDecision = payload.decision ?? run.sandboxDecision;
+      setCurrentDecision(nextDecision);
+      setCheckStatus(sandboxDecisionHeadline(nextDecision));
     } catch (error) {
       setCheckError(error instanceof Error ? error.message : "权限检查失败");
     } finally {
@@ -153,14 +160,14 @@ export function RunSandboxSurface({ run }: { run: Run }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">执行权限</p>
-          <h3 className="mt-2 font-display text-[24px] font-bold leading-7">这次执行的访问范围</h3>
+          <h3 className="mt-2 font-display text-[24px] font-bold leading-7">本次访问范围</h3>
         </div>
         <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]">
           {sandboxProfileLabel(run.sandbox.profile)}
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
-        当前执行允许访问的主机、命令和工具；如果需要人工放行，判断结果也会保留下来。
+        这里看当前允许的主机、命令和工具，也保留放行判断。
       </p>
 
       <div className="mt-4 grid gap-2 md:grid-cols-4">
@@ -194,7 +201,7 @@ export function RunSandboxSurface({ run }: { run: Run }) {
               </select>
             </label>
             <label className="grid gap-2 text-sm">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em]">允许访问的主机</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em]">允许主机</span>
               <input
                 data-testid="run-detail-sandbox-allowed-hosts"
                 value={allowedHosts}
@@ -205,7 +212,7 @@ export function RunSandboxSurface({ run }: { run: Run }) {
               />
             </label>
             <label className="grid gap-2 text-sm md:col-span-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em]">允许执行的命令</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em]">允许命令</span>
               <input
                 data-testid="run-detail-sandbox-allowed-commands"
                 value={allowedCommands}
@@ -216,7 +223,7 @@ export function RunSandboxSurface({ run }: { run: Run }) {
               />
             </label>
             <label className="grid gap-2 text-sm md:col-span-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em]">允许调用的工具</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em]">允许工具</span>
               <input
                 data-testid="run-detail-sandbox-allowed-tools"
                 value={allowedTools}
@@ -254,22 +261,22 @@ export function RunSandboxSurface({ run }: { run: Run }) {
                 data-testid="run-detail-sandbox-decision-status"
                 className={cn(
                   "rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
-                  sandboxDecisionTone(run.sandboxDecision.status) === "lime" && "bg-[var(--shock-lime)]",
-                  sandboxDecisionTone(run.sandboxDecision.status) === "yellow" && "bg-[var(--shock-yellow)]",
-                  sandboxDecisionTone(run.sandboxDecision.status) === "pink" && "bg-[var(--shock-pink)] text-white",
-                  sandboxDecisionTone(run.sandboxDecision.status) === "white" && "bg-white"
+                  sandboxDecisionTone(currentDecision.status) === "lime" && "bg-[var(--shock-lime)]",
+                  sandboxDecisionTone(currentDecision.status) === "yellow" && "bg-[var(--shock-yellow)]",
+                  sandboxDecisionTone(currentDecision.status) === "pink" && "bg-[var(--shock-pink)] text-white",
+                  sandboxDecisionTone(currentDecision.status) === "white" && "bg-white"
                 )}
               >
-                {sandboxDecisionLabel(run.sandboxDecision.status)}
+                {sandboxDecisionLabel(currentDecision.status)}
               </span>
             </div>
             <div className="mt-3 space-y-2">
-              <StatusRow label="结果" value={sandboxDecisionHeadline(run.sandboxDecision)} tone={sandboxDecisionTone(run.sandboxDecision.status)} />
-              <StatusRow label="原因" value={valueOrPlaceholder(run.sandboxDecision.reason, "当前还没有触发权限检查。")} />
-              <StatusRow label="处理建议" value={valueOrPlaceholder(run.sandboxDecision.retryHint, "当前没有额外处理建议。")} />
+              <StatusRow label="判断" value={sandboxDecisionHeadline(currentDecision)} tone={sandboxDecisionTone(currentDecision.status)} />
+              <StatusRow label="原因" value={valueOrPlaceholder(currentDecision.reason, "尚未检查")} />
+              <StatusRow label="下一步" value={valueOrPlaceholder(currentDecision.retryHint, "暂无建议")} />
               <StatusRow
                 label="处理人"
-                value={valueOrPlaceholder(run.sandboxDecision.overrideBy || run.sandboxDecision.requestedBy, "未记录")}
+                value={valueOrPlaceholder(currentDecision.overrideBy || currentDecision.requestedBy, "未记录")}
               />
             </div>
           </div>
@@ -281,9 +288,7 @@ export function RunSandboxSurface({ run }: { run: Run }) {
                 {canOverride ? permissionLabel("workspace.manage") : `${permissionLabel("workspace.manage")} · ${overrideStatusLabel}`}
               </span>
             </div>
-            <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-              先按操作类型和目标检查权限；只有同一条操作已经进入“需要批准”，且当前成员具备管理权限时，才允许人工放行后重试。
-            </p>
+            <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">先检查这条操作。进入“需要批准”后，具备管理权限的成员才能放行重试。</p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="grid gap-2 text-sm">
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em]">操作类型</span>
@@ -338,7 +343,7 @@ export function RunSandboxSurface({ run }: { run: Run }) {
             {checkError ? <p className="mt-3 text-sm leading-6 text-[color:rgba(163,37,28,0.9)]">{checkError}</p> : null}
             {!overrideReady ? (
               <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                只有当前这条 {sandboxActionKindLabel(actionKind)} / {actionTarget.trim() || "目标"} 已经进入“需要批准”，才会放开人工放行。
+                这条 {sandboxActionKindLabel(actionKind)} / {actionTarget.trim() || "目标"} 进入“需要批准”后，才可人工放行。
               </p>
             ) : null}
             {!canOverride ? (
