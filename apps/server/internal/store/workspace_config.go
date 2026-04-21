@@ -271,6 +271,36 @@ func workspaceOnboardingIsComplete(onboarding WorkspaceOnboardingSnapshot) bool 
 	return false
 }
 
+func workspaceOnboardingHasCompletedStep(onboarding WorkspaceOnboardingSnapshot, step string) bool {
+	target := strings.TrimSpace(step)
+	if target == "" {
+		return false
+	}
+	for _, item := range onboarding.CompletedSteps {
+		if strings.TrimSpace(item) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceOnboardingCanAutoComplete(workspace WorkspaceSnapshot) bool {
+	if workspaceOnboardingIsComplete(workspace.Onboarding) {
+		return true
+	}
+	if !workspaceOnboardingHasCompletedStep(workspace.Onboarding, "template-selected") {
+		return false
+	}
+
+	repoBound := strings.EqualFold(defaultString(workspace.RepoBinding.BindingStatus, workspace.RepoBindingStatus), "bound")
+	authMode := strings.TrimSpace(strings.ToLower(defaultString(workspace.RepoBinding.AuthMode, workspace.RepoAuthMode)))
+	githubReady := authMode != "github-app" || workspace.GitHubInstallation.AppInstalled || workspace.GitHubInstallation.ConnectionReady
+	runtimePaired := strings.EqualFold(strings.TrimSpace(workspace.PairingStatus), workspacePairingPaired)
+	materialized := len(workspace.Onboarding.Materialization.Agents) > 0 && len(workspace.Onboarding.Materialization.Channels) > 0
+
+	return repoBound && githubReady && runtimePaired && materialized
+}
+
 func completionResumeURL(current string) string {
 	trimmed := strings.TrimSpace(current)
 	switch {
@@ -413,7 +443,7 @@ func syncWorkspaceSnapshotDefaults(workspace *WorkspaceSnapshot) {
 	} else {
 		workspace.Onboarding.CompletedSteps = normalizeCompletedSteps(workspace.Onboarding.CompletedSteps, defaultOnboarding.CompletedSteps)
 	}
-	if workspaceOnboardingIsComplete(workspace.Onboarding) {
+	if workspaceOnboardingCanAutoComplete(*workspace) {
 		workspace.Onboarding.Status = workspaceOnboardingDone
 		workspace.Onboarding.CurrentStep = "bootstrap-finished"
 		workspace.Onboarding.CompletedSteps = normalizeCompletedSteps(append(workspace.Onboarding.CompletedSteps, "bootstrap-finished"), defaultOnboarding.CompletedSteps)

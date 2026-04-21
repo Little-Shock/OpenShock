@@ -374,6 +374,7 @@ func (s *Store) UpdateRuntimePairing(req RuntimePairingInput) (State, error) {
 			s.state.Runtimes[index].PairingState = runtimePairingPaired
 		}
 	}
+	syncWorkspaceSnapshotDefaults(&s.state.Workspace)
 
 	now := shortClock()
 	message := fmt.Sprintf("浏览器已完成本地 runtime 配对：%s -> %s", machine, s.state.Workspace.PairedRuntimeURL)
@@ -556,6 +557,7 @@ func (s *Store) selectRuntimeLocked(machine string) (State, error) {
 			s.state.Runtimes[index].PairingState = runtimePairingPaired
 		}
 	}
+	syncWorkspaceSnapshotDefaults(&s.state.Workspace)
 
 	return cloneState(s.state), nil
 }

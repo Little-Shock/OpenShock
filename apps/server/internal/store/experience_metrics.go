@@ -67,7 +67,7 @@ func buildExperienceMetricsSnapshot(snapshot State, notificationCenter Notificat
 		Workspace:   defaultString(snapshot.Workspace.Name, "OpenShock Workspace"),
 		Repo:        snapshot.Workspace.Repo,
 		Branch:      snapshot.Workspace.Branch,
-		Methodology: "Derived from the current workspace state, notification center, and memory center. Historical metrics without durable time-series truth stay marked as partial instead of being guessed.",
+		Methodology: "Derived from the current workspace state, notification center, memory center, and persisted session recovery truth. Metrics only stay partial when the durable event history is genuinely absent.",
 		Sections:    sections,
 	}
 
@@ -164,7 +164,7 @@ func buildProductMetrics(snapshot State, notificationCenter NotificationCenter, 
 		}
 	}
 
-	recoveredIssues, blockedIssues, retriedIssues := deriveRecoveryMetrics(snapshot)
+	recoveryMetrics := deriveRecoveryMetrics(snapshot)
 	interventionAverage := 0.0
 	if len(snapshot.Issues) > 0 {
 		interventionAverage = float64(notificationCenter.ApprovalCenter.OpenCount) / float64(len(snapshot.Issues))
@@ -255,28 +255,28 @@ func buildProductMetrics(snapshot State, notificationCenter NotificationCenter, 
 		experienceMetric(
 			"repeat-instruction-reduction",
 			"Repeated-instruction reduction",
-			experienceMetricPartial,
+			statusFromCoverageWithEmptyAsPartial(continuitySessions, len(snapshot.Sessions)),
 			fmt.Sprintf("%d/%d sessions already carry continuity hints", continuitySessions, len(snapshot.Sessions)),
 			"Repeated setup instructions should keep shrinking over time.",
-			"Current state exposes memory paths, control notes, and follow-thread continuity, but there is no durable before/after delta yet.",
+			"Uses persisted session memory paths, follow-thread flags, and control notes as the durable continuity signal.",
 			"/runs",
 		),
 		experienceMetric(
 			"blocked-recovery",
 			"Blocked recovery within 24h",
-			experienceMetricPartial,
-			fmt.Sprintf("%d/%d blocked issues already show a recovery lane", recoveredIssues, blockedIssues),
+			statusFromIncidentRecovery(recoveryMetrics.recoveredBlockedIssues, recoveryMetrics.blockedIssues),
+			fmt.Sprintf("%d/%d blocked issues recovered within 24h", recoveryMetrics.recoveredBlockedIssues, recoveryMetrics.blockedIssues),
 			"Blocked work should recover inside a clearly observable time window.",
-			"Recovery lanes are visible from multi-run issue history, but 24h SLA timing still needs durable event rollups.",
+			"Uses persisted session recovery events first, then run history, to avoid guessing from raw logs.",
 			"/inbox",
 		),
 		experienceMetric(
 			"retry-success",
 			"Retry success after failure",
-			experienceMetricPartial,
-			fmt.Sprintf("%d issues show retry continuity", retriedIssues),
+			statusFromIncidentRecovery(recoveryMetrics.retrySuccessIssues, recoveryMetrics.failedIssues),
+			fmt.Sprintf("%d/%d failed issues show successful retry continuity", recoveryMetrics.retrySuccessIssues, recoveryMetrics.failedIssues),
 			"After a failure, the next successful lane should be measurable without manual log reading.",
-			"Current run history can show multi-lane recovery, but not a stable success-after-failure rate over time.",
+			"Uses persisted recovery events and multi-run issue history to verify success after failure.",
 			"/runs",
 		),
 	}
@@ -284,7 +284,7 @@ func buildProductMetrics(snapshot State, notificationCenter NotificationCenter, 
 	return summarizeMetricSection(
 		"product",
 		"产品指标",
-		"Product metrics stay tied to current issue, member, PR, mailbox, and memory truth. Historical rates that still lack durable event rollups remain explicit partials.",
+		"Product metrics stay tied to current issue, member, PR, mailbox, memory, and durable recovery truth.",
 		metrics,
 	)
 }
@@ -609,6 +609,19 @@ func statusFromInboxCorrection(ok, total int) string {
 	}
 }
 
+func statusFromIncidentRecovery(recovered, total int) string {
+	switch {
+	case total == 0:
+		return experienceMetricReady
+	case recovered == total:
+		return experienceMetricReady
+	case recovered > 0:
+		return experienceMetricWarning
+	default:
+		return experienceMetricBlocked
+	}
+}
+
 func statusFromTemplateOnboarding(onboarding WorkspaceOnboardingSnapshot, materializedAgents, materializedChannels int) string {
 	switch {
 	case workspaceOnboardingIsComplete(onboarding) && materializedAgents > 0 && materializedChannels > 0:
@@ -771,7 +784,26 @@ func issueHasContextChain(snapshot State, notificationCenter NotificationCenter,
 	return true
 }
 
-func deriveRecoveryMetrics(snapshot State) (recoveredIssues int, blockedIssues int, retriedIssues int) {
+type experienceRecoveryMetrics struct {
+	blockedIssues          int
+	recoveredBlockedIssues int
+	failedIssues           int
+	retrySuccessIssues     int
+}
+
+type experienceRecoveryObservation struct {
+	hasBlocked            bool
+	blockedAt             time.Time
+	blockedAtSet          bool
+	hasFailure            bool
+	failureAt             time.Time
+	failureAtSet          bool
+	hasRetry              bool
+	recoveredBlocked      bool
+	recoveredAfterFailure bool
+}
+
+func deriveRecoveryMetrics(snapshot State) experienceRecoveryMetrics {
 	runsByIssue := map[string][]Run{}
 	for _, run := range snapshot.Runs {
 		if strings.TrimSpace(run.IssueKey) == "" {
@@ -780,30 +812,165 @@ func deriveRecoveryMetrics(snapshot State) (recoveredIssues int, blockedIssues i
 		runsByIssue[run.IssueKey] = append(runsByIssue[run.IssueKey], run)
 	}
 
-	for _, runs := range runsByIssue {
-		hasBlocked := false
-		hasRecovery := false
-		if len(runs) > 1 {
-			retriedIssues++
+	observations := map[string]*experienceRecoveryObservation{}
+	observationForIssue := func(issueKey string) *experienceRecoveryObservation {
+		issueKey = strings.TrimSpace(issueKey)
+		if issueKey == "" {
+			issueKey = "unknown"
 		}
+		if observations[issueKey] == nil {
+			observations[issueKey] = &experienceRecoveryObservation{}
+		}
+		return observations[issueKey]
+	}
+
+	for issueKey, runs := range runsByIssue {
+		observation := observationForIssue(issueKey)
 		for _, run := range runs {
-			if strings.TrimSpace(run.Status) == "blocked" {
-				hasBlocked = true
-				continue
+			status := strings.TrimSpace(run.Status)
+			runTime, runTimeOK := parseExperienceEventTime(run.StartedAt)
+			if status == "blocked" {
+				markExperienceRecoveryBlocked(observation, runTime, runTimeOK)
+			}
+			if isFailureRunStatus(status) {
+				markExperienceRecoveryFailure(observation, runTime, runTimeOK)
 			}
 			if isRecoveryRunStatus(run.Status) {
-				hasRecovery = true
+				markExperienceRecoveryRecovered(observation, runTime, runTimeOK)
 			}
 		}
-		if hasBlocked {
-			blockedIssues++
-			if hasRecovery {
-				recoveredIssues++
+		if len(runs) > 1 {
+			observation.hasRetry = true
+			if issueHasSuccessfulRetryRun(runs) {
+				observation.recoveredAfterFailure = true
 			}
 		}
 	}
 
-	return recoveredIssues, blockedIssues, retriedIssues
+	for _, session := range snapshot.Sessions {
+		observation := observationForIssue(session.IssueKey)
+		if session.PendingTurn != nil && isFailureRecoveryStatus(session.PendingTurn.Status) {
+			eventTime, ok := parseExperienceEventTime(session.PendingTurn.UpdatedAt)
+			markExperienceRecoveryFailure(observation, eventTime, ok)
+		}
+		if session.Recovery == nil {
+			continue
+		}
+		for _, event := range session.Recovery.Events {
+			eventTime, eventTimeOK := parseExperienceEventTime(event.OccurredAt)
+			switch strings.TrimSpace(event.Status) {
+			case "blocked":
+				markExperienceRecoveryBlocked(observation, eventTime, eventTimeOK)
+			case "interrupted", "failed", "error":
+				markExperienceRecoveryFailure(observation, eventTime, eventTimeOK)
+			case "retrying":
+				observation.hasRetry = true
+			case "recovered":
+				markExperienceRecoveryRecovered(observation, eventTime, eventTimeOK)
+			}
+		}
+	}
+
+	result := experienceRecoveryMetrics{}
+	for _, observation := range observations {
+		if observation.hasBlocked {
+			result.blockedIssues++
+			if observation.recoveredBlocked {
+				result.recoveredBlockedIssues++
+			}
+		}
+		if observation.hasFailure {
+			result.failedIssues++
+			if observation.recoveredAfterFailure || (observation.hasRetry && observation.recoveredBlocked) {
+				result.retrySuccessIssues++
+			}
+		}
+	}
+	return result
+}
+
+func markExperienceRecoveryBlocked(observation *experienceRecoveryObservation, occurredAt time.Time, occurredAtSet bool) {
+	if observation == nil {
+		return
+	}
+	observation.hasBlocked = true
+	markExperienceRecoveryFailure(observation, occurredAt, occurredAtSet)
+	if occurredAtSet {
+		observation.blockedAt = occurredAt
+		observation.blockedAtSet = true
+	}
+}
+
+func markExperienceRecoveryFailure(observation *experienceRecoveryObservation, occurredAt time.Time, occurredAtSet bool) {
+	if observation == nil {
+		return
+	}
+	observation.hasFailure = true
+	if occurredAtSet {
+		observation.failureAt = occurredAt
+		observation.failureAtSet = true
+	}
+}
+
+func markExperienceRecoveryRecovered(observation *experienceRecoveryObservation, occurredAt time.Time, occurredAtSet bool) {
+	if observation == nil {
+		return
+	}
+	if observation.hasBlocked {
+		if !observation.blockedAtSet || !occurredAtSet || !occurredAt.Before(observation.blockedAt) && occurredAt.Sub(observation.blockedAt) <= 24*time.Hour {
+			observation.recoveredBlocked = true
+		}
+	}
+	if observation.hasFailure {
+		if !observation.failureAtSet || !occurredAtSet || !occurredAt.Before(observation.failureAt) {
+			observation.recoveredAfterFailure = true
+		}
+	}
+}
+
+func parseExperienceEventTime(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
+func issueHasSuccessfulRetryRun(runs []Run) bool {
+	seenFailure := false
+	for _, run := range runs {
+		status := strings.TrimSpace(run.Status)
+		if isFailureRunStatus(status) {
+			seenFailure = true
+			continue
+		}
+		if seenFailure && isRecoveryRunStatus(status) {
+			return true
+		}
+	}
+	return false
+}
+
+func isFailureRunStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "blocked", "failed", "error", "interrupted":
+		return true
+	default:
+		return false
+	}
+}
+
+func isFailureRecoveryStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "blocked", "failed", "error", "interrupted":
+		return true
+	default:
+		return false
+	}
 }
 
 func isRecoveryRunStatus(status string) bool {

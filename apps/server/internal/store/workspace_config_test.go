@@ -234,3 +234,44 @@ func TestWorkspaceConfigNormalizesCompletedBootstrapToDone(t *testing.T) {
 		t.Fatalf("reloaded onboarding = %#v, want durable done state with chat resume", snapshot.Workspace.Onboarding)
 	}
 }
+
+func TestWorkspaceConfigAutoCompletesFreshSetupWhenWorkspaceIsOperational(t *testing.T) {
+	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
+
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := s.UpdateRepoBinding(RepoBindingInput{
+		Repo:            "Larkspur-Wang/OpenShock",
+		RepoURL:         "https://github.com/Larkspur-Wang/OpenShock.git",
+		Branch:          "main",
+		AuthMode:        "local-git-origin",
+		ConnectionReady: true,
+	}); err != nil {
+		t.Fatalf("UpdateRepoBinding() error = %v", err)
+	}
+	if _, err := s.UpdateRuntimePairing(RuntimePairingInput{
+		RuntimeID: "shock-main",
+		DaemonURL: "http://127.0.0.1:8090",
+		Machine:   "shock-main",
+		State:     runtimeStateOnline,
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	snapshot := s.Snapshot()
+	if snapshot.Workspace.Onboarding.Status != workspaceOnboardingDone || snapshot.Workspace.Onboarding.CurrentStep != "bootstrap-finished" {
+		t.Fatalf("workspace onboarding = %#v, want auto-completed bootstrap-finished state", snapshot.Workspace.Onboarding)
+	}
+	if snapshot.Workspace.Onboarding.ResumeURL != "/chat/all" {
+		t.Fatalf("workspace onboarding resume = %q, want /chat/all after operational auto-complete", snapshot.Workspace.Onboarding.ResumeURL)
+	}
+	if !workspaceOnboardingHasCompletedStep(snapshot.Workspace.Onboarding, "bootstrap-finished") {
+		t.Fatalf("workspace onboarding completed steps = %#v, want bootstrap-finished recorded", snapshot.Workspace.Onboarding.CompletedSteps)
+	}
+}
