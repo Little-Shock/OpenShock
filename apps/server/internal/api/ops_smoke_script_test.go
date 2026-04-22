@@ -52,6 +52,19 @@ func TestOpsSmokePassesWhenPairingMatchesDaemonTruth(t *testing.T) {
 					},
 				}},
 			})
+		case "/v1/state/stream":
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("event: snapshot\nid: 1\ndata: {\"type\":\"snapshot\",\"state\":{\"workspace\":{\"name\":\"OpenShock\"}}}\n\n"))
+		case "/v1/experience-metrics":
+			writeJSON(w, http.StatusOK, map[string]any{
+				"workspace":   "OpenShock",
+				"summary":     "baseline ready",
+				"methodology": "repo + live stack probes",
+				"sections": []map[string]any{{
+					"id": "product",
+				}},
+			})
 		case "/v1/runtime/registry":
 			writeJSON(w, http.StatusOK, map[string]any{
 				"pairedRuntime": "shock-main",
@@ -132,6 +145,19 @@ func TestOpsSmokeFailsWhenPairingDriftsFromDaemonTruth(t *testing.T) {
 					"usage": map[string]any{
 						"totalTokens": 1200,
 					},
+				}},
+			})
+		case "/v1/state/stream":
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("event: snapshot\nid: 1\ndata: {\"type\":\"snapshot\",\"state\":{\"workspace\":{\"name\":\"OpenShock\"}}}\n\n"))
+		case "/v1/experience-metrics":
+			writeJSON(w, http.StatusOK, map[string]any{
+				"workspace":   "OpenShock",
+				"summary":     "baseline ready",
+				"methodology": "repo + live stack probes",
+				"sections": []map[string]any{{
+					"id": "product",
 				}},
 			})
 		case "/v1/runtime/registry":

@@ -195,6 +195,100 @@ NODE
   trap - RETURN
 }
 
+assert_experience_metrics_truth() {
+  local body="$1"
+  local body_file
+
+  body_file="$(mktemp)"
+  trap 'rm -f "$body_file"' RETURN
+  printf '%s' "$body" >"$body_file"
+
+  EXPERIENCE_BODY_FILE="$body_file" node <<'NODE'
+const fail = (message) => {
+  console.error(message)
+  process.exit(1)
+}
+
+const fs = require("node:fs")
+
+let snapshot
+try {
+  snapshot = JSON.parse(fs.readFileSync(process.env.EXPERIENCE_BODY_FILE || "", "utf8") || "{}")
+} catch (error) {
+  fail(`EXPERIENCE_BODY_FILE invalid json: ${error.message}`)
+}
+
+if (!Array.isArray(snapshot.sections) || snapshot.sections.length === 0) {
+  fail("Experience metrics missing sections")
+}
+if (!snapshot.summary || !snapshot.workspace || !snapshot.methodology) {
+  fail("Experience metrics missing summary fields")
+}
+NODE
+
+  rm -f "$body_file"
+  trap - RETURN
+}
+
+probe_state_stream_snapshot() {
+  echo "==> Server state stream"
+  STATE_STREAM_URL="$SERVER_URL/v1/state/stream" \
+  OPENSHOCK_STREAM_TIMEOUT_MS="${OPENSHOCK_STREAM_TIMEOUT_MS:-2500}" \
+    node <<'NODE'
+const fail = (message) => {
+  console.error(message)
+  process.exit(1)
+}
+
+;(async () => {
+  const url = process.env.STATE_STREAM_URL
+  const timeoutMs = Number(process.env.OPENSHOCK_STREAM_TIMEOUT_MS || "2500")
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "text/event-stream" },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      fail(`Server state stream returned status ${response.status}`)
+    }
+    if (!response.body) {
+      fail("Server state stream missing response body")
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let body = ""
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) {
+        break
+      }
+      body += decoder.decode(value, { stream: true })
+      if (body.includes("event: snapshot") && body.includes('"workspace"')) {
+        const compact = body.replace(/\s+/g, " ").trim()
+        console.log(compact.slice(0, 200))
+        clearTimeout(timer)
+        controller.abort()
+        process.exit(0)
+      }
+    }
+
+    fail("Server state stream missing snapshot payload")
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      fail("Server state stream timed out before snapshot arrived")
+    }
+    fail(`Server state stream probe failed: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    clearTimeout(timer)
+  }
+})()
+NODE
+}
+
 probe_github_connection() {
   local url="$1"
 
@@ -220,6 +314,14 @@ assert_contains '"workspace"' "Server state"
 state_body="$last_body"
 preview_body "$state_body"
 assert_usage_observability_truth "$state_body"
+probe_state_stream_snapshot
+echo "==> Server experience metrics"
+request_json "$SERVER_URL/v1/experience-metrics"
+assert_status "200" "Server experience metrics"
+assert_contains '"sections"' "Server experience metrics"
+experience_body="$last_body"
+preview_body "$experience_body"
+assert_experience_metrics_truth "$experience_body"
 probe "Server repo binding" "$SERVER_URL/v1/repo/binding" '"bindingStatus"'
 probe_github_connection "$SERVER_URL/v1/github/connection"
 

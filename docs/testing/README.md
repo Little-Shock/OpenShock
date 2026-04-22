@@ -25,6 +25,8 @@
   - 代表命令：`go test -tags=integration ./apps/daemon/internal/integration`、`go test ./apps/daemon/...`
 - `2026-04-19` subtractive sweep
   - 代表命令：`pnpm test:headed-cross-room-governance-orchestration`、`pnpm typecheck:web`、`pnpm build:web`
+- `2026-04-22` 九分冲刺首屏与 release gate 加硬
+  - 代表命令：`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-work-shell-smoke -- --report docs/testing/Test-Report-2026-04-22-work-shell-smoke.md`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-agent-mailbox-handoff`、`OPENSHOCK_SERVER_URL=http://127.0.0.1:45068 OPENSHOCK_DAEMON_URL=http://127.0.0.1:45054 pnpm ops:smoke`
 
 如果你要看“最新新增能力”而不是“历史代表性报告”，先看这里，再往下翻归档。
 
@@ -193,6 +195,8 @@
   - `TKT-27` 的 `dm / followed / saved` server-backed search result、reopen 与 jump-target evidence
 - [Test Report 2026-04-08 Work Shell Smoke](./Test-Report-2026-04-08-work-shell-smoke.md)
   - `chat / setup / issues / memory / inbox / board / room / run` 在统一 workspace shell 下的当前有头走查结果
+- [Test Report 2026-04-22 Work Shell Smoke](./Test-Report-2026-04-22-work-shell-smoke.md)
+  - 九分冲刺后重跑的 headless workspace shell 走查，覆盖 `chat / setup / issues / memory / inbox / board / room / run`
 - [Test Report 2026-04-08 Frontend Interaction Polish](./Test-Report-2026-04-08-frontend-interaction-polish.md)
   - `TKT-24` 的 sidebar / topbar hit area、channel / room scrollback、composer 常驻与窄屏抽查证据
 - [Test Report 2026-04-08 Memory Governance](./Test-Report-2026-04-08-memory-governance.md)

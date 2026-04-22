@@ -133,19 +133,6 @@ function formatCount(value?: number) {
   return typeof value === "number" ? value.toLocaleString("zh-CN") : "未返回";
 }
 
-function quotaStatusLabel(status?: string) {
-  switch (status) {
-    case "near_limit":
-      return "逼近上限";
-    case "watch":
-      return "观察中";
-    case "healthy":
-      return "健康";
-    default:
-      return "待同步";
-  }
-}
-
 function onboardingStatusLabel(status?: string) {
   switch ((status ?? "").trim()) {
     case "done":
@@ -834,6 +821,14 @@ export function LiveSetupContextRail() {
               : repoBindingStatusLabel(workspace.repoBindingStatus),
         },
         {
+          label: "GitHub",
+          value: loading
+            ? "同步中"
+            : error
+              ? "未同步"
+              : githubInstallLabel(workspace.githubInstallation.connectionReady, workspace.githubInstallation.appInstalled),
+        },
+        {
           label: "模板",
           value: loading
             ? "同步中"
@@ -847,25 +842,7 @@ export function LiveSetupContextRail() {
             ? "同步中"
             : error || runtimeError
               ? "未同步"
-              : `${valueOrPlaceholder(selectedRuntimeName, "未选择")} / ${pairingStatusLabel(pairing?.pairingStatus || "")} / ${onlineRuntimes} 在线${staleRuntimes > 0 ? ` · ${staleRuntimes} 陈旧` : ""} / ${registryRuntimes.length} 台`,
-        },
-        {
-          label: "拉取请求",
-          value: loading
-            ? "同步中"
-            : error
-              ? "未同步"
-              : state.pullRequests.length > 0
-                ? `${state.pullRequests.length} 条已同步`
-                : "待产生",
-        },
-        {
-          label: "配额",
-          value: loading
-            ? "同步中"
-            : error
-              ? "未同步"
-              : `${valueOrPlaceholder(workspace.plan, "未命名计划")} / ${quotaStatusLabel(workspace.quota?.status)} / ${formatQuotaCounter(workspace.quota?.usedAgents, workspace.quota?.maxAgents, "个智能体")}`,
+                : `${valueOrPlaceholder(selectedRuntimeName, "未选择")} / ${pairingStatusLabel(pairing?.pairingStatus || "")} / ${onlineRuntimes} 在线${staleRuntimes > 0 ? ` · ${staleRuntimes} 陈旧` : ""} / ${registryRuntimes.length} 台`,
         },
       ]}
     />
@@ -953,16 +930,18 @@ export function LiveSetupOverview() {
           active={registryRuntimes.length > 0 && pairingStatus !== "unpaired"}
         />
         <SetupCheckpointCard
-          title="协作主链"
+          title="GitHub"
           summary={
-            state.rooms.length > 0 || state.pullRequests.length > 0
-              ? `已有 ${state.rooms.length} 个讨论间、${state.pullRequests.length} 个拉取请求对象，主链已经可见。`
-              : "讨论间和拉取请求对象还没出现，主链还在起步。"
+            workspace.githubInstallation.connectionReady
+              ? "GitHub 已接通，可以继续创建和检查拉取请求。"
+              : workspace.githubInstallation.appInstalled
+                ? "GitHub App 已安装，还要确认仓库授权和连接状态。"
+                : "还没接上 GitHub，远端交付前先完成安装。"
           }
-          active={state.rooms.length > 0 || state.pullRequests.length > 0}
+          active={workspace.githubInstallation.connectionReady}
         />
         <SetupCheckpointCard
-          title="首次引导"
+          title="模板"
           summary={`模板 ${templateSurfaceLabel(workspace.onboarding.templateId)} · ${onboardingStatusLabel(workspace.onboarding.status)} · 回跳地址 ${valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")}。`}
           active={workspace.onboarding.status !== "not_started"}
         />
@@ -973,7 +952,7 @@ export function LiveSetupOverview() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[0.24em]">工作区概览</p>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">先看仓库、运行环境和模板。</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">先看模板、仓库、GitHub 和运行环境。</p>
             </div>
             <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
               {selectedRuntimeLabel} · {pairingStatusLabel(pairingStatus)}

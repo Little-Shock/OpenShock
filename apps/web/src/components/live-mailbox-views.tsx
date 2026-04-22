@@ -335,6 +335,21 @@ export function LiveMailboxPageContent() {
   const openCount = loading || error ? 0 : state.mailbox.filter((item) => item.status !== "completed").length;
   const blockedCount = loading || error ? 0 : state.mailbox.filter((item) => item.status === "blocked").length;
   const completedCount = loading || error ? 0 : state.mailbox.filter((item) => item.status === "completed").length;
+  const activeMailboxForRoom = mailboxForRoom.filter((handoff) => handoff.status !== "completed");
+  const visibleMailboxForRoom = [
+    ...activeMailboxForRoom,
+    ...mailboxForRoom.filter((handoff) => handoff.status === "completed"),
+  ];
+  const focusHandoff =
+    activeMailboxForRoom.find((handoff) => handoff.id === highlightedHandoffId) ??
+    activeMailboxForRoom.find((handoff) => handoff.status === "blocked") ??
+    activeMailboxForRoom[0] ??
+    mailboxForRoom[0] ??
+    null;
+  const focusRoom = focusHandoff ? state.rooms.find((room) => room.id === focusHandoff.roomId) : null;
+  const focusActions = focusHandoff ? availableHandoffActions(focusHandoff.status) : [];
+  const focusCanAck = focusActions.includes("acknowledged");
+  const focusCanComplete = focusActions.includes("completed");
   const selectableMailboxHandoffs = mailboxForRoom.filter(batchSelectableHandoff);
   const selectableMailboxIds = selectableMailboxHandoffs.map((handoff) => handoff.id);
   const selectedMailboxHandoffs = mailboxForRoom.filter((handoff) => selectedMailboxIds.includes(handoff.id));
@@ -642,11 +657,11 @@ export function LiveMailboxPageContent() {
   return (
     <OpenShockShell
       view="mailbox"
-      eyebrow="交接"
-      title="所有交接"
-      description="继续交接的事项。"
+      eyebrow="待办交接"
+      title="先处理需要你接手的事"
+      description="默认先看待处理和阻塞项；批量、创建和协作规则在后面继续保留。"
       contextTitle="交接概览"
-      contextDescription="交接状态、阻塞和完成进度。"
+      contextDescription="当前待处理、阻塞和完成情况。"
       contextBody={
         <DetailRail
           label="交接统计"
@@ -670,8 +685,98 @@ export function LiveMailboxPageContent() {
           <p className="mt-3 text-sm leading-6 text-white/80">{error}</p>
         </Panel>
       ) : (
-        <div className="space-y-4">
-          <Panel tone="lime">
+        <div className="flex flex-col gap-4">
+          <Panel tone={focusHandoff?.status === "blocked" ? "pink" : "yellow"} className="order-0">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">下一步</p>
+                <h3 className="mt-2 font-display text-3xl font-bold">
+                  {focusHandoff ? focusHandoff.title : "暂时没有待处理交接"}
+                </h3>
+                <p className="mt-3 max-w-3xl text-sm leading-6 opacity-80">
+                  {focusHandoff
+                    ? focusHandoff.status === "blocked"
+                      ? focusHandoff.lastAction
+                      : focusHandoff.summary
+                    : "没有人等你接手时，可以回到讨论间继续当前任务，或按需发起一条新交接。"}
+                </p>
+                {focusHandoff ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--shock-ink)]">
+                      {handoffStatusLabel(focusHandoff.status)}
+                    </span>
+                    <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--shock-ink)]">
+                      {focusRoom?.title ?? focusHandoff.roomId}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+              <div className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 text-[var(--shock-ink)]">
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">现在的队列</p>
+                <dl className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2">
+                    <dt className="font-mono text-[10px] uppercase tracking-[0.14em]">待处理</dt>
+                    <dd className="mt-1 font-display text-xl font-bold">{openCount}</dd>
+                  </div>
+                  <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2">
+                    <dt className="font-mono text-[10px] uppercase tracking-[0.14em]">阻塞</dt>
+                    <dd className="mt-1 font-display text-xl font-bold">{blockedCount}</dd>
+                  </div>
+                  <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2">
+                    <dt className="font-mono text-[10px] uppercase tracking-[0.14em]">完成</dt>
+                    <dd className="mt-1 font-display text-xl font-bold">{completedCount}</dd>
+                  </div>
+                </dl>
+                <div className="mt-4 grid gap-2">
+                  {focusHandoff ? (
+                    <Link
+                      href={`/rooms/${focusHandoff.roomId}?tab=context`}
+                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em]"
+                    >
+                      回到讨论
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/rooms"
+                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em]"
+                    >
+                      去讨论间
+                    </Link>
+                  )}
+                  {focusHandoff && focusCanAck ? (
+                    <button
+                      type="button"
+                      data-testid="mailbox-primary-action-acknowledged"
+                      disabled={!canMutate || mailboxMutationBusy}
+                      onClick={() => void handleAdvance(focusHandoff, "acknowledged")}
+                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] disabled:opacity-50"
+                    >
+                      {busyKey === `${focusHandoff.id}:acknowledged` ? "处理中..." : "接手"}
+                    </button>
+                  ) : null}
+                  {focusHandoff && focusCanComplete ? (
+                    <button
+                      type="button"
+                      data-testid="mailbox-primary-action-completed"
+                      disabled={!canMutate || mailboxMutationBusy}
+                      onClick={() => void handleAdvance(focusHandoff, "completed")}
+                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-ink)] px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-white disabled:opacity-50"
+                    >
+                      {busyKey === `${focusHandoff.id}:completed` ? "处理中..." : "完成"}
+                    </button>
+                  ) : null}
+                  <a
+                    href="#mailbox-create-surface"
+                    className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em]"
+                  >
+                    发起新交接
+                  </a>
+                </div>
+              </div>
+            </div>
+          </Panel>
+
+          <Panel tone="lime" className="order-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
@@ -720,7 +825,7 @@ export function LiveMailboxPageContent() {
             </div>
           </Panel>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_0.85fr]">
+          <div className="order-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_0.85fr]">
             <Panel tone="white">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -1030,7 +1135,7 @@ export function LiveMailboxPageContent() {
             </div>
           </div>
 
-          <Panel tone="paper">
+          <Panel tone="paper" className="order-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
@@ -1070,7 +1175,7 @@ export function LiveMailboxPageContent() {
             </div>
           </Panel>
 
-          <Panel tone="yellow">
+          <Panel id="mailbox-create-surface" tone="yellow" className="order-2">
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
@@ -1261,8 +1366,8 @@ export function LiveMailboxPageContent() {
             </div>
           </Panel>
 
-          <div className="space-y-4">
-            {mailboxForRoom.length === 0 ? (
+          <div className="order-1 flex flex-col gap-4">
+            {visibleMailboxForRoom.length === 0 ? (
               <Panel tone="white">
                 <p className="font-display text-2xl font-bold">暂无交接项</p>
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
@@ -1271,7 +1376,7 @@ export function LiveMailboxPageContent() {
               </Panel>
             ) : (
               <>
-                <Panel tone="paper">
+                <Panel tone="paper" className="order-2">
                   <div
                     data-testid="mailbox-batch-surface"
                     className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-[#fff7dd] px-5 py-5"
@@ -1438,7 +1543,7 @@ export function LiveMailboxPageContent() {
                     </div>
                   </div>
                 </Panel>
-                {mailboxForRoom.map((handoff) => {
+                {visibleMailboxForRoom.map((handoff) => {
                 const room = state.rooms.find((item) => item.id === handoff.roomId);
                 const fromAgentHref = buildProfileHref("agent", handoff.fromAgentId);
                 const toAgentHref = buildProfileHref("agent", handoff.toAgentId);

@@ -138,7 +138,7 @@ async function startFreshStack({ openBrowser }) {
 
   try {
     await waitForURL(`${urls.server}/healthz`, (response, body) => response.ok && body.includes("ok"));
-    await waitForURL(urls.home, (response, body) => response.ok && body.includes("正在进入工作区"));
+    await waitForURL(urls.home, (response, body) => response.ok && body.includes("现在可以做什么"));
   } catch (error) {
     await stopFreshStack(false, { server, daemon, web });
     throw error;

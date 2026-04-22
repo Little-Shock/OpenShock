@@ -7,6 +7,7 @@ import {
   LiveSetupContextRail,
   LiveSetupOverview,
   OnboardingStudioPanel,
+  SetupFirstStartJourneyPanel,
 } from "@/components/live-setup-views";
 import { RepoBindingConsole } from "@/components/repo-binding-console";
 import { LiveRuntimeProvider } from "@/lib/live-runtime";
@@ -16,16 +17,17 @@ export default function SetupPage() {
     <LiveRuntimeProvider>
       <OpenShockShell
         view="setup"
-        eyebrow="高级设置"
-        title="设置与诊断"
-        description="仓库、GitHub、运行环境和诊断都收在这里。首次使用先完成引导。"
+        eyebrow="开始使用"
+        title="先把工作区接通"
+        description="跟着下一步完成模板、仓库、GitHub 和运行环境，准备好后直接回到聊天。"
         contextTitle="当前是否可用"
-        contextDescription="先看主链路状态，详细信息按需展开。"
+        contextDescription="只看开始前必须确认的几项。"
         contextBody={<LiveSetupContextRail />}
       >
         <div className="space-y-4">
-          <OnboardingStudioPanel />
+          <SetupFirstStartJourneyPanel />
           <LiveSetupOverview />
+          <OnboardingStudioPanel />
           <details data-testid="setup-repo-section" className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white px-5 py-4 shadow-[6px_6px_0_0_var(--shock-yellow)]">
             <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
               展开仓库与远端

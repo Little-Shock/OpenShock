@@ -54,10 +54,20 @@ pnpm verify:release
 pnpm ops:smoke
 ```
 
+如果当前 live server / daemon 不在默认 `127.0.0.1:8080 / 127.0.0.1:8090`，必须显式传入真实地址：
+
+```bash
+OPENSHOCK_SERVER_URL=http://127.0.0.1:45068 \
+OPENSHOCK_DAEMON_URL=http://127.0.0.1:45054 \
+pnpm ops:smoke
+```
+
 这层要求 server / daemon 已启动，并会直接打当前 live stack：
 
 - `GET /healthz`
 - `GET /v1/state`
+- `GET /v1/state/stream`
+- `GET /v1/experience-metrics`
 - `GET /v1/runtime/registry`
 - `GET /v1/runtime/pairing`
 - `GET /v1/runtime`

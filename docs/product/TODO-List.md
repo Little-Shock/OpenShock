@@ -1,7 +1,7 @@
 # OpenShock To Do List
 
-**版本:** 1.62
-**更新日期:** 2026 年 4 月 21 日
+**版本:** 1.63
+**更新日期:** 2026 年 4 月 22 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
@@ -43,12 +43,12 @@
 
 如果你今天只想知道“下一步先做什么”，先看这 3 条：
 
-1. 继续做前端减法。
-   重点是 `shell / setup / settings / mailbox` 的层级、文案和密度，不再靠新增面板解决理解成本。
-2. 把记忆与 provider 继续收成 durable truth。
-   重点是 memory compaction、retention、external provider orchestration 与恢复证据。
-3. 扩 daemon continuity 的重验证矩阵。
-   重点是 multi-session / multi-agent recovery、runtime publish retry、degraded fallback，不再退回零散 fixture。
+1. 把首页和主壳继续收成真正产品入口。
+   重点是 `/`、`shell`、`rooms`：先回答“我现在能做什么”，再展示统计和支撑信息。
+2. 把 supporting flow 继续做减法。
+   重点是 `/setup`、`/mailbox`、`/settings`：默认只保留下一步，诊断、治理、调度、配额都后移。
+3. 把 release gate 从“能连通”推进到“能证明主链可用”。
+   重点是 `state stream / experience metrics / runtime drift`，后续再补 `run control` 和 GitHub hard gate。
 
 ---
 
@@ -211,6 +211,34 @@
   - daemon real-process continuity system harness 已站住；built binary + real daemon subprocess + httptest control plane + fake Codex CLI 现在能一起证明 same-session restart recovery、`CURRENT_TURN.md` 刷新、`notes/work-log.md` 累积、稳定 `codexHome` 与 `appServerThreadId` reinjection。
 - `GAP-71 / TKT-102`
   - 显式 provider thread state 的本地持久化 contract 已站住；执行进程现在可通过 daemon 提供的 thread-state file 写回 `SESSION.json.appServerThreadId`，后续 resume 会把这个值重新注入进程环境，形成可验证的本地恢复锚点。
+
+### 2026-04-22 九分冲刺待收
+
+- `P0-首页产品化`
+  - `/` 不能再只是跳转中间页；要直接回答“现在可以继续聊天、继续设置、回到最近讨论、处理待办交接”。
+- `P0-主壳减法`
+  - `shell / rooms` 继续压噪音：统计、摘要 rail、重复 self-link 和多层次级标签默认后移，主视觉只保留聊天和当前目标。
+- `P0-Setup 减法`
+  - `/setup` 默认只保留模板、仓库、GitHub、运行环境 4 个 checkpoint；runtime inventory、governance、lease、调度、配额全部降到高级区域。
+- `P0-Mailbox 减法`
+  - `/mailbox` 默认只保留待你处理的交接、阻塞原因和下一步按钮；升级队列、团队分工、规则、自动续接都进入二级视图。
+- `P0-Release Gate 加硬`
+  - `ops:smoke` 要覆盖 `/v1/state/stream`、`/v1/experience-metrics`、runtime pairing drift；后续继续补 `run control` 和默认 fail-closed GitHub readiness。
+- `P1-文件级记忆产品面`
+  - 把 `SOUL.md / MEMORY.md / notes/channels.md / notes/operating-rules.md / notes/skills.md / notes/work-log.md` 变成默认可见、可回放、可注入的工作面。
+- `P1-协议化协作闭环`
+  - 把 `claim -> execute -> handoff -> resume -> closeout` 做成显式主链，绑定 actor、thread、evidence 和 SLA，减少“有能力但没有强协议”的使用落差。
+
+本轮已落地：
+
+- `/`
+  - 首页已改成真实产品入口，默认显示“现在可以做什么”、最近讨论、待办交接、GitHub 与工作区概况，不再自动跳转。
+- `/setup`
+  - 首屏已改成“下一步 + 模板/仓库/GitHub/运行环境”优先，开始使用语气替代“设置与诊断”语气。
+- `/mailbox`
+  - 首屏已改成“先处理需要你接手的事”，把待处理交接和下一步动作提前到最前面。
+- `ops:smoke`
+  - 已覆盖 `/v1/state/stream` 与 `/v1/experience-metrics`，并锁进脚本测试。
 
 ### 当前必须先收的 GAP
 
