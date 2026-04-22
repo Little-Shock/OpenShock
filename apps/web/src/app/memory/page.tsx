@@ -9,10 +9,10 @@ export default function MemoryPage() {
     <OpenShockShell
       view="memory"
       eyebrow="记忆"
-      title="记忆与知识"
-      description="查看资料、管理来源，并决定下一次任务会带上哪些上下文。"
-      contextTitle="记忆概览"
-      contextDescription="版本、来源、可用范围和最近变更都会集中显示。"
+      title="决定下次带哪些资料"
+      description="查看资料来源、版本和可用范围，清掉不该进入下一次任务的内容。"
+      contextTitle="会带上什么"
+      contextDescription="先看来源、范围和最近变更，再决定是否调整。"
       contextBody={<LiveMemoryContextRail />}
     >
       <LiveMemoryView />

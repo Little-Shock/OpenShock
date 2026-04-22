@@ -5,11 +5,11 @@ export default function AccessPage() {
   return (
     <OpenShockShell
       view="access"
-      eyebrow="身份"
-      title="登录与成员"
-      description="这里处理登录、成员切换、邮箱确认和设备授权。首次使用先完成引导。"
-      contextTitle="当前登录情况"
-      contextDescription="先确认当前身份和可用状态，其他恢复与权限操作放在下方。"
+      eyebrow="账号"
+      title="确认你能进入工作区"
+      description="先确认账号、邮箱和设备；成员切换和恢复操作按需展开。"
+      contextTitle="能不能继续"
+      contextDescription="账号可用就回到聊天，缺一步就按提示补齐。"
       contextBody={<LiveAccessContextRail />}
     >
       <LiveAccessOverview />

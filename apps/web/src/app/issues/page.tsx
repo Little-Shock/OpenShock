@@ -7,16 +7,16 @@ export default function IssuesPage() {
     <OpenShockShell
       view="issues"
       eyebrow="事项"
-      title="所有事项"
-      description="查看当前事项，以及它对应的讨论间和执行记录。"
-      contextTitle="事项关联"
-      contextDescription="每个事项都会关联对应的讨论间和执行记录，方便继续处理。"
+      title="选择要推进的事项"
+      description="先看当前事项，再进入对应讨论间或执行记录。"
+      contextTitle="下一步去哪里"
+      contextDescription="事项连着讨论间和执行记录，打开后即可继续处理。"
       contextBody={
         <DetailRail
-          label="事项概览"
+          label="事项路径"
           items={[
-            { label: "Issue -> Room", value: "1:1" },
-            { label: "Room -> Topic", value: "1:1" },
+            { label: "事项 -> 讨论间", value: "1:1" },
+            { label: "讨论间 -> 话题", value: "1:1" },
             { label: "运行记录", value: "按房间关联" },
             { label: "PR 关联", value: "按房间关联" },
           ]}

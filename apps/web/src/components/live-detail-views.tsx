@@ -552,19 +552,19 @@ export function LiveIssuesListView() {
   if (loading) {
     return (
       <LiveStateNotice
-        title="正在载入事项"
-        message="正在获取事项、讨论间和执行记录。"
+        title="正在同步事项"
+        message="正在读取事项、讨论间和执行记录。"
       />
     );
   }
 
   if (error) {
-    return <LiveStateNotice title="Issue 同步失败" message={error} />;
+    return <LiveStateNotice title="事项同步失败" message={error} />;
   }
 
   if (state.issues.length === 0) {
     return (
-      <LiveStateNotice title="暂无事项" message="创建事项后会显示内容。" />
+      <LiveStateNotice title="暂无事项" message="新建事项后就能从这里继续推进。" />
     );
   }
 
@@ -583,17 +583,17 @@ export function LiveRoomsPageContent() {
   return (
     <OpenShockShell
       view="rooms"
-      eyebrow="讨论间总览"
-      title="所有讨论间"
-      description="当前讨论间、对应事项和执行状态。"
-      contextTitle="讨论间概览"
-      contextDescription="每个讨论间都会关联事项和执行记录，方便直接继续处理。"
+      eyebrow="讨论间"
+      title="回到正在推进的讨论"
+      description="先处理未读、阻塞和正在跑的讨论间。"
+      contextTitle="哪里要继续"
+      contextDescription="活跃、阻塞和未读会优先告诉你下一步去哪里。"
       contextBody={
         <DetailRail
-          label="讨论间基线"
+          label="讨论状态"
           items={[
-            { label: "总数", value: `${rooms.length} 个` },
-            { label: "活跃中", value: `${activeRooms} 个` },
+            { label: "全部", value: `${rooms.length} 个` },
+            { label: "进行中", value: `${activeRooms} 个` },
             { label: "阻塞", value: `${blockedRooms} 个` },
             { label: "未读", value: `${unreadCount} 条` },
           ]}
@@ -602,13 +602,13 @@ export function LiveRoomsPageContent() {
     >
       {loading ? (
         <LiveStateNotice
-          title="正在载入讨论间"
-          message="正在获取讨论间、事项和执行状态。"
+          title="正在同步讨论间"
+          message="正在读取讨论、事项和执行状态。"
         />
       ) : error ? (
         <LiveStateNotice title="讨论间同步失败" message={error} />
       ) : rooms.length === 0 ? (
-        <LiveStateNotice title="暂无讨论间" message="创建事项后会显示讨论间。" />
+        <LiveStateNotice title="暂无讨论间" message="创建事项后就能从这里继续讨论。" />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {rooms.map((room) => (
@@ -695,28 +695,28 @@ export function LiveAgentsPageContent() {
     <OpenShockShell
       view="agents"
       eyebrow="智能体"
-      title="所有智能体"
-      description="智能体当前状态、最近执行和所用运行环境。"
-      contextTitle="智能体概览"
-      contextDescription="快速了解当前哪些智能体正在运行、阻塞或空闲。"
+      title="看谁正在干活"
+      description="先看正在跑、阻塞和可接手的智能体。"
+      contextTitle="团队状态"
+      contextDescription="运行中和阻塞会先露出来，便于接手或调整。"
       contextBody={
         <DetailRail
-          label="调度基线"
+          label="队友状态"
           items={[
-            { label: "总数", value: `${agents.length} 个` },
+            { label: "全部", value: `${agents.length} 个` },
             { label: "执行中", value: `${agents.filter((agent) => agent.state === "running").length} 个` },
             { label: "阻塞", value: `${agents.filter((agent) => agent.state === "blocked").length} 个` },
-            { label: "会话", value: `${sessions.length} 条` },
+            { label: "执行记录", value: `${sessions.length} 条` },
           ]}
         />
       }
     >
       {loading ? (
-        <LiveStateNotice title="正在载入智能体" message="正在获取智能体列表和最近执行记录。" />
+        <LiveStateNotice title="正在同步智能体" message="正在读取队友状态和最近执行。" />
       ) : error ? (
-        <LiveStateNotice title="智能体载入失败" message={error} />
+        <LiveStateNotice title="智能体同步失败" message={error} />
       ) : agents.length === 0 ? (
-        <LiveStateNotice title="暂无智能体" message="创建智能体后会显示内容。" />
+        <LiveStateNotice title="暂无智能体" message="添加智能体后就能看到谁可接手。" />
       ) : (
         <div className="space-y-4">
           <LiveOrchestrationBoard
@@ -810,31 +810,31 @@ export function LiveRunsPageContent() {
   return (
     <OpenShockShell
       view="runs"
-      eyebrow="执行总览"
-      title="所有执行记录"
-      description="当前和历史执行记录，包括运行环境、分支、日志和状态。"
-      contextTitle="执行概览"
-      contextDescription="每条执行记录都保留对应的运行环境、状态和关联对象，方便排查和继续处理。"
+      eyebrow="执行"
+      title="看执行进度"
+      description="先处理正在跑、阻塞和待批准的执行记录。"
+      contextTitle="哪里卡住了"
+      contextDescription="状态、运行环境和关联对象会一起显示，方便继续处理。"
       contextBody={
         <DetailRail
-          label="执行概况"
+          label="执行状态"
           items={[
-            { label: "总数", value: `${runs.length} 条` },
-            { label: "活跃中", value: `${activeRuns} 条` },
+            { label: "全部", value: `${runs.length} 条` },
+            { label: "进行中", value: `${activeRuns} 条` },
             { label: "阻塞", value: `${blockedRuns} 条` },
-            { label: "需批准", value: `${approvalRuns} 条` },
+            { label: "待批准", value: `${approvalRuns} 条` },
           ]}
         />
       }
     >
       {loading ? (
-        <LiveStateNotice title="正在载入执行记录" message="正在获取执行记录、讨论间和事项信息。" />
+        <LiveStateNotice title="正在同步执行" message="正在读取执行、讨论间和事项。" />
       ) : error ? (
         <LiveStateNotice title="执行记录同步失败" message={error} />
       ) : historyLoading && historyPage.items.length === 0 && !historyError ? (
-        <LiveStateNotice title="正在载入历史记录" message="正在获取较早的执行记录。" />
+        <LiveStateNotice title="正在读取历史" message="正在获取更早的执行记录。" />
       ) : visibleHistory.length === 0 ? (
-        <LiveStateNotice title="暂无执行记录" message="执行开始后会显示内容。" />
+        <LiveStateNotice title="暂无执行记录" message="开始执行后就能看到进度和结果。" />
       ) : (
         <div className="grid gap-4">
           {historyError ? (
