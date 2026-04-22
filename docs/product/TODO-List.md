@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.72
+**版本:** 1.73
 **更新日期:** 2026 年 4 月 22 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -154,7 +154,8 @@
 - `GAP-66 / TKT-97`
   - memory center 现在还补了正式 provider health / recovery；`workspace-file / search-sidecar / external-persistent` 的 `health summary / next action / failure count / activity timeline / recovery result` 会写回 durable truth，并在 `/memory` 与 preview prompt summary 同步投影。
 - `GAP-70 / TKT-101`
-  - Phase 0 shell 前端减法已收九十八刀；room/context/pr/mailbox/governance 里的重复 self-link、generic CTA、双卡解释和旧 fallback 已大幅收回 contract-level 目标名，PR/detail/topic/run/settings/setup 这些 supporting flow 现在优先暴露 `执行详情 / 事项详情 / 话题详情 / 交付详情 / 交接详情 / 通知设置 / 账号中心 / 远端 PR / GitHub 安装页` 这类真实目标，而不是继续堆空泛按钮。
+  - Phase 0 shell 前端减法已收九十九刀；room/context/pr/mailbox/governance 里的重复 self-link、generic CTA、双卡解释和旧 fallback 已大幅收回 contract-level 目标名，PR/detail/topic/run/settings/setup 这些 supporting flow 现在优先暴露 `执行详情 / 事项详情 / 话题详情 / 交付详情 / 交接详情 / 通知设置 / 账号中心 / 远端 PR / GitHub 安装页` 这类真实目标，而不是继续堆空泛按钮。
+  - 第九十九刀继续把 `/rooms` 列表卡从多入口卡片压回单主动作；默认只保留当前话题、处理人、执行和未读，`话题详情 / 执行详情 / 事项详情` 后移到 `更多入口`，让讨论间索引先回答“去哪继续讨论”。
   - 第九十八刀继续把 access/orchestration/chat/setup/PR 支持流里的“载入/读取/这里/总览/概览”压成状态语气；账号、协作、消息、工作区、交付和仓库状态统一改成同步中、状态和出现时同步，不再像内部控制台。
   - 第九十七刀继续把 profile/settings/mailbox supporting flow 里的“概览/这里/载入”压成结果导向；档案、通知和交接状态改成更直接的对象状态与下一步提示，不再像内部控制台。
   - 第九十四刀继续把 supporting flow 的壳层从“所有/总览/概览”压回“现在能做什么”；`/access`、`/issues`、`/memory`、`/rooms`、`/agents`、`/runs` 的标题、上下文 rail 和空态改成确认账号、选择事项、决定资料、回到讨论、查看谁在干活、处理执行进度，避免继续把列表页读成内部控制台。
@@ -243,6 +244,8 @@
   - 进一步把调度、配额、租约恢复、运行环境明细和协作预览后移到可展开区域；首屏默认只看四个检查点和下一步。
 - `/mailbox`
   - 首屏已改成“先处理需要你接手的事”，把待处理交接和下一步动作提前到最前面。
+- `/rooms`
+  - 房间卡片已从多入口卡片压成单主动作；默认只保留进入讨论间，话题、执行和事项深链按需展开。
 - `headed 验收 harness`
   - 自定义 Next `distDir + tsconfigPath`、scoped e2e tsconfig 清理、`next start` cwd 对齐已前滚；重复跑治理 / planner / website exact replay 不再互相踩构建目录，也不再把 tracked `tsconfig.json` 弄脏。
 - `协作闭环前台主链`
@@ -327,6 +330,17 @@
 - Merge Gate: governance preview、planner replay、website four-agent delivery 这三条 exact replay 在新的 build harness 下继续可跑通，且 `git diff --check` 为空。
 - Related Checklist IDs: `CHK-15` `CHK-21`
 - Related Test Case IDs: `TC-041` `TC-087` `TC-092`
+
+#### `TKT-109` Mailbox 默认二级化与 Headed 脚本同步
+
+- Goal: 让 `/mailbox` 默认只保留待你处理的交接、阻塞原因和下一步按钮，把发起新交接、批量处理、团队分工、升级队列、规则和自动续接收进二级视图。
+- Scope: `apps/web/src/components/live-mailbox-views.tsx`、所有依赖 `mailbox-governance-* / mailbox-batch-* / mailbox-create-* / mailbox-governed-route-*` 的 headed 脚本。
+- Dependencies: 当前 Mailbox 主动作、governed route、一键起单、batch queue、cross-room rollup 和 delivery delegation 链路。
+- Self-Check: `pnpm --dir apps/web lint`、`pnpm --dir apps/web typecheck`、`pnpm --dir apps/web build`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-agent-mailbox-handoff`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-mailbox-batch-policy`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-governance-escalation-rollup`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-governed-mailbox-route`。
+- Review Gate: 默认首屏不能再摊开治理和批量处理大块内容；所有原有 `data-testid` 仍可通过展开二级视图找到，headed 脚本必须显式打开对应高级区。
+- Merge Gate: 创建交接、批量续接、治理升级、cross-room rollup 和 delegated closeout lifecycle 不能因为默认折叠回退。
+- Related Checklist IDs: `CHK-21` `CHK-22`
+- Related Test Case IDs: `TC-041` `TC-087` `TC-091` `TC-092`
 
 ---
 
