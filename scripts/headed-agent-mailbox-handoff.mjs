@@ -318,6 +318,7 @@ try {
   page = await context.newPage();
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
+  await page.getByTestId("mailbox-collaboration-protocol").waitFor({ state: "visible" });
   await page.getByTestId("mailbox-create-room").waitFor({ state: "visible" });
   await page.getByTestId("mailbox-create-room").selectOption("room-runtime");
   await page.getByTestId("mailbox-create-from-agent").selectOption("agent-codex-dockmaster");
@@ -330,6 +331,14 @@ try {
   const handoffId = handoff.id;
   await page.getByTestId(`mailbox-card-${handoffId}`).waitFor({ state: "visible" });
   await waitForMailboxStatus(page, handoffId, "待接手");
+  assert(
+    (await readText(page, "mailbox-collaboration-step-claim-status")) === "可继续",
+    "mailbox collaboration chain should expose claim as ready while the new handoff waits to be picked up"
+  );
+  assert(
+    (await readText(page, "mailbox-collaboration-step-handoff-status")) === "可继续",
+    "mailbox collaboration chain should expose handoff as the current ready step after create"
+  );
 
   const stateAfterCreate = await readState(serverURL);
   const createdInbox = stateAfterCreate.inbox.find((item) => item.id === handoff.inboxItemId);
@@ -418,6 +427,10 @@ try {
   assert(runtimeRun?.owner === "Claude Review Runner", "acknowledged handoff should switch run owner");
   assert(runtimeRoom?.topic?.owner === "Claude Review Runner", "acknowledged handoff should switch room owner");
   assert(runtimeIssue?.owner === "Claude Review Runner", "acknowledged handoff should switch issue owner");
+  assert(
+    (await readText(page, "mailbox-collaboration-step-handoff-status")) === "进行中",
+    "mailbox collaboration chain should flip handoff to active after acknowledge"
+  );
   await capture(page, "mailbox-acknowledged");
 
   await page.goto(`${webURL}/rooms/room-runtime?tab=context`, { waitUntil: "load" });
@@ -451,6 +464,10 @@ try {
     completedRoomMessages.some((message) => message.message.includes("标记为 complete")),
     "completed handoff should write a completion event into room timeline"
   );
+  assert(
+    (await readText(page, "mailbox-collaboration-step-handoff-status")) === "已完成",
+    "mailbox collaboration chain should flip handoff to done after complete"
+  );
   await capture(page, "mailbox-completed");
 
   assert(
@@ -478,6 +495,7 @@ try {
     "- adversarial path 已覆盖：未填 note 直接 `blocked` 会被 server 拒绝，UI 继续停在 `requested`，不会把假 blocked 写进 live truth -> PASS",
     "- 填写 blocker note 后，handoff 会前滚到 `blocked`，同一条 inbox item 也切到 blocked tone，note 保持在 ledger 上；随后 target agent 继续 formal comment 时 blocker note 和 blocked tone 都不会被冲掉 -> PASS",
     "- `acknowledged` 后，`run_runtime_01.owner`、`room-runtime.topic.owner`、`OPS-18.owner` 会一起切到 `Claude Review Runner`，handoff 不再只是文案提示 -> PASS",
+    "- `/mailbox` 首屏现在会把认领、执行、交接、继续、收口压成同一条五步主链；create 后显示 `可继续`，ack 后切到 `进行中`，complete 后切到 `已完成` -> PASS",
     "- Room context 现在会直接露出 mailbox backlink；`/inbox?handoffId=...` 也能聚焦同一条 handoff，Room / Inbox / Mailbox 三个面读的是同一份 lifecycle truth -> PASS",
     "- `completed` 后，closeout note 会同时回写到 inbox summary 和 room timeline，handoff ledger 落到 `completed`，生命周期可以完整回放 -> PASS",
     "",

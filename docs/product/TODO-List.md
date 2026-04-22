@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.64
+**版本:** 1.65
 **更新日期:** 2026 年 4 月 22 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -237,6 +237,8 @@
   - 首屏已改成“下一步 + 模板/仓库/GitHub/运行环境”优先，开始使用语气替代“设置与诊断”语气。
 - `/mailbox`
   - 首屏已改成“先处理需要你接手的事”，把待处理交接和下一步动作提前到最前面。
+- `协作闭环前台主链`
+  - `/mailbox`、`/rooms/[id]` 上线了同一条 `认领 -> 执行 -> 交接 -> 继续 -> 收口` 五步条，不用先翻协作细节，也能知道当前处理人、下一步和收口状态。
 - `ops:smoke`
   - 已覆盖 `/v1/state/stream` 与 `/v1/experience-metrics`，并锁进脚本测试。
   - 已补 `POST /v1/runs/__ops_smoke_missing_run__/control` fail-closed 探测；默认 smoke 现在会证明控制路由在线且不会误写 live run。
@@ -284,6 +286,17 @@
 - Merge Gate: `CURRENT_TURN.md` 刷新、`notes/work-log.md` 累积、`SESSION.json` thread state persistence 继续保持。
 - Related Checklist IDs: `CHK-10` `CHK-14` `CHK-22`
 - Related Test Case IDs: `TC-043` `TC-088` `TC-091`
+
+#### `TKT-106` 协作闭环前台主链
+
+- Goal: 把 `认领 -> 执行 -> 交接 -> 继续 -> 收口` 做成 room / mailbox 一眼可见的主链，不再要求先翻治理摘要才知道卡在哪一步。
+- Scope: 复用现有 `room / run / session / mailbox handoff / workspace governance` live truth，新增五步闭环条，并挂到 `/mailbox`、`/rooms/[id]` 的上下文与摘要入口。
+- Dependencies: 现有 room claim、run control、mailbox handoff、response aggregation、follow thread / pending turn truth。
+- Self-Check: `node --test apps/web/src/lib/collaboration-protocol.test.ts`、`pnpm --dir apps/web lint`、`pnpm --dir apps/web typecheck`、`pnpm --dir apps/web build`。
+- Review Gate: 不新增后端真相，不把 `session / recovery / topology / contract` 这类内部词直接露到主视图；房间和 mailbox 都必须读同一套 live state。
+- Merge Gate: 五步条需要在 mailbox、room context、room 摘要 rail 同时存在，并保留稳定 `data-testid` 供后续 headed smoke 复用。
+- Related Checklist IDs: `CHK-21` `CHK-22`
+- Related Test Case IDs: `TC-039` `TC-041` `TC-087` `TC-091` `TC-092`
 
 ---
 

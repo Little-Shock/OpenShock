@@ -345,6 +345,12 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=context");
   await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "context tab did not survive reload");
+  await waitForVisible(page.locator('[data-testid="room-collaboration-protocol"]'), "room collaboration protocol did not render");
+  assert(
+    (await page.getByTestId("room-collaboration-step-claim").count()) === 1 &&
+      (await page.getByTestId("room-collaboration-step-closeout").count()) === 1,
+    "room context should surface one compact collaboration chain from claim to closeout"
+  );
   assert(
     (await page.getByTestId("room-workbench-open-mailbox").count()) === 0,
     "room context pending panel should not keep a generic open-mailbox CTA once inbox owns the primary triage entry and handoff cards already link into mailbox"
@@ -358,6 +364,7 @@ try {
     "room context pending panel should not keep a desktop open-inbox CTA once the shell sidebar already owns inbox navigation"
   );
   await capture(page, "room-context");
+  results.push("- Context sheet 现在会把认领、执行、交接、继续、收口压成同一条主链，不用先翻治理明细。");
   results.push("- Context sheet 继续支持 query-state reload，并保留 issue / board / inbox back-links。");
 
   await page.getByTestId("sidebar-inbox-link").click();

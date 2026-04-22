@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+import { CollaborationProtocolStrip } from "@/components/collaboration-protocol-strip";
 import { GovernanceEscalationGraph, governanceEscalationNextRouteHrefLabel } from "@/components/governance-escalation-graph";
 import { OpenShockShell } from "@/components/open-shock-shell";
 import { DetailRail, Panel } from "@/components/phase-zero-views";
@@ -346,7 +347,17 @@ export function LiveMailboxPageContent() {
     activeMailboxForRoom[0] ??
     mailboxForRoom[0] ??
     null;
-  const focusRoom = focusHandoff ? state.rooms.find((room) => room.id === focusHandoff.roomId) : null;
+  const requestedRoom = requestedRoomId ? state.rooms.find((room) => room.id === requestedRoomId) ?? null : null;
+  const focusRoom = focusHandoff ? state.rooms.find((room) => room.id === focusHandoff.roomId) ?? requestedRoom : requestedRoom;
+  const focusRun = focusRoom
+    ? state.runs.find((run) => run.id === focusHandoff?.runId) ?? state.runs.find((run) => run.roomId === focusRoom.id) ?? null
+    : null;
+  const focusSession =
+    focusRoom && focusRun
+      ? state.sessions.find((session) => session.activeRunId === focusRun.id) ??
+        state.sessions.find((session) => session.roomId === focusRoom.id) ??
+        null
+      : null;
   const focusActions = focusHandoff ? availableHandoffActions(focusHandoff.status) : [];
   const focusCanAck = focusActions.includes("acknowledged");
   const focusCanComplete = focusActions.includes("completed");
@@ -776,18 +787,32 @@ export function LiveMailboxPageContent() {
             </div>
           </Panel>
 
-          <Panel tone="lime" className="order-3">
+          <div className="order-1">
+            <CollaborationProtocolStrip
+              testIdPrefix="mailbox-collaboration"
+              room={focusRoom}
+              run={focusRun}
+              session={focusSession}
+              handoff={focusHandoff}
+              governance={governance}
+              eyebrow="当前主线"
+              title="认领到收口"
+              description="先看这条交接现在走到哪一步，再决定要不要进治理细节。"
+            />
+          </div>
+
+          <Panel tone="paper" className="order-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                   智能体协作
                 </p>
-                <h3 className="mt-2 font-display text-3xl font-bold">当前协作流程总览</h3>
+                <h3 className="mt-2 font-display text-3xl font-bold">协作细节</h3>
                 <p
                   data-testid="mailbox-governance-summary"
                   className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.74)]"
                 >
-                  {governance.summary}
+                  {governance.summary || "默认把升级、路由和最终收口放在这里复核。"}
                 </p>
               </div>
               <span

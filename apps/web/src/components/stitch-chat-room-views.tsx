@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
+import { CollaborationProtocolStrip } from "@/components/collaboration-protocol-strip";
 import type { SidebarProfileEntry } from "@/components/stitch-shell-primitives";
 import { QuickSearchSurface, StitchSidebar, StitchTopBar, WorkspaceStatusStrip } from "@/components/stitch-shell-primitives";
+import { pickPrimaryHandoff } from "@/lib/collaboration-protocol";
 import { buildRunHistoryEntries, rewriteCustomerFacingText } from "@/lib/phase-zero-helpers";
 import { useQuickSearchController } from "@/lib/quick-search";
 import { buildNamedProfileHref, buildProfileHref } from "@/lib/profile-surface";
@@ -1103,6 +1105,7 @@ function RoomContextPanels({
   relatedSignals,
   recentSignals,
   relatedHandoffs,
+  governance,
 }: {
   room: Room;
   run: Run;
@@ -1112,10 +1115,12 @@ function RoomContextPanels({
   relatedSignals: ApprovalCenterItem[];
   recentSignals: ApprovalCenterItem[];
   relatedHandoffs: AgentHandoff[];
+  governance: PhaseZeroState["workspace"]["governance"];
 }) {
   const currentRunStatus = session?.status ?? run.status;
   const previewSignals = relatedSignals.length === 0 ? recentSignals.slice(0, 2) : relatedSignals.slice(0, 2);
   const hasPendingItems = previewSignals.length > 0 || relatedHandoffs.length > 0;
+  const focusHandoff = pickPrimaryHandoff(relatedHandoffs);
 
   return (
     <div className="space-y-3">
@@ -1203,6 +1208,18 @@ function RoomContextPanels({
           </div>
         </div>
       </Panel>
+
+      <CollaborationProtocolStrip
+        room={room}
+        run={run}
+        session={session}
+        handoff={focusHandoff}
+        governance={governance}
+        testIdPrefix="room-collaboration"
+        eyebrow="当前主线"
+        title="认领到收口"
+        description="不用翻治理明细，先看这条协作线现在走到哪一步。"
+      />
 
       <Panel tone="paper">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1535,6 +1552,7 @@ function RoomWorkbenchRailSummary({
   machineProfileHref,
   relatedSignals,
   relatedHandoffs,
+  governance,
   pullRequestActionLabel,
   pullRequestActionDisabled,
   onPullRequestAction,
@@ -1553,6 +1571,7 @@ function RoomWorkbenchRailSummary({
   machineProfileHref?: string | null;
   relatedSignals: ApprovalCenterItem[];
   relatedHandoffs: AgentHandoff[];
+  governance: PhaseZeroState["workspace"]["governance"];
   pullRequestActionLabel: string;
   pullRequestActionDisabled: boolean;
   onPullRequestAction: (() => Promise<void>) | null;
@@ -1565,6 +1584,7 @@ function RoomWorkbenchRailSummary({
   const runPanelTestId = activeTab === "run" ? "room-rail-run-panel" : "room-workbench-run-panel";
   const prPanelTestId = activeTab === "pr" ? "room-rail-pr-panel" : "room-workbench-pr-panel";
   const previewAgents = activeAgents.slice(0, 3);
+  const focusHandoff = pickPrimaryHandoff(relatedHandoffs);
 
   return (
     <div data-testid={contextPanelTestId} className="space-y-3">
@@ -1600,6 +1620,21 @@ function RoomWorkbenchRailSummary({
               <p className="mt-1.5 text-sm font-semibold">{relatedHandoffs.length} 条跟进中</p>
             </div>
           </div>
+          {activeTab === "context" ? null : (
+            <div className="mt-4">
+              <CollaborationProtocolStrip
+                room={room}
+                run={run}
+                session={session}
+                handoff={focusHandoff}
+                governance={governance}
+                testIdPrefix="room-rail-collaboration"
+                eyebrow="当前主线"
+                title="认领到收口"
+                description="先看现在卡在哪一步。"
+              />
+            </div>
+          )}
           {machineProfileHref || previewAgents.length > 0 ? (
             <div className="mt-4 rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
               <div className="flex items-start justify-between gap-3">
@@ -3483,6 +3518,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
         relatedSignals={relatedSignals}
         recentSignals={recentSignals}
         relatedHandoffs={relatedHandoffs}
+        governance={state.workspace.governance}
       />
     ) : null;
 
@@ -3861,6 +3897,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                     machineProfileHref={machineProfileHref}
                     relatedSignals={relatedSignals}
                     relatedHandoffs={relatedHandoffs}
+                    governance={state.workspace.governance}
                     pullRequestActionLabel={pullRequestActionLabel}
                     pullRequestActionDisabled={pullRequestActionDisabled}
                     onPullRequestAction={pullRequestActionHandler}
