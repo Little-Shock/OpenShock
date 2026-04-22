@@ -1191,8 +1191,8 @@ function FirstStartJourneyPanel() {
   if (loading) {
     return (
       <AccessStateNotice
-        title="正在读取当前登录状态"
-        message="正在检查当前登录状态。"
+        title="正在确认账号状态"
+        message="正在同步当前账号、邮箱和设备。"
         tone="yellow"
       />
     );
@@ -1269,7 +1269,7 @@ function FirstStartJourneyPanel() {
           {journey.nextLabel}
         </Link>
         <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-          登录页只负责带你回到正确的位置。
+          确认完就回到聊天或设置继续。
         </p>
       </div>
     </Panel>
@@ -1319,15 +1319,15 @@ export function LiveAccessOverview() {
   if (loading) {
     return (
       <AccessStateNotice
-        title="正在读取登录与成员信息"
-        message="马上就好。我们先把当前成员、角色和可用操作载入出来。"
+        title="正在同步账号和成员"
+        message="马上就好，正在读取当前成员、角色和可用操作。"
         tone="yellow"
       />
     );
   }
 
   if (error) {
-    return <AccessStateNotice title="身份页同步失败" message={error} tone="pink" />;
+    return <AccessStateNotice title="账号页同步失败" message={error} tone="pink" />;
   }
 
   const session = state.auth.session;

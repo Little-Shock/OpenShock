@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.68
+**版本:** 1.70
 **更新日期:** 2026 年 4 月 22 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -154,8 +154,10 @@
 - `GAP-66 / TKT-97`
   - memory center 现在还补了正式 provider health / recovery；`workspace-file / search-sidecar / external-persistent` 的 `health summary / next action / failure count / activity timeline / recovery result` 会写回 durable truth，并在 `/memory` 与 preview prompt summary 同步投影。
 - `GAP-70 / TKT-101`
-  - Phase 0 shell 前端减法已收九十四刀；room/context/pr/mailbox/governance 里的重复 self-link、generic CTA、双卡解释和旧 fallback 已大幅收回 contract-level 目标名，PR/detail/topic/run/settings/setup 这些 supporting flow 现在优先暴露 `执行详情 / 事项详情 / 话题详情 / 交付详情 / 交接详情 / 通知设置 / 账号中心 / 远端 PR / GitHub 安装页` 这类真实目标，而不是继续堆空泛按钮。
+  - Phase 0 shell 前端减法已收九十六刀；room/context/pr/mailbox/governance 里的重复 self-link、generic CTA、双卡解释和旧 fallback 已大幅收回 contract-level 目标名，PR/detail/topic/run/settings/setup 这些 supporting flow 现在优先暴露 `执行详情 / 事项详情 / 话题详情 / 交付详情 / 交接详情 / 通知设置 / 账号中心 / 远端 PR / GitHub 安装页` 这类真实目标，而不是继续堆空泛按钮。
   - 第九十四刀继续把 supporting flow 的壳层从“所有/总览/概览”压回“现在能做什么”；`/access`、`/issues`、`/memory`、`/rooms`、`/agents`、`/runs` 的标题、上下文 rail 和空态改成确认账号、选择事项、决定资料、回到讨论、查看谁在干活、处理执行进度，避免继续把列表页读成内部控制台。
+  - 第九十五刀继续把 detail loading/error/empty state 从“载入/详情/请稍候”压回“同步中/怎么继续”；事项、话题、执行详情在同步中、失败、未找到时都直接告诉用户重试、回到列表或回到讨论间，不再像后台详情面板。
+  - 第九十六刀继续把 `access` supporting flow 压回结果导向；账号页加载提示和下一步提示不再写“读取当前登录状态 / 带你回到正确的位置”，统一改成确认账号、同步成员、确认完就继续当前工作。
   - 后端可用性这轮也继续前滚到 action semantics：delivery gate、governance route、delivery evidence、delegation/lineage deep-link 都已补 contract-level `hrefLabel` 并由 live truth hygiene 给旧 snapshot 自动回填，前端不再靠局部猜测决定动作名；当前页自链接也已继续从 PR detail evidence、多个 summary strip 和 governance rollup room action 里收掉。
   - channel thread supporting flow 里的回访 rail 也已继续收口：列表卡上的 `打开原视图` 和 desktop 详情 rail 里的 `打开列表` 都已删掉，当前队列上下文只保留 `重新打开线程` 这一条真正改变位置的主动作，不再靠残留 `surfaceHref` 维持重复自链接。
   - governance rollup / graph 的 room-side action 现在也不会再退回 `查看上下文`；即使旧 snapshot 没带 `hrefLabel / nextRouteHrefLabel`，sanitize 后的前端也会直接看到 `查看当前交接 / 查看交接箱 / 执行详情 / 交付详情` 这类真实目标名，不再靠图组件局部猜一个抽象入口。

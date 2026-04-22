@@ -564,7 +564,7 @@ export function LiveIssuesListView() {
 
   if (state.issues.length === 0) {
     return (
-      <LiveStateNotice title="暂无事项" message="新建事项后就能从这里继续推进。" />
+      <LiveStateNotice title="暂无事项" message="新建事项后就能继续推进。" />
     );
   }
 
@@ -608,7 +608,7 @@ export function LiveRoomsPageContent() {
       ) : error ? (
         <LiveStateNotice title="讨论间同步失败" message={error} />
       ) : rooms.length === 0 ? (
-        <LiveStateNotice title="暂无讨论间" message="创建事项后就能从这里继续讨论。" />
+        <LiveStateNotice title="暂无讨论间" message="创建事项后就能继续讨论。" />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {rooms.map((room) => (
@@ -873,12 +873,12 @@ export function LiveIssuePageContent({ issueKey }: { issueKey: string }) {
       <OpenShockShell
         view="issues"
         eyebrow="事项详情"
-        title="正在载入事项"
-        description="正在获取当前事项详情。"
-        contextTitle="事项详情"
-        contextDescription="请稍候，页面正在同步最新信息。"
+        title="正在同步事项"
+        description="正在读取事项、讨论间和执行信息。"
+        contextTitle="稍等一下"
+        contextDescription="同步完成后就能继续处理这条事项。"
       >
-        <LiveStateNotice title="载入中" message="正在获取事项详情和对应的讨论间、执行记录。" />
+        <LiveStateNotice title="同步中" message="正在读取事项详情和对应的讨论间、执行记录。" />
       </OpenShockShell>
     );
   }
@@ -888,12 +888,12 @@ export function LiveIssuePageContent({ issueKey }: { issueKey: string }) {
       <OpenShockShell
         view="issues"
         eyebrow="事项详情"
-        title="事项载入失败"
-        description="暂时无法获取当前事项详情。"
-        contextTitle="事项详情"
-        contextDescription="请检查服务是否正常，然后重试。"
+        title="暂时没连上这条事项"
+        description="先重试一次；如果还不行，就回到事项列表重新进入。"
+        contextTitle="怎么继续"
+        contextDescription="服务恢复后就会拿到这条事项的最新状态。"
       >
-        <LiveStateNotice title="载入失败" message={error} />
+        <LiveStateNotice title="同步失败" message={error} />
       </OpenShockShell>
     );
   }
@@ -907,8 +907,8 @@ export function LiveIssuePageContent({ issueKey }: { issueKey: string }) {
         eyebrow="事项详情"
         title="未找到事项"
         description="这条事项可能已被删除，或当前数据尚未更新。"
-        contextTitle="事项详情"
-        contextDescription="请刷新页面，或从事项列表重新进入。"
+        contextTitle="怎么继续"
+        contextDescription="刷新页面，或从事项列表重新进入。"
       >
         <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-6 py-6 text-base">
           当前找不到 `{issueKey}` 对应的事项。
@@ -964,12 +964,12 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
       <OpenShockShell
         view="topic"
         eyebrow="话题详情"
-        title="正在载入话题"
-        description="正在获取当前话题、讨论间和执行记录。"
-        contextTitle="话题详情"
-        contextDescription="请稍候，页面正在同步最新信息。"
+        title="正在同步话题"
+        description="正在读取话题、讨论间和执行信息。"
+        contextTitle="稍等一下"
+        contextDescription="同步完成后就能继续补说明或恢复执行。"
       >
-        <LiveStateNotice title="载入中" message="正在获取话题内容和当前执行状态。" />
+        <LiveStateNotice title="同步中" message="正在读取话题内容和当前执行状态。" />
       </OpenShockShell>
     );
   }
@@ -979,12 +979,12 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
       <OpenShockShell
         view="topic"
         eyebrow="话题详情"
-        title="话题载入失败"
-        description="暂时无法获取当前话题详情。"
-        contextTitle="话题详情"
-        contextDescription="请检查服务是否正常，然后重试。"
+        title="暂时没连上这条话题"
+        description="先重试一次；如果还不行，就回到讨论间重新进入。"
+        contextTitle="怎么继续"
+        contextDescription="服务恢复后就会拿到这条话题的最新状态。"
       >
-        <LiveStateNotice title="载入失败" message={error} />
+        <LiveStateNotice title="同步失败" message={error} />
       </OpenShockShell>
     );
   }
@@ -1024,7 +1024,7 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
         eyebrow="话题详情"
         title="未找到话题"
         description="这条话题可能还没同步，或者当前讨论间已经变化。"
-        contextTitle="话题同步"
+        contextTitle="怎么继续"
         contextDescription="从讨论间或快速搜索重新进入，通常就能拿到最新状态。"
       >
         <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-6 py-6 text-base">
@@ -1263,32 +1263,32 @@ export function LiveRunPageContent({
 
   if (loading) {
     return (
-        <OpenShockShell
+      <OpenShockShell
         view="runs"
         eyebrow="执行详情"
-        title="正在载入执行记录"
-        description="正在获取当前执行记录详情。"
+        title="正在同步执行"
+        description="正在读取执行、讨论间和当前状态。"
         selectedRoomId={roomId}
-        contextTitle="执行记录详情"
-        contextDescription="请稍候，页面正在同步最新信息。"
+        contextTitle="稍等一下"
+        contextDescription="同步完成后就能继续处理这条执行。"
       >
-        <LiveStateNotice title="载入中" message="正在获取执行记录和对应的讨论间信息。" />
+        <LiveStateNotice title="同步中" message="正在读取执行记录和对应的讨论间信息。" />
       </OpenShockShell>
     );
   }
 
   if (error) {
     return (
-        <OpenShockShell
+      <OpenShockShell
         view="runs"
         eyebrow="执行详情"
-        title="执行记录载入失败"
-        description="暂时无法获取当前执行记录详情。"
+        title="暂时没连上这条执行"
+        description="先重试一次；如果还不行，就回到讨论间重新进入。"
         selectedRoomId={roomId}
-        contextTitle="执行记录详情"
-        contextDescription="请检查服务是否正常，然后重试。"
+        contextTitle="怎么继续"
+        contextDescription="服务恢复后就会拿到这条执行的最新状态。"
       >
-        <LiveStateNotice title="载入失败" message={error} />
+        <LiveStateNotice title="同步失败" message={error} />
       </OpenShockShell>
     );
   }
@@ -1304,13 +1304,13 @@ export function LiveRunPageContent({
 
   if (!room || !run) {
     return (
-        <OpenShockShell
+      <OpenShockShell
         view="runs"
         eyebrow="执行详情"
         title="未找到执行记录"
         description="这条执行记录可能还没同步，或者对应讨论间已经变化。"
         selectedRoomId={roomId}
-        contextTitle="执行记录同步"
+        contextTitle="怎么继续"
         contextDescription="从讨论间重新进入通常就能拿到最新状态。"
       >
         <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-6 py-6 text-base">
@@ -1330,7 +1330,7 @@ export function LiveRunPageContent({
   }
 
   return (
-      <OpenShockShell
+    <OpenShockShell
       view="runs"
       eyebrow="执行详情"
       title={run.id}
