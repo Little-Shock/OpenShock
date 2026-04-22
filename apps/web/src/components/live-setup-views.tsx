@@ -434,7 +434,7 @@ export function SetupFirstStartJourneyPanel() {
     return (
       <SetupStateNotice
         title="正在准备工作区"
-        message="正在载入工作区信息，请稍候。"
+        message="正在同步工作区信息。"
         tone="yellow"
       />
     );
@@ -527,8 +527,8 @@ export function OnboardingStudioPanel() {
   if (loading) {
     return (
       <SetupStateNotice
-        title="正在载入起步设置"
-        message="正在读取模板、分工和当前进度。"
+        title="正在同步起步设置"
+        message="正在同步模板、分工和当前进度。"
         tone="yellow"
       />
     );
@@ -929,8 +929,8 @@ export function LiveSetupOverview() {
   if (loading || runtimeLoading) {
     return (
       <SetupStateNotice
-        title="正在载入工作区"
-        message="正在读取仓库、运行环境和模板状态。"
+        title="正在同步工作区"
+        message="正在同步仓库、运行环境和模板状态。"
         tone="yellow"
       />
     );
@@ -982,7 +982,7 @@ export function LiveSetupOverview() {
             展开高级信息
           </summary>
           <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-            调度、配额、租约恢复和运行环境明细都集中放在这里，首屏默认不再摊开。
+            调度、配额、租约恢复和运行环境明细都收在高级信息内，首屏默认不摊开。
           </p>
           <details data-testid="setup-overview-technical-details" className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">

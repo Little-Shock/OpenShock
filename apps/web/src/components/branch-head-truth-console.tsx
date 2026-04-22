@@ -299,7 +299,7 @@ export function BranchHeadTruthConsole() {
       </div>
 
       <p data-testid="setup-branch-head-truth-summary" className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-        {snapshot?.summary ?? "正在读取当前仓库绑定、GitHub 连接、本地检出和实时服务状态。"}
+        {snapshot?.summary ?? "正在同步仓库绑定、GitHub 连接、本地检出和实时服务状态。"}
       </p>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -324,7 +324,7 @@ export function BranchHeadTruthConsole() {
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">当前检出</p>
           <p className="mt-2 font-display text-xl font-semibold">
-            {formatBranchHead(snapshot?.checkout.branch, snapshot?.checkout.head, "正在读取当前检出分支")}
+            {formatBranchHead(snapshot?.checkout.branch, snapshot?.checkout.head, "正在同步当前检出分支")}
           </p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
             {snapshot?.checkout.dirty ? `未清理 (${snapshot.checkout.dirtyEntries})` : "干净"} · {valueOrFallback(snapshot?.checkout.worktreePath, "未返回工作区")}

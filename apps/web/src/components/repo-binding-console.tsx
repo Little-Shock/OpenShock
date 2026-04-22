@@ -268,14 +268,14 @@ export function RepoBindingConsole() {
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">当前判断</p>
           <p data-testid="setup-repo-binding-message" className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.8)]">
-              {valueOrFallback(binding?.connectionMessage, "正在检查仓库状态。")}
+            {valueOrFallback(binding?.connectionMessage, "正在检查仓库状态。")}
           </p>
           <details className="mt-4 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
               绑定依据
             </summary>
             <p className="mt-3 font-mono text-xs leading-6 break-all text-[color:rgba(24,20,14,0.78)]">
-              {valueOrFallback(binding?.repoUrl, "正在读取当前仓库远端地址")}
+              {valueOrFallback(binding?.repoUrl, "正在同步当前仓库远端地址")}
             </p>
             {binding?.missing?.length ? (
               <p

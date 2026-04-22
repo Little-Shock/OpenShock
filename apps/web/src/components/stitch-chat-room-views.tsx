@@ -3010,15 +3010,15 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                   >
                     <div className="mx-auto max-w-[1040px] border-x-2 border-[var(--shock-ink)] bg-[#fff9ec] pb-4">
                       <div className="border-b-2 border-[var(--shock-ink)] px-4 py-3">
-                        <p className="font-display text-[18px] font-bold">{channel?.name ?? "正在载入"}</p>
+                        <p className="font-display text-[18px] font-bold">{channel?.name ?? "同步中"}</p>
                         <p className="mt-1 text-[12px] leading-5 text-[color:rgba(24,20,14,0.64)]">
                           {channel?.summary ?? channel?.purpose ?? (isDirectMessage ? "私聊说明还没同步。" : "频道说明还没同步。")}
                         </p>
                       </div>
                       {loading ? (
                         <DiscussionStateMessage
-                          title="正在载入消息"
-                          message="正在获取当前频道或私聊内容。"
+                          title="正在同步消息"
+                          message="正在同步当前频道或私聊内容。"
                         />
                       ) : error ? (
                         <DiscussionStateMessage title="消息面同步失败" message={error} />
@@ -3077,7 +3077,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                               ? `继续回复 ${replyTarget.speaker}...`
                               : canChannelCompose && channel
                                 ? `发送消息到 ${channel.name}...`
-                                : channelSendBoundary || "正在载入消息..."
+                                : channelSendBoundary || "正在同步消息..."
                           }
                         />
                       </div>
@@ -3611,7 +3611,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
               </div>
               {loading ? (
                 <div className="p-4">
-                  <DiscussionStateMessage title="正在载入讨论间" message="正在获取当前讨论间、执行和消息内容。" />
+                  <DiscussionStateMessage title="正在同步讨论间" message="正在同步讨论间、执行和消息。" />
                 </div>
               ) : error ? (
                 <div className="p-4">
@@ -3847,7 +3847,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
 
               <div className="flex-1 overflow-y-auto p-4">
                 {loading ? (
-                  <DiscussionStateMessage title="正在载入房间信息" message="正在同步讨论间、执行和会话信息。" />
+                  <DiscussionStateMessage title="正在同步房间信息" message="正在同步讨论间、执行和会话信息。" />
                 ) : error ? (
                   <DiscussionStateMessage title="上下文同步失败" message={error} />
                 ) : !room || !run ? (

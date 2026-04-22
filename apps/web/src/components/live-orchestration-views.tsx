@@ -232,7 +232,7 @@ function agentBoundaryState(agent: AgentStatus, relatedPullRequests: PullRequest
     {
       label: "调度变更",
       status: "只读",
-      detail: agent.state === "running" ? "当前先保持稳定执行，不在这里直接暂停或改派。" : "当前不在这里直接改派，避免把状态和动作混在一起。",
+      detail: agent.state === "running" ? "当前先保持稳定执行，需要暂停或改派时回到对应执行。" : "当前先不直接改派，避免把状态和动作混在一起。",
     },
     {
       label: "运行环境",
@@ -1107,7 +1107,7 @@ export function LiveOrchestrationBoard({
   return (
     <div className="space-y-4">
       <Panel tone="yellow">
-        <p className="font-mono text-[11px] uppercase tracking-[0.24em]">协作总览</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.24em]">协作状态</p>
         <h2 className="mt-3 font-display text-4xl font-bold">协作、调度和合并状态</h2>
         <p className="mt-3 max-w-4xl text-base leading-7">
           哪些智能体在推进，哪些机器正忙，哪些事项需要你接手。
@@ -1157,7 +1157,7 @@ export function LiveOrchestrationBoard({
                 {column.agents.length === 0 ? (
                   <SurfaceNotice
                     title={`暂无${column.title}智能体`}
-                    message="新的分配或交接会出现在这里。"
+                    message="有新分配或交接时会同步。"
                   />
                 ) : (
                   column.agents.map((agent) => (
@@ -1257,7 +1257,7 @@ export function LiveOrchestrationBoard({
               ) : plannerQueue.length === 0 ? (
                 <SurfaceNotice
                   title="目前没有待调度事项"
-                  message="新事项会出现在这里。"
+                  message="有新事项时会同步。"
                 />
               ) : (
                 plannerQueue.map((item) => <PlannerQueueCard key={item.sessionId} item={item} />)
@@ -1365,7 +1365,7 @@ export function AgentControlSurface({
         <p className="font-mono text-[11px] uppercase tracking-[0.24em]">当前边界</p>
         <h3 className="mt-3 font-display text-3xl font-bold">先看现在能动到哪里</h3>
         <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
-          这里先说明真实边界，不再放看起来能点、实际不会生效的假按钮。
+          先说明真实边界，不放看起来能点、实际不会生效的假按钮。
         </p>
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           {boundaryItems.map((item) => (
@@ -1434,7 +1434,7 @@ export function AgentControlSurface({
       </Panel>
 
       <Panel tone="lime">
-        <p className="font-mono text-[11px] uppercase tracking-[0.24em]">当前概览</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.24em]">当前状态</p>
         <div className="mt-4 space-y-3">
           <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">最近执行</p>

@@ -926,7 +926,7 @@ export function PullRequestDetailView({
                     >
                       {deliveryStatusLabel(detail.delivery.status)}
                     </span>
-                    <h3 className="font-display text-3xl font-bold">交付总览</h3>
+                    <h3 className="font-display text-3xl font-bold">交付状态</h3>
                   </div>
                   <p className="mt-4 max-w-4xl text-sm leading-6 opacity-85">{detail.delivery.summary}</p>
                 </div>

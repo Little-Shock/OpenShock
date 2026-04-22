@@ -1320,7 +1320,7 @@ export function LiveAccessOverview() {
     return (
       <AccessStateNotice
         title="正在同步账号和成员"
-        message="马上就好，正在读取当前成员、角色和可用操作。"
+        message="正在同步成员、角色和可用操作。"
         tone="yellow"
       />
     );
