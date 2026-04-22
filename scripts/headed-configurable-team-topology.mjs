@@ -289,6 +289,7 @@ try {
   await capture(page, "setup-governance-preview");
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "domcontentloaded" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render");
   await page.getByTestId("mailbox-governance-lane-developer").waitFor({ state: "visible" });
   await page.getByTestId("mailbox-governance-lane-ops").waitFor({ state: "visible" });
   assert((await readText(page, "mailbox-governance-lane-developer")).includes("Builder"), "mailbox governance lane should reflect Builder");

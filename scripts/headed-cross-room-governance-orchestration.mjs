@@ -236,6 +236,16 @@ async function readLocatorText(locator) {
   return (await locator.textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function waitForMailboxStatus(page, handoffId, expected) {
   const expectedLabel =
     expected === "requested"
@@ -364,6 +374,7 @@ try {
   assert(!findRollup(baselineState, targetRoom.id), "runtime room should not already be hot before orchestration replay");
 
   await page.goto(`${webURL}/mailbox?roomId=${targetRoom.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render");
   await page.getByTestId("mailbox-governance-escalation-rollup").waitFor({ state: "visible" });
   await capture(page, "mailbox-cross-room-baseline");
 
@@ -399,6 +410,7 @@ try {
   }, "runtime room did not become a blocked cross-room rollup with ready next route");
 
   await page.goto(`${webURL}/mailbox?roomId=${targetRoom.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render for hot room");
   await page.getByTestId(`mailbox-governance-escalation-rollup-room-${targetRoom.id}`).waitFor({ state: "visible" });
   await page.getByTestId("mailbox-governance-escalation-graph").waitFor({ state: "visible" });
   await page.getByTestId(`mailbox-governance-escalation-graph-room-${targetRoom.id}`).waitFor({ state: "visible" });
@@ -525,6 +537,7 @@ try {
   await capture(page, "orchestration-cross-room-route-ready");
 
   await page.goto(`${webURL}/mailbox?roomId=${targetRoom.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render before create");
   await page.getByTestId(`mailbox-governance-escalation-rollup-route-create-${targetRoom.id}`).click();
 
   const activeState = await waitFor(async () => {
@@ -662,6 +675,7 @@ try {
     await capture(page, "pr-detail-cross-room-auto-closeout-done");
 
     await page.goto(`${webURL}/mailbox?roomId=${targetRoom.id}`, { waitUntil: "load" });
+    await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after auto-closeout");
     await page.getByTestId("mailbox-governance-escalation-graph").waitFor({ state: "visible" });
     await waitFor(
       async () => (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} 个讨论间`,
@@ -684,6 +698,7 @@ try {
     await capture(page, "mailbox-cross-room-auto-closeout-done");
 
     await page.reload({ waitUntil: "load" });
+    await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after mailbox reload");
     await page.getByTestId("mailbox-governance-escalation-graph").waitFor({ state: "visible" });
     await waitFor(
       async () => (await readText(page, `mailbox-governance-escalation-rollup-route-status-${targetRoom.id}`)) === "完成",

@@ -233,6 +233,16 @@ async function readText(page, testId) {
   return (await page.getByTestId(testId).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function startServices() {
   const workspaceRoot = path.join(artifactsDir, "workspace");
   const statePath = path.join(artifactsDir, "state.json");
@@ -339,6 +349,7 @@ try {
   page = await context.newPage();
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-batch-details", "mailbox batch detail panel did not render");
 
   for (const handoff of created) {
     await waitForMailbox(serverURL, handoff.title);

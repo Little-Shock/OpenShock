@@ -246,6 +246,16 @@ async function readText(page, testId) {
   return (await page.getByTestId(testId).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function startServices() {
   const workspaceRoot = path.join(artifactsDir, "workspace");
   const statePath = path.join(artifactsDir, "state.json");
@@ -347,6 +357,7 @@ try {
   const secondaryTitle = `Cross-room rollup secondary ${Date.now()}`;
 
   await page.goto(`${webURL}/mailbox?roomId=${primaryRoom.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render");
   await page.getByTestId("mailbox-governance-escalation-rollup").waitFor({ state: "visible" });
   assert(
     (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount} 个讨论间`,
@@ -399,6 +410,7 @@ try {
   }, "cross-room escalation rollup did not surface both rooms");
 
   await page.goto(`${webURL}/mailbox?roomId=${primaryRoom.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render with hot rooms");
   await page.getByTestId(`mailbox-governance-escalation-rollup-room-${primaryRoom.id}`).waitFor({ state: "visible" });
   await page.getByTestId(`mailbox-governance-escalation-rollup-room-${secondaryRoom.id}`).waitFor({ state: "visible" });
   assert(
@@ -448,6 +460,7 @@ try {
   }, "primary room rollup did not clear while secondary room stayed active");
 
   await page.goto(`${webURL}/mailbox?roomId=${secondaryRoom.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after primary closeout");
   assert(
     (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount + 1} 个讨论间`,
     "one newly added room should remain after primary closeout"
@@ -470,6 +483,7 @@ try {
   }, "cross-room escalation rollup did not clear after both rooms closed");
 
   await page.goto(`${webURL}/mailbox?roomId=${primaryRoom.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after clear-down");
   assert(
     (await readText(page, "mailbox-governance-escalation-rollup-count")) === `${baselineRollupCount} 个讨论间`,
     "mailbox cross-room rollup should return to baseline hot-room count after both rooms close"

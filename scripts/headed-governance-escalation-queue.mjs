@@ -267,6 +267,16 @@ async function readText(page, testId) {
   return (await page.getByTestId(testId).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function startServices() {
   const workspaceRoot = path.join(artifactsDir, "workspace");
   const statePath = path.join(artifactsDir, "state.json");
@@ -364,6 +374,8 @@ try {
   const baselineState = await readState(serverURL);
   const baselineQueueCount = baselineState.workspace.governance.escalationSla?.queue?.length ?? 0;
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render");
+  await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render");
   await page.getByTestId("mailbox-governance-escalation-queue").waitFor({ state: "visible" });
   assert(
     parseCountText(await readText(page, "mailbox-governance-escalation-count")) === baselineQueueCount,
@@ -426,6 +438,7 @@ try {
   await capture(page, "orchestration-escalation-requested");
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after return");
   await page.getByTestId(`mailbox-note-${handoff.id}`).fill(blockedNote);
   await page.getByTestId(`mailbox-action-blocked-${handoff.id}`).click();
   await waitForMailboxStatus(page, handoff.id, "blocked");
@@ -496,6 +509,7 @@ try {
   }, "handoff did not complete via formal mailbox truth");
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after closeout");
   await waitFor(
     async () => parseCountText(await readText(page, "mailbox-governance-escalation-count")) === baselineQueueCount,
     "escalation queue should return to baseline after handoff closeout"

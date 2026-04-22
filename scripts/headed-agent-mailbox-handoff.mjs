@@ -225,6 +225,16 @@ async function readText(page, testId) {
   return (await page.getByTestId(testId).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function startServices() {
   const workspaceRoot = path.join(artifactsDir, "workspace");
   const statePath = path.join(artifactsDir, "state.json");
@@ -319,6 +329,7 @@ try {
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
   await page.getByTestId("mailbox-collaboration-protocol").waitFor({ state: "visible" });
+  await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render");
   await page.getByTestId("mailbox-create-room").waitFor({ state: "visible" });
   await page.getByTestId("mailbox-create-room").selectOption("room-runtime");
   await page.getByTestId("mailbox-create-from-agent").selectOption("agent-codex-dockmaster");

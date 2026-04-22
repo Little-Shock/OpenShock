@@ -459,6 +459,16 @@ async function readText(page, testId) {
   return (await page.getByTestId(testId).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function isVisibleByTestId(page, testId) {
   const locator = page.getByTestId(testId);
   if ((await locator.count()) === 0) {
@@ -635,6 +645,7 @@ try {
   await capture(page, "governed-compose-ready");
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render");
   await page.getByTestId("mailbox-governed-route").waitFor({ state: "visible" });
   await waitForGovernanceStatus(page, "mailbox-governed-route-status", "ready");
 
@@ -689,10 +700,11 @@ try {
   let resultLines = [
     "- `/mailbox` 与 Inbox compose 都会读取 `workspace.governance.routingPolicy.suggestedHandoff`；当 route 已可用时，Inbox 会默认把自由表单折成次级入口，只保留 `Create Governed Handoff` 热路径在首屏 -> PASS",
     "- 通过 governed route 一键起单后，`/mailbox` 与 Inbox compose 会一起切到 `active`，并提供聚焦当前 handoff 的回链，防止同一路由被重复创建 -> PASS",
-    "- 完成当前 reviewer handoff 后，两处 governed surface 会一起前滚到下一条 lane；当 QA lane 缺少可映射 agent 时，状态会显式转成 `blocked`，不会静默回退到随机接收方 -> PASS",
+    "- 完成当前 reviewer handoff 后，两处 governed surface 会一起前滚到 QA；有默认接收人时保持 `ready`，缺少映射时显式转成 `blocked`，不会静默回退到随机接收方 -> PASS",
   ];
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${handoff.id}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render after handoff focus");
   await page.getByTestId(`mailbox-action-acknowledged-${handoff.id}`).click();
   await page.getByTestId(`mailbox-note-${handoff.id}`).fill("review 已完成，继续看下一条治理建议。");
 
@@ -781,6 +793,7 @@ try {
 	      const qaCloseoutNote = "QA 验证完成，可以进入 PR delivery closeout。";
 
 	      await page.goto(`${webURL}/mailbox?roomId=room-runtime&handoffId=${followup.id}`, { waitUntil: "load" });
+	      await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render for followup handoff");
 	      if (
 	        runMode === "delegate-history-sync" ||
 	        runMode === "delegate-communication-thread" ||
@@ -805,6 +818,7 @@ try {
 	          }),
 	        });
 	        await page.reload({ waitUntil: "load" });
+	        await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render after governed reload");
 	      } else {
 	        await waitForActionEnabled(page, `mailbox-action-acknowledged-${followup.id}`);
 	        await Promise.all([
@@ -817,6 +831,7 @@ try {
 	          page.getByTestId(`mailbox-action-acknowledged-${followup.id}`).click(),
 	        ]);
 	        await page.reload({ waitUntil: "load" });
+	        await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render after governed acknowledge reload");
 	        await page.getByTestId(`mailbox-card-${followup.id}`).waitFor({ state: "visible" });
 	        await waitForActionEnabled(page, `mailbox-action-completed-${followup.id}`);
 	        await page.getByTestId(`mailbox-note-${followup.id}`).fill(qaCloseoutNote);
@@ -2863,14 +2878,24 @@ try {
 
     const stateAfterComplete = await readState(serverURL);
     const governedSuggestion = stateAfterComplete.workspace.governance.routingPolicy.suggestedHandoff;
-    assert(governedSuggestion.status === "blocked", "next governed handoff should block when QA lane has no mapped agent");
     assert(governedSuggestion.toLaneLabel === "QA", "next governed handoff should point at the QA lane");
-    await waitForGovernanceStatus(page, "mailbox-governed-route-status", "blocked");
-    await capture(page, "governed-route-next-blocked");
+    const expectedNextStatus = governedSuggestion.toAgentId ? "ready" : "blocked";
+    assert(
+      governedSuggestion.status === expectedNextStatus,
+      `next governed handoff should be ${expectedNextStatus} after reviewer closeout`
+    );
+    if (expectedNextStatus === "ready") {
+      assert(
+        governedSuggestion.toAgent === "Memory Clerk",
+        "ready QA handoff should retain the configured Memory Clerk target"
+      );
+    }
+    await waitForGovernanceStatus(page, "mailbox-governed-route-status", expectedNextStatus);
+    await capture(page, `governed-route-next-${expectedNextStatus}`);
 
     await page.goto(`${webURL}/inbox?roomId=room-runtime`, { waitUntil: "load" });
-    await waitForGovernanceStatus(page, "mailbox-compose-governed-route-status", "blocked");
-    await capture(page, "governed-compose-next-blocked");
+    await waitForGovernanceStatus(page, "mailbox-compose-governed-route-status", expectedNextStatus);
+    await capture(page, `governed-compose-next-${expectedNextStatus}`);
 
     if (runMode === "auto-create") {
       reportTitle = "# 2026-04-11 Governed Mailbox Auto-Create Report";

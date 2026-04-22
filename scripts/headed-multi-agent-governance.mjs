@@ -348,6 +348,8 @@ try {
   );
 
   await page.goto(`${webURL}/mailbox?roomId=room-runtime`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render");
+  await ensureDetailsOpen(page, "mailbox-create-details", "mailbox create detail panel did not render");
   await page.getByTestId("mailbox-governance-template").waitFor({ state: "visible" });
   assert(
     (await readText(page, "mailbox-governance-template")).includes("开发团队协作流"),

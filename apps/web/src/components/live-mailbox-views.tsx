@@ -74,6 +74,15 @@ function commonBatchActions(handoffs: AgentHandoff[]) {
   );
 }
 
+function openMailboxDetails(detailsId: string) {
+  const details = document.getElementById(detailsId);
+  if (!(details instanceof HTMLDetailsElement)) {
+    return;
+  }
+  details.open = true;
+  details.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
 function batchGovernedPolicyStatus(selection: {
   selectedCount: number;
   governedCount: number;
@@ -617,6 +626,9 @@ export function LiveMailboxPageContent() {
   }
 
   function toggleMailboxSelection(handoffId: string, selected: boolean) {
+    if (selected) {
+      openMailboxDetails("mailbox-batch-details");
+    }
     setSelectedMailboxIds((current) => {
       if (selected) {
         return current.includes(handoffId) ? current : [...current, handoffId];
@@ -776,12 +788,13 @@ export function LiveMailboxPageContent() {
                       {busyKey === `${focusHandoff.id}:completed` ? "处理中..." : "完成"}
                     </button>
                   ) : null}
-                  <a
-                    href="#mailbox-create-surface"
+                  <button
+                    type="button"
+                    onClick={() => openMailboxDetails("mailbox-create-surface")}
                     className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em]"
                   >
                     发起新交接
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>
@@ -801,58 +814,84 @@ export function LiveMailboxPageContent() {
             />
           </div>
 
-          <Panel tone="paper" className="order-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <details
+            id="mailbox-governance-details"
+            data-testid="mailbox-governance-details"
+            className="order-3 rounded-[28px] border-2 border-[var(--shock-ink)] bg-white px-5 py-4 shadow-[6px_6px_0_0_var(--shock-lime)]"
+          >
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                  智能体协作
+                  按需查看
                 </p>
-                <h3 className="mt-2 font-display text-3xl font-bold">协作细节</h3>
-                <p
-                  data-testid="mailbox-governance-summary"
-                  className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.74)]"
-                >
-                  {governance.summary || "升级、路由和最终收口会一起复核。"}
+                <h3 className="mt-2 font-display text-2xl font-bold">协作细节</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                  团队分工、升级队列和规则放在这里，默认不打断交接处理。
                 </p>
               </div>
-              <span
-                data-testid="mailbox-governance-template"
-                className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
-              >
-                {governance.label}
-              </span>
-            </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <GovernanceMetric
-                label="待处理交接"
-                value={`${governance.stats.openHandoffs}`}
-                detail="未处理完的交接。"
-                testId="mailbox-governance-open-handoffs"
-              />
-              <GovernanceMetric
-                label="阻塞事项"
-                value={`${governance.stats.blockedEscalations}`}
-                detail="需要人工处理的阻塞会集中显示。"
-                testId="mailbox-governance-blocked-escalations"
-              />
-              <GovernanceMetric
-                label="评审关卡"
-                value={`${governance.stats.reviewGates}`}
-                detail="评审相关状态会同步到交接、PR 和收件箱。"
-                testId="mailbox-governance-review-gates"
-              />
-              <GovernanceMetric
-                label="待拍板"
-                value={`${governance.stats.humanOverrideGates}`}
-                detail="需要你拍板的步骤会一直保持可见。"
-                testId="mailbox-governance-human-override-gates"
-              />
-            </div>
-          </Panel>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em]">
+                  {blockedCount} 项阻塞
+                </span>
+                <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-lime)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em]">
+                  展开
+                </span>
+              </div>
+            </summary>
 
-          <div className="order-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_0.85fr]">
-            <Panel tone="white">
-              <div className="flex items-start justify-between gap-3">
+            <div className="mt-4 flex flex-col gap-4">
+              <Panel tone="paper">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                      智能体协作
+                    </p>
+                    <h3 className="mt-2 font-display text-3xl font-bold">协作细节</h3>
+                    <p
+                      data-testid="mailbox-governance-summary"
+                      className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.74)]"
+                    >
+                      {governance.summary || "升级、路由和最终收口会一起复核。"}
+                    </p>
+                  </div>
+                  <span
+                    data-testid="mailbox-governance-template"
+                    className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+                  >
+                    {governance.label}
+                  </span>
+                </div>
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <GovernanceMetric
+                    label="待处理交接"
+                    value={`${governance.stats.openHandoffs}`}
+                    detail="未处理完的交接。"
+                    testId="mailbox-governance-open-handoffs"
+                  />
+                  <GovernanceMetric
+                    label="阻塞事项"
+                    value={`${governance.stats.blockedEscalations}`}
+                    detail="需要人工处理的阻塞会集中显示。"
+                    testId="mailbox-governance-blocked-escalations"
+                  />
+                  <GovernanceMetric
+                    label="评审关卡"
+                    value={`${governance.stats.reviewGates}`}
+                    detail="评审相关状态会同步到交接、PR 和收件箱。"
+                    testId="mailbox-governance-review-gates"
+                  />
+                  <GovernanceMetric
+                    label="待拍板"
+                    value={`${governance.stats.humanOverrideGates}`}
+                    detail="需要你拍板的步骤会一直保持可见。"
+                    testId="mailbox-governance-human-override-gates"
+                  />
+                </div>
+              </Panel>
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_0.85fr]">
+                <Panel tone="white">
+                  <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                     协作分工
@@ -899,10 +938,10 @@ export function LiveMailboxPageContent() {
                   </Panel>
                 ))}
               </div>
-            </Panel>
+                </Panel>
 
-            <div className="space-y-4">
-              <Panel tone={governanceTone(governance.humanOverride.status)}>
+                <div className="space-y-4">
+                  <Panel tone={governanceTone(governance.humanOverride.status)}>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                   需要你拍板
                 </p>
@@ -913,9 +952,9 @@ export function LiveMailboxPageContent() {
                   {governanceStatusLabel(governance.humanOverride.status)}
                 </p>
                 <p className="mt-3 text-sm leading-6">{governance.humanOverride.summary}</p>
-              </Panel>
+                  </Panel>
 
-              <Panel tone={governanceTone(governance.responseAggregation.status)}>
+                  <Panel tone={governanceTone(governance.responseAggregation.status)}>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                   最终回复
                 </p>
@@ -936,9 +975,9 @@ export function LiveMailboxPageContent() {
                     </span>
                   ))}
                 </div>
-              </Panel>
+                  </Panel>
 
-              <Panel tone={governanceTone(governance.escalationSla.status)}>
+                  <Panel tone={governanceTone(governance.escalationSla.status)}>
                 <div
                   data-testid="mailbox-governance-escalation-queue"
                   className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4"
@@ -1009,9 +1048,9 @@ export function LiveMailboxPageContent() {
                     )}
                   </div>
                 </div>
-              </Panel>
+                  </Panel>
 
-              <Panel tone={escalationRollup.some((entry) => entry.status === "blocked") ? "pink" : "paper"}>
+                  <Panel tone={escalationRollup.some((entry) => entry.status === "blocked") ? "pink" : "paper"}>
                 <div
                   data-testid="mailbox-governance-escalation-rollup"
                   className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4"
@@ -1133,9 +1172,9 @@ export function LiveMailboxPageContent() {
                     ) : null}
                   </div>
                 </div>
-              </Panel>
+                  </Panel>
 
-              <Panel tone="paper">
+                  <Panel tone="paper">
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                   当前规则
                 </p>
@@ -1156,52 +1195,74 @@ export function LiveMailboxPageContent() {
                     </div>
                   ))}
                 </div>
+                  </Panel>
+                </div>
+              </div>
+
+              <Panel tone="paper">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                      示例流程
+                    </p>
+                    <h3 className="mt-2 font-display text-2xl font-bold">
+                      当前流程从任务到交付已经可以串起来
+                    </h3>
+                  </div>
+                  <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+                    {governance.walkthrough.length} 步
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 xl:grid-cols-5">
+                  {governance.walkthrough.map((step) => (
+                    <Panel key={step.id} tone={governanceTone(step.status)} className="!p-3.5">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">{step.label}</p>
+                      <p
+                        data-testid={`mailbox-governance-step-${step.id}`}
+                        className="mt-2 font-display text-[22px] font-bold leading-7"
+                      >
+                        {step.summary}
+                      </p>
+                      <p className="mt-2 text-sm leading-6">{step.detail}</p>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                          {governanceStatusLabel(step.status)}
+                        </span>
+                        {step.href ? (
+                          <Link href={step.href} className="font-mono text-[10px] uppercase tracking-[0.16em] underline">
+                            打开
+                          </Link>
+                        ) : null}
+                      </div>
+                    </Panel>
+                  ))}
+                </div>
               </Panel>
             </div>
-          </div>
+          </details>
 
-          <Panel tone="paper" className="order-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <details
+            id="mailbox-create-surface"
+            data-testid="mailbox-create-details"
+            className="order-2 rounded-[28px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-5 py-4 shadow-[6px_6px_0_0_var(--shock-pink)]"
+          >
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                  示例流程
+                  按需创建
                 </p>
-                <h3 className="mt-2 font-display text-2xl font-bold">
-                  当前流程从任务到交付已经可以串起来
-                </h3>
+                <h3 className="mt-2 font-display text-2xl font-bold">发起新交接</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                  当前列表里没有合适接手人时，再打开这里指定讨论、发起方和接收方。
+                </p>
               </div>
-              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
-                {governance.walkthrough.length} 步
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em]">
+                展开
               </span>
-            </div>
-            <div className="mt-4 grid gap-3 xl:grid-cols-5">
-              {governance.walkthrough.map((step) => (
-                <Panel key={step.id} tone={governanceTone(step.status)} className="!p-3.5">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">{step.label}</p>
-                  <p
-                    data-testid={`mailbox-governance-step-${step.id}`}
-                    className="mt-2 font-display text-[22px] font-bold leading-7"
-                  >
-                    {step.summary}
-                  </p>
-                  <p className="mt-2 text-sm leading-6">{step.detail}</p>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                    <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
-                      {governanceStatusLabel(step.status)}
-                    </span>
-                    {step.href ? (
-                      <Link href={step.href} className="font-mono text-[10px] uppercase tracking-[0.16em] underline">
-                        打开
-                      </Link>
-                    ) : null}
-                  </div>
-                </Panel>
-              ))}
-            </div>
-          </Panel>
+            </summary>
 
-          <Panel id="mailbox-create-surface" tone="yellow" className="order-2">
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <Panel tone="yellow" className="mt-4">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
                   发起交接
@@ -1388,21 +1449,54 @@ export function LiveMailboxPageContent() {
                   <p className="text-sm leading-6 text-[var(--shock-pink)]">{actionError.message}</p>
                 ) : null}
               </div>
-            </div>
-          </Panel>
+              </div>
+            </Panel>
+          </details>
 
           <div className="order-1 flex flex-col gap-4">
             {visibleMailboxForRoom.length === 0 ? (
               <Panel tone="white">
                 <p className="font-display text-2xl font-bold">暂无交接项</p>
                 <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                  先从上方创建第一条交接。
+                  没有人等你接手时，可以回到讨论间继续当前任务，或发起一条新交接。
                 </p>
+                <button
+                  type="button"
+                  onClick={() => openMailboxDetails("mailbox-create-surface")}
+                  className="mt-4 rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[10px] uppercase tracking-[0.16em]"
+                >
+                  发起新交接
+                </button>
               </Panel>
             ) : (
               <>
-                <Panel tone="paper" className="order-2">
-                  <div
+                <details
+                  id="mailbox-batch-details"
+                  data-testid="mailbox-batch-details"
+                  className="order-2 rounded-[28px] border-2 border-[var(--shock-ink)] bg-white px-5 py-4 shadow-[6px_6px_0_0_var(--shock-yellow)]"
+                >
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                        按需批量
+                      </p>
+                      <h3 className="mt-2 font-display text-2xl font-bold">批量处理</h3>
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                        需要一次处理多条交接时再展开；单条交接优先用卡片上的按钮。
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em]">
+                        可处理 {selectableMailboxHandoffs.length}
+                      </span>
+                      <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em]">
+                        展开
+                      </span>
+                    </div>
+                  </summary>
+
+                  <Panel tone="paper" className="mt-4">
+                    <div
                     data-testid="mailbox-batch-surface"
                     className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-[#fff7dd] px-5 py-5"
                   >
@@ -1566,8 +1660,9 @@ export function LiveMailboxPageContent() {
                         </button>
                       </div>
                     </div>
-                  </div>
-                </Panel>
+                    </div>
+                  </Panel>
+                </details>
                 {visibleMailboxForRoom.map((handoff) => {
                 const room = state.rooms.find((item) => item.id === handoff.roomId);
                 const fromAgentHref = buildProfileHref("agent", handoff.fromAgentId);

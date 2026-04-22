@@ -546,6 +546,7 @@ try {
   );
 
   await page.goto(`${webURL}/mailbox?roomId=${createdIssue.roomId}`, { waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render");
   await page.getByTestId(`mailbox-card-${architectHandoff.id}`).waitFor({ state: "visible" });
 
   await fetchJSON(`${serverURL}/v1/mailbox/${architectHandoff.id}`, {
@@ -573,6 +574,7 @@ try {
   );
 
   await page.reload({ waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after reviewer create");
   await page.getByTestId(`mailbox-card-${reviewerHandoff.id}`).waitFor({ state: "visible" });
   await capture(page, "mailbox-reviewer-requested");
 
@@ -604,6 +606,7 @@ try {
   });
 
   await page.reload({ waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after reviewer block");
   assert(
     (await readText(page, "mailbox-governance-lane-status-reviewer")) === "阻塞",
     "reviewer lane should surface the blocked website review step"
@@ -640,6 +643,7 @@ try {
   );
 
   await page.reload({ waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after qa create");
   await page.getByTestId(`mailbox-card-${qaHandoff.id}`).waitFor({ state: "visible" });
   await capture(page, "mailbox-qa-requested");
 
@@ -660,6 +664,7 @@ try {
   });
 
   await page.reload({ waitUntil: "load" });
+  await ensureDetailsOpen(page, "mailbox-governance-details", "mailbox governance detail panel did not render after qa closeout");
   await waitFor(
     async () => (await readText(page, "mailbox-governance-response-aggregation")).includes(qaCloseoutNote),
     "mailbox response aggregation did not expose the QA closeout note"

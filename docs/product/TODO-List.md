@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.73
+**版本:** 1.74
 **更新日期:** 2026 年 4 月 22 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -154,7 +154,8 @@
 - `GAP-66 / TKT-97`
   - memory center 现在还补了正式 provider health / recovery；`workspace-file / search-sidecar / external-persistent` 的 `health summary / next action / failure count / activity timeline / recovery result` 会写回 durable truth，并在 `/memory` 与 preview prompt summary 同步投影。
 - `GAP-70 / TKT-101`
-  - Phase 0 shell 前端减法已收九十九刀；room/context/pr/mailbox/governance 里的重复 self-link、generic CTA、双卡解释和旧 fallback 已大幅收回 contract-level 目标名，PR/detail/topic/run/settings/setup 这些 supporting flow 现在优先暴露 `执行详情 / 事项详情 / 话题详情 / 交付详情 / 交接详情 / 通知设置 / 账号中心 / 远端 PR / GitHub 安装页` 这类真实目标，而不是继续堆空泛按钮。
+  - Phase 0 shell 前端减法已收一百刀；room/context/pr/mailbox/governance 里的重复 self-link、generic CTA、双卡解释和旧 fallback 已大幅收回 contract-level 目标名，PR/detail/topic/run/settings/setup 这些 supporting flow 现在优先暴露 `执行详情 / 事项详情 / 话题详情 / 交付详情 / 交接详情 / 通知设置 / 账号中心 / 远端 PR / GitHub 安装页` 这类真实目标，而不是继续堆空泛按钮。
+  - 第一百刀继续把 `/mailbox` 首屏压回“手头交接 + 下一步”；治理、发起新交接和批量处理改成默认折叠区，主面只保留焦点交接、阻塞原因、五步主链和卡片动作，避免交接箱再次退回后台控制台结构。
   - 第九十九刀继续把 `/rooms` 列表卡从多入口卡片压回单主动作；默认只保留当前话题、处理人、执行和未读，`话题详情 / 执行详情 / 事项详情` 后移到 `更多入口`，让讨论间索引先回答“去哪继续讨论”。
   - 第九十八刀继续把 access/orchestration/chat/setup/PR 支持流里的“载入/读取/这里/总览/概览”压成状态语气；账号、协作、消息、工作区、交付和仓库状态统一改成同步中、状态和出现时同步，不再像内部控制台。
   - 第九十七刀继续把 profile/settings/mailbox supporting flow 里的“概览/这里/载入”压成结果导向；档案、通知和交接状态改成更直接的对象状态与下一步提示，不再像内部控制台。
@@ -218,6 +219,12 @@
 - `GAP-71 / TKT-102`
   - 显式 provider thread state 的本地持久化 contract 已站住；执行进程现在可通过 daemon 提供的 thread-state file 写回 `SESSION.json.appServerThreadId`，后续 resume 会把这个值重新注入进程环境，形成可验证的本地恢复锚点。
 
+### 2026-04-22 已收口
+
+- `GAP-72 / TKT-109`
+  - `/mailbox` 默认首屏现在只保留手头交接、阻塞原因、下一步按钮和当前卡片列表；治理、发起新交接、批量处理已后移到默认折叠区，不再一进来就像内部控制台。
+  - 相关 headed 脚本已同步改成显式展开二级区块后再验证治理、自动交接和批量处理，避免“前端做减法”把浏览器验收误打成假失败。
+
 ### 2026-04-22 九分冲刺待收
 
 - `P0-首页产品化`
@@ -244,6 +251,7 @@
   - 进一步把调度、配额、租约恢复、运行环境明细和协作预览后移到可展开区域；首屏默认只看四个检查点和下一步。
 - `/mailbox`
   - 首屏已改成“先处理需要你接手的事”，把待处理交接和下一步动作提前到最前面。
+  - 治理、发起新交接和批量处理已后移到默认折叠区；默认先看焦点交接、阻塞原因和卡片动作，需要时再展开高级协作面。
 - `/rooms`
   - 房间卡片已从多入口卡片压成单主动作；默认只保留进入讨论间，话题、执行和事项深链按需展开。
 - `headed 验收 harness`
