@@ -1,6 +1,6 @@
 # OpenShock To Do List
 
-**版本:** 1.65
+**版本:** 1.67
 **更新日期:** 2026 年 4 月 22 日
 **关联文档:** [PRD](./PRD.md) · [Product Checklist](./Checklist.md) · [Test Cases](../testing/Test-Cases.md)
 
@@ -235,8 +235,11 @@
   - 首页已改成真实产品入口，默认显示“现在可以做什么”、最近讨论、待办交接、GitHub 与工作区概况，不再自动跳转。
 - `/setup`
   - 首屏已改成“下一步 + 模板/仓库/GitHub/运行环境”优先，开始使用语气替代“设置与诊断”语气。
+  - 进一步把调度、配额、租约恢复、运行环境明细和协作预览后移到可展开区域；首屏默认只看四个检查点和下一步。
 - `/mailbox`
   - 首屏已改成“先处理需要你接手的事”，把待处理交接和下一步动作提前到最前面。
+- `headed 验收 harness`
+  - 自定义 Next `distDir + tsconfigPath`、scoped e2e tsconfig 清理、`next start` cwd 对齐已前滚；重复跑治理 / planner / website exact replay 不再互相踩构建目录，也不再把 tracked `tsconfig.json` 弄脏。
 - `协作闭环前台主链`
   - `/mailbox`、`/rooms/[id]` 上线了同一条 `认领 -> 执行 -> 交接 -> 继续 -> 收口` 五步条，不用先翻协作细节，也能知道当前处理人、下一步和收口状态。
 - `ops:smoke`
@@ -297,6 +300,28 @@
 - Merge Gate: 五步条需要在 mailbox、room context、room 摘要 rail 同时存在，并保留稳定 `data-testid` 供后续 headed smoke 复用。
 - Related Checklist IDs: `CHK-21` `CHK-22`
 - Related Test Case IDs: `TC-039` `TC-041` `TC-087` `TC-091` `TC-092`
+
+#### `TKT-107` Setup 首屏减法与高级信息后移
+
+- Goal: 让 `/setup` 首屏只保留模板、仓库、GitHub、运行环境四个检查点，以及真正需要继续的下一步。
+- Scope: `LiveSetupOverview` 把调度、配额、租约恢复和运行环境明细收进高级信息；`OnboardingStudioPanel` 把协作预览收进可展开区域；同步相关 headed 脚本。
+- Dependencies: 当前 `setup` 首启引导、runtime inventory detail、governance preview、onboarding materialization truth。
+- Self-Check: `pnpm --dir apps/web lint`、`pnpm --dir apps/web typecheck`、`pnpm --dir apps/web build`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-machine-profile-capability-binding`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-multi-agent-governance`。
+- Review Gate: 默认首屏不再直接铺开调度/配额/治理大块内容，但原有 truth 和 data-testid 仍可通过展开区域读到。
+- Merge Gate: 机器能力绑定、治理模板切换和 setup 恢复链路不能因为首屏减法回退。
+- Related Checklist IDs: `CHK-03` `CHK-06` `CHK-12` `CHK-21`
+- Related Test Case IDs: `TC-004` `TC-027` `TC-041` `TC-056`
+
+#### `TKT-108` Headed 验收构建目录隔离与工作树卫生
+
+- Goal: 让重复运行或并行运行的 headed exact replay 不再互相抢 Next 构建目录，也不再把 tracked `tsconfig.json` 和构建临时文件留脏在工作树里。
+- Scope: `scripts/lib/headed-web-build.mjs`、`apps/web/next.config.ts`、`apps/web/.gitignore`、`scripts/clean-next-e2e-dist.mjs`，以及所有使用自定义 `OPENSHOCK_NEXT_DIST_DIR` / `next start` 的 headed 脚本。
+- Dependencies: 当前 custom Next `distDir`、scoped e2e tsconfig、`clean:web-e2e-dist`、governance / planner / website exact replay harness。
+- Self-Check: `pnpm --dir apps/web lint`、`pnpm --dir apps/web typecheck`、`pnpm --dir apps/web build`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-multi-agent-governance`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-planner-dispatch-replay`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-website-four-agent-delivery`。
+- Review Gate: 同一条 headed 脚本重复运行时不能因为 Next build lock、共享 distDir 或 scoped tsconfig 丢失而随机失败；验收结束后 `pnpm clean:web-e2e-dist` 必须能恢复到干净 tracked 文件。
+- Merge Gate: governance preview、planner replay、website four-agent delivery 这三条 exact replay 在新的 build harness 下继续可跑通，且 `git diff --check` 为空。
+- Related Checklist IDs: `CHK-15` `CHK-21`
+- Related Test Case IDs: `TC-041` `TC-087` `TC-092`
 
 ---
 

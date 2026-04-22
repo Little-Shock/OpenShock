@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { spawn, spawnSync } from "node:child_process";
-import { accessSync, constants as fsConstants, createWriteStream, writeFileSync } from "node:fs";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { accessSync, constants as fsConstants, createWriteStream } from "node:fs";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -10,8 +10,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
-import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
+import { buildHeadedWebApp } from "./lib/headed-web-build.mjs";
 import { resolveProvidedServiceTargets } from "./lib/headed-service-targets.mjs";
+import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -28,12 +29,11 @@ const reportPath = parsedArgs.reportPath
   : path.join(artifactsDir, "report.md");
 const screenshotsDir = path.join(artifactsDir, "screenshots");
 const logsDir = path.join(artifactsDir, "logs");
-const webDistDirName = ".next-e2e-planner-dispatch-replay";
+const webDistDirName = `.next-e2e-planner-dispatch-replay-${path.basename(artifactsDir)}`;
 const webDistDir = path.join(projectRoot, "apps", "web", webDistDirName);
 
 await mkdir(screenshotsDir, { recursive: true });
 await mkdir(logsDir, { recursive: true });
-await mkdir(webDistDir, { recursive: true });
 
 const screenshots = [];
 const processes = [];
@@ -209,6 +209,16 @@ async function readText(page, testId) {
   return (await page.getByTestId(testId).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function startServices() {
   if (providedServiceTargets) {
     const { webURL, serverURL } = providedServiceTargets;
@@ -242,28 +252,13 @@ async function startServices() {
   const buildLogPath = path.join(logsDir, "web-build.log");
 
   await mkdir(workspaceRoot, { recursive: true });
-  await rm(webDistDir, { recursive: true, force: true });
-  await mkdir(webDistDir, { recursive: true });
-
-  const buildResult = spawnSync("pnpm", ["--dir", "apps/web", "build"], {
-    cwd: projectRoot,
-    env: webEnv,
-    encoding: "utf8",
-  });
-  writeFileSync(
+  await buildHeadedWebApp({
+    projectRoot,
+    webDistDir,
+    webEnv,
     buildLogPath,
-    [
-      `[${timestamp()}] pnpm --dir apps/web build`,
-      buildResult.stdout ?? "",
-      buildResult.stderr ?? "",
-      `[${timestamp()}] exited code=${buildResult.status} signal=${buildResult.signal ?? "null"}`,
-      "",
-    ].join("\n"),
-    "utf8"
-  );
-  if (buildResult.status !== 0) {
-    throw new Error(`web build failed before headed replay. See ${buildLogPath}`);
-  }
+    failureMessage: "web build failed before headed replay",
+  });
 
   startProcess("server", path.join(projectRoot, "scripts", "go.sh"), ["run", "./cmd/openshock-server"], {
     cwd: path.join(projectRoot, "apps", "server"),
@@ -278,9 +273,9 @@ async function startServices() {
   startProcess(
     "web",
     "pnpm",
-    ["--dir", "apps/web", "exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)],
+    ["exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)],
     {
-      cwd: projectRoot,
+      cwd: path.join(projectRoot, "apps", "web"),
       env: webEnv,
     }
   );
@@ -320,9 +315,10 @@ try {
   await page.getByTestId("setup-template-select-dev-team").waitFor({ state: "visible" });
   await page.getByTestId("setup-template-select-dev-team").click();
   await page.getByTestId("setup-onboarding-success").waitFor({ state: "visible" });
+  await ensureDetailsOpen(page, "setup-governance-preview-details", "setup governance detail panel did not render");
   await page.getByTestId("setup-governance-template").waitFor({ state: "visible" });
-  assert(
-    (await readText(page, "setup-governance-template")).includes("开发团队治理链"),
+  await waitFor(
+    async () => (await readText(page, "setup-governance-template")).includes("开发团队协作流"),
     "setup should resolve to dev-team governance before replay starts"
   );
 

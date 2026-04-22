@@ -213,8 +213,8 @@ async function startServices() {
     },
   });
 
-  startProcess("web", "pnpm", ["--dir", "apps/web", "exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
-    cwd: projectRoot,
+  startProcess("web", "pnpm", ["exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
+    cwd: path.join(projectRoot, "apps", "web"),
     env: webEnv,
   });
 

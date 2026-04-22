@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { spawn, spawnSync } from "node:child_process";
-import { accessSync, constants as fsConstants, createWriteStream, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { accessSync, constants as fsConstants, createWriteStream } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -10,8 +10,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
-import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
+import { buildHeadedWebApp } from "./lib/headed-web-build.mjs";
 import { resolveProvidedServiceTargets } from "./lib/headed-service-targets.mjs";
+import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -41,12 +42,11 @@ const reportPath = parsedArgs.reportPath
 const screenshotsDir = path.join(artifactsDir, "screenshots");
 const logsDir = path.join(artifactsDir, "logs");
 const workspaceDir = path.join(artifactsDir, "workspace");
-const webDistDirName = ".next-e2e-website-four-agent-delivery";
+const webDistDirName = `.next-e2e-website-four-agent-delivery-${path.basename(artifactsDir)}`;
 const webDistDir = path.join(projectRoot, "apps", "web", webDistDirName);
 
 await mkdir(screenshotsDir, { recursive: true });
 await mkdir(logsDir, { recursive: true });
-await mkdir(webDistDir, { recursive: true });
 
 const screenshots = [];
 const processes = [];
@@ -266,6 +266,16 @@ async function readText(page, testId) {
   return (await page.getByTestId(testId).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testId, message) {
+  const details = page.getByTestId(testId);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function prepareWorkspace() {
   await rm(workspaceDir, { recursive: true, force: true });
   await runCommand("git", ["clone", "--shared", projectRoot, workspaceDir]);
@@ -308,28 +318,13 @@ async function startServices() {
   const buildLogPath = path.join(logsDir, "web-build.log");
 
   await prepareWorkspace();
-  await rm(webDistDir, { recursive: true, force: true });
-  await mkdir(webDistDir, { recursive: true });
-
-  const buildResult = spawnSync("pnpm", ["--dir", "apps/web", "build"], {
-    cwd: projectRoot,
-    env: webEnv,
-    encoding: "utf8",
-  });
-  writeFileSync(
+  await buildHeadedWebApp({
+    projectRoot,
+    webDistDir,
+    webEnv,
     buildLogPath,
-    [
-      `[${timestamp()}] pnpm --dir apps/web build`,
-      buildResult.stdout ?? "",
-      buildResult.stderr ?? "",
-      `[${timestamp()}] exited code=${buildResult.status} signal=${buildResult.signal ?? "null"}`,
-      "",
-    ].join("\n"),
-    "utf8"
-  );
-  if (buildResult.status !== 0) {
-    throw new Error(`web build failed before website delivery replay. See ${buildLogPath}`);
-  }
+    failureMessage: "web build failed before website delivery replay",
+  });
 
   startProcess(
     "daemon",
@@ -368,9 +363,9 @@ async function startServices() {
   startProcess(
     "web",
     "pnpm",
-    ["--dir", "apps/web", "exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)],
+    ["exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)],
     {
-      cwd: projectRoot,
+      cwd: path.join(projectRoot, "apps", "web"),
       env: webEnv,
     }
   );
@@ -465,6 +460,7 @@ try {
   );
 
   await page.reload({ waitUntil: "load" });
+  await ensureDetailsOpen(page, "setup-governance-preview-details", "setup governance detail panel did not render after reload");
   await page.getByTestId("setup-governance-lane-architect").waitFor({ state: "visible" });
   await page.getByTestId("setup-governance-lane-developer").waitFor({ state: "visible" });
   await page.getByTestId("setup-governance-lane-reviewer").waitFor({ state: "visible" });

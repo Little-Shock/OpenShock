@@ -282,7 +282,7 @@ try {
   await page.getByTestId("settings-member-start-route").selectOption(startRoute);
   await page.getByTestId("settings-member-github-handle").fill(githubHandle);
   await page.getByTestId("settings-member-save").click();
-  await waitForText(page, "settings-member-success", "成员偏好已保存，换设备后也会继续读取同一份设置。");
+  await waitForText(page, "settings-member-success", "成员偏好已保存。");
   await capture(page, "settings-after-write");
 
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -309,6 +309,7 @@ try {
   results.push("- `/access` 会显示和 `/settings` 一致的成员偏好与 GitHub 身份。");
 
   await page.goto(`${webURL}/setup`, { waitUntil: "domcontentloaded" });
+  await expandDetails(page, '[data-testid="setup-advanced-details"]', "setup advanced detail panel did not render");
   await expandDetails(page, '[data-testid="setup-overview-technical-details"]', "setup technical detail panel did not render");
   await waitForText(page, "setup-onboarding-template", templateLabel);
   await waitForText(page, "setup-onboarding-status", onboardingStatusLabel);
@@ -333,6 +334,7 @@ try {
   await waitForText(secondPage, "access-durable-start-route", startRoute);
   await waitForText(secondPage, "access-durable-github-handle", githubHandle);
   await secondPage.goto(`${webURL}/setup`, { waitUntil: "domcontentloaded" });
+  await expandDetails(secondPage, '[data-testid="setup-advanced-details"]', "setup advanced detail panel did not render in second browser");
   await expandDetails(secondPage, '[data-testid="setup-overview-technical-details"]', "setup technical detail panel did not render in second browser");
   await waitForText(secondPage, "setup-onboarding-template", templateLabel);
   await waitForText(secondPage, "setup-onboarding-status", onboardingStatusLabel);

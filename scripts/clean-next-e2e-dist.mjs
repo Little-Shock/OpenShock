@@ -6,16 +6,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export async function cleanNextE2EArtifacts(projectRoot = path.resolve(__dirname, "..")) {
+export async function normalizeNextE2ETsconfig(projectRoot = path.resolve(__dirname, "..")) {
   const webRoot = path.join(projectRoot, "apps", "web");
   const tsconfigPath = path.join(webRoot, "tsconfig.json");
-
-  const entries = await readdir(webRoot, { withFileTypes: true });
-  const staleDirs = entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(".next-e2e"))
-    .map((entry) => path.join(webRoot, entry.name));
-
-  await Promise.all(staleDirs.map((target) => rm(target, { recursive: true, force: true })));
 
   const tsconfig = JSON.parse(await readFile(tsconfigPath, "utf8"));
   const include = Array.isArray(tsconfig.include) ? tsconfig.include : [];
@@ -39,17 +32,47 @@ export async function cleanNextE2EArtifacts(projectRoot = path.resolve(__dirname
     await writeFile(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`, "utf8");
   }
 
-  return { cleanedDirs: staleDirs.length, normalizedTsconfig: normalized };
+  return normalized;
+}
+
+export async function cleanNextE2EArtifacts(projectRoot = path.resolve(__dirname, "..")) {
+  const webRoot = path.join(projectRoot, "apps", "web");
+  const entries = await readdir(webRoot, { withFileTypes: true });
+  const staleDirs = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(".next-e2e"))
+    .map((entry) => path.join(webRoot, entry.name));
+
+  await Promise.all(staleDirs.map((target) => rm(target, { recursive: true, force: true })));
+
+  const normalized = await normalizeNextE2ETsconfig(projectRoot);
+
+  const scopedTsconfigEntries = entries
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        (/^\.tsconfig-next-e2e-.*\.json$/.test(entry.name) ||
+          /^\.next-e2e-tsconfig-.*\.json$/.test(entry.name))
+    )
+    .map((entry) => path.join(webRoot, entry.name));
+
+  await Promise.all(scopedTsconfigEntries.map((target) => rm(target, { force: true })));
+
+  return {
+    cleanedDirs: staleDirs.length,
+    normalizedTsconfig: normalized,
+    cleanedScopedTsconfigFiles: scopedTsconfigEntries.length,
+  };
 }
 
 const invokedAsScript = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (invokedAsScript) {
   const result = await cleanNextE2EArtifacts();
-  if (result.cleanedDirs > 0 || result.normalizedTsconfig) {
+  if (result.cleanedDirs > 0 || result.normalizedTsconfig || result.cleanedScopedTsconfigFiles > 0) {
     const summary = [
       result.cleanedDirs > 0 ? `cleaned ${result.cleanedDirs} Next E2E dist dir(s)` : "",
       result.normalizedTsconfig ? "normalized apps/web/tsconfig.json" : "",
+      result.cleanedScopedTsconfigFiles > 0 ? `removed ${result.cleanedScopedTsconfigFiles} scoped Next E2E tsconfig file(s)` : "",
     ]
       .filter(Boolean)
       .join("; ");

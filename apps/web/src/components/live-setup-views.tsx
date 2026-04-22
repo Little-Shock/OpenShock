@@ -672,49 +672,54 @@ export function OnboardingStudioPanel() {
                 </p>
               ))}
             </div>
-            <div className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]">协作预览</p>
-                  <p
-                    data-testid="setup-governance-summary"
-                    className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]"
-                  >
-                    {state.workspace.governance.summary}
-                  </p>
-                </div>
-                <span
-                  data-testid="setup-governance-template"
-                  className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
-                >
-                  {state.workspace.governance.label}
-                </span>
-              </div>
-              <div className="mt-4 grid gap-2 md:grid-cols-2">
-                {state.workspace.governance.teamTopology.map((lane) => (
-                  <div
-                    key={lane.id}
-                    data-testid={`setup-governance-lane-${lane.id}`}
-                    className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-display text-lg font-semibold">{lane.label}</p>
-                        <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{lane.role}</p>
-                      </div>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{governanceLaneStatusLabel(lane.status)}</span>
-                    </div>
+            <details data-testid="setup-governance-preview-details" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-4">
+              <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.68)]">
+                展开协作细节
+              </summary>
+              <div className="mt-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em]">协作预览</p>
                     <p
-                      data-testid={`setup-governance-lane-${lane.id}-agent`}
-                      className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]"
+                      data-testid="setup-governance-summary"
+                      className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]"
                     >
-                      默认智能体：{valueOrPlaceholder(lane.defaultAgent, "未设置")}
+                      {state.workspace.governance.summary}
                     </p>
-                    <p className="mt-2 text-sm leading-6">{lane.summary}</p>
                   </div>
-                ))}
+                  <span
+                    data-testid="setup-governance-template"
+                    className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+                  >
+                    {state.workspace.governance.label}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-2 md:grid-cols-2">
+                  {state.workspace.governance.teamTopology.map((lane) => (
+                    <div
+                      key={lane.id}
+                      data-testid={`setup-governance-lane-${lane.id}`}
+                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-display text-lg font-semibold">{lane.label}</p>
+                          <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{lane.role}</p>
+                        </div>
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{governanceLaneStatusLabel(lane.status)}</span>
+                      </div>
+                      <p
+                        data-testid={`setup-governance-lane-${lane.id}-agent`}
+                        className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]"
+                      >
+                        默认智能体：{valueOrPlaceholder(lane.defaultAgent, "未设置")}
+                      </p>
+                      <p className="mt-2 text-sm leading-6">{lane.summary}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            </details>
           </Panel>
 
           <Panel tone="paper" className="!p-3.5">
@@ -887,6 +892,39 @@ export function LiveSetupOverview() {
   const blockedLeaseInbox =
     state.inbox.find((item) => item.kind === "blocked" && looksLikeRuntimeLeaseConflict(item.summary)) ?? null;
   const leaseRecoveryNote = blockedLeaseSession?.controlNote?.trim() || blockedLeaseInbox?.summary?.trim() || "";
+  const checkpointCards = [
+    {
+      title: "仓库",
+      summary:
+        workspace.repoBindingStatus === "bound"
+          ? `已连接到 ${valueOrPlaceholder(workspace.repoProvider, "代码平台")}，可以直接从聊天进入执行。`
+          : "还没接通仓库，先把项目绑定好。",
+      active: workspace.repoBindingStatus === "bound",
+    },
+    {
+      title: "运行环境",
+      summary:
+        registryRuntimes.length > 0
+          ? `已发现 ${registryRuntimes.length} 台，其中 ${onlineRuntimes} 台在线${staleRuntimes > 0 ? `、${staleRuntimes} 台需要留意` : ""}；当前使用 ${selectedRuntimeLabel}${blockedLeaseSession ? "，另有一条执行线被租约冲突挡住" : ""}。`
+          : "先把运行环境接上，智能体才能真正开始干活。",
+      active: registryRuntimes.length > 0 && pairingStatus !== "unpaired",
+    },
+    {
+      title: "GitHub",
+      summary: workspace.githubInstallation.connectionReady
+        ? "GitHub 已接通，可以继续创建和检查拉取请求。"
+        : workspace.githubInstallation.appInstalled
+          ? "GitHub App 已安装，还要确认仓库授权和连接状态。"
+          : "还没接上 GitHub，远端交付前先完成安装。",
+      active: workspace.githubInstallation.connectionReady,
+    },
+    {
+      title: "模板",
+      summary: `模板 ${templateSurfaceLabel(workspace.onboarding.templateId)} · ${onboardingStatusLabel(workspace.onboarding.status)} · 回跳地址 ${valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")}。`,
+      active: workspace.onboarding.status !== "not_started",
+    },
+  ] as const;
+  const nextCheckpoint = checkpointCards.find((item) => !item.active) ?? null;
 
   if (loading || runtimeLoading) {
     return (
@@ -911,48 +949,21 @@ export function LiveSetupOverview() {
   return (
     <div className="grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_0.95fr]">
       <div className="grid gap-3 md:grid-cols-2">
-        <SetupCheckpointCard
-          title="仓库"
-          summary={
-            workspace.repoBindingStatus === "bound"
-              ? `已连接到 ${valueOrPlaceholder(workspace.repoProvider, "代码平台")}，可以直接从聊天进入执行。`
-              : "还没接通仓库，先把项目绑定好。"
-          }
-          active={workspace.repoBindingStatus === "bound"}
-        />
-        <SetupCheckpointCard
-          title="运行环境"
-          summary={
-            registryRuntimes.length > 0
-              ? `已发现 ${registryRuntimes.length} 台，其中 ${onlineRuntimes} 台在线${staleRuntimes > 0 ? `、${staleRuntimes} 台需要留意` : ""}；当前使用 ${selectedRuntimeLabel}。`
-              : "先把运行环境接上，智能体才能真正开始干活。"
-          }
-          active={registryRuntimes.length > 0 && pairingStatus !== "unpaired"}
-        />
-        <SetupCheckpointCard
-          title="GitHub"
-          summary={
-            workspace.githubInstallation.connectionReady
-              ? "GitHub 已接通，可以继续创建和检查拉取请求。"
-              : workspace.githubInstallation.appInstalled
-                ? "GitHub App 已安装，还要确认仓库授权和连接状态。"
-                : "还没接上 GitHub，远端交付前先完成安装。"
-          }
-          active={workspace.githubInstallation.connectionReady}
-        />
-        <SetupCheckpointCard
-          title="模板"
-          summary={`模板 ${templateSurfaceLabel(workspace.onboarding.templateId)} · ${onboardingStatusLabel(workspace.onboarding.status)} · 回跳地址 ${valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")}。`}
-          active={workspace.onboarding.status !== "not_started"}
-        />
+        {checkpointCards.map((item) => (
+          <SetupCheckpointCard key={item.title} title={item.title} summary={item.summary} active={item.active} />
+        ))}
       </div>
 
       <div className="space-y-3">
         <Panel tone="yellow" className="!p-3.5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.24em]">工作区概览</p>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">先看模板、仓库、GitHub 和运行环境。</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.24em]">首屏只看四项</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                {nextCheckpoint
+                  ? `现在先补 ${nextCheckpoint.title}。调度、配额、租约和运行环境明细都收在下面的高级信息。`
+                  : "模板、仓库、GitHub 和运行环境都已接通，可以直接回到聊天继续。"}
+              </p>
             </div>
             <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
               {selectedRuntimeLabel} · {pairingStatusLabel(pairingStatus)}
@@ -965,9 +976,17 @@ export function LiveSetupOverview() {
             <WorkspaceMetric label="引导状态" value={onboardingStatusLabel(workspace.onboarding.status)} testID="setup-onboarding-status" />
             <WorkspaceMetric label="GitHub" value={githubInstallLabel(workspace.githubInstallation.connectionReady, workspace.githubInstallation.appInstalled)} testID="setup-installation-status" />
           </dl>
-          <details data-testid="setup-overview-technical-details" className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
+        </Panel>
+        <details data-testid="setup-advanced-details" className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+          <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">
+            展开高级信息
+          </summary>
+          <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+            调度、配额、租约恢复和运行环境明细都集中放在这里，首屏默认不再摊开。
+          </p>
+          <details data-testid="setup-overview-technical-details" className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
-              展开更多技术细节
+              调度与配额
             </summary>
             <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
               已检测到 {state.runtimes.length} 条运行环境记录，有 {selectableRuntimes} 台可调度，默认使用 {selectedRuntimeLabel}
@@ -998,103 +1017,103 @@ export function LiveSetupOverview() {
                 testId="setup-selected-runtime-shell"
               />
             </dl>
-            <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5 text-sm leading-6">
+            <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 text-sm leading-6">
               {scheduler.summary || "调度摘要还没同步。"}
             </p>
-          </details>
-          {workspace.usage?.warning || workspace.quota?.warning ? (
-            <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5 text-sm leading-6">
-              {workspace.usage?.warning ?? workspace.quota?.warning}
-            </p>
-          ) : null}
-        </Panel>
-        {blockedLeaseSession ? (
-          <Panel tone="pink" className="!p-3.5">
-            <div data-testid="setup-runtime-lease-recovery">
-              <p className="font-mono text-[11px] uppercase tracking-[0.24em]">运行环境恢复</p>
-              <p className="mt-3 font-display text-2xl font-bold">当前有执行线被租约冲突挡住</p>
-              <p className="mt-3 text-sm leading-6">{blockedLeaseSession.summary}</p>
-              {leaseRecoveryNote ? (
-                <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">{leaseRecoveryNote}</p>
-              ) : null}
-            </div>
-          </Panel>
-        ) : null}
-        <details data-testid="setup-runtime-inventory-details" className="rounded-[28px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
-          <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">
-            运行环境明细
-          </summary>
-          <div className="mt-3 space-y-2">
-            {registryRuntimes.length === 0 ? (
-              <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                还没注册运行环境。先完成本地桥接。
+            {workspace.usage?.warning || workspace.quota?.warning ? (
+              <p className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 text-sm leading-6">
+                {workspace.usage?.warning ?? workspace.quota?.warning}
               </p>
-            ) : (
-              registryRuntimes.map((runtime) => {
-                const selected = runtime.machine === selectedRuntimeName || runtime.id === selectedRuntimeName;
-                const assigned = runtime.machine === scheduler.assignedMachine || runtime.id === scheduler.assignedRuntime;
-                const machine = runtimeMachines.find((item) => item.name === runtime.machine || item.id === runtime.id);
-                const candidate =
-                  scheduler.candidates.find((item) => item.runtime === runtime.id || item.machine === runtime.machine) ?? null;
-                const activeLeaseCount = activeLeases.filter(
-                  (lease) => lease.runtime === runtime.id || lease.machine === runtime.machine
-                ).length;
-                return (
-                  <div
-                    key={runtime.id}
-                    data-testid={`setup-runtime-card-${runtime.id}`}
-                    className={cn(
-                      "rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3",
-                      assigned ? "bg-[var(--shock-lime)]" : selected ? "bg-[var(--shock-yellow)]" : "bg-white"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-display text-[18px] font-semibold leading-5">{runtime.machine}</p>
-                        <p className="mt-1 text-sm text-[color:rgba(24,20,14,0.72)]">
-                          {runtime.detectedCli.join(" + ") || machine?.cli || "未返回 CLI 标签"}
-                        </p>
-                      </div>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em]">
-                        {assigned ? "下一条执行线" : selected ? "当前所选" : runtimeStatusLabel(runtime.state)}
-                      </span>
-                    </div>
-                    <div className="mt-3 space-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                      <p>{machine?.os || "本地"} / {machine?.lastHeartbeat || runtime.lastHeartbeatAt || "未返回心跳"}</p>
-                      <p>{runtime.shell || machine?.shell || "命令壳未返回"}</p>
-                      <p>{runtime.daemonUrl || "未配对本地桥"} / {pairingStateLabel(runtime.pairingState)}</p>
-                      <p>{formatHeartbeatCadence(runtime.heartbeatIntervalSeconds, runtime.heartbeatTimeoutSeconds)}</p>
-                      <p>活跃租约：{activeLeaseCount} / 可调度：{candidate?.schedulable ? "是" : "否"}</p>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {runtime.providers.map((provider) => (
-                        <span
-                          key={`${runtime.id}-${provider.id}`}
-                          className={cn(
-                            "rounded-full border border-[var(--shock-ink)] px-3 py-1.5 font-mono text-[10px]",
-                            runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "lime" && "bg-[var(--shock-lime)]",
-                            runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "yellow" && "bg-[var(--shock-yellow)]",
-                            runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "pink" && "bg-[var(--shock-pink)] text-white",
-                            runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "paper" && "bg-[var(--shock-paper)]"
-                          )}
-                        >
-                          {provider.label} · {runtimeProviderHealthLabel(runtimeProviderHealthStatus(provider))}
+            ) : null}
+          </details>
+          {blockedLeaseSession ? (
+            <Panel tone="pink" className="mt-3 !p-3.5">
+              <div data-testid="setup-runtime-lease-recovery">
+                <p className="font-mono text-[11px] uppercase tracking-[0.24em]">运行环境恢复</p>
+                <p className="mt-3 font-display text-2xl font-bold">当前有执行线被租约冲突挡住</p>
+                <p className="mt-3 text-sm leading-6">{blockedLeaseSession.summary}</p>
+                {leaseRecoveryNote ? (
+                  <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">{leaseRecoveryNote}</p>
+                ) : null}
+              </div>
+            </Panel>
+          ) : null}
+          <details data-testid="setup-runtime-inventory-details" className="mt-3 rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
+            <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">
+              运行环境明细
+            </summary>
+            <div className="mt-3 space-y-2">
+              {registryRuntimes.length === 0 ? (
+                <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                  还没注册运行环境。先完成本地桥接。
+                </p>
+              ) : (
+                registryRuntimes.map((runtime) => {
+                  const selected = runtime.machine === selectedRuntimeName || runtime.id === selectedRuntimeName;
+                  const assigned = runtime.machine === scheduler.assignedMachine || runtime.id === scheduler.assignedRuntime;
+                  const machine = runtimeMachines.find((item) => item.name === runtime.machine || item.id === runtime.id);
+                  const candidate =
+                    scheduler.candidates.find((item) => item.runtime === runtime.id || item.machine === runtime.machine) ?? null;
+                  const activeLeaseCount = activeLeases.filter(
+                    (lease) => lease.runtime === runtime.id || lease.machine === runtime.machine
+                  ).length;
+                  return (
+                    <div
+                      key={runtime.id}
+                      data-testid={`setup-runtime-card-${runtime.id}`}
+                      className={cn(
+                        "rounded-[16px] border-2 border-[var(--shock-ink)] px-3 py-3",
+                        assigned ? "bg-[var(--shock-lime)]" : selected ? "bg-[var(--shock-yellow)]" : "bg-white"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-display text-[18px] font-semibold leading-5">{runtime.machine}</p>
+                          <p className="mt-1 text-sm text-[color:rgba(24,20,14,0.72)]">
+                            {runtime.detectedCli.join(" + ") || machine?.cli || "未返回 CLI 标签"}
+                          </p>
+                        </div>
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em]">
+                          {assigned ? "下一条执行线" : selected ? "当前所选" : runtimeStatusLabel(runtime.state)}
                         </span>
-                      ))}
+                      </div>
+                      <div className="mt-3 space-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                        <p>{machine?.os || "本地"} / {machine?.lastHeartbeat || runtime.lastHeartbeatAt || "未返回心跳"}</p>
+                        <p>{runtime.shell || machine?.shell || "命令壳未返回"}</p>
+                        <p>{runtime.daemonUrl || "未配对本地桥"} / {pairingStateLabel(runtime.pairingState)}</p>
+                        <p>{formatHeartbeatCadence(runtime.heartbeatIntervalSeconds, runtime.heartbeatTimeoutSeconds)}</p>
+                        <p>活跃租约：{activeLeaseCount} / 可调度：{candidate?.schedulable ? "是" : "否"}</p>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {runtime.providers.map((provider) => (
+                          <span
+                            key={`${runtime.id}-${provider.id}`}
+                            className={cn(
+                              "rounded-full border border-[var(--shock-ink)] px-3 py-1.5 font-mono text-[10px]",
+                              runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "lime" && "bg-[var(--shock-lime)]",
+                              runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "yellow" && "bg-[var(--shock-yellow)]",
+                              runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "pink" && "bg-[var(--shock-pink)] text-white",
+                              runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "paper" && "bg-[var(--shock-paper)]"
+                            )}
+                          >
+                            {provider.label} · {runtimeProviderHealthLabel(runtimeProviderHealthStatus(provider))}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-2 space-y-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                        {runtime.providers.map((provider) => (
+                          <p key={`${runtime.id}-${provider.id}-summary`}>
+                            {runtimeProviderHealthSummary(provider)}
+                          </p>
+                        ))}
+                      </div>
+                      {candidate?.reason ? <p className="mt-2.5 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{candidate.reason}</p> : null}
                     </div>
-                    <div className="mt-2 space-y-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-                      {runtime.providers.map((provider) => (
-                        <p key={`${runtime.id}-${provider.id}-summary`}>
-                          {runtimeProviderHealthSummary(provider)}
-                        </p>
-                      ))}
-                    </div>
-                    {candidate?.reason ? <p className="mt-2.5 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{candidate.reason}</p> : null}
-                  </div>
-                );
-              })
-            )}
-          </div>
+                  );
+                })
+              )}
+            </div>
+          </details>
         </details>
       </div>
     </div>

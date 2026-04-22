@@ -621,8 +621,8 @@ async function runCallbackPhase(chromiumExecutable) {
     },
   });
 
-  startProcess("callback-web", "pnpm", ["--dir", "apps/web", "exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
-    cwd: projectRoot,
+  startProcess("callback-web", "pnpm", ["exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
+    cwd: path.join(projectRoot, "apps", "web"),
     env: {
       ...process.env,
       NEXT_PUBLIC_OPENSHOCK_API_BASE: ingressURL,

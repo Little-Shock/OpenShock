@@ -203,6 +203,16 @@ async function readText(page, testID) {
   return (await page.getByTestId(testID).textContent())?.trim() ?? "";
 }
 
+async function ensureDetailsOpen(page, testID, message) {
+  const details = page.getByTestId(testID);
+  await waitFor(async () => (await details.count()) > 0, message);
+  await details.evaluate((node) => {
+    if (node instanceof HTMLDetailsElement) {
+      node.open = true;
+    }
+  });
+}
+
 async function readState(serverURL) {
   const response = await fetch(`${serverURL}/v1/state`, { cache: "no-store" });
   if (!response.ok) {
@@ -271,6 +281,7 @@ try {
   await waitFor(async () => (await readText(page, "settings-governance-topology-count")).includes("6"), "topology count did not persist after reload");
 
   await page.goto(`${webURL}/setup`, { waitUntil: "domcontentloaded" });
+  await ensureDetailsOpen(page, "setup-governance-preview-details", "setup governance detail panel did not render");
   await page.getByTestId("setup-governance-lane-developer").waitFor({ state: "visible" });
   await page.getByTestId("setup-governance-lane-ops").waitFor({ state: "visible" });
   assert((await readText(page, "setup-governance-lane-developer")).includes("Builder"), "setup governance preview should reflect Builder lane label");
@@ -308,6 +319,7 @@ try {
   const secondContext = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
   const secondPage = await secondContext.newPage();
   await secondPage.goto(`${webURL}/setup`, { waitUntil: "domcontentloaded" });
+  await ensureDetailsOpen(secondPage, "setup-governance-preview-details", "setup governance detail panel did not render in second browser");
   await secondPage.getByTestId("setup-governance-lane-ops").waitFor({ state: "visible" });
   assert((await readText(secondPage, "setup-governance-lane-ops")).includes("Ops"), "second browser context should read same ops lane truth");
   await capture(secondPage, "second-context-setup-preview");

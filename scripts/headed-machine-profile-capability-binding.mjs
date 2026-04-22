@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
+import { buildHeadedWebApp } from "./lib/headed-web-build.mjs";
 import { launchChromiumSession } from "./lib/playwright-chromium.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,8 @@ const reportPath = parsedArgs.reportPath
   : path.join(artifactsDir, "report.md");
 const screenshotsDir = path.join(artifactsDir, "screenshots");
 const logsDir = path.join(artifactsDir, "logs");
+const webDistDirName = `.next-e2e-machine-profile-capability-binding-${path.basename(artifactsDir)}`;
+const webDistDir = path.join(projectRoot, "apps", "web", webDistDirName);
 
 await mkdir(screenshotsDir, { recursive: true });
 await mkdir(logsDir, { recursive: true });
@@ -187,8 +190,22 @@ async function startServices() {
   const serverPort = await freePort();
   const webURL = `http://127.0.0.1:${webPort}`;
   const serverURL = `http://127.0.0.1:${serverPort}`;
+  const webEnv = {
+    ...process.env,
+    OPENSHOCK_CONTROL_API_BASE: serverURL,
+    NEXT_PUBLIC_OPENSHOCK_API_BASE: serverURL,
+    OPENSHOCK_NEXT_DIST_DIR: webDistDirName,
+  };
+  const buildLogPath = path.join(logsDir, "web-build.log");
 
   await mkdir(workspaceRoot, { recursive: true });
+  await buildHeadedWebApp({
+    projectRoot,
+    webDistDir,
+    webEnv,
+    buildLogPath,
+    failureMessage: "web build failed before machine profile binding replay",
+  });
 
   startProcess("server", path.join(projectRoot, "scripts", "go.sh"), ["run", "./cmd/openshock-server"], {
     cwd: path.join(projectRoot, "apps", "server"),
@@ -203,13 +220,10 @@ async function startServices() {
   startProcess(
     "web",
     "pnpm",
-    ["--dir", "apps/web", "exec", "next", "dev", "--hostname", "127.0.0.1", "--port", String(webPort)],
+    ["exec", "next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)],
     {
-      cwd: projectRoot,
-      env: {
-        ...process.env,
-        OPENSHOCK_CONTROL_API_BASE: serverURL,
-      },
+      cwd: path.join(projectRoot, "apps", "web"),
+      env: webEnv,
     }
   );
 
@@ -243,6 +257,7 @@ try {
   const results = [];
 
   await page.goto(`${webURL}/setup`, { waitUntil: "domcontentloaded" });
+  await expandDetails(page, '[data-testid="setup-advanced-details"]', "setup advanced detail panel did not render");
   await expandDetails(page, '[data-testid="setup-overview-technical-details"]', "setup technical detail panel did not render");
   await expandDetails(page, '[data-testid="setup-runtime-inventory-details"]', "setup runtime inventory details did not render");
   await waitForVisible(page.locator('[data-testid="setup-runtime-card-shock-main"]'), "setup runtime card did not render");
@@ -254,16 +269,16 @@ try {
     "setup shell metric did not report pwsh"
   );
   await expectLocatorText(
-    page.locator('[data-testid="setup-runtime-card-shock-main"]'),
-    "Codex CLI: gpt-5.2 / gpt-5.3-codex / gpt-5.1-codex-mini",
-    "setup card missing codex model catalog"
+    page.locator('[data-testid="setup-overview-technical-details"]'),
+    "Codex CLI · 已就绪: gpt-5.2 / gpt-5.3-codex / gpt-5.1-codex-mini",
+    "setup technical details missing codex model catalog"
   );
   await expectLocatorText(
-    page.locator('[data-testid="setup-runtime-card-shock-main"]'),
-    "Claude Code CLI: claude-sonnet-4 / claude-opus-4.1",
-    "setup card missing claude model catalog"
+    page.locator('[data-testid="setup-overview-technical-details"]'),
+    "Claude Code CLI · 已就绪: claude-sonnet-4 / claude-opus-4.1",
+    "setup technical details missing claude model catalog"
   );
-  results.push("`/setup` 当前会直接展示 selected runtime 的 shell 与 provider-model catalog。");
+  results.push("`/setup` 现在会把 selected runtime 的 shell 与 provider-model catalog 收进高级信息，不会继续挤在首屏。");
 
   await page.goto(`${webURL}/profiles/machine/machine-main`, { waitUntil: "domcontentloaded" });
   await waitForVisible(page.locator('[data-testid="machine-profile-shell"]'), "machine profile shell metric did not render");
