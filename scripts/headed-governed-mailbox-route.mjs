@@ -972,7 +972,7 @@ try {
           );
           await capture(page, "pull-request-delivery-delegation-signal-only");
 
-          await page.goto(`${webURL}/settings`, { waitUntil: "load" });
+          await page.goto(`${webURL}/settings/advanced`, { waitUntil: "load" });
           await page.getByTestId("settings-advanced-governance-toggle").click();
           await page.waitForFunction(() => {
             return document.querySelector('[data-testid="settings-governance-delivery-policy"]')?.textContent?.includes("仅提醒") ?? false;
@@ -985,7 +985,7 @@ try {
           reportScope = "signal-only delivery policy、PR delegation signal、settings durable policy truth";
           resultLines = [
             "- workspace governance 现在支持 `signal-only` delivery delegation policy；final lane closeout 后 PR detail 仍会给出 `Delivery Delegation` card 和 related inbox signal，但不会自动创建 delegated closeout handoff -> PASS",
-            "- `/settings` 会把同一份 `signal only` delivery policy 读回前台，说明这不是脚本局部开关，而是 durable workspace governance truth -> PASS",
+            "- `/settings/advanced` 会把同一份 `signal only` delivery policy 读回前台，说明这不是脚本局部开关，而是 durable workspace governance truth -> PASS",
             "- Mailbox ledger 在 `signal-only` 模式下不会偷偷物化 `delivery-closeout` handoff，delegate automation policy 已真正收口到产品行为而不是文案 -> PASS",
           ];
         } else if (

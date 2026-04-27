@@ -31,7 +31,7 @@ func (s *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, sanitizeLivePayload(s.store.Snapshot().Credentials))
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "workspace.manage") {
+		if !s.requireRequestSessionPermission(w, r, "workspace.manage") {
 			return
 		}
 		var req CredentialProfileRequest
@@ -45,7 +45,7 @@ func (s *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 			SecretKind:       req.SecretKind,
 			SecretValue:      req.SecretValue,
 			WorkspaceDefault: req.WorkspaceDefault,
-			UpdatedBy:        currentAuthActor(s.store.Snapshot().Auth.Session),
+			UpdatedBy:        s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeCredentialProfileError(w, err)
@@ -77,7 +77,7 @@ func (s *Server) handleCredentialRoutes(w http.ResponseWriter, r *http.Request) 
 		}
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": store.ErrCredentialProfileNotFound.Error()})
 	case http.MethodPatch:
-		if !s.requireSessionPermission(w, "workspace.manage") {
+		if !s.requireRequestSessionPermission(w, r, "workspace.manage") {
 			return
 		}
 		var req CredentialProfileRequest
@@ -91,7 +91,7 @@ func (s *Server) handleCredentialRoutes(w http.ResponseWriter, r *http.Request) 
 			SecretKind:       req.SecretKind,
 			SecretValue:      req.SecretValue,
 			WorkspaceDefault: req.WorkspaceDefault,
-			UpdatedBy:        currentAuthActor(s.store.Snapshot().Auth.Session),
+			UpdatedBy:        s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeCredentialProfileError(w, err)

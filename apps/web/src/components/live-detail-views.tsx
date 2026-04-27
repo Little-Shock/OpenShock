@@ -18,6 +18,7 @@ import {
   RunDetailView,
 } from "@/components/phase-zero-views";
 import { RunControlSurface } from "@/components/run-control-surface";
+import { buildRoomContinueTarget, sortRoomsForContinue } from "@/lib/continue-target";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { buildRunHistoryEntries, sanitizePlannerQueue, sanitizeRunDetail, sanitizeRunHistoryPage } from "@/lib/phase-zero-helpers";
 import { resolveLiveRunDetail } from "@/lib/run-detail-view-model";
@@ -367,7 +368,7 @@ function RoomSnapshotCard({
   run?: Run;
 }) {
   return (
-    <Panel tone={panelToneForStatus(room.topic.status)} className="!p-3.5">
+    <Panel data-testid={`room-snapshot-card-${room.id}`} tone={panelToneForStatus(room.topic.status)} className="!p-3.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[color:rgba(24,20,14,0.62)]">
@@ -403,6 +404,7 @@ function RoomSnapshotCard({
       <div className="mt-4 flex flex-wrap gap-2">
         <Link
           href={`/rooms/${room.id}`}
+          data-testid={`room-snapshot-primary-cta-${room.id}`}
           className="rounded-xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
         >
           进入讨论间
@@ -595,8 +597,10 @@ export function LiveIssuesListView() {
 export function LiveRoomsPageContent() {
   const { state, loading, error } = usePhaseZeroState();
   const rooms = loading || error ? [] : state.rooms;
+  const sortedRooms = sortRoomsForContinue(rooms);
   const issues = loading || error ? [] : state.issues;
   const runs = loading || error ? [] : state.runs;
+  const continueRoom = buildRoomContinueTarget(rooms);
   const activeRooms = rooms.filter((room) => room.topic.status === "running" || room.topic.status === "review").length;
   const blockedRooms = rooms.filter((room) => room.topic.status === "blocked" || room.topic.status === "paused").length;
   const unreadCount = rooms.reduce((total, room) => total + room.unread, 0);
@@ -605,18 +609,21 @@ export function LiveRoomsPageContent() {
     <OpenShockShell
       view="rooms"
       eyebrow="讨论间"
-      title="回到正在推进的讨论"
-      description="先处理未读、阻塞和正在跑的讨论间。"
-      contextTitle="哪里要继续"
-      contextDescription="活跃、阻塞和未读会优先告诉你下一步去哪里。"
+      title="回到现在该继续的工作"
+      description="先点名最该继续的讨论，再直接带你去那一步。"
+      contextTitle="现在先去哪"
+      contextDescription={
+        continueRoom
+          ? continueRoom.reason
+          : "阻塞、未读和进行中的讨论会先告诉你下一步去哪里。"
+      }
       contextBody={
         <DetailRail
-          label="讨论状态"
+          label="讨论快照"
           items={[
-            { label: "全部", value: `${rooms.length} 个` },
-            { label: "进行中", value: `${activeRooms} 个` },
             { label: "阻塞", value: `${blockedRooms} 个` },
             { label: "未读", value: `${unreadCount} 条` },
+            { label: "进行中", value: `${activeRooms} 个` },
           ]}
         />
       }
@@ -631,15 +638,41 @@ export function LiveRoomsPageContent() {
       ) : rooms.length === 0 ? (
         <LiveStateNotice title="暂无讨论间" message="创建事项后就能继续讨论。" />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {rooms.map((room) => (
-            <RoomSnapshotCard
-              key={room.id}
-              room={room}
-              issue={issues.find((candidate) => candidate.roomId === room.id)}
-              run={runs.find((candidate) => candidate.id === room.runId)}
-            />
-          ))}
+        <div className="space-y-4">
+          {continueRoom ? (
+            <Panel data-testid="rooms-continue-card" tone="yellow" className="!p-4">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.58)]">现在先去</p>
+              <h2 data-testid="rooms-continue-title" className="mt-2 font-display text-[26px] font-bold leading-7">
+                {continueRoom.roomTitle ?? continueRoom.title}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">{continueRoom.summary}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href={continueRoom.href}
+                  data-testid="rooms-continue-cta"
+                  className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
+                >
+                  {continueRoom.ctaLabel}
+                </Link>
+                <span
+                  data-testid="rooms-continue-reason"
+                  className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]"
+                >
+                  {continueRoom.reason}
+                </span>
+              </div>
+            </Panel>
+          ) : null}
+          <div data-testid="rooms-snapshot-grid" className="grid gap-4 xl:grid-cols-2">
+            {sortedRooms.map((room) => (
+              <RoomSnapshotCard
+                key={room.id}
+                room={room}
+                issue={issues.find((candidate) => candidate.roomId === room.id)}
+                run={runs.find((candidate) => candidate.id === room.runId)}
+              />
+            ))}
+          </div>
         </div>
       )}
     </OpenShockShell>
@@ -1131,11 +1164,11 @@ export function LiveTopicPageContent({ topicId }: { topicId: string }) {
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link
-                href={`/rooms/${room.id}?tab=topic`}
+                href={`/rooms/${room.id}?tab=context`}
                 data-testid="topic-open-room-workbench"
                 className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
               >
-                讨论间话题
+                讨论间上下文
               </Link>
               {run ? (
                 <Link
@@ -1381,10 +1414,10 @@ export function LiveRunPageContent({
             话题详情
           </Link>
           <Link
-            href={`/rooms/${room.id}?tab=topic`}
+            href={`/rooms/${room.id}?tab=context`}
             className="rounded-xl border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em]"
           >
-            讨论间话题
+            讨论间上下文
           </Link>
           {issue ? (
             <Link

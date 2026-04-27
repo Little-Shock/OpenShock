@@ -1,0 +1,887 @@
+==> repo verify
+
+> openshock@ verify /home/lark/OpenShock
+> pnpm verify:web && pnpm verify:go
+
+
+> openshock@ verify:web /home/lark/OpenShock
+> pnpm clean:web-e2e-dist && pnpm check:live-truth-hygiene && pnpm test:web-contracts && pnpm lint:web && pnpm typecheck:web && pnpm build:web && pnpm clean:web-e2e-dist
+
+
+> openshock@ clean:web-e2e-dist /home/lark/OpenShock
+> node ./scripts/clean-next-e2e-dist.mjs
+
+
+> openshock@ check:live-truth-hygiene /home/lark/OpenShock
+> node ./scripts/check-live-truth-hygiene.mjs
+
+live truth hygiene ok: checked 115 web source files and current state file; no disallowed mock-data imports, banned placeholder wording, or tracked live-truth residue found.
+
+> openshock@ test:web-contracts /home/lark/OpenShock
+> pnpm --dir apps/web exec node --test src/lib/*.test.ts
+
+TAP version 13
+# (node:773484) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/access-first-screen.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: access page copy keeps the route focused on getting back into the workspace
+ok 1 - access page copy keeps the route focused on getting back into the workspace
+  ---
+  duration_ms: 1.486085
+  type: 'test'
+  ...
+# Subtest: access overview leads with the next step before recovery controls
+ok 2 - access overview leads with the next step before recovery controls
+  ---
+  duration_ms: 1.172405
+  type: 'test'
+  ...
+# Subtest: access overview drops the first-start panel once identity is ready
+ok 3 - access overview drops the first-start panel once identity is ready
+  ---
+  duration_ms: 1.138976
+  type: 'test'
+  ...
+# Subtest: access first-start panel keeps step details behind a disclosure while preserving script anchors
+ok 4 - access first-start panel keeps step details behind a disclosure while preserving script anchors
+  ---
+  duration_ms: 1.078207
+  type: 'test'
+  ...
+# Subtest: access recovery keeps reset and identity binding behind a secondary disclosure
+ok 5 - access recovery keeps reset and identity binding behind a secondary disclosure
+  ---
+  duration_ms: 1.117989
+  type: 'test'
+  ...
+# Subtest: access context rail keeps only login, identity, member, and next-step signals
+ok 6 - access context rail keeps only login, identity, member, and next-step signals
+  ---
+  duration_ms: 0.947012
+  type: 'test'
+  ...
+# (node:773485) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/board-inbox-first-screen.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: board first screen keeps board as a supporting flow
+ok 7 - board first screen keeps board as a supporting flow
+  ---
+  duration_ms: 2.326362
+  type: 'test'
+  ...
+# Subtest: inbox first screen keeps inbox as a supporting flow
+ok 8 - inbox first screen keeps inbox as a supporting flow
+  ---
+  duration_ms: 1.537499
+  type: 'test'
+  ...
+# (node:773491) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/chat-room-collaboration-copy.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: chat and room first surfaces say users can collaborate with AI agents
+ok 9 - chat and room first surfaces say users can collaborate with AI agents
+  ---
+  duration_ms: 2.822995
+  type: 'test'
+  ...
+# (node:773492) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/collaboration-protocol.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pickPrimaryHandoff prioritizes blockers before normal active handoffs
+ok 10 - pickPrimaryHandoff prioritizes blockers before normal active handoffs
+  ---
+  duration_ms: 1.270111
+  type: 'test'
+  ...
+# Subtest: buildCollaborationProtocolSteps reflects active handoff and resumable turn
+ok 11 - buildCollaborationProtocolSteps reflects active handoff and resumable turn
+  ---
+  duration_ms: 1.931001
+  type: 'test'
+  ...
+# Subtest: buildCollaborationProtocolSteps prefers final closeout truth over intermediate lifecycle
+ok 12 - buildCollaborationProtocolSteps prefers final closeout truth over intermediate lifecycle
+  ---
+  duration_ms: 0.515922
+  type: 'test'
+  ...
+# Subtest: buildCollaborationProtocolSteps ignores handoff suggestions from other rooms
+ok 13 - buildCollaborationProtocolSteps ignores handoff suggestions from other rooms
+  ---
+  duration_ms: 0.326854
+  type: 'test'
+  ...
+# (node:773498) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/continue-target.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildContinueTarget prioritizes actionable inbox before room when a handoff is waiting
+ok 14 - buildContinueTarget prioritizes actionable inbox before room when a handoff is waiting
+  ---
+  duration_ms: 1.729102
+  type: 'test'
+  ...
+# Subtest: buildRoomContinueTarget prioritizes blocked room before unread and active rooms
+ok 15 - buildRoomContinueTarget prioritizes blocked room before unread and active rooms
+  ---
+  duration_ms: 0.557515
+  type: 'test'
+  ...
+# Subtest: buildRoomContinueTarget prioritizes unread room before running room
+ok 16 - buildRoomContinueTarget prioritizes unread room before running room
+  ---
+  duration_ms: 0.356329
+  type: 'test'
+  ...
+# Subtest: buildRoomContinueTarget sends review rooms straight to delivery detail
+ok 17 - buildRoomContinueTarget sends review rooms straight to delivery detail
+  ---
+  duration_ms: 0.26654
+  type: 'test'
+  ...
+# Subtest: sortRoomsForContinue orders blocked, unread, active, then recent
+ok 18 - sortRoomsForContinue orders blocked, unread, active, then recent
+  ---
+  duration_ms: 1.092706
+  type: 'test'
+  ...
+# Subtest: buildContinueTarget falls back to journey when no inbox or rooms exist
+ok 19 - buildContinueTarget falls back to journey when no inbox or rooms exist
+  ---
+  duration_ms: 0.324723
+  type: 'test'
+  ...
+# Subtest: buildContinueTarget lets unread direct messages become the primary continue target
+ok 20 - buildContinueTarget lets unread direct messages become the primary continue target
+  ---
+  duration_ms: 2.210954
+  type: 'test'
+  ...
+# Subtest: buildContinueTarget lets unread channels beat a recent room when chat is the real next step
+ok 21 - buildContinueTarget lets unread channels beat a recent room when chat is the real next step
+  ---
+  duration_ms: 0.365561
+  type: 'test'
+  ...
+# (node:773508) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/critical-loop-contract.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: critical loop contract keeps stable UI anchors for issue -> rooms continue -> room
+ok 22 - critical loop contract keeps stable UI anchors for issue -> rooms continue -> room
+  ---
+  duration_ms: 4.893257
+  type: 'test'
+  ...
+# Subtest: critical loop harness enforces fresh workspace onboarding to chat
+ok 23 - critical loop harness enforces fresh workspace onboarding to chat
+  ---
+  duration_ms: 0.680078
+  type: 'test'
+  ...
+# Subtest: critical loop harness covers created object recovery through rooms continue and restart
+ok 24 - critical loop harness covers created object recovery through rooms continue and restart
+  ---
+  duration_ms: 2.247207
+  type: 'test'
+  ...
+# Subtest: critical loop harness verifies a real settings action instead of route-only navigation
+ok 25 - critical loop harness verifies a real settings action instead of route-only navigation
+  ---
+  duration_ms: 0.423836
+  type: 'test'
+  ...
+# (node:773510) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/first-start-journey.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildFirstStartJourney sends signed-out users to access first
+ok 26 - buildFirstStartJourney sends signed-out users to access first
+  ---
+  duration_ms: 1.978855
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney keeps unverified identity on access before setup
+ok 27 - buildFirstStartJourney keeps unverified identity on access before setup
+  ---
+  duration_ms: 0.403717
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney uses plain template label when onboarding is next
+ok 28 - buildFirstStartJourney uses plain template label when onboarding is next
+  ---
+  duration_ms: 0.450308
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney launches chat after onboarding is done
+ok 29 - buildFirstStartJourney launches chat after onboarding is done
+  ---
+  duration_ms: 0.284434
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney falls back to chat when saved start route points to internal configuration pages
+ok 30 - buildFirstStartJourney falls back to chat when saved start route points to internal configuration pages
+  ---
+  duration_ms: 0.350388
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney labels mailbox as a plain customer-facing surface
+ok 31 - buildFirstStartJourney labels mailbox as a plain customer-facing surface
+  ---
+  duration_ms: 0.339036
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney still requires access when onboarding is done but session is signed out
+ok 32 - buildFirstStartJourney still requires access when onboarding is done but session is signed out
+  ---
+  duration_ms: 0.37387
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney treats bootstrap-finished as launch-ready once identity is ready
+ok 33 - buildFirstStartJourney treats bootstrap-finished as launch-ready once identity is ready
+  ---
+  duration_ms: 0.24609
+  type: 'test'
+  ...
+# Subtest: buildFirstStartJourney treats bootstrap-finished onboarding as launchable even before status is normalized
+ok 34 - buildFirstStartJourney treats bootstrap-finished onboarding as launchable even before status is normalized
+  ---
+  duration_ms: 0.619371
+  type: 'test'
+  ...
+# (node:773517) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/home-first-screen.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: home first screen keeps one dominant continue CTA and demotes secondary actions
+ok 35 - home first screen keeps one dominant continue CTA and demotes secondary actions
+  ---
+  duration_ms: 1.812887
+  type: 'test'
+  ...
+# (node:773523) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/live-phase0-create-issue.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: recoverCreateIssuePayload keeps room continuity on recoverable issue-create failures
+ok 36 - recoverCreateIssuePayload keeps room continuity on recoverable issue-create failures
+  ---
+  duration_ms: 1.350574
+  type: 'test'
+  ...
+# Subtest: recoverCreateIssuePayload ignores mutation failures without a room target
+ok 37 - recoverCreateIssuePayload ignores mutation failures without a room target
+  ---
+  duration_ms: 2.580586
+  type: 'test'
+  ...
+# Subtest: recoverStateMutationPayload ignores non mutation errors
+ok 38 - recoverStateMutationPayload ignores non mutation errors
+  ---
+  duration_ms: 0.268765
+  type: 'test'
+  ...
+# (node:773525) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/live-phase0-stream.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildPhaseZeroStateStreamURL omits since when no replay cursor exists
+ok 39 - buildPhaseZeroStateStreamURL omits since when no replay cursor exists
+  ---
+  duration_ms: 1.328335
+  type: 'test'
+  ...
+# Subtest: buildPhaseZeroStateStreamURL includes since when a replay cursor exists
+ok 40 - buildPhaseZeroStateStreamURL includes since when a replay cursor exists
+  ---
+  duration_ms: 0.31842
+  type: 'test'
+  ...
+# Subtest: resolvePhaseZeroSnapshotDecision ignores stale snapshot sequences
+ok 41 - resolvePhaseZeroSnapshotDecision ignores stale snapshot sequences
+  ---
+  duration_ms: 1.200905
+  type: 'test'
+  ...
+# Subtest: resolvePhaseZeroSnapshotDecision applies newer or unsequenced snapshots
+ok 42 - resolvePhaseZeroSnapshotDecision applies newer or unsequenced snapshots
+  ---
+  duration_ms: 0.276889
+  type: 'test'
+  ...
+# Subtest: resolvePhaseZeroDeltaDecision ignores stale delta sequences
+ok 43 - resolvePhaseZeroDeltaDecision ignores stale delta sequences
+  ---
+  duration_ms: 0.485971
+  type: 'test'
+  ...
+# Subtest: resolvePhaseZeroDeltaDecision applies contiguous or unsequenced deltas
+ok 44 - resolvePhaseZeroDeltaDecision applies contiguous or unsequenced deltas
+  ---
+  duration_ms: 0.494831
+  type: 'test'
+  ...
+# Subtest: resolvePhaseZeroDeltaDecision triggers refresh when a gap appears
+ok 45 - resolvePhaseZeroDeltaDecision triggers refresh when a gap appears
+  ---
+  duration_ms: 0.236248
+  type: 'test'
+  ...
+# Subtest: resolvePhaseZeroResyncDecision always refreshes and only advances valid cursors
+ok 46 - resolvePhaseZeroResyncDecision always refreshes and only advances valid cursors
+  ---
+  duration_ms: 0.296739
+  type: 'test'
+  ...
+# (node:773532) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/message-thread-truth.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildThreadReplyMap groups live replies by replyToMessageId
+ok 47 - buildThreadReplyMap groups live replies by replyToMessageId
+  ---
+  duration_ms: 2.030332
+  type: 'test'
+  ...
+# Subtest: buildThreadReplyMap ignores dangling reply targets
+ok 48 - buildThreadReplyMap ignores dangling reply targets
+  ---
+  duration_ms: 0.271777
+  type: 'test'
+  ...
+# Subtest: selectInitialThreadMessageId prefers the requested message when it exists
+ok 49 - selectInitialThreadMessageId prefers the requested message when it exists
+  ---
+  duration_ms: 0.31977
+  type: 'test'
+  ...
+# Subtest: selectInitialThreadMessageId falls back to the first root with live replies
+ok 50 - selectInitialThreadMessageId falls back to the first root with live replies
+  ---
+  duration_ms: 0.27347
+  type: 'test'
+  ...
+# (node:773539) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/onboarding-reduction.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: account submit advances to the next ready step instead of stopping on template
+ok 51 - account submit advances to the next ready step instead of stopping on template
+  ---
+  duration_ms: 1.893776
+  type: 'test'
+  ...
+# Subtest: runtime pairing can advance straight to finish when the default agent already exists
+ok 52 - runtime pairing can advance straight to finish when the default agent already exists
+  ---
+  duration_ms: 2.538172
+  type: 'test'
+  ...
+# Subtest: onboarding keeps finish and future steps gated until repo and runtime are ready
+ok 53 - onboarding keeps finish and future steps gated until repo and runtime are ready
+  ---
+  duration_ms: 2.414066
+  type: 'test'
+  ...
+# Subtest: onboarding copy tells users they can start first and finish setup later
+ok 54 - onboarding copy tells users they can start first and finish setup later
+  ---
+  duration_ms: 0.650315
+  type: 'test'
+  ...
+# (node:773568) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/phase-zero-helpers.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: sanitizePhaseZeroState preserves live agent names in governance and ownership surfaces
+ok 55 - sanitizePhaseZeroState preserves live agent names in governance and ownership surfaces
+  ---
+  duration_ms: 9.796321
+  type: 'test'
+  ...
+# Subtest: sanitizePhaseZeroState still simplifies onboarding template agent labels
+ok 56 - sanitizePhaseZeroState still simplifies onboarding template agent labels
+  ---
+  duration_ms: 4.397353
+  type: 'test'
+  ...
+# (node:773569) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/room-next-step.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildRoomNextStep prioritizes approval-center signals before every other follow-up
+ok 57 - buildRoomNextStep prioritizes approval-center signals before every other follow-up
+  ---
+  duration_ms: 6.818316
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep labels room-scoped run deep links as execution detail
+ok 58 - buildRoomNextStep labels room-scoped run deep links as execution detail
+  ---
+  duration_ms: 0.449357
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep prioritizes active handoffs before paused runs
+ok 59 - buildRoomNextStep prioritizes active handoffs before paused runs
+  ---
+  duration_ms: 0.403624
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep sends blocked or paused runs to the run panel when no human follow-up is ahead
+ok 60 - buildRoomNextStep sends blocked or paused runs to the run panel when no human follow-up is ahead
+  ---
+  duration_ms: 0.261904
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep still routes to the run panel when the room topic is blocked but run status has not caught up
+ok 61 - buildRoomNextStep still routes to the run panel when the room topic is blocked but run status has not caught up
+  ---
+  duration_ms: 0.330063
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep opens the PR panel when delivery is the next review surface
+ok 62 - buildRoomNextStep opens the PR panel when delivery is the next review surface
+  ---
+  duration_ms: 0.361069
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep keeps unread chat ahead of a generic continue path
+ok 63 - buildRoomNextStep keeps unread chat ahead of a generic continue path
+  ---
+  duration_ms: 0.323398
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep sends completed rooms with merged PRs to delivery detail
+ok 64 - buildRoomNextStep sends completed rooms with merged PRs to delivery detail
+  ---
+  duration_ms: 0.217082
+  type: 'test'
+  ...
+# Subtest: buildRoomNextStep falls back to continuing the room when no stronger action exists
+ok 65 - buildRoomNextStep falls back to continuing the room when no stronger action exists
+  ---
+  duration_ms: 2.252569
+  type: 'test'
+  ...
+# (node:773570) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/room-pending-overview.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildRoomPendingOverview reduces pending work to one primary follow-up
+ok 66 - buildRoomPendingOverview reduces pending work to one primary follow-up
+  ---
+  duration_ms: 4.92241
+  type: 'test'
+  ...
+# Subtest: buildRoomPendingOverview falls through to handoff when no signal exists
+ok 67 - buildRoomPendingOverview falls through to handoff when no signal exists
+  ---
+  duration_ms: 0.363977
+  type: 'test'
+  ...
+# Subtest: buildRoomPendingOverview stays quiet when pending work is clear
+ok 68 - buildRoomPendingOverview stays quiet when pending work is clear
+  ---
+  duration_ms: 0.337018
+  type: 'test'
+  ...
+# (node:773589) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/room-related-signals.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildRoomRelatedSignals falls back to inbox when approval center has no room signal yet
+ok 69 - buildRoomRelatedSignals falls back to inbox when approval center has no room signal yet
+  ---
+  duration_ms: 1.432921
+  type: 'test'
+  ...
+# Subtest: buildRoomRelatedSignals prefers approval center truth when available
+ok 70 - buildRoomRelatedSignals prefers approval center truth when available
+  ---
+  duration_ms: 1.041468
+  type: 'test'
+  ...
+# (node:773590) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/room-workbench-navigation.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: room workbench no longer exposes topic as a top-level tab
+ok 71 - room workbench no longer exposes topic as a top-level tab
+  ---
+  duration_ms: 3.264604
+  type: 'test'
+  ...
+# Subtest: legacy room topic links collapse into the context surface
+ok 72 - legacy room topic links collapse into the context surface
+  ---
+  duration_ms: 2.527873
+  type: 'test'
+  ...
+# Subtest: room workbench now exposes one primary next-step action instead of a summary-only overview card
+ok 73 - room workbench now exposes one primary next-step action instead of a summary-only overview card
+  ---
+  duration_ms: 2.849495
+  type: 'test'
+  ...
+# Subtest: room overview and pending panels avoid repeating signal and handoff counts above the real lists
+ok 74 - room overview and pending panels avoid repeating signal and handoff counts above the real lists
+  ---
+  duration_ms: 3.617
+  type: 'test'
+  ...
+# Subtest: room delivery and PR panels demote drill-in links behind the single primary action
+ok 75 - room delivery and PR panels demote drill-in links behind the single primary action
+  ---
+  duration_ms: 1.601922
+  type: 'test'
+  ...
+# Subtest: room context and rail keep collaboration rules visible from session memory and routing policy
+ok 76 - room context and rail keep collaboration rules visible from session memory and routing policy
+  ---
+  duration_ms: 1.41777
+  type: 'test'
+  ...
+# Subtest: room thread fallback stays reachable on mobile when the desktop rail is hidden
+ok 77 - room thread fallback stays reachable on mobile when the desktop rail is hidden
+  ---
+  duration_ms: 2.789158
+  type: 'test'
+  ...
+# (node:773592) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/rooms-first-screen.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: rooms first screen exposes stable continue-entry anchors
+ok 78 - rooms first screen exposes stable continue-entry anchors
+  ---
+  duration_ms: 1.689899
+  type: 'test'
+  ...
+# Subtest: rooms continue headed replay covers the blocked-room priority path
+ok 79 - rooms continue headed replay covers the blocked-room priority path
+  ---
+  duration_ms: 0.591376
+  type: 'test'
+  ...
+# (node:773607) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/run-detail-view-model.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: resolveLiveRunDetail prefers server detail envelope over client-side fallback truth
+ok 80 - resolveLiveRunDetail prefers server detail envelope over client-side fallback truth
+  ---
+  duration_ms: 1.979938
+  type: 'test'
+  ...
+# Subtest: resolveLiveRunDetail falls back to phase-zero state when the detail envelope is missing
+ok 81 - resolveLiveRunDetail falls back to phase-zero state when the detail envelope is missing
+  ---
+  duration_ms: 1.651458
+  type: 'test'
+  ...
+# Subtest: resolveLiveRunDetail ignores a detail envelope for a different run
+ok 82 - resolveLiveRunDetail ignores a detail envelope for a different run
+  ---
+  duration_ms: 0.437962
+  type: 'test'
+  ...
+# (node:773608) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/settings-advanced-script-contract.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: advanced settings headed walkthroughs target /settings/advanced for governance, credentials, and notifications
+ok 83 - advanced settings headed walkthroughs target /settings/advanced for governance, credentials, and notifications
+  ---
+  duration_ms: 3.488018
+  type: 'test'
+  ...
+# (node:773615) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/settings-first-screen.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: settings first screen keeps workspace editing behind a disclosure
+ok 84 - settings first screen keeps workspace editing behind a disclosure
+  ---
+  duration_ms: 2.477887
+  type: 'test'
+  ...
+# Subtest: settings first screen keeps member preferences behind a disclosure
+ok 85 - settings first screen keeps member preferences behind a disclosure
+  ---
+  duration_ms: 1.093959
+  type: 'test'
+  ...
+# Subtest: settings first screen pushes governance, credentials, and notifications into advanced settings
+ok 86 - settings first screen pushes governance, credentials, and notifications into advanced settings
+  ---
+  duration_ms: 1.255001
+  type: 'test'
+  ...
+# Subtest: settings member preferences keep default entry on customer-facing routes with plain labels
+ok 87 - settings member preferences keep default entry on customer-facing routes with plain labels
+  ---
+  duration_ms: 1.963721
+  type: 'test'
+  ...
+# Subtest: settings routes split primary and advanced pages
+ok 88 - settings routes split primary and advanced pages
+  ---
+  duration_ms: 3.122847
+  type: 'test'
+  ...
+# Subtest: settings first screen surfaces machine pairing and memory benefit before quota detail
+ok 89 - settings first screen surfaces machine pairing and memory benefit before quota detail
+  ---
+  duration_ms: 1.192533
+  type: 'test'
+  ...
+# Subtest: settings first screen keeps secondary workspace facts behind a disclosure
+ok 90 - settings first screen keeps secondary workspace facts behind a disclosure
+  ---
+  duration_ms: 1.041727
+  type: 'test'
+  ...
+# Subtest: settings config recovery flow opens workspace and member disclosures before editing
+ok 91 - settings config recovery flow opens workspace and member disclosures before editing
+  ---
+  duration_ms: 0.305059
+  type: 'test'
+  ...
+# (node:773622) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/settings-notification-ux.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: notification summary reports loading and failure instead of fake zero counts
+ok 92 - notification summary reports loading and failure instead of fake zero counts
+  ---
+  duration_ms: 1.347531
+  type: 'test'
+  ...
+# Subtest: notification summary keeps real counts when notifications are healthy
+ok 93 - notification summary keeps real counts when notifications are healthy
+  ---
+  duration_ms: 0.220653
+  type: 'test'
+  ...
+# Subtest: browser subscriber status only becomes ready after permission and registration are both ready
+ok 94 - browser subscriber status only becomes ready after permission and registration are both ready
+  ---
+  duration_ms: 0.371842
+  type: 'test'
+  ...
+# Subtest: browser connect readiness blocks fake-positive connect actions until the browser is actually ready
+ok 95 - browser connect readiness blocks fake-positive connect actions until the browser is actually ready
+  ---
+  duration_ms: 0.966189
+  type: 'test'
+  ...
+# (node:773624) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/setup-first-screen.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: setup first screen keeps repo, GitHub, runtime, and live bridge behind clear support sections
+ok 96 - setup first screen keeps repo, GitHub, runtime, and live bridge behind clear support sections
+  ---
+  duration_ms: 2.007095
+  type: 'test'
+  ...
+# Subtest: setup overview tells users to finish four explicit setup checkpoints before diagnostics
+ok 97 - setup overview tells users to finish four explicit setup checkpoints before diagnostics
+  ---
+  duration_ms: 0.820578
+  type: 'test'
+  ...
+# (node:773630) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/shell-rules-surface.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: shell rail surfaces collaboration rules from the selected room session or active session
+ok 98 - shell rail surfaces collaboration rules from the selected room session or active session
+  ---
+  duration_ms: 1.663613
+  type: 'test'
+  ...
+# Subtest: entry shell trims global summary noise on setup and access views
+ok 99 - entry shell trims global summary noise on setup and access views
+  ---
+  duration_ms: 0.678164
+  type: 'test'
+  ...
+# (node:773638) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lark/OpenShock/apps/web/src/lib/workspace-rule-highlights.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/lark/OpenShock/apps/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: buildWorkspaceRuleHighlights merges routing rules with file rules
+ok 100 - buildWorkspaceRuleHighlights merges routing rules with file rules
+  ---
+  duration_ms: 1.304769
+  type: 'test'
+  ...
+# Subtest: buildWorkspaceRuleHighlights deduplicates memory paths and keeps readable summaries
+ok 101 - buildWorkspaceRuleHighlights deduplicates memory paths and keeps readable summaries
+  ---
+  duration_ms: 0.199499
+  type: 'test'
+  ...
+1..101
+# tests 101
+# suites 0
+# pass 101
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 455.667609
+
+> openshock@ lint:web /home/lark/OpenShock
+> pnpm --dir apps/web lint
+
+
+> @openshock/web@0.1.0 lint /home/lark/OpenShock/apps/web
+> eslint
+
+
+> openshock@ typecheck:web /home/lark/OpenShock
+> pnpm --dir apps/web typecheck
+
+
+> @openshock/web@0.1.0 typecheck /home/lark/OpenShock/apps/web
+> next typegen && tsc --noEmit
+
+Generating route types...
+✓ Types generated successfully
+
+> openshock@ build:web /home/lark/OpenShock
+> pnpm --dir apps/web build
+
+
+> @openshock/web@0.1.0 build /home/lark/OpenShock/apps/web
+> next build --webpack
+
+▲ Next.js 16.2.2 (webpack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 5.0s
+  Running TypeScript ...
+  Finished TypeScript in 8.0s ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/21) ...
+  Generating static pages using 15 workers (5/21) 
+  Generating static pages using 15 workers (10/21) 
+  Generating static pages using 15 workers (15/21) 
+✓ Generating static pages using 15 workers (21/21) in 498ms
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /access
+├ ○ /agents
+├ ƒ /agents/[agentId]
+├ ƒ /api/agents
+├ ƒ /api/channels/[channelId]
+├ ƒ /api/control/[...path]
+├ ƒ /api/inbox
+├ ƒ /api/rooms/[roomId]
+├ ƒ /api/runs/[runId]
+├ ƒ /api/runs/[runId]/detail
+├ ƒ /api/workspace
+├ ○ /board
+├ ƒ /chat/[channelId]
+├ ○ /inbox
+├ ○ /issues
+├ ƒ /issues/[issueKey]
+├ ○ /mailbox
+├ ○ /memory
+├ ○ /onboarding
+├ ƒ /profiles/[kind]/[profileId]
+├ ƒ /pull-requests/[pullRequestId]
+├ ○ /rooms
+├ ƒ /rooms/[roomId]
+├ ƒ /rooms/[roomId]/runs/[runId]
+├ ○ /runs
+├ ƒ /runs/[runId]
+├ ○ /settings
+├ ○ /settings/advanced
+├ ○ /setup
+├ ○ /setup/github/callback
+└ ƒ /topics/[topicId]
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+
+> openshock@ clean:web-e2e-dist /home/lark/OpenShock
+> node ./scripts/clean-next-e2e-dist.mjs
+
+
+> openshock@ verify:go /home/lark/OpenShock
+> pnpm verify:server && pnpm verify:daemon
+
+
+> openshock@ verify:server /home/lark/OpenShock
+> bash -lc 'root=$(pwd); cd apps/server && OPENSHOCK_WORKSPACE_ROOT="${OPENSHOCK_WORKSPACE_ROOT:-$root}" "$root/scripts/go.sh" test ./...'
+
+--- FAIL: TestSanitizePersistedStateOnStartupRewritesDirtyStateFile (0.06s)
+panic: runtime error: index out of range [0] with length 0 [recovered]
+	panic: runtime error: index out of range [0] with length 0
+
+goroutine 7 [running]:
+testing.tRunner.func1.2({0x8dcba0, 0xc0004510f8})
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1734 +0x21c
+testing.tRunner.func1()
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1737 +0x35e
+panic({0x8dcba0?, 0xc0004510f8?})
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/runtime/panic.go:787 +0x132
+github.com/Larkspur-Wang/OpenShock/apps/server/cmd/openshock-server.TestSanitizePersistedStateOnStartupRewritesDirtyStateFile(0xc0000e8380)
+	/home/lark/OpenShock/apps/server/cmd/openshock-server/main_test.go:81 +0x9d0
+testing.tRunner(0xc0000e8380, 0x93fe60)
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1792 +0xf4
+created by testing.(*T).Run in goroutine 1
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1851 +0x413
+FAIL	github.com/Larkspur-Wang/OpenShock/apps/server/cmd/openshock-server	0.068s
+?   	github.com/Larkspur-Wang/OpenShock/apps/server/cmd/openshock-state-residue-cleanup	[no test files]
+--- FAIL: TestCurrentOwnerFallbackKeepsRunDetailMemoryPreviewAndGovernanceAligned (0.05s)
+    current_owner_consistency_contract_test.go:115: response aggregation = store.WorkspaceResponseAggregation{Status:"", Summary:"", Sources:[]string(nil), FinalResponse:"", Aggregator:"", DecisionPath:[]string(nil), OverrideTrace:[]string(nil), AuditTrail:[]store.WorkspaceResponseAggregationAuditEntry(nil)}, want issue-backed current owner aggregator
+--- FAIL: TestGitHubInstallationCallbackPersistsInstallTruthAndRefreshesRepoBinding (0.06s)
+    github_installation_callback_test.go:117: status = 401, want 200
+--- FAIL: TestGitHubInstallationCallbackRejectsMissingInstallationID (0.05s)
+    github_installation_callback_test.go:195: status = 401, want 400
+--- FAIL: TestInboxDecisionRouteSyncsReviewItem (0.03s)
+    inbox_decision_test.go:183: review decision status = 401, want 200
+--- FAIL: TestInboxDecisionRouteReturnsFailureContractForReviewSyncFailure (0.02s)
+    inbox_decision_test.go:240: review sync failure status = 401, want 502
+--- FAIL: TestSanitizeLiveStateFailClosesGovernanceAndAdapterResidue (0.00s)
+    live_truth_hygiene_contract_test.go:100: governance label = "", want customer-facing fallback
+--- FAIL: TestSanitizeLivePayloadRemovesPlaceholderLeakage (0.00s)
+    live_truth_hygiene_test.go:122: workspace branch = "", want sanitized fallback
+--- FAIL: TestBuildStateStreamEventSanitizesSnapshot (0.00s)
+panic: runtime error: index out of range [0] with length 0 [recovered]
+	panic: runtime error: index out of range [0] with length 0
+
+goroutine 1249 [running]:
+testing.tRunner.func1.2({0xacb200, 0xc000344960})
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1734 +0x21c
+testing.tRunner.func1()
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1737 +0x35e
+panic({0xacb200?, 0xc000344960?})
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/runtime/panic.go:787 +0x132
+github.com/Larkspur-Wang/OpenShock/apps/server/internal/api.TestBuildStateStreamEventSanitizesSnapshot(0xc000516fc0)
+	/home/lark/OpenShock/apps/server/internal/api/live_truth_hygiene_test.go:207 +0x859
+testing.tRunner(0xc000516fc0, 0xb655c8)
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1792 +0xf4
+created by testing.(*T).Run in goroutine 1
+	/home/lark/OpenShock/.openshock/toolchains/go-1.24.0-linux-amd64/go/src/testing/testing.go:1851 +0x413
+FAIL	github.com/Larkspur-Wang/OpenShock/apps/server/internal/api	4.327s
+ok  	github.com/Larkspur-Wang/OpenShock/apps/server/internal/github	0.990s
+ok  	github.com/Larkspur-Wang/OpenShock/apps/server/internal/store	6.499s
+FAIL
+ ELIFECYCLE  Command failed with exit code 1.
+ ELIFECYCLE  Command failed with exit code 1.
+ ELIFECYCLE  Command failed with exit code 1.

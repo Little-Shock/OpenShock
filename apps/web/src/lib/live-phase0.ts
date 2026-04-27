@@ -4,6 +4,7 @@ import { createContext, createElement, startTransition, useCallback, useContext,
 
 import type {
   ApprovalCenterState,
+  AuthChallenge,
   AuthSession,
   InboxDecision,
   PhaseZeroState,
@@ -12,6 +13,7 @@ import type {
   WorkspaceGovernanceLaneConfig,
 } from "@/lib/phase-zero-types";
 import { sanitizePhaseZeroState } from "@/lib/phase-zero-helpers";
+import { StateMutationError, recoverCreateIssuePayload, recoverStateMutationPayload } from "./state-mutation-recovery";
 import {
   buildPhaseZeroStateStreamURL,
   resolvePhaseZeroDeltaDecision,
@@ -21,6 +23,7 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 const STATE_STREAM_PATH = "/v1/state/stream";
+const AUTH_DEVICE_STORAGE_KEY = "openshock.auth.devices";
 
 type CreateIssueInput = {
   title: string;
@@ -37,18 +40,57 @@ type StateMutationResponse = {
   output?: string;
   pullRequestId?: string;
   session?: AuthSession;
+  challenge?: AuthChallenge;
 };
 
-class StateMutationError extends Error {
-  payload: StateMutationResponse;
-  status: number;
+type StoredAuthDevice = {
+  deviceId: string;
+  deviceLabel?: string;
+};
 
-  constructor(message: string, status: number, payload: StateMutationResponse) {
-    super(message);
-    this.name = "StateMutationError";
-    this.payload = payload;
-    this.status = status;
+function normalizeAuthEmail(email: string | undefined) {
+  return (email ?? "").trim().toLowerCase();
+}
+
+function readStoredAuthDevices() {
+  if (typeof window === "undefined") {
+    return {} as Record<string, StoredAuthDevice>;
   }
+  try {
+    const raw = window.localStorage.getItem(AUTH_DEVICE_STORAGE_KEY);
+    if (!raw) {
+      return {} as Record<string, StoredAuthDevice>;
+    }
+    const parsed = JSON.parse(raw) as Record<string, StoredAuthDevice>;
+    return parsed ?? {};
+  } catch {
+    return {} as Record<string, StoredAuthDevice>;
+  }
+}
+
+function rememberAuthDevice(session: AuthSession | null | undefined) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const email = normalizeAuthEmail(session?.email);
+  const deviceId = session?.deviceId?.trim();
+  if (!email || !deviceId) {
+    return;
+  }
+  const next = readStoredAuthDevices();
+  next[email] = {
+    deviceId,
+    deviceLabel: session?.deviceLabel?.trim() || undefined,
+  };
+  window.localStorage.setItem(AUTH_DEVICE_STORAGE_KEY, JSON.stringify(next));
+}
+
+function rememberedAuthDeviceForEmail(email: string | undefined) {
+  const key = normalizeAuthEmail(email);
+  if (!key) {
+    return null;
+  }
+  return readStoredAuthDevices()[key] ?? null;
 }
 
 export type RoomStreamEvent = {
@@ -206,7 +248,7 @@ type PhaseZeroContextValue = {
   verifyMemberEmail: (input?: { email?: string; memberId?: string }) => Promise<StateMutationResponse>;
   authorizeAuthDevice: (input?: { deviceId?: string; deviceLabel?: string; memberId?: string }) => Promise<StateMutationResponse>;
   requestPasswordReset: (input?: { email?: string; memberId?: string }) => Promise<StateMutationResponse>;
-  completePasswordReset: (input?: { email?: string; memberId?: string; deviceId?: string; deviceLabel?: string }) => Promise<StateMutationResponse>;
+  completePasswordReset: (input?: { email?: string; memberId?: string; deviceId?: string; deviceLabel?: string; challengeId?: string }) => Promise<StateMutationResponse>;
   bindExternalIdentity: (input: { provider: string; handle: string; email?: string; memberId?: string }) => Promise<StateMutationResponse>;
   inviteWorkspaceMember: (input: { email: string; name?: string; role: string }) => Promise<StateMutationResponse>;
   updateWorkspaceMember: (memberId: string, input: { role?: string; status?: string }) => Promise<StateMutationResponse>;
@@ -219,8 +261,8 @@ type PhaseZeroContextValue = {
   updateRunSandbox: (runId: string, input: RunSandboxUpdateInput) => Promise<StateMutationResponse>;
   checkRunSandbox: (runId: string, input: RunSandboxCheckInput) => Promise<StateMutationResponse & { decision?: SandboxDecision }>;
   createIssue: (input: CreateIssueInput) => Promise<StateMutationResponse>;
-  postChannelMessage: (channelId: string, prompt: string) => Promise<StateMutationResponse>;
-  postDirectMessage: (directMessageId: string, prompt: string) => Promise<StateMutationResponse>;
+  postChannelMessage: (channelId: string, prompt: string, replyToMessageId?: string) => Promise<StateMutationResponse>;
+  postDirectMessage: (directMessageId: string, prompt: string, replyToMessageId?: string) => Promise<StateMutationResponse>;
   updateMessageSurfaceCollection: (input: {
     kind: "followed" | "saved";
     channelId: string;
@@ -228,11 +270,12 @@ type PhaseZeroContextValue = {
     enabled: boolean;
   }) => Promise<StateMutationResponse>;
   updateTopicGuidance: (topicId: string, input: UpdateTopicGuidanceInput) => Promise<StateMutationResponse>;
-  postRoomMessage: (roomId: string, prompt: string, provider?: string) => Promise<StateMutationResponse>;
+  postRoomMessage: (roomId: string, prompt: string, provider?: string, replyToMessageId?: string) => Promise<StateMutationResponse>;
   streamRoomMessage: (
     roomId: string,
     prompt: string,
     provider?: string,
+    replyToMessageId?: string,
     onEvent?: (event: RoomStreamEvent) => void
   ) => Promise<RoomStreamEvent | null>;
   createPullRequest: (roomId: string) => Promise<StateMutationResponse>;
@@ -495,6 +538,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
 
   const commitState = useCallback((next: PhaseZeroState) => {
     const sanitized = sanitizePhaseZeroState(next);
+    rememberAuthDevice(sanitized.auth.session);
     startTransition(() => {
       setState(sanitized);
       setError(null);
@@ -698,14 +742,20 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   }, [refresh]);
 
   async function loginAuthSession(input: { email: string; name?: string; deviceId?: string; deviceLabel?: string; authMethod?: string }) {
+    const rememberedDevice = input.deviceId ? null : rememberedAuthDeviceForEmail(input.email);
     const payload = await readJSON<StateMutationResponse>("/v1/auth/session", {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify({
+        ...input,
+        deviceId: input.deviceId ?? rememberedDevice?.deviceId,
+        deviceLabel: input.deviceLabel ?? rememberedDevice?.deviceLabel,
+      }),
     });
 
     if (payload.state) {
       commitStateAndRefreshApprovalCenter(payload.state);
     }
+    rememberAuthDevice(payload.session ?? payload.state?.auth.session);
     return payload;
   }
 
@@ -757,13 +807,14 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     });
   }
 
-  async function completePasswordReset(input: { email?: string; memberId?: string; deviceId?: string; deviceLabel?: string } = {}) {
+  async function completePasswordReset(input: { email?: string; memberId?: string; deviceId?: string; deviceLabel?: string; challengeId?: string } = {}) {
     return runAuthRecovery({
       action: "complete_password_reset",
       email: input.email,
       memberId: input.memberId,
       deviceId: input.deviceId,
       deviceLabel: input.deviceLabel,
+      challengeId: input.challengeId,
     });
   }
 
@@ -908,22 +959,34 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
   }
 
   async function createIssue(input: CreateIssueInput) {
-    const payload = await readJSON<StateMutationResponse>("/v1/issues", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
+    try {
+      const payload = await readJSON<StateMutationResponse>("/v1/issues", {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
 
-    if (payload.state) {
-      commitStateAndRefreshApprovalCenter(payload.state);
+      if (payload.state) {
+        commitStateAndRefreshApprovalCenter(payload.state);
+      }
+      return payload;
+    } catch (mutationError) {
+      const recoveredPayload = recoverStateMutationPayload<StateMutationResponse>(mutationError);
+      if (recoveredPayload?.state) {
+        commitStateAndRefreshApprovalCenter(recoveredPayload.state);
+      }
+      const continuityPayload = recoverCreateIssuePayload<StateMutationResponse>(mutationError);
+      if (continuityPayload) {
+        return continuityPayload;
+      }
+      throw mutationError;
     }
-    return payload;
   }
 
-  async function postChannelMessage(channelId: string, prompt: string) {
+  async function postChannelMessage(channelId: string, prompt: string, replyToMessageId?: string) {
     try {
       const payload = await readJSON<StateMutationResponse>(`/v1/channels/${channelId}/messages`, {
         method: "POST",
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify(replyToMessageId ? { prompt, replyToMessageId } : { prompt }),
       });
 
       if (payload.state) {
@@ -938,10 +1001,10 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     }
   }
 
-  async function postDirectMessage(directMessageId: string, prompt: string) {
+  async function postDirectMessage(directMessageId: string, prompt: string, replyToMessageId?: string) {
     const payload = await readJSON<StateMutationResponse>(`/v1/direct-messages/${directMessageId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify(replyToMessageId ? { prompt, replyToMessageId } : { prompt }),
     });
 
     if (payload.state) {
@@ -979,10 +1042,10 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     return payload;
   }
 
-  async function postRoomMessage(roomId: string, prompt: string, provider?: string) {
+  async function postRoomMessage(roomId: string, prompt: string, provider?: string, replyToMessageId?: string) {
     const payload = await readJSON<StateMutationResponse>(`/v1/rooms/${roomId}/messages`, {
       method: "POST",
-      body: JSON.stringify(provider ? { prompt, provider } : { prompt }),
+      body: JSON.stringify(provider ? { prompt, provider, replyToMessageId } : { prompt, replyToMessageId }),
     });
 
     if (payload.state) {
@@ -995,6 +1058,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
     roomId: string,
     prompt: string,
     provider?: string,
+    replyToMessageId?: string,
     onEvent?: (event: RoomStreamEvent) => void
   ) {
     const response = await fetch(`${API_BASE}/v1/rooms/${roomId}/messages/stream`, {
@@ -1003,7 +1067,7 @@ function useProvidePhaseZeroState(): PhaseZeroContextValue {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(provider ? { prompt, provider } : { prompt }),
+      body: JSON.stringify(provider ? { prompt, provider, replyToMessageId } : { prompt, replyToMessageId }),
     });
 
     if (!response.ok) {

@@ -17,6 +17,11 @@ import {
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { useQuickSearchController } from "@/lib/quick-search";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus, permissionStatusSurfaceLabel } from "@/lib/session-authz";
+import {
+  buildSidebarDirectMessages,
+  buildSidebarFollowedThreads,
+  buildSidebarSavedLaterItems,
+} from "@/lib/sidebar-desk";
 
 type MailboxAdvanceAction = "acknowledged" | "blocked" | "comment" | "completed";
 type MailboxCommentActorMode = "from" | "to";
@@ -374,6 +379,9 @@ export function StitchBoardView() {
   const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = liveMachines;
   const sidebarAgents = liveAgents;
+  const sidebarDirectMessages = loading || error ? [] : buildSidebarDirectMessages(state.directMessages);
+  const sidebarFollowedThreads = loading || error ? [] : buildSidebarFollowedThreads(state.followedThreads);
+  const sidebarSavedLaterItems = loading || error ? [] : buildSidebarSavedLaterItems(state.savedLaterItems);
   const activeAgents = liveAgents.filter((agent) => agent.state === "running").length;
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
   const openLaneCount = liveIssues.filter((issue) => issue.state !== "done").length;
@@ -406,7 +414,7 @@ export function StitchBoardView() {
       : null,
     sourceIssue
       ? {
-          label: "看事项",
+          label: "事项详情",
           href: `/issues/${sourceIssue.key}`,
           testID: "board-context-issue-link",
           tone: "bg-white",
@@ -453,6 +461,9 @@ export function StitchBoardView() {
         <StitchSidebar
           active="board"
           channels={sidebarChannels}
+          directMessages={sidebarDirectMessages}
+          followedThreads={sidebarFollowedThreads}
+          savedLaterItems={sidebarSavedLaterItems}
           rooms={sidebarRooms}
           machines={sidebarMachines}
           agents={sidebarAgents}
@@ -466,7 +477,7 @@ export function StitchBoardView() {
           <StitchTopBar
             eyebrow="任务板"
             title="任务板"
-            description="只保留优先级和推进状态，真正的讨论、执行和追问都回到讨论间。"
+            description="这里只看优先级和推进状态，真正动手仍在讨论间。"
             searchPlaceholder="搜索事项 / 讨论 / 智能体"
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
           />
@@ -503,6 +514,43 @@ export function StitchBoardView() {
               </div>
             </div>
           ) : null}
+          <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <details data-testid="board-mobile-create-details" className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] p-3 shadow-[var(--shock-shadow-sm)] xl:hidden">
+              <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.58)]">
+                起一条新事项
+              </summary>
+              <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">这里只登记事项，具体推进回讨论间。</p>
+              <div className="mt-4 space-y-3">
+                <input
+                  data-testid="board-mobile-create-issue-title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  disabled={!canCreateIssue}
+                  className="w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none disabled:opacity-60"
+                  placeholder="事项标题"
+                />
+                <textarea
+                  data-testid="board-mobile-create-issue-summary"
+                  value={summary}
+                  onChange={(event) => setSummary(event.target.value)}
+                  disabled={!canCreateIssue}
+                  className="min-h-[120px] w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none disabled:opacity-60"
+                  placeholder="一句话说明要推进什么"
+                />
+                <button
+                  data-testid="board-mobile-create-issue-submit"
+                  onClick={handleCreateIssue}
+                  disabled={creating || !canCreateIssue}
+                  className="w-full rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] shadow-[var(--shock-shadow-sm)] disabled:opacity-60"
+                >
+                  {creating ? "创建中..." : "创建后进入讨论间"}
+                </button>
+                <p data-testid="board-mobile-create-issue-authz" className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                  {boardCreatePermissionLabel(createIssueStatus)}
+                </p>
+              </div>
+            </details>
+          </div>
           <div className="border-b-2 border-[var(--shock-ink)] bg-white px-4 py-3">
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]">
@@ -614,7 +662,7 @@ export function StitchBoardView() {
                 <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-white p-4 shadow-[var(--shock-shadow-sm)]">
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">快速新建</p>
                   <h3 className="mt-2 font-display text-[24px] font-bold leading-none">起一条新事项</h3>
-                  <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">先起事项，再去讨论间推进。</p>
+                  <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">这里只登记事项，具体推进回讨论间。</p>
                   <div className="mt-4 space-y-3">
                     <input data-testid="board-create-issue-title" value={title} onChange={(event) => setTitle(event.target.value)} disabled={!canCreateIssue} className="w-full rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="事项标题" />
                     <textarea data-testid="board-create-issue-summary" value={summary} onChange={(event) => setSummary(event.target.value)} disabled={!canCreateIssue} className="min-h-[120px] w-full rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none disabled:opacity-60" placeholder="一句话说明要推进什么" />
@@ -678,6 +726,9 @@ export function StitchInboxView() {
   const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = loading || error ? [] : state.machines;
   const sidebarAgents = loading || error ? [] : state.agents;
+  const sidebarDirectMessages = loading || error ? [] : buildSidebarDirectMessages(state.directMessages);
+  const sidebarFollowedThreads = loading || error ? [] : buildSidebarFollowedThreads(state.followedThreads);
+  const sidebarSavedLaterItems = loading || error ? [] : buildSidebarSavedLaterItems(state.savedLaterItems);
   const centerLoading = loading || approvalCenterLoading;
   const blockedCount = loading || error ? 0 : approvalCenter.blockedCount;
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
@@ -1012,6 +1063,9 @@ export function StitchInboxView() {
         <StitchSidebar
           active="inbox"
           channels={sidebarChannels}
+          directMessages={sidebarDirectMessages}
+          followedThreads={sidebarFollowedThreads}
+          savedLaterItems={sidebarSavedLaterItems}
           rooms={sidebarRooms}
           machines={sidebarMachines}
           agents={sidebarAgents}
@@ -1028,7 +1082,7 @@ export function StitchInboxView() {
             description={
               mailboxSurfaceActive
                 ? "待跟进交接。"
-                : "待拍板提醒。"
+                : "只处理提醒，处理完回讨论间。"
             }
             searchPlaceholder={mailboxSurfaceActive ? "搜索交接 / 讨论间 / 智能体" : "搜索审批 / 评审 / 讨论间"}
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
@@ -1042,12 +1096,12 @@ export function StitchInboxView() {
                       {mailboxSurfaceActive ? "交接" : "待处理"}
                     </p>
                     <p className="mt-2 font-display text-[22px] font-bold">
-                      {mailboxSurfaceActive ? "先处理交接" : "先处理待判断事项"}
+                      {mailboxSurfaceActive ? "先处理交接" : "先清提醒，再回讨论间"}
                     </p>
                     <p className="mt-2 max-w-2xl text-[12px] leading-5 text-[color:rgba(24,20,14,0.62)]">
                       {mailboxSurfaceActive
                         ? "待跟进交接。"
-                        : "审批、阻塞和评审提醒。"}
+                        : "这里集中看提醒，决定后回讨论间继续。"}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1099,8 +1153,8 @@ export function StitchInboxView() {
                     <div>
                       <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">移动端提醒</p>
                       
-                      <h2 className="mt-2 font-display text-[22px] font-bold leading-6">手机端先看收件箱。</h2>
-                      <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">手机端先处理待处理、未读和阻塞；更完整的设置在设置页。</p>
+                      <h2 className="mt-2 font-display text-[22px] font-bold leading-6">先清提醒。</h2>
+                      <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.72)]">先清提醒，再回讨论间继续。通知规则在设置里。</p>
                     </div>
                     <Link
                       href="/settings"
@@ -1140,13 +1194,13 @@ export function StitchInboxView() {
                         : item.href;
                     const runHref = item.roomId && item.runId ? `/rooms/${item.roomId}?tab=run` : item.runId ? `/runs/${item.runId}` : null;
                     const detailLinks = [
-                      { label: "Room", href: roomHref, external: false, testId: `approval-center-room-link-${item.id}` },
-                      runHref ? { label: "Run", href: runHref, external: false, testId: `approval-center-run-link-${item.id}` } : null,
+                      { label: "讨论间", href: roomHref, external: false, testId: `approval-center-room-link-${item.id}` },
+                      runHref ? { label: "执行详情", href: runHref, external: false, testId: `approval-center-run-link-${item.id}` } : null,
                       pullRequest?.url
-                        ? { label: "PR", href: pullRequest.url, external: true, testId: `approval-center-pr-link-${item.id}` }
+                        ? { label: "远端 PR", href: pullRequest.url, external: true, testId: `approval-center-pr-link-${item.id}` }
                         : null,
                       pullRequest
-                        ? { label: "PR Detail", href: `/pull-requests/${pullRequest.id}`, external: false, testId: `approval-center-pr-detail-link-${item.id}` }
+                        ? { label: "交付详情", href: `/pull-requests/${pullRequest.id}`, external: false, testId: `approval-center-pr-detail-link-${item.id}` }
                         : null,
                     ].filter(Boolean) as Array<{ label: string; href: string; external: boolean; testId: string }>;
                     const mobileDetailSummary =
@@ -1216,7 +1270,7 @@ export function StitchInboxView() {
                                 rel="noreferrer"
                                 className={cn(
                                   "border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px]",
-                                  link.label === "PR" ? "bg-[var(--shock-yellow)]" : "bg-white"
+                                  link.label === "远端 PR" ? "bg-[var(--shock-yellow)]" : "bg-white"
                                 )}
                               >
                                 {link.label}
@@ -1228,7 +1282,7 @@ export function StitchInboxView() {
                                 href={link.href}
                                 className={cn(
                                   "border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px]",
-                                  link.label === "Room" ? "bg-[var(--shock-paper)]" : "bg-white"
+                                  link.label === "讨论间" ? "bg-[var(--shock-paper)]" : "bg-white"
                                 )}
                               >
                                 {link.label}
@@ -1243,7 +1297,7 @@ export function StitchInboxView() {
                               className="rounded-[16px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3"
                             >
                               <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.7)]">
-                                <span>更多信息</span>
+                                <span>详情</span>
                                 <span aria-hidden="true">+</span>
                               </summary>
                               <div className="mt-3 space-y-3">
@@ -1267,7 +1321,7 @@ export function StitchInboxView() {
                                           rel="noreferrer"
                                           className={cn(
                                             "inline-flex min-h-[44px] items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]",
-                                            link.label === "PR" ? "bg-[var(--shock-yellow)]" : "bg-white"
+                                            link.label === "远端 PR" ? "bg-[var(--shock-yellow)]" : "bg-white"
                                           )}
                                         >
                                           {link.label}
@@ -1279,7 +1333,7 @@ export function StitchInboxView() {
                                           href={link.href}
                                           className={cn(
                                             "inline-flex min-h-[44px] items-center justify-center rounded-[14px] border-2 border-[var(--shock-ink)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]",
-                                            link.label === "Room" ? "bg-[var(--shock-paper)]" : "bg-white"
+                                            link.label === "讨论间" ? "bg-[var(--shock-paper)]" : "bg-white"
                                           )}
                                         >
                                           {link.label}
@@ -1783,7 +1837,7 @@ export function StitchInboxView() {
                                 </span>
                                 {highlightedHandoffId === handoff.id ? (
                                   <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em]">
-                                    当前查看
+                                    正在看
                                   </span>
                                 ) : null}
                                 {selectedForBatch ? (
@@ -1858,7 +1912,7 @@ export function StitchInboxView() {
                               </p>
                               {handoff.lastNote ? (
                                 <p className="mt-2 border-l-4 border-[var(--shock-ink)] pl-3 text-[12px] leading-6 text-[color:rgba(24,20,14,0.68)]">
-                                  最近说明：{handoff.lastNote}
+                                  最新留言：{handoff.lastNote}
                                 </p>
                               ) : null}
 

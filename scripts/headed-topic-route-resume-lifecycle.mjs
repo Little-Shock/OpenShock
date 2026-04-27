@@ -288,10 +288,10 @@ try {
   results.push("- Topic route can resume the same run/session continuity directly, so operators no longer need to detour back to the room tab to continue execution.");
 
   await page.locator('[data-testid="topic-open-room-workbench"]').click();
-  await waitForUrlIncludes(page, "/rooms/room-runtime?tab=topic");
-  await waitForVisible(page.locator('[data-testid="room-workbench-topic-panel"]'), "room topic workbench did not open from topic route");
-  await capture(page, "room-topic-backlink");
-  results.push("- Topic route keeps a clean backlink into the room topic workbench, so route drill-in and room-first collaboration stay aligned.");
+  await waitForUrlIncludes(page, "/rooms/room-runtime?tab=context");
+  await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "room context workbench did not open from topic route");
+  await capture(page, "room-context-backlink");
+  results.push("- Topic route keeps a clean backlink into the room context surface, so route drill-in and room-first collaboration stay aligned.");
 
   const report = [
     "# 2026-04-09 Topic Route / Edit Lifecycle / Resume Deep Link Report",
@@ -306,7 +306,7 @@ try {
     ...screenshots.map((shot) => `- ${shot.name}: ${shot.path}`),
     "",
     "## Single Value",
-    "- `Topic` 现在已经是可独立直达的一等 route：用户可从 Run 直接 deep-link 到 `/topics/:topicId`，在同页写回 guidance、暂停/恢复当前 continuity、reload 保持 paused truth，并再回链到 room topic workbench。",
+    "- `Topic` 现在已经是可独立直达的一等 route：用户可从 Run 直接 deep-link 到 `/topics/:topicId`，在同页写回 guidance、暂停/恢复当前 continuity、reload 保持 paused truth，并再回链到 room context workbench。",
   ].join("\n");
 
   await writeFile(reportPath, `${report}\n`, "utf8");

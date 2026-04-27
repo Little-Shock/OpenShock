@@ -168,7 +168,7 @@ func TestWorkspaceMemberPreferencesRouteAllowsSelfServiceButProtectsOtherMembers
 		t.Fatalf("self payload session = %#v, want refreshed self-service session", selfPayload.State.Auth.Session)
 	}
 
-	otherReq, err := http.NewRequest(http.MethodPatch, server.URL+"/v1/workspace/members/member-larkspur/preferences", bytes.NewReader([]byte(`{"startRoute":"/settings"}`)))
+	otherReq, err := http.NewRequest(http.MethodPatch, server.URL+"/v1/workspace/members/member-larkspur/preferences", bytes.NewReader([]byte(`{"startRoute":"/mailbox"}`)))
 	if err != nil {
 		t.Fatalf("new PATCH other preferences request error = %v", err)
 	}
@@ -180,5 +180,41 @@ func TestWorkspaceMemberPreferencesRouteAllowsSelfServiceButProtectsOtherMembers
 	}
 	if otherResp.StatusCode != http.StatusForbidden {
 		t.Fatalf("PATCH other preferences status = %d, want %d", otherResp.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestWorkspaceMemberPreferencesRouteRejectsInternalStartRoute(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	loginResp, err := http.Post(server.URL+"/v1/auth/session", "application/json", bytes.NewReader([]byte(`{"email":"mina@openshock.dev"}`)))
+	if err != nil {
+		t.Fatalf("POST /v1/auth/session error = %v", err)
+	}
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/auth/session status = %d, want %d", loginResp.StatusCode, http.StatusOK)
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, server.URL+"/v1/workspace/members/member-mina/preferences", bytes.NewReader([]byte(`{
+		"startRoute":"/settings"
+	}`)))
+	if err != nil {
+		t.Fatalf("new PATCH self preferences request error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH self preferences error = %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("PATCH self preferences status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+
+	var payload map[string]string
+	decodeJSON(t, resp, &payload)
+	if payload["error"] == "" {
+		t.Fatalf("PATCH self preferences error payload = %#v, want validation error", payload)
 	}
 }

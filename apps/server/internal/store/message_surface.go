@@ -213,6 +213,18 @@ func (s *Store) findMessageSurfaceMessageLocked(channelID, messageID string) (Me
 	return Message{}, "", false
 }
 
+func (s *Store) normalizeMessageSurfaceReplyTargetLocked(channelID, messageID string) string {
+	target := strings.TrimSpace(messageID)
+	if target == "" {
+		return ""
+	}
+	message, _, ok := s.findMessageSurfaceMessageLocked(channelID, target)
+	if !ok {
+		return ""
+	}
+	return message.ID
+}
+
 func buildMessageSurfaceEntry(kind, channelID, channelLabel string, message Message) MessageSurfaceEntry {
 	note := "这条 thread 已被 follow，可从 sidebar 或 Followed tab 重新打开。"
 	if kind == "saved" {
@@ -240,7 +252,7 @@ func messageExcerpt(text string, limit int) string {
 	return string(runes[:limit]) + "…"
 }
 
-func (s *Store) AppendDirectMessageConversation(dmID, prompt, actor string) (State, error) {
+func (s *Store) AppendDirectMessageConversation(dmID, prompt, actor string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -251,21 +263,27 @@ func (s *Store) AppendDirectMessageConversation(dmID, prompt, actor string) (Sta
 
 	now := shortClock()
 	counterpart := defaultString(s.state.DirectMessages[dmIndex].Counterpart, strings.TrimPrefix(s.state.DirectMessages[dmIndex].Name, "@"))
+	replyTarget := ""
+	if len(replyToMessageID) > 0 {
+		replyTarget = s.normalizeMessageSurfaceReplyTargetLocked(dmID, replyToMessageID[0])
+	}
 	humanMessage := Message{
-		ID:      fmt.Sprintf("dm-human-%d", time.Now().UnixNano()),
-		Speaker: defaultString(strings.TrimSpace(actor), "Larkspur"),
-		Role:    "human",
-		Tone:    "human",
-		Message: strings.TrimSpace(prompt),
-		Time:    now,
+		ID:               fmt.Sprintf("dm-human-%d", time.Now().UnixNano()),
+		Speaker:          defaultString(strings.TrimSpace(actor), "Larkspur"),
+		Role:             "human",
+		Tone:             "human",
+		Message:          strings.TrimSpace(prompt),
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 	replyMessage := Message{
-		ID:      fmt.Sprintf("dm-agent-%d", time.Now().UnixNano()),
-		Speaker: counterpart,
-		Role:    "agent",
-		Tone:    "agent",
-		Message: "收到。这条我先留在 DM / followed thread 工作流里，不急着升级成 room。",
-		Time:    now,
+		ID:               fmt.Sprintf("dm-agent-%d", time.Now().UnixNano()),
+		Speaker:          counterpart,
+		Role:             "agent",
+		Tone:             "agent",
+		Message:          "收到。这条我先留在 DM / followed thread 工作流里，不急着升级成 room。",
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 
 	s.state.DirectMessageMessages[dmID] = append(s.state.DirectMessageMessages[dmID], humanMessage, replyMessage)

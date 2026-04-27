@@ -348,6 +348,7 @@ export type AuthSession = {
   email?: string;
   name?: string;
   role?: string;
+  memberStatus?: string;
   status: string;
   authMethod?: string;
   signedInAt?: string;
@@ -414,11 +415,23 @@ export type AuthDevice = {
   lastSeenAt?: string;
 };
 
+export type AuthChallenge = {
+  id: string;
+  kind: string;
+  memberId?: string;
+  email?: string;
+  status: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  consumedAt?: string;
+};
+
 export type AuthSnapshot = {
   session: AuthSession;
   roles: WorkspaceRole[];
   members: WorkspaceMember[];
   devices?: AuthDevice[];
+  challenges?: AuthChallenge[];
 };
 
 export type Channel = {
@@ -447,6 +460,7 @@ export type Message = {
   tone: "human" | "agent" | "paper" | "blocked" | "system";
   message: string;
   time: string;
+  replyToMessageId?: string;
 };
 
 export type MessageSurfaceEntry = {
@@ -1055,6 +1069,7 @@ export type SessionPendingTurn = {
   provider?: string;
   status?: string;
   preview?: string;
+  replyToMessageId?: string;
   startedAt?: string;
   updatedAt?: string;
   resumeEligible?: boolean;

@@ -1,7 +1,7 @@
 # OpenShock Test Cases
 
-**版本:** 1.42
-**更新日期:** 2026 年 4 月 22 日
+**版本:** 1.44
+**更新日期:** 2026 年 4 月 24 日
 **关联文档:** [Product Checklist](../product/Checklist.md) · [PRD](../product/PRD.md)
 
 ---
@@ -15,7 +15,44 @@
 
 ---
 
-## 二、测试用例
+## 二、优先级分层
+
+### P0 发布阻断
+
+- `TC-002` `TC-004` `TC-005` `TC-010` `TC-015` `TC-098` `TC-099` `TC-100`
+- 这些用例对应 repo binding、runtime pairing、issue 主链、Inbox/PR 收口、GitHub readiness、`/rooms` continue 与 fresh workspace critical loop。
+
+### P1 回归主链
+
+- `TC-001` `TC-006` `TC-007` `TC-008` `TC-009` `TC-011` `TC-012` `TC-013` `TC-014` `TC-016` `TC-017` `TC-018`
+- 这些用例覆盖首屏、路由、room/run 真相、身份权限、memory、远端 PR、通知和 stop/resume 等高频链路。
+
+### P2 扩展能力
+
+- 其余测试用例
+- 适合专题回归和能力深挖，不要求每次发布都全量重跑。
+
+---
+
+## 三、本轮 RC 重跑范围
+
+- `2026-04-23` release candidate gate 直接重跑：
+  - `TC-001` Setup 壳层可见性
+  - `TC-004` Runtime Pairing 冷启动一致性
+  - `TC-005` 创建 Issue 生成执行 lane
+  - `TC-007` 全路由浏览器走查
+  - `TC-012` Access / Session / Members 基础读取
+  - `TC-098` `/rooms` continue entry
+  - `TC-099` fresh workspace critical loop
+  - `TC-100` config persistence / recovery
+- 代表证据：
+  - [Test Report 2026-04-23 Release Candidate Gate](./Test-Report-2026-04-23-release-candidate-gate.md)
+  - [Test Report 2026-04-23 Fresh Workspace Critical Loop](./Test-Report-2026-04-23-fresh-workspace-critical-loop.md)
+  - [Test Report 2026-04-23 Rooms Continue Entry](./Test-Report-2026-04-23-rooms-continue-entry.md)
+
+---
+
+## 四、测试用例
 
 ## TC-001 Setup 壳层可见性
 
@@ -1305,6 +1342,7 @@
 ## TC-093 Persistent Session Workspace Envelope
 
 - 业务目标: 确认 daemon 对同一 `sessionId` 会持续复用同一份本地工作区，并把当前 turn、session metadata 与 work log 写成可恢复的文件锚点。
+- 当前执行状态: Pass
 - 前置条件: daemon runtime exec 已支持 `sessionId / runId / roomId` 元数据；存在可控 fake CLI。
 - 测试步骤:
   1. 以同一 `sessionId` 连续执行两轮 daemon prompt。
@@ -1318,6 +1356,7 @@
 ## TC-094 Local-First Provider Thread Resume
 
 - 业务目标: 确认 daemon restart 后，同一 session 的 Codex resume continuity 仍然锚定本地 session workspace，而不是回落到全局共享 `--last` 状态。
+- 当前执行状态: Pass
 - 前置条件: session workspace 已持久化 `SESSION.json`；daemon 会为同一 session 派生本地 `codex-home`。
 - 测试步骤:
   1. 对同一 `sessionId` 发第一轮 Codex 执行，记录输出里的 `OPENSHOCK_CODEX_HOME`。
@@ -1331,6 +1370,7 @@
 ## TC-095 Daemon Real-Process Continuity Harness
 
 - 业务目标: 确认真实 daemon 进程级别的 system harness 能证明多轮 session continuity、heartbeat 与恢复链，而不只是 API / runtime 单测。
+- 当前执行状态: Pass
 - 前置条件: 可 build 的 daemon binary、httptest control plane、fake Codex CLI 与同一 `sessionId / runId / roomId` 的最小执行场景已就绪。
 - 测试步骤:
   1. build `./cmd/openshock-daemon` 二进制，并用 httptest control plane 接收 `/v1/runtime/heartbeats`。
@@ -1358,6 +1398,7 @@
 ## TC-097 Explicit Provider Thread State Persistence
 
 - 业务目标: 确认显式 provider thread state 会作为 daemon-managed local truth 被持久化，即便真实 app-server transport 还没接进来，也不能继续停在占位字段。
+- 当前执行状态: Pass
 - 前置条件: daemon session workspace 已存在 `SESSION.json`；执行进程可通过 daemon 提供的 thread-state file 写回 thread id。
 - 测试步骤:
   1. 对同一 `sessionId` 发第一轮 provider-backed 执行，让 fake provider 通过 daemon 提供的 thread-state file 写回 `thread-001`。
@@ -1367,3 +1408,50 @@
   5. 经 `/v1/exec` 再走一遍相同 resume 请求，确认 HTTP 路由也会复用同一份持久化 thread state。
 - 预期结果: `SESSION.json.appServerThreadId` 必须成为可验证的本地恢复锚点；resume 时 thread state 要被显式重新注入，而不是靠隐式全局状态。
 - 业务结论: 2026 年 4 月 16 日新增 `TestRunPromptPersistsAppServerThreadIDFromProviderStateFile`、`TestResumeSessionExportsPersistedAppServerThreadIDAcrossRestart` 与 `TestExecRoutePersistsAndReusesAppServerThreadID`。当前 targeted `go test ./apps/daemon/internal/runtime` 与 `go test ./apps/daemon/internal/api` 已确认 daemon 会把执行进程写回的 thread state 持久化到 `SESSION.json.appServerThreadId`，并在 restart 后 resume 时重新注入执行环境，因此这条显式 provider thread state continuity 用例当前转为 `Pass`。
+
+## TC-098 Rooms Continue Entry Prioritizes The Next Blocked Discussion
+
+- 业务目标: 确认 `/rooms` 首屏先回答“现在该回哪一间讨论”，并把真正 blocked 的目标房间作为单主动作前置，而不是要求用户自己遍历整页卡片。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-01`
+- 前置条件: web / server 可启动；房间列表里至少存在一条 blocked room truth。
+- 测试步骤:
+  1. 打开 `/rooms`，确认首屏直接出现 `rooms-continue-card`。
+  2. 检查继续卡标题、摘要和阻塞原因，确认它指向当前 blocked room，而不是泛化导航。
+  3. 检查房间索引第一张卡就是同一条 blocked room，并且默认只有一个始终可见的主动作。
+  4. 点击继续 CTA，确认页面直接进入目标讨论间，并能看到对应消息流与标题。
+  5. 记录首屏和进入房间后的浏览器截图与 markdown 报告。
+- 预期结果: `/rooms` 首屏必须先给出“下一间讨论”，blocked room 既要排在列表第一位，也要通过 continue CTA 一跳回到正确讨论间；继续建议与真实导航不能分叉。
+- 业务结论: 2026 年 4 月 23 日新增 `node --test apps/web/src/lib/rooms-first-screen.test.ts` 与 `OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-rooms-continue-entry -- --report docs/testing/Test-Report-2026-04-23-rooms-continue-entry.md`。当前浏览器级报告已证明 `/rooms` 首屏会前置 blocked `room-memory`，继续卡和列表第一项保持同一目标，点击后直接进入 `记忆写回讨论间`，因此这条首屏继续入口用例当前转为 `Pass`。
+
+## TC-099 Release Candidate Gate Requires GitHub-Ready Live Smoke
+
+- 业务目标: 确认 release candidate 不再只依赖 repo 静态门，而是必须在同一条命令里同时证明 repo gate、浏览器关键路径和 strict GitHub-ready live smoke 可通过。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-15`
+- 前置条件: 当前仓库可执行 `pnpm verify`；live stack smoke 可读取 GitHub readiness truth。
+- 测试步骤:
+  1. 运行 `pnpm verify:release`，确认 repo gate 会串起 web/go 验证和 release gate contract 自检。
+  2. 运行 `pnpm verify:release:browser`，确认 release gate 使用的浏览器关键路径可以单独复核。
+  3. 运行 `pnpm verify:release:rc`，确认 release candidate path 会在 repo gate 之后继续执行浏览器关键路径和 strict live smoke。
+  4. 对 `scripts/ops-smoke.sh` 注入 GitHub not-ready 场景，确认 strict 模式显式失败，而不是只看字段存在。
+  5. 复查 `scripts/release-gate.sh` 的 mode 分流，确认 `repo`、`browser`、`all`、`rc` 四条路径职责清晰，不靠临时环境变量记忆。
+  6. 将命令和结果同步写入 release gate / runbook / testing index。
+- 预期结果: release candidate gate 必须形成 first-class command；当浏览器关键路径漂移或 GitHub readiness 不满足时都要 fail-closed，满足时则与 repo gate 一起构成单条发布前信任路径。
+- 业务结论: 2026 年 4 月 23 日新增 `node --test scripts/release-gate-contract.test.mjs`、`TestOpsSmokeStrictFailsWhenGitHubNotReady`，并把 `pnpm verify:release:browser` 和 `pnpm verify:release:rc` 收成正式入口。当前 `scripts/release-gate.sh` 已区分 `repo / browser / all / rc`，`pnpm verify:release:rc` 会先过 repo gate、再过 `/rooms` 浏览器关键路径、最后按 JSON truth 校验 strict GitHub-ready smoke，因此这条 release candidate gate 用例当前转为 `Pass`。
+
+## TC-100 Fresh Workspace Critical Loop
+
+- 业务目标: 确认一个 fresh workspace 能在同一条浏览器链里完成 `打开应用 -> onboarding/setup -> 进入 chat -> 创建 issue/room -> /rooms continue -> 回到同一 room -> reload/server restart 后继续找回同一对象`，而不是只能靠多条分段脚本拼接。
+- 当前执行状态: Pass
+- 对应 Checklist: `CHK-01` `CHK-15`
+- 前置条件: web / server 可由脚本在临时目录启动；fresh bootstrap 可用；浏览器可访问 onboarding、board、rooms、room surface。
+- 测试步骤:
+  1. 用 fresh workspace 打开 `/`，进入 onboarding，并按当前首启链路完成账号、模板、GitHub、repo、runtime、agent 和 finish 步骤。
+  2. 确认页面进入 `/chat/all`，且 workspace onboarding truth 已写成 `done`。
+  3. 打开 `/board`，通过前台表单创建一条新 issue，确认浏览器直接进入对应 room。
+  4. 打开 `/rooms`，确认 continue 卡命中刚创建的 room，而不是漂到其他对象。
+  5. 点击 continue CTA 回到目标 room，随后执行浏览器 reload，确认 continue 目标仍然不变。
+  6. 重启同一 state 文件上的 server，再次通过 `/rooms` continue 找回同一 issue/room 对象。
+- 预期结果: critical loop 必须围同一 issue/room 收口；continue 目标在 reload 和 server restart 后都不能漂移，fresh workspace 也不能要求操作者手工补 state 才能继续。
+- 业务结论: 2026 年 4 月 23 日新增 `node --test apps/web/src/lib/critical-loop-contract.test.ts` 和 `OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-critical-loop -- --report docs/testing/Test-Report-2026-04-23-fresh-workspace-critical-loop.md`。当前脚本会在临时 workspace 中完成 onboarding、进入 chat、前台建 issue/room，并通过 `/rooms` continue 在 reload 和 server restart 后继续找回同一 room，因此这条 fresh-workspace critical loop 用例当前转为 `Pass`。

@@ -38,6 +38,12 @@ func SanitizeLiveState(snapshot store.State) store.State {
 	return sanitizeLiveState(snapshot)
 }
 
+// SanitizePersistedState removes dirty placeholder residue from persisted state
+// without applying viewer-specific redaction that would erase durable data.
+func SanitizePersistedState(snapshot store.State) store.State {
+	return sanitizeState(snapshot, false)
+}
+
 func sanitizeLivePayload(payload any) any {
 	switch typed := payload.(type) {
 	case store.State:
@@ -350,6 +356,10 @@ func sanitizeLivePayload(payload any) any {
 }
 
 func sanitizeLiveState(snapshot store.State) store.State {
+	return sanitizeState(snapshot, true)
+}
+
+func sanitizeState(snapshot store.State, viewerRedaction bool) store.State {
 	snapshot.Workspace = sanitizeWorkspace(snapshot.Workspace)
 	snapshot.Channels = sanitizeLivePayload(snapshot.Channels).([]store.Channel)
 	snapshot.ChannelMessages = sanitizeLivePayload(snapshot.ChannelMessages).(map[string][]store.Message)
@@ -378,14 +388,79 @@ func sanitizeLiveState(snapshot store.State) store.State {
 	snapshot.Memory = sanitizeLivePayload(snapshot.Memory).([]store.MemoryArtifact)
 	snapshot.MemoryVersions = sanitizeLivePayload(snapshot.MemoryVersions).(map[string][]store.MemoryArtifactVersion)
 	snapshot.Credentials = sanitizeLivePayload(snapshot.Credentials).([]store.CredentialProfile)
+	if !viewerRedaction {
+		return snapshot
+	}
+	snapshot.Auth = redactAuthSnapshotForViewer(snapshot.Auth)
+	session := snapshot.Auth.Session
+	if strings.TrimSpace(session.Status) != authSessionStatusActive {
+		return redactSignedOutLiveState(snapshot)
+	}
+	if authSessionPermissionReadinessError(session) != "" && !authSessionHasRawPermission(session, "members.manage") {
+		return redactSignedOutLiveState(snapshot)
+	}
+	if !authSessionHasRawPermission(session, "runtime.manage") {
+		snapshot = redactRuntimeManageState(snapshot)
+	}
 	return snapshot
+}
+
+func redactRuntimeManageState(snapshot store.State) store.State {
+	snapshot.Workspace.PairedRuntimeURL = ""
+	for index := range snapshot.Runtimes {
+		snapshot.Runtimes[index].DaemonURL = ""
+	}
+	return snapshot
+}
+
+func redactSignedOutLiveState(snapshot store.State) store.State {
+	snapshot.Workspace = redactSignedOutWorkspaceBootstrap(snapshot.Workspace)
+	snapshot.Channels = []store.Channel{}
+	snapshot.ChannelMessages = map[string][]store.Message{}
+	snapshot.DirectMessages = []store.DirectMessage{}
+	snapshot.DirectMessageMessages = map[string][]store.Message{}
+	snapshot.FollowedThreads = []store.MessageSurfaceEntry{}
+	snapshot.SavedLaterItems = []store.MessageSurfaceEntry{}
+	snapshot.QuickSearchEntries = []store.SearchResult{}
+	snapshot.Issues = []store.Issue{}
+	snapshot.Rooms = []store.Room{}
+	snapshot.RoomMessages = map[string][]store.Message{}
+	snapshot.Runs = []store.Run{}
+	snapshot.Agents = []store.Agent{}
+	snapshot.Machines = []store.Machine{}
+	snapshot.Runtimes = []store.RuntimeRecord{}
+	snapshot.Inbox = []store.InboxItem{}
+	snapshot.Mailbox = []store.AgentHandoff{}
+	snapshot.PullRequests = []store.PullRequest{}
+	snapshot.Sessions = []store.Session{}
+	snapshot.RuntimeLeases = []store.RuntimeLease{}
+	snapshot.RuntimeScheduler = store.RuntimeScheduler{}
+	snapshot.ControlPlane = store.ControlPlaneState{}
+	snapshot.RuntimePublish = store.RuntimePublishState{}
+	snapshot.Guards = []store.DestructiveGuard{}
+	snapshot.Memory = []store.MemoryArtifact{}
+	snapshot.MemoryVersions = map[string][]store.MemoryArtifactVersion{}
+	snapshot.Credentials = []store.CredentialProfile{}
+	return snapshot
+}
+
+func redactSignedOutWorkspaceBootstrap(workspace store.WorkspaceSnapshot) store.WorkspaceSnapshot {
+	return store.WorkspaceSnapshot{
+		Name: sanitizeDisplayText(workspace.Name, "当前工作区名称还没同步。"),
+		GitHubInstallation: sanitizeWorkspaceGitHubInstall(store.WorkspaceGitHubInstallSnapshot{
+			Provider:          workspace.GitHubInstallation.Provider,
+			PreferredAuthMode: workspace.GitHubInstallation.PreferredAuthMode,
+			ConnectionMessage: "登录后再查看 GitHub 连接状态。",
+		}),
+		Onboarding: sanitizeWorkspaceOnboarding(workspace.Onboarding),
+	}
 }
 
 func sanitizeWorkspace(workspace store.WorkspaceSnapshot) store.WorkspaceSnapshot {
 	workspace.Name = sanitizeDisplayText(workspace.Name, "当前工作区名称还没同步。")
 	workspace.Repo = sanitizeDisplayText(workspace.Repo, "当前仓库信息还没同步。")
 	workspace.RepoURL = sanitizeDisplayText(workspace.RepoURL, "")
-	workspace.Branch = sanitizeDisplayText(workspace.Branch, "待整理分支")
+	workspace.Branch = sanitizeDisplayTextOrFallback(workspace.Branch, "待整理分支")
 	workspace.RepoProvider = sanitizeDisplayText(workspace.RepoProvider, "待整理仓库提供方")
 	workspace.RepoBindingStatus = sanitizeDisplayText(workspace.RepoBindingStatus, "当前绑定状态正在整理中。")
 	workspace.RepoAuthMode = sanitizeDisplayText(workspace.RepoAuthMode, "当前认证模式正在整理中。")
@@ -800,7 +875,7 @@ func sanitizeTopic(topic store.Topic) store.Topic {
 }
 
 func sanitizeRun(run store.Run) store.Run {
-	run.Branch = sanitizeDisplayText(run.Branch, "待整理分支")
+	run.Branch = sanitizeDisplayTextOrFallback(run.Branch, "待整理分支")
 	run.Worktree = sanitizeDisplayText(run.Worktree, "当前 worktree 名称正在整理中。")
 	run.WorktreePath = sanitizeDisplayText(run.WorktreePath, "当前 worktree 路径正在整理中。")
 	run.Summary = sanitizeDisplayText(run.Summary, "当前执行摘要还没同步。")
@@ -915,8 +990,8 @@ func sanitizeMailboxMessage(item store.MailboxMessage) store.MailboxMessage {
 
 func sanitizePullRequest(item store.PullRequest) store.PullRequest {
 	item.Title = sanitizeDisplayText(item.Title, "待整理 PR")
-	item.Branch = sanitizeDisplayText(item.Branch, "待整理分支")
-	item.BaseBranch = sanitizeDisplayText(item.BaseBranch, "当前 base 分支正在整理中。")
+	item.Branch = sanitizeDisplayTextOrFallback(item.Branch, "待整理分支")
+	item.BaseBranch = sanitizeDisplayTextOrFallback(item.BaseBranch, "当前 base 分支正在整理中。")
 	item.Mergeable = sanitizeDisplayText(item.Mergeable, "")
 	item.MergeStateStatus = sanitizeDisplayText(item.MergeStateStatus, "")
 	item.ReviewSummary = sanitizeDisplayText(item.ReviewSummary, "当前 review 摘要正在整理中。")
@@ -933,7 +1008,7 @@ func sanitizePullRequestConversationEntry(item store.PullRequestConversationEntr
 }
 
 func sanitizeRuntimeLease(item store.RuntimeLease) store.RuntimeLease {
-	item.Branch = sanitizeDisplayText(item.Branch, "待整理分支")
+	item.Branch = sanitizeDisplayTextOrFallback(item.Branch, "待整理分支")
 	item.WorktreeName = sanitizeDisplayText(item.WorktreeName, "当前 worktree 名称正在整理中。")
 	item.WorktreePath = sanitizeDisplayText(item.WorktreePath, "当前 worktree 路径正在整理中。")
 	item.Cwd = sanitizeDisplayText(item.Cwd, "当前工作目录正在整理中。")
@@ -955,7 +1030,7 @@ func sanitizeRuntimeScheduler(item store.RuntimeScheduler) store.RuntimeSchedule
 
 func sanitizeSession(session store.Session) store.Session {
 	session.ControlNote = sanitizeDisplayText(session.ControlNote, "当前执行备注还没同步。")
-	session.Branch = sanitizeDisplayText(session.Branch, "待整理分支")
+	session.Branch = sanitizeDisplayTextOrFallback(session.Branch, "待整理分支")
 	session.Worktree = sanitizeDisplayText(session.Worktree, "当前 worktree 名称正在整理中。")
 	session.WorktreePath = sanitizeDisplayText(session.WorktreePath, "当前 worktree 路径正在整理中。")
 	session.Summary = sanitizeDisplayText(session.Summary, "当前会话摘要正在整理中。")
@@ -1027,13 +1102,58 @@ func sanitizeAuthSnapshot(snapshot store.AuthSnapshot) store.AuthSnapshot {
 	for index := range snapshot.Devices {
 		snapshot.Devices[index] = sanitizeAuthDevice(snapshot.Devices[index])
 	}
+	for index := range snapshot.Challenges {
+		snapshot.Challenges[index] = sanitizeAuthChallenge(snapshot.Challenges[index])
+	}
+	return snapshot
+}
+
+func redactAuthSnapshotForViewer(snapshot store.AuthSnapshot) store.AuthSnapshot {
+	session := snapshot.Session
+	if strings.TrimSpace(session.Status) != authSessionStatusActive {
+		snapshot.Members = []store.WorkspaceMember{}
+		snapshot.Devices = []store.AuthDevice{}
+		snapshot.Challenges = []store.AuthChallenge{}
+		return snapshot
+	}
+	if authSessionHasRawPermission(session, "members.manage") {
+		return snapshot
+	}
+
+	memberID := strings.TrimSpace(session.MemberID)
+	email := strings.TrimSpace(session.Email)
+
+	filteredMembers := make([]store.WorkspaceMember, 0, 1)
+	for _, member := range snapshot.Members {
+		if member.ID == memberID {
+			filteredMembers = append(filteredMembers, member)
+			break
+		}
+	}
+	snapshot.Members = filteredMembers
+
+	filteredDevices := make([]store.AuthDevice, 0, len(snapshot.Devices))
+	for _, device := range snapshot.Devices {
+		if device.MemberID == memberID || device.ID == session.DeviceID {
+			filteredDevices = append(filteredDevices, device)
+		}
+	}
+	snapshot.Devices = filteredDevices
+
+	filteredChallenges := make([]store.AuthChallenge, 0, len(snapshot.Challenges))
+	for _, challenge := range snapshot.Challenges {
+		if challenge.MemberID == memberID || strings.EqualFold(strings.TrimSpace(challenge.Email), email) {
+			filteredChallenges = append(filteredChallenges, challenge)
+		}
+	}
+	snapshot.Challenges = filteredChallenges
 	return snapshot
 }
 
 func sanitizeWorkspaceRepoBinding(item store.WorkspaceRepoBindingSnapshot) store.WorkspaceRepoBindingSnapshot {
 	item.Repo = sanitizeDisplayText(item.Repo, "当前仓库绑定真值正在整理中。")
 	item.RepoURL = sanitizeDisplayText(item.RepoURL, "")
-	item.Branch = sanitizeDisplayText(item.Branch, "待整理分支")
+	item.Branch = sanitizeDisplayTextOrFallback(item.Branch, "待整理分支")
 	item.Provider = sanitizeDisplayText(item.Provider, "待整理仓库提供方")
 	item.BindingStatus = sanitizeDisplayText(item.BindingStatus, "当前绑定状态正在整理中。")
 	item.AuthMode = sanitizeDisplayText(item.AuthMode, "当前认证模式正在整理中。")
@@ -1296,6 +1416,14 @@ func sanitizeAuthDevice(item store.AuthDevice) store.AuthDevice {
 	return item
 }
 
+func sanitizeAuthChallenge(item store.AuthChallenge) store.AuthChallenge {
+	item.MemberID = sanitizeDisplayText(item.MemberID, "")
+	item.Kind = sanitizeDisplayText(item.Kind, "")
+	item.Email = sanitizeDisplayText(item.Email, "")
+	item.Status = sanitizeDisplayText(item.Status, "")
+	return item
+}
+
 func sanitizeMemoryArtifact(item store.MemoryArtifact) store.MemoryArtifact {
 	item.Scope = sanitizeDisplayText(item.Scope, "memory:current")
 	item.Path = sanitizeDisplayText(item.Path, "notes/current-artifact.md")
@@ -1328,7 +1456,7 @@ func sanitizeTextLinesOrFallback(lines []string, fallback string) []string {
 func sanitizeDisplayText(value, fallback string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return trimmed
+		return fallback
 	}
 	rewritten := rewriteCustomerFacingText(trimmed)
 	if looksLikeLiveTruthLeak(rewritten) {

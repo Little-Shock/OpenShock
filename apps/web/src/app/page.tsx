@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { buildContinueTarget } from "@/lib/continue-target";
 import { buildFirstStartJourney } from "@/lib/first-start-journey";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 
@@ -9,64 +10,264 @@ function statusLabel(ready: boolean, positive: string, negative: string) {
   return ready ? positive : negative;
 }
 
-function cardTone(kind: "primary" | "paper" | "ink") {
-  if (kind === "primary") {
-    return "border-[var(--shock-ink)] bg-[linear-gradient(135deg,#fff2a8_0%,#ffe36a_100%)] text-[var(--shock-ink)] shadow-[4px_4px_0_0_var(--shock-ink)]";
-  }
-  if (kind === "ink") {
-    return "border-[var(--shock-ink)] bg-[var(--shock-ink)] text-[var(--shock-paper)] shadow-[4px_4px_0_0_rgba(24,20,14,0.26)]";
-  }
-  return "border-[rgba(24,20,14,0.16)] bg-white/88 text-[var(--shock-ink)] shadow-[0_18px_40px_rgba(24,20,14,0.1)]";
-}
-
-function actionButtonTone(kind: "primary" | "secondary") {
-  if (kind === "primary") {
-    return "bg-[var(--shock-ink)] text-[var(--shock-paper)]";
-  }
-  return "bg-white text-[var(--shock-ink)]";
+function actionButtonTone() {
+  return "bg-[var(--shock-ink)] text-[var(--shock-paper)]";
 }
 
 export default function HomePage() {
   const { state, loading, error, refresh } = usePhaseZeroState();
   const journey = buildFirstStartJourney(state.workspace, state.auth.session);
   const actionableInbox = state.inbox.filter((item) => item.kind !== "status");
+  const channelCount = state.channels.length;
+  const agentCount = state.agents.length;
+  const directMessageCount = state.directMessages.length;
+  const connectedMachineCount = state.machines.filter((machine) => machine.state === "online" || machine.state === "busy").length;
   const recentRoom = state.rooms.find((room) => room.unread > 0) ?? state.rooms[0];
   const liveRun = state.runs.find((run) => run.status === "running" || run.status === "blocked" || run.status === "paused") ?? state.runs[0];
-  const workspaceReady = journey.onboardingDone;
   const runtimeReady = state.workspace.pairingStatus.trim() === "paired";
   const githubReady = Boolean(state.workspace.githubInstallation.connectionReady);
-  const workspaceStatus = loading ? "正在确认" : statusLabel(workspaceReady, "可以直接开始", "还要先完成设置");
+  const firstDirectMessage = state.directMessages[0];
+  const chatHref = "/chat/all";
+  const directMessageHref = firstDirectMessage ? `/chat/${firstDirectMessage.id}` : chatHref;
+  const agentHref = state.agents[0] ? `/profiles/agent/${state.agents[0].id}` : "/agents";
+  const machineHref = runtimeReady ? "/chat/all" : "/setup";
+  const roomHref = recentRoom ? `/rooms/${recentRoom.id}` : "/rooms";
+  const inboxHref = actionableInbox[0]?.href ?? "/inbox";
+  const settingsHref = githubReady ? "/settings" : "/setup";
+  const needsOnboarding = !journey.onboardingDone;
+  const continueTarget =
+    loading || error
+        ? null
+      : buildContinueTarget({
+          inbox: actionableInbox,
+          channels: state.channels,
+          directMessages: state.directMessages,
+          rooms: state.rooms,
+          journey,
+        });
+  const primaryEntryHref = needsOnboarding ? "/setup" : chatHref;
+  const primaryEntryLabel = needsOnboarding ? (journey.onboardingStarted ? "继续设置" : "开始设置") : "进入聊天";
+  const primaryContinueHref = continueTarget?.href ?? primaryEntryHref;
+  const primaryContinueLabel = continueTarget?.ctaLabel ?? primaryEntryLabel;
+  const productHeadline = "让人和智能体在同一条对话里继续工作";
+  const productSummary = "频道、私聊、记忆和你的电脑会接着上次状态继续；需要补设置时，只补当前缺的这一步。";
+  const primaryEntryReason = needsOnboarding ? "先把工作区接通，完成后聊天会成为默认入口。" : "先进入聊天，再决定回讨论、处理交接或检查设置。";
+  const primaryContinueReason = needsOnboarding
+    ? primaryEntryReason
+    : continueTarget
+      ? `${continueTarget.reason}，一键回到当前工作。`
+      : primaryEntryReason;
   const runtimeStatus = loading ? "正在确认" : statusLabel(runtimeReady, "已连接", "还没连上");
-  const inboxStatus = loading ? "正在确认" : actionableInbox.length > 0 ? `${actionableInbox.length} 条待处理` : "暂时没有";
+  const shellReady = !loading && !error && !needsOnboarding;
+  const chatSummary = `${channelCount} 个频道会继续接住当前协作。`;
+  const directMessageSummary =
+    directMessageCount > 0 ? `${directMessageCount} 条私聊会和频道一起续上。` : "还没有私聊，先从频道开始。";
+  const inboxSummary =
+    actionableInbox.length > 0
+      ? `${actionableInbox.length} 条待处理提醒会把你带回讨论或执行。`
+      : "当前没有待处理提醒。";
+  const agentSummary = agentCount > 0 ? `${agentCount} 位智能体已经在工作区里待命或执行。` : "接通工作区后，智能体会出现在这里。";
+  const machineSummary =
+    connectedMachineCount > 0
+      ? `${connectedMachineCount} 台机器在线，任务可以直接接起来。`
+      : "接上机器后，任务会直接在你的环境里执行。";
+  const roomSummary = recentRoom ? recentRoom.summary : "还没有讨论间，先从聊天或任务板起一条新工作。";
+  const runSummary = liveRun ? liveRun.nextAction : "需要时再从讨论间发起执行。";
 
   return (
     <main className="min-h-screen overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(255,213,0,0.28),transparent_34%),linear-gradient(180deg,#fff8e7_0%,#fff6dd_100%)] px-5 py-6 text-[var(--shock-ink)] sm:px-7">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-        <section className="rounded-[30px] border-2 border-[var(--shock-ink)] bg-[linear-gradient(135deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.94)_100%)] p-5 shadow-[6px_6px_0_0_var(--shock-ink)] sm:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        {shellReady ? (
+          <section
+            data-testid="home-shell-surface"
+            className="rounded-[30px] border-2 border-[var(--shock-ink)] bg-[linear-gradient(135deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.94)_100%)] p-5 shadow-[6px_6px_0_0_var(--shock-ink)] sm:p-7"
+          >
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[rgba(24,20,14,0.58)]">OpenShock</p>
+                <h1 className="mt-3 font-display text-[2rem] font-bold leading-none sm:text-[2.7rem]">
+                  {continueTarget?.title ?? "直接回到协作壳"}
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-[rgba(24,20,14,0.76)] sm:text-[15px]">
+                  {primaryContinueReason}
+                </p>
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <Link
+                    className={`rounded-full border-2 border-[var(--shock-ink)] px-4 py-2 text-sm font-semibold shadow-[3px_3px_0_0_rgba(24,20,14,0.2)] ${actionButtonTone()}`}
+                    data-testid="home-primary-chat-cta"
+                    href={primaryContinueHref}
+                  >
+                    {primaryContinueLabel}
+                  </Link>
+                  <Link
+                    className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-4 py-2 text-sm font-semibold shadow-[3px_3px_0_0_var(--shock-ink)]"
+                    href={settingsHref}
+                  >
+                    {githubReady ? "检查设置" : "补齐设置"}
+                  </Link>
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <Link
+                    className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[3px_3px_0_0_var(--shock-ink)]"
+                    data-testid="home-shell-chat-link"
+                    href={chatHref}
+                  >
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">频道</p>
+                    <p className="mt-2 text-sm font-semibold">{`${channelCount} 个可聊`}</p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{chatSummary}</p>
+                  </Link>
+                  <Link
+                    className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[3px_3px_0_0_var(--shock-ink)]"
+                    data-testid="home-shell-dm-link"
+                    href={directMessageHref}
+                  >
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">私聊</p>
+                    <p className="mt-2 text-sm font-semibold">{directMessageCount > 0 ? `${directMessageCount} 条在等你` : "随时可发起"}</p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{directMessageSummary}</p>
+                  </Link>
+                  <Link
+                    className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[3px_3px_0_0_var(--shock-ink)]"
+                    data-testid="home-shell-rooms-link"
+                    href={roomHref}
+                  >
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">讨论间</p>
+                    <p className="mt-2 text-sm font-semibold">{recentRoom?.title ?? "还没有讨论间"}</p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{roomSummary}</p>
+                  </Link>
+                  <Link
+                    className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[3px_3px_0_0_var(--shock-ink)]"
+                    data-testid="home-shell-inbox-link"
+                    href={inboxHref}
+                  >
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">收件箱</p>
+                    <p className="mt-2 text-sm font-semibold">{actionableInbox.length > 0 ? `${actionableInbox.length} 条待处理` : "当前很干净"}</p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{inboxSummary}</p>
+                  </Link>
+                  <Link
+                    className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[3px_3px_0_0_var(--shock-ink)]"
+                    data-testid="home-shell-agents-link"
+                    href={agentHref}
+                  >
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">智能体</p>
+                    <p className="mt-2 text-sm font-semibold">{`${agentCount} 位在场`}</p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{agentSummary}</p>
+                  </Link>
+                  <Link
+                    className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4 shadow-[3px_3px_0_0_var(--shock-ink)]"
+                    data-testid="home-shell-machine-link"
+                    href={machineHref}
+                  >
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">机器</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {connectedMachineCount > 0 ? `${connectedMachineCount} 台在线` : runtimeStatus}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{machineSummary}</p>
+                  </Link>
+                </div>
+              </div>
+
+              <aside className="grid gap-3">
+                <div className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">当前继续</p>
+                  <p className="mt-2 text-sm font-semibold">{continueTarget?.title ?? journey.nextLabel}</p>
+                  <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
+                    {continueTarget?.summary ?? journey.nextSummary}
+                  </p>
+                </div>
+                <div className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">最近讨论</p>
+                  <p className="mt-2 text-sm font-semibold">{recentRoom?.title || "还没有讨论间"}</p>
+                  <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{roomSummary}</p>
+                </div>
+                <div className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">当前运行</p>
+                  <p className="mt-2 text-sm font-semibold">{liveRun ? `${liveRun.status} · ${liveRun.owner}` : "没有进行中的运行"}</p>
+                  <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">{runSummary}</p>
+                </div>
+              </aside>
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-[30px] border-2 border-[var(--shock-ink)] bg-[linear-gradient(135deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.94)_100%)] p-5 shadow-[6px_6px_0_0_var(--shock-ink)] sm:p-7">
             <div className="max-w-3xl">
               <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[rgba(24,20,14,0.58)]">OpenShock</p>
-              <h1 className="mt-3 font-display text-[2rem] font-bold leading-none sm:text-[3rem]">现在可以做什么</h1>
+              <h1 className="mt-3 font-display text-[2rem] font-bold leading-none sm:text-[3rem]">{productHeadline}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[rgba(24,20,14,0.76)] sm:text-[15px]">
-                先继续当前工作，再决定要不要看设置、回到讨论，或者处理待办交接。
+                {productSummary}
               </p>
+              <p className="mt-3 max-w-2xl font-mono text-[11px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.52)]">
+                {primaryContinueReason}
+              </p>
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <Link
+                  className={`rounded-full border-2 border-[var(--shock-ink)] px-4 py-2 text-sm font-semibold shadow-[3px_3px_0_0_rgba(24,20,14,0.2)] ${actionButtonTone()}`}
+                  data-testid="home-primary-chat-cta"
+                  href={primaryContinueHref}
+                >
+                  {primaryContinueLabel}
+                </Link>
+              </div>
+              <details className="mt-5 rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+                <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.68)]">
+                  查看当前状态与补充入口
+                </summary>
+                <div
+                  data-testid="home-status-strip"
+                  className="mt-4 flex flex-wrap items-center gap-2 rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3"
+                >
+                  <span className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    记忆会续上
+                  </span>
+                  <span className="text-sm leading-6 text-[rgba(24,20,14,0.74)]">
+                    上次讨论、交接和运行线索会继续接住。
+                  </span>
+                  <span className="hidden text-[rgba(24,20,14,0.34)] sm:inline">/</span>
+                  <span className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    频道和私聊是一条对话
+                  </span>
+                  <span className="text-sm leading-6 text-[rgba(24,20,14,0.74)]">
+                    {loading ? "正在确认讨论入口。" : `${channelCount} 个频道和 ${directMessageCount} 条私聊都能继续工作。`}
+                  </span>
+                  <span className="hidden text-[rgba(24,20,14,0.34)] sm:inline">/</span>
+                  <span className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                    你的电脑就是执行环境
+                  </span>
+                  <span className="text-sm leading-6 text-[rgba(24,20,14,0.74)]">
+                    {loading
+                      ? "正在确认机器连接。"
+                      : connectedMachineCount > 0
+                        ? `${connectedMachineCount} 台机器在线，随时可以接任务。`
+                        : "接上机器后，任务就能直接在你的环境里执行。"}
+                  </span>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-[rgba(24,20,14,0.72)]" data-testid="home-support-actions">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.5)]">稍后再做</span>
+                  <Link
+                    className="underline decoration-[rgba(24,20,14,0.24)] underline-offset-4"
+                    data-testid="home-support-dm-link"
+                    href={directMessageHref}
+                  >
+                    私聊智能体
+                  </Link>
+                  <Link
+                    className="underline decoration-[rgba(24,20,14,0.24)] underline-offset-4"
+                    data-testid="home-support-agents-link"
+                    href={agentHref}
+                  >
+                    查看智能体
+                  </Link>
+                  <Link
+                    className="underline decoration-[rgba(24,20,14,0.24)] underline-offset-4"
+                    data-testid="home-support-machine-link"
+                    href={machineHref}
+                  >
+                    {runtimeReady ? "机器状态" : "连接机器"}
+                  </Link>
+                </div>
+              </details>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3 lg:w-[30rem]">
-              <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 shadow-[3px_3px_0_0_var(--shock-ink)]">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">工作区</p>
-                <p className="mt-2 text-sm font-semibold">{workspaceStatus}</p>
-              </div>
-              <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 shadow-[3px_3px_0_0_var(--shock-ink)]">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">运行环境</p>
-                <p className="mt-2 text-sm font-semibold">{runtimeStatus}</p>
-              </div>
-              <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 shadow-[3px_3px_0_0_var(--shock-ink)]">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.54)]">待办交接</p>
-                <p className="mt-2 text-sm font-semibold">{inboxStatus}</p>
-              </div>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {loading ? (
           <section className="rounded-[26px] border-2 border-dashed border-[rgba(24,20,14,0.24)] bg-white/75 px-5 py-10 text-center shadow-[0_16px_36px_rgba(24,20,14,0.08)]">
@@ -101,103 +302,49 @@ export default function HomePage() {
               </Link>
             </div>
           </section>
-        ) : (
-          <section className="grid gap-4 xl:grid-cols-[1.35fr_0.95fr]">
-            <article className={`rounded-[28px] border-2 p-5 sm:p-6 ${cardTone("primary")}`}>
-              <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.62)]">下一步</p>
-              <h2 className="mt-3 font-display text-[1.9rem] font-bold leading-none sm:text-[2.5rem]">{journey.nextLabel}</h2>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-[rgba(24,20,14,0.84)] sm:text-[15px]">{journey.nextSummary}</p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link
-                  className={`rounded-full border-2 border-[var(--shock-ink)] px-4 py-2 text-sm font-semibold shadow-[3px_3px_0_0_rgba(24,20,14,0.2)] ${actionButtonTone("primary")}`}
-                  href={journey.nextHref}
-                >
-                  去{journey.nextSurfaceLabel}
-                </Link>
-                <Link
-                  className={`rounded-full border-2 border-[var(--shock-ink)] px-4 py-2 text-sm font-semibold shadow-[3px_3px_0_0_var(--shock-ink)] ${actionButtonTone("secondary")}`}
-                  href={journey.launchHref}
-                >
-                  继续聊天
-                </Link>
-              </div>
-              <div className="mt-6 grid gap-3 md:grid-cols-3">
-                <div className="rounded-[20px] border-2 border-[rgba(24,20,14,0.18)] bg-white/76 px-4 py-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.5)]">最近讨论</p>
-                  <p className="mt-2 text-sm font-semibold">{recentRoom?.title || "还没有讨论间"}</p>
-                  <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-                    {recentRoom ? recentRoom.summary : "先在聊天或设置里起一个新任务。"}
-                  </p>
-                </div>
-                <div className="rounded-[20px] border-2 border-[rgba(24,20,14,0.18)] bg-white/76 px-4 py-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.5)]">当前运行</p>
-                  <p className="mt-2 text-sm font-semibold">{liveRun ? `${liveRun.status} · ${liveRun.owner}` : "没有进行中的运行"}</p>
-                  <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-                    {liveRun ? liveRun.nextAction : "需要时再从讨论间或任务板发起。"}
-                  </p>
-                </div>
-                <div className="rounded-[20px] border-2 border-[rgba(24,20,14,0.18)] bg-white/76 px-4 py-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.5)]">GitHub</p>
-                  <p className="mt-2 text-sm font-semibold">{githubReady ? "可以继续走 PR" : "还没完全接好"}</p>
-                  <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-                    {githubReady ? "远端连接已就绪，可以继续评审和交付。" : "先在设置里把连接补齐，再继续远端链路。"}
-                  </p>
-                </div>
-              </div>
-            </article>
-
-            <div className="grid gap-4">
-              <article className={`rounded-[26px] border-2 p-5 sm:p-6 ${cardTone("paper")}`}>
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.5)]">现在最常用</p>
-                <div className="mt-4 grid gap-3">
-                  <Link className="rounded-[20px] border-2 border-[rgba(24,20,14,0.16)] bg-white px-4 py-4 shadow-[0_12px_24px_rgba(24,20,14,0.06)]" href={recentRoom ? `/rooms/${recentRoom.id}` : "/rooms"}>
-                    <p className="text-sm font-semibold">回到最近讨论</p>
-                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-                      {recentRoom ? `${recentRoom.title} · ${recentRoom.summary}` : "打开讨论间列表，继续当前任务。"}
-                    </p>
-                  </Link>
-                  <Link className="rounded-[20px] border-2 border-[rgba(24,20,14,0.16)] bg-white px-4 py-4 shadow-[0_12px_24px_rgba(24,20,14,0.06)]" href={actionableInbox[0]?.href || "/mailbox"}>
-                    <p className="text-sm font-semibold">处理待办交接</p>
-                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-                      {actionableInbox.length > 0 ? actionableInbox[0]?.summary : "打开交接列表，看看有没有人等你接手。"}
-                    </p>
-                  </Link>
-                  <Link className="rounded-[20px] border-2 border-[rgba(24,20,14,0.16)] bg-white px-4 py-4 shadow-[0_12px_24px_rgba(24,20,14,0.06)]" href="/setup">
-                    <p className="text-sm font-semibold">检查设置</p>
-                    <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-                      看仓库、GitHub 和运行环境是不是都在可用状态。
-                    </p>
-                  </Link>
-                </div>
-              </article>
-
-              <article className={`rounded-[26px] border-2 p-5 sm:p-6 ${cardTone("ink")}`}>
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(255,248,231,0.62)]">工作区概况</p>
-                <p className="mt-3 text-lg font-semibold">{state.workspace.name || "当前工作区"}</p>
-                <p className="mt-2 text-sm leading-6 text-[rgba(255,248,231,0.84)]">
-                  {state.workspace.repo ? `${state.workspace.repo} · ${state.workspace.branch || "当前分支"}` : "还没读到仓库信息。"}
+        ) : shellReady ? null : (
+          <details className="rounded-[24px] border-2 border-[var(--shock-ink)] bg-white px-5 py-4 shadow-[4px_4px_0_0_var(--shock-ink)]">
+            <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.68)]">
+              查看继续线索与工作区概览
+            </summary>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-[20px] border-2 border-[rgba(24,20,14,0.18)] bg-[var(--shock-paper)] px-4 py-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.5)]">当前继续</p>
+                <p className="mt-2 text-sm font-semibold">{continueTarget?.title ?? journey.nextLabel}</p>
+                <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
+                  {continueTarget?.summary ?? journey.nextSummary}
                 </p>
-                <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(255,248,231,0.56)]">讨论间</dt>
-                    <dd className="mt-1 text-sm font-semibold">{state.rooms.length} 个</dd>
-                  </div>
-                  <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(255,248,231,0.56)]">运行</dt>
-                    <dd className="mt-1 text-sm font-semibold">{state.runs.length} 条</dd>
-                  </div>
-                  <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(255,248,231,0.56)]">交接</dt>
-                    <dd className="mt-1 text-sm font-semibold">{state.mailbox.length} 条</dd>
-                  </div>
-                  <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(255,248,231,0.56)]">消息</dt>
-                    <dd className="mt-1 text-sm font-semibold">{state.workspace.usage?.messageCount ?? 0} 条 / {state.workspace.usage?.windowLabel || "当前窗口"}</dd>
-                  </div>
-                </dl>
-              </article>
+              </div>
+              <div className="rounded-[20px] border-2 border-[rgba(24,20,14,0.18)] bg-[var(--shock-paper)] px-4 py-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.5)]">最近讨论</p>
+                <p className="mt-2 text-sm font-semibold">{recentRoom?.title || "还没有讨论间"}</p>
+                <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
+                  {recentRoom ? recentRoom.summary : "先在聊天或设置里起一个新任务。"}
+                </p>
+              </div>
+              <div className="rounded-[20px] border-2 border-[rgba(24,20,14,0.18)] bg-[var(--shock-paper)] px-4 py-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgba(24,20,14,0.5)]">当前运行</p>
+                <p className="mt-2 text-sm font-semibold">{liveRun ? `${liveRun.status} · ${liveRun.owner}` : "没有进行中的运行"}</p>
+                <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
+                  {liveRun ? liveRun.nextAction : "需要时再从讨论间或任务板发起。"}
+                </p>
+              </div>
             </div>
-          </section>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Link
+                className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm font-semibold shadow-[3px_3px_0_0_var(--shock-ink)]"
+                href={actionableInbox[0]?.href || "/mailbox"}
+              >
+                {actionableInbox.length > 0 ? "处理待办交接" : "打开交接列表"}
+              </Link>
+              <Link
+                className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm font-semibold shadow-[3px_3px_0_0_var(--shock-ink)]"
+                href={githubReady ? "/settings" : "/setup"}
+              >
+                {githubReady ? "检查默认设置" : "补齐支撑设置"}
+              </Link>
+            </div>
+          </details>
         )}
       </div>
     </main>

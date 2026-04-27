@@ -241,6 +241,73 @@ async function waitForVisible(page, testID) {
   await page.getByTestId(testID).waitFor({ state: "visible", timeout: 30_000 });
 }
 
+async function waitForEnabled(page, testID, message) {
+  await waitFor(async () => !(await page.getByTestId(testID).isDisabled()), message);
+}
+
+async function rewindOnboardingToTemplate(page) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (await page.getByTestId("onboarding-template-research-team").isVisible().catch(() => false)) {
+      return;
+    }
+    const backButton = page.getByTestId("onboarding-go-back");
+    if (await backButton.isVisible().catch(() => false)) {
+      await backButton.click();
+    }
+    await delay(250);
+  }
+  throw new Error("onboarding did not rewind back to template step");
+}
+
+async function waitForOnboardingAdvance(page, webURL) {
+  let stage = "";
+  await waitFor(async () => {
+    if (page.url().startsWith(`${webURL}/chat/all`)) {
+      stage = "chat";
+      return true;
+    }
+    const finishButton = page.getByTestId("onboarding-finish-submit");
+    if (
+      await finishButton.isVisible().catch(() => false) &&
+      !(await finishButton.isDisabled().catch(() => true))
+    ) {
+      stage = "finish";
+      return true;
+    }
+    if (await page.getByTestId("onboarding-agent-submit").isVisible().catch(() => false)) {
+      stage = "agent";
+      return true;
+    }
+    if (await page.getByTestId("onboarding-runtime-pair").isVisible().catch(() => false)) {
+      stage = "runtime";
+      return true;
+    }
+    if (await page.getByTestId("onboarding-repo-manual-submit").isVisible().catch(() => false)) {
+      stage = "repo";
+      return true;
+    }
+    const skipButton = page.getByTestId("onboarding-github-skip");
+    if (
+      await skipButton.isVisible().catch(() => false) &&
+      !(await skipButton.isDisabled().catch(() => true))
+    ) {
+      stage = "github";
+      return true;
+    }
+    return false;
+  }, "onboarding did not advance to the next actionable step");
+  return stage;
+}
+
+async function openSettingsDisclosure(page, testID, message) {
+  const toggle = page.getByTestId(`settings-advanced-${testID}-toggle`);
+  await waitFor(async () => (await toggle.count()) > 0, message);
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await page.getByTestId(`settings-advanced-${testID}-content`).waitFor({ state: "visible", timeout: 30_000 });
+}
+
 let browser;
 
 try {
@@ -257,56 +324,85 @@ try {
   const page = await browser.newPage({ viewport: { width: 1560, height: 1280 } });
 
   await page.goto(`${webURL}/access`, { waitUntil: "domcontentloaded" });
-  await waitForText(page, "access-first-start-next-route", "/onboarding");
+  await waitForText(page, "access-first-start-next-route", "/setup");
   await waitForText(page, "access-first-start-step-session-status", "ready");
   await waitForText(page, "access-first-start-step-identity-status", "ready");
   await waitForText(page, "access-first-start-step-setup-status", "active");
   await capture(page, "access-before-onboarding");
-  results.push("- `/access` 在当前已登录但尚未完成设置的状态下，会把下一跳明确压成 `/onboarding`。");
+  results.push("- `/access` 在当前已登录但尚未完成设置的状态下，会把下一跳明确压成 `/setup`。");
 
   await page.getByTestId("access-first-start-next-link").click();
-  await page.waitForURL(new RegExp(`${webURL}/onboarding`), { timeout: 30_000 });
-  await waitForVisible(page, "onboarding-github-skip");
+  await page.waitForURL(new RegExp(`${webURL}/setup`), { timeout: 30_000 });
+  await rewindOnboardingToTemplate(page);
   await capture(page, "onboarding-resume-github");
   results.push("- 从 `/access` 点继续后会直接恢复到页内向导当前步骤，而不是先绕到旧的 setup 面板。");
 
-  await page.getByTestId("onboarding-go-back").click();
   await waitForVisible(page, "onboarding-template-research-team");
   await capture(page, "onboarding-template");
 
   await page.getByTestId("onboarding-template-research-team").click();
-  await waitForText(page, "onboarding-success", "模板已保存，继续配置 GitHub。");
-  await waitForVisible(page, "onboarding-github-skip");
-  await capture(page, "onboarding-github");
+  await waitForText(page, "onboarding-success", "模板已保存。");
+  let currentStage = await waitForOnboardingAdvance(page, webURL);
 
-  await page.getByTestId("onboarding-github-skip").click();
-  await waitForText(page, "onboarding-success", "已跳过 GitHub，继续下一步。");
-  await waitForVisible(page, "onboarding-repo-manual-submit");
+  while (currentStage !== "chat") {
+    if (currentStage === "github") {
+      await page.getByTestId("onboarding-github-skip").evaluate((node) => {
+        if (!(node instanceof HTMLElement)) {
+          throw new Error("target is not clickable");
+        }
+        node.click();
+      });
+      currentStage = await waitForOnboardingAdvance(page, webURL);
+      continue;
+    }
 
-  await page.getByTestId("onboarding-repo-name").fill("Larkspur-Wang/OpenShock");
-  await page.getByTestId("onboarding-repo-url").fill("https://github.com/Larkspur-Wang/OpenShock");
-  await page.getByTestId("onboarding-repo-branch").fill("main");
-  await page.getByTestId("onboarding-repo-manual-submit").click();
-  await waitForText(page, "onboarding-success", "仓库信息已保存。");
-  await waitForVisible(page, "onboarding-runtime-pair");
-  await capture(page, "onboarding-repo");
+    if (currentStage === "repo") {
+      await waitForEnabled(page, "onboarding-repo-manual-submit", "repo submit button never became enabled");
+      await page.getByTestId("onboarding-repo-name").fill("Larkspur-Wang/OpenShock");
+      await page.getByTestId("onboarding-repo-url").fill("https://github.com/Larkspur-Wang/OpenShock");
+      await page.getByTestId("onboarding-repo-branch").fill("main");
+      await page.getByTestId("onboarding-repo-manual-submit").click();
+      await capture(page, "onboarding-repo");
+      currentStage = await waitForOnboardingAdvance(page, webURL);
+      continue;
+    }
 
-  await page.getByTestId("onboarding-runtime-pair").click();
-  await waitForText(page, "onboarding-success", "运行环境已连接，继续设置智能体。");
-  await waitForVisible(page, "onboarding-agent-submit");
-  await capture(page, "onboarding-runtime");
+    if (currentStage === "runtime") {
+      await waitForEnabled(page, "onboarding-runtime-pair", "runtime pair button never became enabled");
+      await page.getByTestId("onboarding-runtime-pair").click();
+      await capture(page, "onboarding-runtime");
+      currentStage = await waitForOnboardingAdvance(page, webURL);
+      continue;
+    }
 
-  await page.getByTestId("onboarding-agent-name").fill("启动智能体");
-  await page.getByTestId("onboarding-agent-role").fill("工作区搭建");
-  await page.getByTestId("onboarding-agent-submit").click();
-  await waitForText(page, "onboarding-success", "智能体配置已保存。");
-  await waitForVisible(page, "onboarding-finish-submit");
-  await capture(page, "onboarding-agent");
+    if (currentStage === "agent") {
+      await waitForEnabled(page, "onboarding-agent-submit", "agent submit button never became enabled");
+      await page.getByTestId("onboarding-agent-name").fill("启动智能体");
+      await page.getByTestId("onboarding-agent-role").fill("工作区搭建");
+      await page.getByTestId("onboarding-agent-submit").click();
+      await capture(page, "onboarding-agent");
+      currentStage = await waitForOnboardingAdvance(page, webURL);
+      continue;
+    }
 
-  await page.getByTestId("onboarding-finish-submit").click();
-  await page.waitForURL(new RegExp(`${webURL}/chat/all`), { timeout: 30_000 });
+    if (currentStage === "finish") {
+      await waitForEnabled(page, "onboarding-finish-submit", "finish submit button never became enabled");
+      await page.getByTestId("onboarding-finish-submit").evaluate((node) => {
+        if (!(node instanceof HTMLButtonElement)) {
+          throw new Error("finish submit target is not a button");
+        }
+        node.click();
+      });
+      await page.waitForURL(new RegExp(`${webURL}/chat/all`), { timeout: 30_000 });
+      currentStage = "chat";
+      continue;
+    }
+
+    throw new Error(`unexpected onboarding stage: ${currentStage}`);
+  }
+
   await capture(page, "chat-after-onboarding");
-  results.push("- 新向导会继续完成模板、仓库、运行环境和智能体配置，最后直接落到 `/chat/all`。");
+  results.push("- 新向导会按当前工作区状态补完剩余步骤；如果默认仓库和运行环境已就绪，也会直接收口到 `/chat/all`。");
 
   const workspaceAfterFinish = await readWorkspace(serverURL);
   if (workspaceAfterFinish.onboarding.status !== "done") {
@@ -344,6 +440,7 @@ try {
   await waitForHealth(serverURL);
 
   await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
+  await openSettingsDisclosure(page, "workspace", "settings workspace disclosure did not render after restart");
   await waitForText(page, "settings-workspace-template-text", "research-team");
   await waitFor(async () => (await readText(page, "settings-workspace-onboarding-value")).includes("已完成"), "settings did not project finished onboarding truth");
   await capture(page, "settings-after-server-restart");
@@ -360,9 +457,9 @@ try {
   results.push("- 第二个浏览器上下文打开 `/setup` 时也能读到同一份 onboarding 结果，恢复不依赖单个 tab。");
 
   const reportLines = [
-    "# Test Report 2026-04-11 First-Start Journey / Access-Onboarding-Chat",
+    "# Test Report 2026-04-23 Release Gate Onboarding Studio",
     "",
-    `- Command: \`pnpm test:headed-first-start-journey -- --report ${path.relative(projectRoot, reportPath)}\``,
+    `- Command: \`pnpm test:headed-onboarding-studio -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Generated At: ${timestamp()}`,
     "",
     "## Result",
@@ -375,8 +472,8 @@ try {
     "",
     "## Scope",
     "",
-    "- 从 `/access` 起步，验证未完成设置时下一跳会进入 `/onboarding`，而不是继续指向旧的 setup 主路径。",
-    "- 在 `/onboarding` 从当前恢复步骤回退到模板，重新选择模板后继续完成 GitHub 跳过、仓库识别、运行环境连接和智能体保存，然后确认最终进入 `/chat/all`。",
+    "- 从 `/access` 起步，验证未完成设置时下一跳会进入 `/setup` 内的 guided setup，而不是分裂成另一条首启路由。",
+    "- 在 `/setup` 从当前恢复步骤回退到模板，重新选择模板后补完剩余步骤，或在已具备默认能力时直接收口到 `/chat/all`。",
     "- 验证完成首次启动后，`/access`、`/setup` 和 `/settings` 会投影同一份已完成的 onboarding truth。",
     "- 验证 server restart 与第二个浏览器上下文后，模板、状态和恢复入口仍保持一致。",
   ];

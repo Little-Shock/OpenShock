@@ -30,7 +30,10 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Memory)
+	if !s.requireRequestSessionPermission(w, r, "memory.read") {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Memory)
 }
 
 func (s *Server) handleMemoryRoutes(w http.ResponseWriter, r *http.Request) {
@@ -51,13 +54,16 @@ func (s *Server) handleMemoryRoutes(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodGet) {
 			return
 		}
+		if !s.requireRequestSessionPermission(w, r, "memory.read") {
+			return
+		}
 
 		detail, ok := s.store.MemoryDetail(memoryID)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "memory artifact not found"})
 			return
 		}
-		writeJSON(w, http.StatusOK, detail)
+		writeJSON(w, http.StatusOK, sanitizeLivePayload(detail))
 		return
 	}
 
@@ -68,7 +74,7 @@ func (s *Server) handleMemoryRoutes(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !s.requireSessionPermission(w, "memory.write") {
+	if !s.requireRequestSessionPermission(w, r, "memory.write") {
 		return
 	}
 
@@ -80,12 +86,11 @@ func (s *Server) handleMemoryRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		snapshot := s.store.Snapshot()
 		nextState, detail, center, err := s.store.SubmitMemoryFeedback(memoryID, store.MemoryFeedbackInput{
 			SourceVersion: req.SourceVersion,
 			Summary:       req.Summary,
 			Note:          req.Note,
-			CorrectedBy:   currentAuthActor(snapshot.Auth.Session),
+			CorrectedBy:   s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeMemoryError(w, err)
@@ -104,11 +109,10 @@ func (s *Server) handleMemoryRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		snapshot := s.store.Snapshot()
 		nextState, detail, center, err := s.store.ForgetMemoryArtifact(memoryID, store.MemoryForgetInput{
 			SourceVersion: req.SourceVersion,
 			Reason:        req.Reason,
-			ForgottenBy:   currentAuthActor(snapshot.Auth.Session),
+			ForgottenBy:   s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeMemoryError(w, err)
@@ -170,25 +174,27 @@ func (s *Server) handleMemoryCenter(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.MemoryCenter())
+	if !s.requireRequestSessionPermission(w, r, "memory.read") {
+		return
+	}
+	writeJSON(w, http.StatusOK, sanitizeLivePayload(s.store.MemoryCenter()))
 }
 
 func (s *Server) handleMemoryCenterCleanup(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !s.requireSessionPermission(w, "memory.write") {
+	if !s.requireRequestSessionPermission(w, r, "memory.write") {
 		return
 	}
 
-	snapshot := s.store.Snapshot()
 	mode := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("mode")))
 	if mode != "" && mode != "due" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid cleanup mode"})
 		return
 	}
 	if mode == "due" {
-		nextState, cleanup, center, executed, err := s.store.RunDueMemoryCleanup(currentAuthActor(snapshot.Auth.Session))
+		nextState, cleanup, center, executed, err := s.store.RunDueMemoryCleanup(s.currentRequestAuthActor(r))
 		if err != nil {
 			writeMemoryError(w, err)
 			return
@@ -206,7 +212,7 @@ func (s *Server) handleMemoryCenterCleanup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	nextState, cleanup, center, err := s.store.RunMemoryCleanup(currentAuthActor(snapshot.Auth.Session))
+	nextState, cleanup, center, err := s.store.RunMemoryCleanup(s.currentRequestAuthActor(r))
 	if err != nil {
 		writeMemoryError(w, err)
 		return
@@ -222,9 +228,12 @@ func (s *Server) handleMemoryCenterCleanup(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleMemoryCenterProviders(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.MemoryCenter().Providers)
+		if !s.requireRequestSessionPermission(w, r, "memory.read") {
+			return
+		}
+		writeJSON(w, http.StatusOK, sanitizeLivePayload(s.store.MemoryCenter().Providers))
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "memory.write") {
+		if !s.requireRequestSessionPermission(w, r, "memory.write") {
 			return
 		}
 
@@ -234,8 +243,7 @@ func (s *Server) handleMemoryCenterProviders(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		snapshot := s.store.Snapshot()
-		nextState, providers, center, err := s.store.UpdateMemoryProviders(req.Providers, currentAuthActor(snapshot.Auth.Session))
+		nextState, providers, center, err := s.store.UpdateMemoryProviders(req.Providers, s.currentRequestAuthActor(r))
 		if err != nil {
 			writeMemoryError(w, err)
 			return
@@ -269,7 +277,7 @@ func (s *Server) handleMemoryCenterProviderRoutes(w http.ResponseWriter, r *http
 		if !requireMethod(w, r, http.MethodPost) {
 			return
 		}
-		if !s.requireSessionPermission(w, "memory.write") {
+		if !s.requireRequestSessionPermission(w, r, "memory.write") {
 			return
 		}
 
@@ -281,8 +289,7 @@ func (s *Server) handleMemoryCenterProviderRoutes(w http.ResponseWriter, r *http
 			}
 		}
 
-		snapshot := s.store.Snapshot()
-		nextState, providers, center, err := s.store.CheckMemoryProviders(req.ProviderID, currentAuthActor(snapshot.Auth.Session))
+		nextState, providers, center, err := s.store.CheckMemoryProviders(req.ProviderID, s.currentRequestAuthActor(r))
 		if err != nil {
 			writeMemoryError(w, err)
 			return
@@ -297,12 +304,11 @@ func (s *Server) handleMemoryCenterProviderRoutes(w http.ResponseWriter, r *http
 		if !requireMethod(w, r, http.MethodPost) {
 			return
 		}
-		if !s.requireSessionPermission(w, "memory.write") {
+		if !s.requireRequestSessionPermission(w, r, "memory.write") {
 			return
 		}
 
-		snapshot := s.store.Snapshot()
-		nextState, provider, center, err := s.store.RecoverMemoryProvider(parts[0], currentAuthActor(snapshot.Auth.Session))
+		nextState, provider, center, err := s.store.RecoverMemoryProvider(parts[0], s.currentRequestAuthActor(r))
 		if err != nil {
 			writeMemoryError(w, err)
 			return
@@ -321,9 +327,12 @@ func (s *Server) handleMemoryCenterProviderRoutes(w http.ResponseWriter, r *http
 func (s *Server) handleMemoryCenterPolicy(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.MemoryCenter().Policy)
+		if !s.requireRequestSessionPermission(w, r, "memory.read") {
+			return
+		}
+		writeJSON(w, http.StatusOK, sanitizeLivePayload(s.store.MemoryCenter().Policy))
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "memory.write") {
+		if !s.requireRequestSessionPermission(w, r, "memory.write") {
 			return
 		}
 
@@ -333,7 +342,6 @@ func (s *Server) handleMemoryCenterPolicy(w http.ResponseWriter, r *http.Request
 			return
 		}
 
-		snapshot := s.store.Snapshot()
 		nextState, policy, center, err := s.store.UpdateMemoryPolicy(store.MemoryPolicyInput{
 			Mode:                     req.Mode,
 			IncludeRoomNotes:         req.IncludeRoomNotes,
@@ -341,7 +349,7 @@ func (s *Server) handleMemoryCenterPolicy(w http.ResponseWriter, r *http.Request
 			IncludeAgentMemory:       req.IncludeAgentMemory,
 			IncludePromotedArtifacts: req.IncludePromotedArtifacts,
 			MaxItems:                 req.MaxItems,
-			UpdatedBy:                currentAuthActor(snapshot.Auth.Session),
+			UpdatedBy:                s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeMemoryError(w, err)
@@ -361,9 +369,12 @@ func (s *Server) handleMemoryCenterPolicy(w http.ResponseWriter, r *http.Request
 func (s *Server) handleMemoryCenterPromotions(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.MemoryCenter().Promotions)
+		if !s.requireRequestSessionPermission(w, r, "memory.read") {
+			return
+		}
+		writeJSON(w, http.StatusOK, sanitizeLivePayload(s.store.MemoryCenter().Promotions))
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "memory.write") {
+		if !s.requireRequestSessionPermission(w, r, "memory.write") {
 			return
 		}
 
@@ -373,14 +384,13 @@ func (s *Server) handleMemoryCenterPromotions(w http.ResponseWriter, r *http.Req
 			return
 		}
 
-		snapshot := s.store.Snapshot()
 		nextState, promotion, center, err := s.store.RequestMemoryPromotion(store.MemoryPromotionRequestInput{
 			MemoryID:      req.MemoryID,
 			SourceVersion: req.SourceVersion,
 			Kind:          req.Kind,
 			Title:         req.Title,
 			Rationale:     req.Rationale,
-			ProposedBy:    currentAuthActor(snapshot.Auth.Session),
+			ProposedBy:    s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeMemoryError(w, err)
@@ -412,7 +422,7 @@ func (s *Server) handleMemoryCenterPromotionRoutes(w http.ResponseWriter, r *htt
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !s.requireSessionPermission(w, "memory.write") {
+	if !s.requireRequestSessionPermission(w, r, "memory.write") {
 		return
 	}
 
@@ -422,11 +432,10 @@ func (s *Server) handleMemoryCenterPromotionRoutes(w http.ResponseWriter, r *htt
 		return
 	}
 
-	snapshot := s.store.Snapshot()
 	nextState, promotion, center, err := s.store.ReviewMemoryPromotion(parts[0], store.MemoryPromotionReviewInput{
 		Status:     req.Status,
 		ReviewNote: req.ReviewNote,
-		ReviewedBy: currentAuthActor(snapshot.Auth.Session),
+		ReviewedBy: s.currentRequestAuthActor(r),
 	})
 	if err != nil {
 		writeMemoryError(w, err)

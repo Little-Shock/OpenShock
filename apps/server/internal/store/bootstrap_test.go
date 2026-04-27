@@ -59,6 +59,12 @@ func TestNewFreshBootstrapStartsWithGuidedWorkspace(t *testing.T) {
 	if snapshot.Workspace.Onboarding.TemplateID != "dev-team" || snapshot.Workspace.Onboarding.Status != workspaceOnboardingInProgress {
 		t.Fatalf("fresh bootstrap onboarding = %#v, want dev-team/in_progress", snapshot.Workspace.Onboarding)
 	}
+	if workspaceOnboardingHasCompletedStep(snapshot.Workspace.Onboarding, "template-selected") {
+		t.Fatalf("fresh bootstrap onboarding = %#v, did not expect template-selected before explicit confirmation", snapshot.Workspace.Onboarding)
+	}
+	if snapshot.Workspace.Onboarding.ResumeURL != "/setup" {
+		t.Fatalf("fresh bootstrap onboarding resume = %q, want /setup", snapshot.Workspace.Onboarding.ResumeURL)
+	}
 	if got := snapshot.Workspace.Onboarding.Materialization.Channels; len(got) != 4 || got[0] != "#all" || got[1] != "#shiproom" || got[2] != "#review-lane" || got[3] != "#ops-watch" {
 		t.Fatalf("fresh bootstrap onboarding channels = %#v, want #all + guided dev-team package", got)
 	}
@@ -68,8 +74,8 @@ func TestNewFreshBootstrapStartsWithGuidedWorkspace(t *testing.T) {
 	if len(snapshot.Workspace.Governance.ConfiguredTopology) != 5 || snapshot.Workspace.Governance.ConfiguredTopology[0].DefaultAgent != "Codex Dockmaster" {
 		t.Fatalf("fresh bootstrap governance = %#v, want concrete dev-team topology", snapshot.Workspace.Governance)
 	}
-	if snapshot.Auth.Session.Status != authSessionStatusActive {
-		t.Fatalf("fresh bootstrap session = %#v, want active local owner session", snapshot.Auth.Session)
+	if snapshot.Auth.Session.Status != authSessionStatusSignedOut {
+		t.Fatalf("fresh bootstrap session = %#v, want signed-out initial session", snapshot.Auth.Session)
 	}
 	if len(snapshot.Auth.Members) != 1 || snapshot.Auth.Members[0].Role != workspaceRoleOwner {
 		t.Fatalf("fresh bootstrap members = %#v, want one owner", snapshot.Auth.Members)
@@ -83,20 +89,20 @@ func TestNewFreshBootstrapStartsWithGuidedWorkspace(t *testing.T) {
 	if got := snapshot.Auth.Members[0].Preferences.StartRoute; got != "/chat/all" {
 		t.Fatalf("fresh bootstrap member start route = %q, want /chat/all", got)
 	}
-	if snapshot.Workspace.DeviceAuth != workspaceDeviceAuthLabel(authDeviceStatusAuthorized) {
-		t.Fatalf("fresh bootstrap workspace device auth = %q, want browser-approved", snapshot.Workspace.DeviceAuth)
+	if snapshot.Workspace.DeviceAuth != workspaceDeviceAuthLabel("") {
+		t.Fatalf("fresh bootstrap workspace device auth = %q, want unauthorized before login", snapshot.Workspace.DeviceAuth)
 	}
 	if len(snapshot.Auth.Devices) != 1 || snapshot.Auth.Devices[0].Status != authDeviceStatusAuthorized {
 		t.Fatalf("fresh bootstrap devices = %#v, want one authorized local device", snapshot.Auth.Devices)
 	}
-	if snapshot.Auth.Session.MemberID != "member-owner" || snapshot.Auth.Session.Email != "owner@openshock.local" {
-		t.Fatalf("fresh bootstrap session identity = %#v, want local owner identity", snapshot.Auth.Session)
+	if snapshot.Auth.Session.MemberID != "" || snapshot.Auth.Session.Email != "" {
+		t.Fatalf("fresh bootstrap session identity = %#v, want blank signed-out identity", snapshot.Auth.Session)
 	}
-	if snapshot.Auth.Session.AuthMethod != "local-bootstrap" || snapshot.Auth.Session.DeviceAuthStatus != authDeviceStatusAuthorized {
-		t.Fatalf("fresh bootstrap session auth/device = %#v, want local-bootstrap + authorized", snapshot.Auth.Session)
+	if snapshot.Auth.Session.AuthMethod != "" || snapshot.Auth.Session.DeviceAuthStatus != "" {
+		t.Fatalf("fresh bootstrap session auth/device = %#v, want blank signed-out auth/device", snapshot.Auth.Session)
 	}
-	if !sessionHasPermission(snapshot.Auth.Session, "workspace.manage") || !sessionHasPermission(snapshot.Auth.Session, "issue.create") {
-		t.Fatalf("fresh bootstrap session permissions = %#v, want owner permissions", snapshot.Auth.Session.Permissions)
+	if len(snapshot.Auth.Session.Permissions) != 0 {
+		t.Fatalf("fresh bootstrap session permissions = %#v, want no permissions while signed out", snapshot.Auth.Session.Permissions)
 	}
 }
 
@@ -110,15 +116,6 @@ func TestFreshBootstrapFirstLoginClaimsPlaceholderOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-
-	store.mu.Lock()
-	store.state.Issues = append(store.state.Issues, Issue{
-		ID:    "issue-bootstrap-claim",
-		Key:   "OPS-1",
-		Title: "Bootstrap work already started",
-		State: "queued",
-	})
-	store.mu.Unlock()
 
 	nextState, session, err := store.LoginWithEmail(AuthLoginInput{
 		Email:       "alice@example.com",
@@ -142,10 +139,75 @@ func TestFreshBootstrapFirstLoginClaimsPlaceholderOwner(t *testing.T) {
 	if member.Email != "alice@example.com" || member.Name != "Alice" || member.Source != "browser-registration" {
 		t.Fatalf("fresh login member = %#v, want claimed registration owner", member)
 	}
+	if member.Status != workspaceMemberStatusInvited {
+		t.Fatalf("fresh login member status = %q, want %q until self recovery completes", member.Status, workspaceMemberStatusInvited)
+	}
 	if len(nextState.Auth.Devices) != 1 || nextState.Auth.Devices[0].Status != authDeviceStatusPending {
 		t.Fatalf("fresh login devices = %#v, want one pending claimed device", nextState.Auth.Devices)
 	}
-	if len(nextState.Issues) != 1 || nextState.Issues[0].ID != "issue-bootstrap-claim" {
-		t.Fatalf("fresh login should preserve started work artifacts, got %#v", nextState.Issues)
+
+	verifyState, verifiedSession, verifiedMember, err := store.VerifyMemberEmail(AuthRecoveryInput{Email: "alice@example.com"})
+	if err != nil {
+		t.Fatalf("VerifyMemberEmail() error = %v", err)
+	}
+	if verifiedSession.EmailVerificationStatus != authEmailVerificationVerified || verifiedMember.Status != workspaceMemberStatusInvited {
+		t.Fatalf("verified session/member = %#v / %#v, want verified invited owner", verifiedSession, verifiedMember)
+	}
+	if verifyState.Auth.Members[0].Status != workspaceMemberStatusInvited {
+		t.Fatalf("verified state member = %#v, want invited until device approval", verifyState.Auth.Members[0])
+	}
+
+	activatedState, activatedSession, activatedMember, device, err := store.AuthorizeAuthDevice(AuthRecoveryInput{DeviceID: session.DeviceID})
+	if err != nil {
+		t.Fatalf("AuthorizeAuthDevice() error = %v", err)
+	}
+	if device.Status != authDeviceStatusAuthorized || activatedSession.DeviceAuthStatus != authDeviceStatusAuthorized {
+		t.Fatalf("authorized device/session = %#v / %#v, want authorized", device, activatedSession)
+	}
+	if activatedMember.Status != workspaceMemberStatusActive || activatedSession.MemberStatus != workspaceMemberStatusActive {
+		t.Fatalf("activated member/session = %#v / %#v, want active owner", activatedMember, activatedSession)
+	}
+	if activatedState.Auth.Members[0].Status != workspaceMemberStatusActive {
+		t.Fatalf("activated state member = %#v, want active owner", activatedState.Auth.Members[0])
+	}
+}
+
+func TestFreshBootstrapOwnerClaimFailsClosedAfterWorkStarts(t *testing.T) {
+	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
+
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	store, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	store.mu.Lock()
+	store.state.Issues = append(store.state.Issues, Issue{
+		ID:    "issue-bootstrap-claim",
+		Key:   "OPS-1",
+		Title: "Bootstrap work already started",
+		State: "queued",
+	})
+	store.mu.Unlock()
+
+	if _, _, err := store.LoginWithEmail(AuthLoginInput{
+		Email:       "alice@example.com",
+		Name:        "Alice",
+		DeviceLabel: "Alice Browser",
+	}); !errorsIs(err, ErrFreshBootstrapOwnerClaimUnavailable) {
+		t.Fatalf("LoginWithEmail(after work started) error = %v, want %v", err, ErrFreshBootstrapOwnerClaimUnavailable)
+	}
+
+	snapshot := store.Snapshot()
+	if len(snapshot.Issues) != 1 || snapshot.Issues[0].ID != "issue-bootstrap-claim" {
+		t.Fatalf("fresh workspace should preserve started work artifacts, got %#v", snapshot.Issues)
+	}
+	if snapshot.Auth.Members[0].Email != "owner@openshock.local" || snapshot.Auth.Members[0].Source != "fresh-bootstrap" {
+		t.Fatalf("fresh bootstrap owner placeholder should stay locked after work starts, got %#v", snapshot.Auth.Members[0])
+	}
+	if snapshot.Auth.Session.Status != authSessionStatusSignedOut {
+		t.Fatalf("fresh bootstrap session = %#v, want signed-out placeholder session", snapshot.Auth.Session)
 	}
 }

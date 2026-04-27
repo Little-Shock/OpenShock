@@ -49,7 +49,7 @@ func (s *Server) handleControlPlaneCommands(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if !s.requireSessionPermission(w, "run.execute") {
+	if !s.requireRequestSessionPermission(w, r, "run.execute") {
 		return
 	}
 
@@ -59,7 +59,7 @@ func (s *Server) handleControlPlaneCommands(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	payloadMap, input, err := decodeControlPlaneCommandRequest(req, currentAuthActor(s.store.Snapshot().Auth.Session))
+	payloadMap, input, err := decodeControlPlaneCommandRequest(req, s.currentRequestAuthActor(r))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

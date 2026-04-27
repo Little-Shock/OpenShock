@@ -6,10 +6,10 @@ export default function AccessPage() {
     <OpenShockShell
       view="access"
       eyebrow="账号"
-      title="确认你能进入工作区"
-      description="先确认账号、邮箱和设备；成员切换和恢复操作按需展开。"
-      contextTitle="能不能继续"
-      contextDescription="账号可用就回到聊天，缺一步就按提示补齐。"
+      title="回到同一条工作对话"
+      description="账号可用就回聊天；需要恢复时只补当前这一步。"
+      contextTitle="还能继续吗"
+      contextDescription="能进入就继续聊，缺一步就补一步。"
       contextBody={<LiveAccessContextRail />}
     >
       <LiveAccessOverview />

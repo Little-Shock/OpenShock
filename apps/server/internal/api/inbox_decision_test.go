@@ -149,6 +149,12 @@ func TestInboxDecisionRouteSyncsReviewItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "mina@openshock.dev",
+		DeviceLabel: "Mina Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(member) error = %v", err)
+	}
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
 		WorkspaceRoot: root,
@@ -218,6 +224,12 @@ func TestInboxDecisionRouteReturnsFailureContractForReviewSyncFailure(t *testing
 	s, err := store.New(statePath, root)
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "mina@openshock.dev",
+		DeviceLabel: "Mina Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(member) error = %v", err)
 	}
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",

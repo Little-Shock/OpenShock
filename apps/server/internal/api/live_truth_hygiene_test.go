@@ -8,6 +8,16 @@ import (
 
 func TestSanitizeLivePayloadRemovesPlaceholderLeakage(t *testing.T) {
 	state := store.State{
+		Auth: store.AuthSnapshot{
+			Session: store.AuthSession{
+				ID:          "auth-session-current",
+				Status:      "active",
+				MemberID:    "member-larkspur",
+				Email:       "larkspur@openshock.dev",
+				Role:        "owner",
+				Permissions: []string{"members.manage"},
+			},
+		},
 		Workspace: store.WorkspaceSnapshot{
 			Name:          "OpenShock 作战台",
 			Branch:        "feat/e2e-status-sync-20260405",
@@ -179,6 +189,16 @@ func TestSanitizeLivePayloadRemovesPlaceholderLeakage(t *testing.T) {
 
 func TestBuildStateStreamEventSanitizesSnapshot(t *testing.T) {
 	event := buildStateStreamEvent(store.State{
+		Auth: store.AuthSnapshot{
+			Session: store.AuthSession{
+				ID:          "auth-session-current",
+				Status:      "active",
+				MemberID:    "member-larkspur",
+				Email:       "larkspur@openshock.dev",
+				Role:        "owner",
+				Permissions: []string{"members.manage"},
+			},
+		},
 		Workspace: store.WorkspaceSnapshot{
 			Onboarding: store.WorkspaceOnboardingSnapshot{
 				Materialization: store.WorkspaceOnboardingMaterialization{
@@ -224,8 +244,54 @@ func TestBuildStateStreamEventSanitizesSnapshot(t *testing.T) {
 	}
 }
 
+func TestSanitizeStateRedactsRuntimeManageURLsForNonOwnerSessions(t *testing.T) {
+	state := store.State{
+		Auth: store.AuthSnapshot{
+			Session: store.AuthSession{
+				ID:                      "auth-session-current",
+				Status:                  "active",
+				MemberID:                "member-mina",
+				Email:                   "mina@openshock.dev",
+				Role:                    "member",
+				EmailVerificationStatus: "verified",
+				DeviceAuthStatus:        "authorized",
+				Permissions:             []string{"run.execute"},
+			},
+		},
+		Workspace: store.WorkspaceSnapshot{
+			PairedRuntime:    "shock-main",
+			PairedRuntimeURL: "http://127.0.0.1:8090",
+		},
+		Runtimes: []store.RuntimeRecord{{
+			ID:           "shock-main",
+			Machine:      "shock-main",
+			DaemonURL:    "http://127.0.0.1:8090",
+			State:        "online",
+			PairingState: "paired",
+		}},
+	}
+
+	sanitized := sanitizeLiveState(state)
+	if sanitized.Workspace.PairedRuntimeURL != "" {
+		t.Fatalf("workspace paired runtime url = %q, want redacted", sanitized.Workspace.PairedRuntimeURL)
+	}
+	if got := sanitized.Runtimes[0].DaemonURL; got != "" {
+		t.Fatalf("runtime daemon url = %q, want redacted", got)
+	}
+}
+
 func TestBuildStateStreamEventRewritesRuntimeSchedulerCopy(t *testing.T) {
 	event := buildStateStreamEvent(store.State{
+		Auth: store.AuthSnapshot{
+			Session: store.AuthSession{
+				ID:          "auth-session-current",
+				Status:      "active",
+				MemberID:    "member-larkspur",
+				Email:       "larkspur@openshock.dev",
+				Role:        "owner",
+				Permissions: []string{"members.manage"},
+			},
+		},
 		Runs: []store.Run{{
 			ID:         "run-runtime",
 			Summary:    "当前执行可继续。",
@@ -410,6 +476,16 @@ func TestSanitizePullRequestDeliveryEvidenceBackfillsHrefLabel(t *testing.T) {
 
 func TestSanitizeWorkspaceGovernanceRollupBackfillsHrefLabels(t *testing.T) {
 	state := store.State{
+		Auth: store.AuthSnapshot{
+			Session: store.AuthSession{
+				ID:          "auth-session-current",
+				Status:      "active",
+				MemberID:    "member-larkspur",
+				Email:       "larkspur@openshock.dev",
+				Role:        "owner",
+				Permissions: []string{"members.manage"},
+			},
+		},
 		Workspace: store.WorkspaceSnapshot{
 			Governance: store.WorkspaceGovernanceSnapshot{
 				EscalationSLA: store.WorkspaceGovernanceEscalationSLA{
@@ -472,6 +548,16 @@ func TestSanitizeWorkspaceGovernanceRollupBackfillsHrefLabels(t *testing.T) {
 
 func TestSanitizeWorkspaceSuggestedHandoffBackfillsHrefLabel(t *testing.T) {
 	state := store.State{
+		Auth: store.AuthSnapshot{
+			Session: store.AuthSession{
+				ID:          "auth-session-current",
+				Status:      "active",
+				MemberID:    "member-larkspur",
+				Email:       "larkspur@openshock.dev",
+				Role:        "owner",
+				Permissions: []string{"members.manage"},
+			},
+		},
 		Workspace: store.WorkspaceSnapshot{
 			Governance: store.WorkspaceGovernanceSnapshot{
 				RoutingPolicy: store.WorkspaceGovernanceRoutingPolicy{

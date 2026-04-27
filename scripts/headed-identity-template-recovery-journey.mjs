@@ -223,6 +223,15 @@ async function waitForContainsText(page, testID, expectedText) {
   );
 }
 
+async function ensureSettingsDisclosureOpen(page, testID) {
+  const toggle = page.getByTestId(`settings-advanced-${testID}-toggle`);
+  await toggle.waitFor({ state: "visible", timeout: 30_000 });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await page.getByTestId(`settings-advanced-${testID}-content`).waitFor({ state: "visible", timeout: 30_000 });
+}
+
 async function waitForSession(page, expectations) {
   await page.waitForFunction(
     (expected) => {
@@ -299,8 +308,8 @@ try {
   context = await browser.newContext({ viewport: { width: 1500, height: 1340 } });
   page = await context.newPage();
 
-  await page.goto(`${webURL}/settings`, { waitUntil: "load" });
-  await page.getByTestId("settings-advanced-notifications-toggle").click();
+  await page.goto(`${webURL}/settings/advanced`, { waitUntil: "load" });
+  await ensureSettingsDisclosureOpen(page, "notifications");
   await page.getByTestId("notification-subscribers-count").waitFor({ state: "visible" });
   await page.getByTestId("notification-email-policy-all").click();
   await page.getByTestId("notification-save-policy").click();
@@ -325,8 +334,8 @@ try {
   await waitForText(page, `access-member-status-${REVIEWER_MEMBER_ID}`, "待接受");
   await capture(page, "access-invite-created");
 
-  await page.goto(`${webURL}/settings`, { waitUntil: "load" });
-  await page.getByTestId("settings-advanced-notifications-toggle").click();
+  await page.goto(`${webURL}/settings/advanced`, { waitUntil: "load" });
+  await ensureSettingsDisclosureOpen(page, "notifications");
   await page.getByTestId("notification-identity-template-auth_invite").waitFor({ state: "visible" });
   await waitForContainsText(page, "notification-identity-signal-count", "1");
   await waitForContainsText(page, "notification-identity-ready-count", "1");
@@ -357,8 +366,8 @@ try {
   await waitForText(page, "access-recovery-reset-status", "pending");
   await capture(page, "access-verify-reset-pending");
 
-  await page.goto(`${webURL}/settings`, { waitUntil: "load" });
-  await page.getByTestId("settings-advanced-notifications-toggle").click();
+  await page.goto(`${webURL}/settings/advanced`, { waitUntil: "load" });
+  await ensureSettingsDisclosureOpen(page, "notifications");
   await page.getByTestId("notification-identity-template-auth_verify_email").waitFor({ state: "visible" });
   await page.getByTestId("notification-identity-template-auth_password_reset").waitFor({ state: "visible" });
   await page.getByTestId("notification-identity-template-auth_blocked_recovery").waitFor({ state: "visible" });
@@ -400,8 +409,8 @@ try {
     "",
     "## 结果",
     "",
-    `- \`/settings\` 已先保存身份通知邮箱 \`${OPS_EMAIL}\`，邀请、验证、重置与恢复会统一进入通知模板区。`,
-    `- \`/access\` 发出邀请后，\`auth_invite\` 会直接出现在 \`/settings\` 的身份通知模板区；首次发送已送达 \`${inviteCenter.worker.receipts.filter((receipt) => receipt.templateId === "auth_invite" && receipt.status === "sent").length}\` 条邀请通知。`,
+    `- \`/settings/advanced\` 已先保存身份通知邮箱 \`${OPS_EMAIL}\`，邀请、验证、重置与恢复会统一进入通知模板区。`,
+    `- \`/access\` 发出邀请后，\`auth_invite\` 会直接出现在 \`/settings/advanced\` 的身份通知模板区；首次发送已送达 \`${inviteCenter.worker.receipts.filter((receipt) => receipt.templateId === "auth_invite" && receipt.status === "sent").length}\` 条邀请通知。`,
     `- 邀请成员快速登录后再触发重置流程，\`auth_verify_email\` / \`auth_password_reset\` / \`auth_blocked_recovery\` 会一并进入同一通知区；第二次发送已送达 \`${recoveryCenter.worker.receipts.filter((receipt) => receipt.status === "sent").length}\` 条恢复通知。`,
     "- 返回 `/access` 完成邮箱验证、当前设备授权和另一设备密码重置后，session recovery 会回到 `已恢复`，说明 invite -> verify/reset -> delivery -> recovery 已经是同一条产品旅程。",
     "",
@@ -416,7 +425,7 @@ try {
     "",
     "## 范围说明",
     "",
-    "- 已在 `/settings` 配好身份通知默认值和邮箱地址。",
+    "- 已在 `/settings/advanced` 配好身份通知默认值和邮箱地址。",
     "- 已验证 `/access` 的邀请会写入身份通知模板区，并进入发送结果。",
     "- 已验证快速登录和重置待处理会把 `auth_verify_email`、`auth_password_reset`、`auth_blocked_recovery` 一起写入同一条通知链路。",
     "- 已验证 `/access` 在另一台设备上完成验证与授权后可以恢复成功。",

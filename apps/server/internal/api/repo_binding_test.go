@@ -23,6 +23,7 @@ func TestRepoBindingScansLocalGitOriginAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -68,6 +69,7 @@ func TestRepoBindingScansLocalGitOriginAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restart store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, restartedStore)
 	restarted := httptest.NewServer(New(restartedStore, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
 		WorkspaceRoot: root,
@@ -132,6 +134,7 @@ func TestRepoBindingPromotesToGitHubAppWhenConnectionIsReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -195,6 +198,59 @@ func TestRepoBindingPromotesToGitHubAppWhenConnectionIsReady(t *testing.T) {
 	}
 }
 
+func TestRepoBindingRejectsRequestThatConflictsWithDetectedCheckout(t *testing.T) {
+	root := initGitBindingRepo(t, "git@github.com:example/phase-zero.git")
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	mustLoginReadyOwner(t, s)
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+		GitHub: fakeGitHubProber{
+			status: githubsvc.Status{
+				Provider: "github",
+			},
+		},
+	}).Handler())
+	defer server.Close()
+
+	body := bytes.NewReader([]byte(`{"repo":"example/other","repoUrl":"https://github.com/example/other.git","branch":"dev","provider":"github"}`))
+	resp, err := http.Post(server.URL+"/v1/repo/binding", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST repo binding error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("repo binding status = %d, want %d", resp.StatusCode, http.StatusConflict)
+	}
+
+	var payload struct {
+		Error    string              `json:"error"`
+		Detected RepoBindingResponse `json:"detected"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode repo binding conflict payload: %v", err)
+	}
+	if !strings.Contains(payload.Error, "current checkout") {
+		t.Fatalf("error = %q, want current checkout marker", payload.Error)
+	}
+	if !strings.Contains(payload.Error, "branch") || !strings.Contains(payload.Error, "repo") {
+		t.Fatalf("error = %q, want branch and repo conflict markers", payload.Error)
+	}
+	if payload.Detected.Repo != "example/phase-zero" {
+		t.Fatalf("detected repo = %q, want example/phase-zero", payload.Detected.Repo)
+	}
+	if payload.Detected.Branch != "main" {
+		t.Fatalf("detected branch = %q, want main", payload.Detected.Branch)
+	}
+}
+
 func TestCurrentRepoBindingCarriesPreferredAuthPathAndMissingFields(t *testing.T) {
 	root := initGitBindingRepo(t, "https://github.com/example/phase-zero.git")
 	statePath := filepath.Join(root, "data", "state.json")
@@ -203,6 +259,7 @@ func TestCurrentRepoBindingCarriesPreferredAuthPathAndMissingFields(t *testing.T
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -252,6 +309,44 @@ func TestCurrentRepoBindingCarriesPreferredAuthPathAndMissingFields(t *testing.T
 	}
 }
 
+func TestBindingResponseFromWorkspaceClearsStaleGitHubReadyFallback(t *testing.T) {
+	payload := bindingResponseFromWorkspace(store.WorkspaceSnapshot{
+		Repo:              "example/phase-zero",
+		RepoURL:           "https://github.com/example/phase-zero.git",
+		Branch:            "main",
+		RepoProvider:      "github",
+		RepoBindingStatus: "bound",
+		RepoAuthMode:      "github-app",
+		RepoBinding: store.WorkspaceRepoBindingSnapshot{
+			Repo:          "example/phase-zero",
+			RepoURL:       "https://github.com/example/phase-zero.git",
+			Branch:        "main",
+			Provider:      "github",
+			BindingStatus: "bound",
+			AuthMode:      "github-app",
+			DetectedAt:    "2026-04-10T12:00:00Z",
+			SyncedAt:      "2026-04-10T12:00:00Z",
+		},
+		GitHubInstallation: store.WorkspaceGitHubInstallSnapshot{
+			Provider:          "github",
+			PreferredAuthMode: "github-app",
+			ConnectionReady:   true,
+			AppConfigured:     true,
+			AppInstalled:      true,
+			InstallationID:    "67890",
+			ConnectionMessage: "GitHub 应用已接通。",
+			SyncedAt:          "2026-04-09T12:00:00Z",
+		},
+	}, "", nil)
+
+	if payload.ConnectionReady {
+		t.Fatalf("payload.ConnectionReady = true, want false for stale persisted GitHub snapshot")
+	}
+	if !strings.Contains(payload.ConnectionMessage, "过期") {
+		t.Fatalf("payload.ConnectionMessage = %q, want stale marker", payload.ConnectionMessage)
+	}
+}
+
 func TestRepoBindingReturnsExplicitContractWhenGitHubAppIsNotInstalled(t *testing.T) {
 	root := initGitBindingRepo(t, "https://github.com/example/phase-zero.git")
 	statePath := filepath.Join(root, "data", "state.json")
@@ -260,6 +355,7 @@ func TestRepoBindingReturnsExplicitContractWhenGitHubAppIsNotInstalled(t *testin
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -327,6 +423,7 @@ func TestRepoBindingPrefersGitHubAppContractAndBlocksWhenInstallationIsPending(t
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",

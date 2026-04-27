@@ -24,6 +24,7 @@ func main() {
 	workspaceRoot := flag.String("workspace-root", ".", "workspace root for local runtime discovery")
 	addr := flag.String("addr", envOr("OPENSHOCK_DAEMON_ADDR", ":8090"), "http listen address")
 	controlURL := flag.String("control-url", envOr("OPENSHOCK_CONTROL_URL", ""), "OpenShock server control plane url for runtime heartbeats")
+	heartbeatSecret := flag.String("heartbeat-secret", envOr("OPENSHOCK_RUNTIME_HEARTBEAT_SECRET", ""), "shared secret used for runtime heartbeat authentication")
 	advertiseURL := flag.String("advertise-url", envOr("OPENSHOCK_DAEMON_ADVERTISE_URL", ""), "daemon url advertised to the OpenShock control plane")
 	heartbeatInterval := flag.Duration("heartbeat-interval", durationOr("OPENSHOCK_DAEMON_HEARTBEAT_INTERVAL", 10*time.Second), "runtime heartbeat interval")
 	heartbeatTimeout := flag.Duration("heartbeat-timeout", durationOr("OPENSHOCK_DAEMON_HEARTBEAT_TIMEOUT", 45*time.Second), "runtime heartbeat timeout published to the control plane")
@@ -51,7 +52,7 @@ func main() {
 	}
 
 	if strings.TrimSpace(*controlURL) != "" {
-		go startHeartbeatLoop(strings.TrimRight(strings.TrimSpace(*controlURL), "/"), service, *heartbeatInterval)
+		go startHeartbeatLoop(strings.TrimRight(strings.TrimSpace(*controlURL), "/"), strings.TrimSpace(*heartbeatSecret), service, *heartbeatInterval)
 	}
 
 	server := api.New(service, root)
@@ -107,25 +108,25 @@ func defaultAdvertiseURL(addr string) string {
 	return "http://" + net.JoinHostPort(host, port)
 }
 
-func startHeartbeatLoop(controlURL string, service *runtime.Service, interval time.Duration) {
+func startHeartbeatLoop(controlURL string, heartbeatSecret string, service *runtime.Service, interval time.Duration) {
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
-	if err := reportHeartbeat(controlURL, client, service); err != nil {
+	if err := reportHeartbeat(controlURL, heartbeatSecret, client, service); err != nil {
 		log.Printf("runtime heartbeat failed: %v", err)
 	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for range ticker.C {
-		if err := reportHeartbeat(controlURL, client, service); err != nil {
+		if err := reportHeartbeat(controlURL, heartbeatSecret, client, service); err != nil {
 			log.Printf("runtime heartbeat failed: %v", err)
 		}
 	}
 }
 
-func reportHeartbeat(controlURL string, client *http.Client, service *runtime.Service) error {
+func reportHeartbeat(controlURL string, heartbeatSecret string, client *http.Client, service *runtime.Service) error {
 	body, err := json.Marshal(service.Snapshot())
 	if err != nil {
 		return err
@@ -136,6 +137,9 @@ func reportHeartbeat(controlURL string, client *http.Client, service *runtime.Se
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(heartbeatSecret) != "" {
+		request.Header.Set("X-OpenShock-Runtime-Secret", strings.TrimSpace(heartbeatSecret))
+	}
 
 	response, err := client.Do(request)
 	if err != nil {

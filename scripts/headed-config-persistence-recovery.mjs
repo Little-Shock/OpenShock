@@ -218,6 +218,15 @@ async function waitForInputValue(page, testID, expected) {
   await waitFor(async () => (await page.getByTestId(testID).inputValue()) === expected, `${testID} did not become ${expected}`);
 }
 
+async function openSettingsDisclosure(page, testID, message) {
+  const toggle = page.getByTestId(`settings-advanced-${testID}-toggle`);
+  await waitFor(async () => (await toggle.count()) > 0, message);
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await page.getByTestId(`settings-advanced-${testID}-content`).waitFor({ state: "visible" });
+}
+
 async function expandDetails(page, selector, message) {
   const details = page.locator(selector);
   await waitFor(async () => (await details.count()) > 0, message);
@@ -261,8 +270,9 @@ try {
   const page = await browser.newPage({ viewport: { width: 1560, height: 1280 } });
 
   await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
-  await waitFor(async () => (await page.getByTestId("settings-workspace-template").count()) > 0, "settings workspace panel did not render");
   await capture(page, "settings-before-write");
+  await openSettingsDisclosure(page, "workspace", "settings workspace disclosure did not render");
+  await openSettingsDisclosure(page, "member", "settings member disclosure did not render");
 
   await page.getByTestId("settings-workspace-template").fill(templateId);
   await page.getByTestId("settings-workspace-onboarding-status").selectOption(onboardingStatus);
@@ -286,6 +296,8 @@ try {
   await capture(page, "settings-after-write");
 
   await page.reload({ waitUntil: "domcontentloaded" });
+  await openSettingsDisclosure(page, "workspace", "settings workspace disclosure did not rerender");
+  await openSettingsDisclosure(page, "member", "settings member disclosure did not rerender");
   await waitForInputValue(page, "settings-workspace-template", templateId);
   await waitForInputValue(page, "settings-workspace-current-step", currentStep);
   await waitForInputValue(page, "settings-workspace-resume-url", resumeUrl);
@@ -322,6 +334,8 @@ try {
   await waitForHealth(serverURL);
 
   await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
+  await openSettingsDisclosure(page, "workspace", "settings workspace disclosure did not survive server restart");
+  await openSettingsDisclosure(page, "member", "settings member disclosure did not survive server restart");
   await waitForInputValue(page, "settings-workspace-template", templateId);
   await waitFor(async () => (await page.getByTestId("settings-member-preferred-agent").inputValue()) === preferredAgentId, "preferred agent did not survive server restart");
   await capture(page, "settings-after-server-restart");
@@ -344,20 +358,20 @@ try {
   results.push("- 第二个浏览器上下文也能读取同一份工作区和成员设置。");
 
   const reportLines = [
-    "# 2026-04-12 配置持久化与恢复测试报告",
+    "# Test Report 2026-04-23 Release Gate Config Persistence Recovery",
     "",
     `- Command: \`pnpm test:headed-config-persistence-recovery -- --report ${path.relative(projectRoot, reportPath)}\``,
-    `- 生成时间: ${timestamp()}`,
+    `- Generated At: ${timestamp()}`,
     "",
-    "## 结果",
+    "## Result",
     "",
     ...results,
     "",
-    "## 证据",
+    "## Evidence",
     "",
     ...screenshots.map((item) => `- ${item.name}: \`${path.relative(projectRoot, item.path)}\``),
     "",
-    "## 范围说明",
+    "## Scope",
     "",
     "- 已从 `/settings` 修改工作区引导、模板、浏览器提醒、记忆模式和安全基线。",
     "- 已从 `/settings` 修改成员常用智能体、默认入口和 GitHub 身份。",

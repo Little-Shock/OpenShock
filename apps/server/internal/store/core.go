@@ -12,7 +12,12 @@ import (
 )
 
 func New(path, workspaceRoot string) (*Store, error) {
-	s := &Store{path: path, workspaceRoot: workspaceRoot, bootstrapMode: bootstrapModeFromEnv()}
+	s := &Store{
+		path:           path,
+		workspaceRoot:  workspaceRoot,
+		bootstrapMode:  bootstrapModeFromEnv(),
+		authChallenges: map[string]AuthChallenge{},
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}

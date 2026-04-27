@@ -54,6 +54,12 @@ func TestCurrentOwnerFallbackKeepsRunDetailMemoryPreviewAndGovernanceAligned(t *
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	if _, _, err := reloadedStore.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
 	server := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
 		WorkspaceRoot: root,

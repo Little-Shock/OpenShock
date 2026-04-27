@@ -338,12 +338,13 @@ type DirectMessage struct {
 }
 
 type Message struct {
-	ID      string `json:"id"`
-	Speaker string `json:"speaker"`
-	Role    string `json:"role"`
-	Tone    string `json:"tone"`
-	Message string `json:"message"`
-	Time    string `json:"time"`
+	ID               string `json:"id"`
+	Speaker          string `json:"speaker"`
+	Role             string `json:"role"`
+	Tone             string `json:"tone"`
+	Message          string `json:"message"`
+	Time             string `json:"time"`
+	ReplyToMessageID string `json:"replyToMessageId,omitempty"`
 }
 
 type MessageSurfaceEntry struct {
@@ -855,13 +856,14 @@ type Session struct {
 }
 
 type SessionPendingTurn struct {
-	Prompt         string `json:"prompt,omitempty"`
-	Provider       string `json:"provider,omitempty"`
-	Status         string `json:"status,omitempty"`
-	Preview        string `json:"preview,omitempty"`
-	StartedAt      string `json:"startedAt,omitempty"`
-	UpdatedAt      string `json:"updatedAt,omitempty"`
-	ResumeEligible bool   `json:"resumeEligible,omitempty"`
+	Prompt           string `json:"prompt,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	Status           string `json:"status,omitempty"`
+	Preview          string `json:"preview,omitempty"`
+	ReplyToMessageID string `json:"replyToMessageId,omitempty"`
+	StartedAt        string `json:"startedAt,omitempty"`
+	UpdatedAt        string `json:"updatedAt,omitempty"`
+	ResumeEligible   bool   `json:"resumeEligible,omitempty"`
 }
 
 type SessionRecovery struct {
@@ -907,6 +909,7 @@ type AuthSession struct {
 	Email                    string                     `json:"email,omitempty"`
 	Name                     string                     `json:"name,omitempty"`
 	Role                     string                     `json:"role,omitempty"`
+	MemberStatus             string                     `json:"memberStatus,omitempty"`
 	Status                   string                     `json:"status"`
 	AuthMethod               string                     `json:"authMethod,omitempty"`
 	SignedInAt               string                     `json:"signedInAt,omitempty"`
@@ -979,11 +982,23 @@ type AuthDevice struct {
 	LastSeenAt   string `json:"lastSeenAt,omitempty"`
 }
 
+type AuthChallenge struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	MemberID   string `json:"memberId,omitempty"`
+	Email      string `json:"email,omitempty"`
+	Status     string `json:"status"`
+	IssuedAt   string `json:"issuedAt,omitempty"`
+	ExpiresAt  string `json:"expiresAt,omitempty"`
+	ConsumedAt string `json:"consumedAt,omitempty"`
+}
+
 type AuthSnapshot struct {
-	Session AuthSession       `json:"session"`
-	Roles   []WorkspaceRole   `json:"roles"`
-	Members []WorkspaceMember `json:"members"`
-	Devices []AuthDevice      `json:"devices,omitempty"`
+	Session    AuthSession       `json:"session"`
+	Roles      []WorkspaceRole   `json:"roles"`
+	Members    []WorkspaceMember `json:"members"`
+	Devices    []AuthDevice      `json:"devices,omitempty"`
+	Challenges []AuthChallenge   `json:"challenges,omitempty"`
 }
 
 type MemoryGovernance struct {
@@ -1062,7 +1077,7 @@ type State struct {
 	Auth                  AuthSnapshot                       `json:"auth"`
 	Memory                []MemoryArtifact                   `json:"memory"`
 	MemoryVersions        map[string][]MemoryArtifactVersion `json:"memoryVersions,omitempty"`
-	Credentials           []CredentialProfile                `json:"credentials,omitempty"`
+	Credentials           []CredentialProfile                `json:"credentials"`
 }
 
 type RoomDetail struct {
@@ -1315,15 +1330,16 @@ type credentialVaultItem struct {
 }
 
 type Store struct {
-	mu            sync.RWMutex
-	path          string
-	workspaceRoot string
-	bootstrapMode string
-	state         State
-	vault         credentialVault
-	vaultKey      []byte
-	subscribers   map[int]chan StateStreamUpdate
-	stateHistory  []StateStreamUpdate
-	nextSequence  int
-	nextSubID     int
+	mu             sync.RWMutex
+	path           string
+	workspaceRoot  string
+	bootstrapMode  string
+	state          State
+	authChallenges map[string]AuthChallenge
+	vault          credentialVault
+	vaultKey       []byte
+	subscribers    map[int]chan StateStreamUpdate
+	stateHistory   []StateStreamUpdate
+	nextSequence   int
+	nextSubID      int
 }

@@ -12,7 +12,14 @@ import { runtimeProviderBlockingReason, runtimeProviderHealthLabel, runtimeProvi
 
 const API_BASE = process.env.NEXT_PUBLIC_OPENSHOCK_API_BASE ?? "/api/control";
 
-const WIZARD_STEPS = [
+type WizardStep = {
+  id: "account" | "template" | "github" | "repo" | "runtime" | "agent" | "finish";
+  label: string;
+  summary: string;
+  optional?: boolean;
+};
+
+const WIZARD_STEPS: readonly WizardStep[] = [
   {
     id: "account",
     label: "账号",
@@ -21,12 +28,14 @@ const WIZARD_STEPS = [
   {
     id: "template",
     label: "模板",
-    summary: "选择团队模板。",
+    summary: "确认推荐模板，之后随时能改。",
+    optional: true,
   },
   {
     id: "github",
     label: "连接 GitHub",
-    summary: "可选，用于同步仓库和拉取请求。",
+    summary: "可选，之后也能再接。",
+    optional: true,
   },
   {
     id: "repo",
@@ -41,7 +50,8 @@ const WIZARD_STEPS = [
   {
     id: "agent",
     label: "智能体",
-    summary: "设置默认智能体。",
+    summary: "默认已准备好，需要时再改。",
+    optional: true,
   },
   {
     id: "finish",
@@ -78,7 +88,9 @@ const AVATAR_OPTIONS = [
   { id: "research-wave", label: "研究波纹" },
 ] as const;
 
-type WizardStepID = (typeof WIZARD_STEPS)[number]["id"];
+type WizardStepID = WizardStep["id"];
+const START_NOW_STEP_IDS = new Set<WizardStepID>(["account", "repo", "runtime"]);
+const LATER_STEP_IDS = new Set<WizardStepID>(["template", "github", "agent"]);
 
 type RepoBindingResponse = {
   repo: string;
@@ -343,7 +355,7 @@ function OnboardingWizard() {
     state.auth.session.emailVerificationStatus,
     state.auth.session.deviceAuthStatus
   );
-  const templateReady = Boolean(state.workspace.onboarding.templateId?.trim());
+  const templateReady = completedSteps.has("template-selected");
   const githubReady = completedSteps.has("github-choice") || state.workspace.githubInstallation.connectionReady;
   const repoReady = state.workspace.repoBindingStatus === "bound";
   const runtimeReady = pairingReady(state.workspace.pairingStatus);
@@ -527,7 +539,7 @@ function OnboardingWizard() {
         templateId: selectedTemplate,
         currentStep: nextStep,
         completedSteps: done ? uniqueStrings([...mergedCompletedSteps, "bootstrap-finished"]) : mergedCompletedSteps,
-        resumeUrl: done ? "/chat/all" : "/onboarding",
+        resumeUrl: done ? "/chat/all" : "/setup",
       },
     });
   }
@@ -561,11 +573,19 @@ function OnboardingWizard() {
         await verifyMemberEmail({ email });
         await authorizeAuthDevice({ deviceLabel: deviceLabel.trim() || "当前浏览器" });
       }
+      const nextStep = derivedCurrentStep({
+        accessReady: true,
+        templateReady,
+        githubReady,
+        repoReady,
+        runtimeReady,
+        agentReady,
+      });
       await persistOnboardingProgress({
-        nextStep: "template",
+        nextStep,
         addCompleted: ["account-ready"],
       });
-      setCurrentStep("template");
+      setCurrentStep(nextStep);
     }, "账号已创建。");
   }
 
@@ -586,7 +606,7 @@ function OnboardingWizard() {
             "account-ready",
             "template-selected",
           ]),
-          resumeUrl: "/onboarding",
+          resumeUrl: "/setup",
         },
       });
       setCurrentStep("github");
@@ -676,12 +696,13 @@ function OnboardingWizard() {
         await selectRuntime(chosenRuntime.machine);
       }
       await pairRuntime(daemonUrl.trim() || chosenRuntime?.daemonUrl || "http://127.0.0.1:8090", chosenRuntime?.id);
+      const nextStep: WizardStepID = starterAgent ? "finish" : "agent";
       await persistOnboardingProgress({
-        nextStep: "agent",
-        addCompleted: ["runtime-paired"],
+        nextStep,
+        addCompleted: starterAgent ? ["runtime-paired", "agent-configured"] : ["runtime-paired"],
       });
-      setCurrentStep("agent");
-    }, "运行环境已连接。");
+      setCurrentStep(nextStep);
+    }, starterAgent ? "运行环境已连接，默认智能体已就绪。" : "运行环境已连接。");
   }
 
   async function handleSaveAgent(event: FormEvent<HTMLFormElement>) {
@@ -714,6 +735,18 @@ function OnboardingWizard() {
 
   async function handleFinish() {
     await withMutation(async () => {
+      if (!accessReady) {
+        setCurrentStep("account");
+        throw new Error("先完成账号创建，再进入工作区。");
+      }
+      if (!repoReady) {
+        setCurrentStep("repo");
+        throw new Error("先绑定当前仓库，再进入工作区。");
+      }
+      if (!runtimeReady) {
+        setCurrentStep("runtime");
+        throw new Error("先连接运行环境，再进入工作区。");
+      }
       if (currentMember) {
         await updateWorkspaceMemberPreferences(currentMember.id, {
           preferredAgentId: starterAgent?.id ?? currentMember.preferences.preferredAgentId ?? "",
@@ -738,6 +771,25 @@ function OnboardingWizard() {
   const canGoBack = stepIndex(currentStep) > 0;
   const canOpenGitHubInstall = Boolean(state.workspace.githubInstallation.installationUrl?.trim());
   const backgroundWorkspaceRoot = valueOrFallback(chosenRuntime?.workspaceRoot, "当前目录将在运行环境接通后显示");
+  const startNowSteps = WIZARD_STEPS.filter((step) => START_NOW_STEP_IDS.has(step.id));
+  const laterSteps = WIZARD_STEPS.filter((step) => LATER_STEP_IDS.has(step.id));
+  const finishStep = WIZARD_STEPS.find((step) => step.id === "finish") ?? WIZARD_STEPS[WIZARD_STEPS.length - 1];
+  const finishReady = accessReady && repoReady && runtimeReady;
+  const onboardingDone = state.workspace.onboarding.status === "done";
+
+  function canOpenStep(stepID: WizardStepID) {
+    if (stepID === "finish") {
+      return finishReady || state.workspace.onboarding.status === "done";
+    }
+    return stepIndex(stepID) <= stepIndex(naturalStep);
+  }
+
+  function openStep(stepID: WizardStepID) {
+    if (!canOpenStep(stepID)) {
+      return;
+    }
+    setCurrentStep(stepID);
+  }
 
   let content: React.ReactNode = null;
 
@@ -759,7 +811,7 @@ function OnboardingWizard() {
               />
             </label>
             <label className="grid gap-2">
-              <span className="text-sm font-medium text-[rgba(24,20,14,0.72)]">显示名</span>
+              <span className="text-sm font-medium text-[rgba(24,20,14,0.72)]">显示名（可选）</span>
               <input
                 data-testid="onboarding-account-name"
                 type="text"
@@ -771,7 +823,7 @@ function OnboardingWizard() {
             </label>
           </div>
           <label className="grid gap-2">
-            <span className="text-sm font-medium text-[rgba(24,20,14,0.72)]">设备名称</span>
+            <span className="text-sm font-medium text-[rgba(24,20,14,0.72)]">设备名称（可选）</span>
             <input
               data-testid="onboarding-account-device"
               type="text"
@@ -809,7 +861,7 @@ function OnboardingWizard() {
               {busy ? "准备中..." : accessReady ? "继续下一步" : "创建并进入"}
             </button>
             <p className="text-sm leading-6 text-[rgba(24,20,14,0.62)]">
-              保存后进入下一步。
+              系统会先给你一个推荐模板，确认后随时都能回来修改。
             </p>
           </div>
         </form>
@@ -817,7 +869,7 @@ function OnboardingWizard() {
     );
   } else if (currentStep === "template") {
     content = (
-      <WizardCard title="选择模板" description="先选一个常用模板，之后仍可调整。">
+      <WizardCard title="确认模板" description="系统会先推荐开发团队，你也可以改成研究或空白。">
         <div className="grid gap-4 lg:grid-cols-3">
           {TEMPLATE_OPTIONS.map((template) => {
             const selected = selectedTemplate === template.id;
@@ -997,10 +1049,10 @@ function OnboardingWizard() {
     );
   } else if (currentStep === "runtime") {
     content = (
-      <WizardCard title="连接运行环境" description="选择默认执行机器，并确认连接地址。">
+      <WizardCard title="连接运行环境" description="先选一台要默认执行任务的机器，连上后就可以开始。">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="rounded-[24px] border border-[rgba(24,20,14,0.12)] bg-white/86 p-5">
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3">
               <label className="grid gap-2">
                 <span className="text-sm font-medium text-[rgba(24,20,14,0.72)]">选择运行环境</span>
                 <select
@@ -1016,18 +1068,8 @@ function OnboardingWizard() {
                   ))}
                 </select>
               </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-[rgba(24,20,14,0.72)]">连接地址</span>
-                <input
-                  data-testid="onboarding-runtime-daemon-url"
-                  type="text"
-                  value={daemonUrl}
-                  onChange={(event) => setDaemonUrl(event.target.value)}
-                  className="min-h-[48px] rounded-[16px] border border-[rgba(24,20,14,0.16)] bg-white/90 px-4 text-[15px] outline-none"
-                />
-              </label>
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
               <div className="rounded-[18px] border border-[rgba(24,20,14,0.1)] bg-[rgba(255,248,230,0.76)] px-4 py-3">
                 <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">当前选择</p>
                 <p className="mt-2 text-sm leading-6">{preferredRuntimeLabel(chosenRuntime)}</p>
@@ -1037,40 +1079,9 @@ function OnboardingWizard() {
                 <p className="mt-2 text-sm leading-6">{runtimeStateLabel(chosenRuntime?.state)}</p>
               </div>
               <div className="rounded-[18px] border border-[rgba(24,20,14,0.1)] bg-[rgba(255,248,230,0.76)] px-4 py-3">
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">执行目录</p>
-                <p className="mt-2 break-all text-sm leading-6">{backgroundWorkspaceRoot}</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">连上后</p>
+                <p className="mt-2 text-sm leading-6">任务会默认在这台机器上继续执行。</p>
               </div>
-            </div>
-            <div className="mt-5 rounded-[18px] border border-[rgba(24,20,14,0.1)] bg-[rgba(255,248,230,0.76)] px-4 py-4">
-              <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">模型服务状态</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(chosenRuntime?.providers ?? []).map((provider) => (
-                  <span
-                    key={`runtime-provider-${provider.id}`}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]",
-                      runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "lime" &&
-                        "border-[var(--shock-ink)] bg-[var(--shock-lime)]",
-                      runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "yellow" &&
-                        "border-[var(--shock-ink)] bg-[var(--shock-yellow)]",
-                      runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "pink" &&
-                        "border-[var(--shock-ink)] bg-[var(--shock-pink)] text-white",
-                      runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "paper" &&
-                        "border-[var(--shock-ink)] bg-white"
-                    )}
-                  >
-                    {provider.label} · {runtimeProviderHealthLabel(runtimeProviderHealthStatus(provider))}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-3 space-y-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
-                {(chosenRuntime?.providers ?? []).map((provider) => (
-                  <p key={`runtime-provider-summary-${provider.id}`}>{runtimeProviderHealthSummary(provider)}</p>
-                ))}
-              </div>
-              {runtimeProviderBoundary ? (
-                <p className="mt-3 text-sm leading-6 text-[var(--shock-pink)]">{runtimeProviderBoundary}</p>
-              ) : null}
             </div>
             <button
               data-testid="onboarding-runtime-pair"
@@ -1081,6 +1092,61 @@ function OnboardingWizard() {
             >
               {busy || runtimeActionLoading ? "连接中..." : "连接这台运行环境"}
             </button>
+            <details
+              data-testid="onboarding-runtime-advanced"
+              className="mt-5 rounded-[18px] border border-[rgba(24,20,14,0.1)] bg-[rgba(255,248,230,0.76)] px-4 py-4"
+            >
+              <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">
+                高级连接信息
+              </summary>
+              <div className="mt-4 grid gap-3">
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium text-[rgba(24,20,14,0.72)]">连接地址</span>
+                  <input
+                    data-testid="onboarding-runtime-daemon-url"
+                    type="text"
+                    value={daemonUrl}
+                    onChange={(event) => setDaemonUrl(event.target.value)}
+                    className="min-h-[48px] rounded-[16px] border border-[rgba(24,20,14,0.16)] bg-white/90 px-4 text-[15px] outline-none"
+                  />
+                </label>
+                <div className="rounded-[16px] border border-[rgba(24,20,14,0.1)] bg-white/80 px-4 py-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">执行目录</p>
+                  <p className="mt-2 break-all text-sm leading-6 text-[rgba(24,20,14,0.72)]">{backgroundWorkspaceRoot}</p>
+                </div>
+                <div className="rounded-[16px] border border-[rgba(24,20,14,0.1)] bg-white/80 px-4 py-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">模型服务状态</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(chosenRuntime?.providers ?? []).map((provider) => (
+                      <span
+                        key={`runtime-provider-${provider.id}`}
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em]",
+                          runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "lime" &&
+                            "border-[var(--shock-ink)] bg-[var(--shock-lime)]",
+                          runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "yellow" &&
+                            "border-[var(--shock-ink)] bg-[var(--shock-yellow)]",
+                          runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "pink" &&
+                            "border-[var(--shock-ink)] bg-[var(--shock-pink)] text-white",
+                          runtimeProviderHealthTone(runtimeProviderHealthStatus(provider)) === "paper" &&
+                            "border-[var(--shock-ink)] bg-white"
+                        )}
+                      >
+                        {provider.label} · {runtimeProviderHealthLabel(runtimeProviderHealthStatus(provider))}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-3 space-y-2 text-sm leading-6 text-[rgba(24,20,14,0.72)]">
+                    {(chosenRuntime?.providers ?? []).map((provider) => (
+                      <p key={`runtime-provider-summary-${provider.id}`}>{runtimeProviderHealthSummary(provider)}</p>
+                    ))}
+                  </div>
+                  {runtimeProviderBoundary ? (
+                    <p className="mt-3 text-sm leading-6 text-[var(--shock-pink)]">{runtimeProviderBoundary}</p>
+                  ) : null}
+                </div>
+              </div>
+            </details>
           </div>
           <div className="rounded-[24px] border border-[rgba(24,20,14,0.12)] bg-[rgba(255,248,230,0.76)] p-5">
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">连接后</p>
@@ -1252,10 +1318,10 @@ function OnboardingWizard() {
               data-testid="onboarding-finish-submit"
               type="button"
               onClick={() => void handleFinish()}
-              disabled={busy}
+              disabled={busy || onboardingDone || !finishReady}
               className="mt-5 min-h-[48px] w-full rounded-[16px] border border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-5 font-mono text-[11px] uppercase tracking-[0.18em] disabled:opacity-60"
             >
-              {busy ? "进入中..." : "进入工作区"}
+              {busy || onboardingDone ? "正在进入工作区..." : "进入工作区"}
             </button>
           </div>
         </div>
@@ -1276,20 +1342,25 @@ function OnboardingWizard() {
               进入 OpenShock
             </h1>
             <p className="mt-3 text-sm leading-6 text-[rgba(24,20,14,0.68)]">
-              完成下面几项基础设置后，即可进入工作区。
+              通常只要账号、仓库和机器就能开始；GitHub 与更多设置可以稍后补。
             </p>
           </div>
-          <nav className="mt-6 grid gap-2">
-            {WIZARD_STEPS.map((step, index) => {
+          <div data-testid="onboarding-start-now" className="mt-6 rounded-[20px] border border-[rgba(24,20,14,0.1)] bg-white/72 px-4 py-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.48)]">现在开始只看 3 步</p>
+            <p className="mt-2 text-sm leading-6 text-[rgba(24,20,14,0.66)]">先完成账号、仓库和机器，其他配置之后都能再补。</p>
+          </div>
+          <nav className="mt-4 grid gap-2">
+            {startNowSteps.map((step, index) => {
               const done = stepIndex(step.id) < stepIndex(naturalStep) || (step.id === "finish" && state.workspace.onboarding.status === "done");
               const active = currentStep === step.id;
               return (
                 <button
                   key={step.id}
                   type="button"
-                  onClick={() => setCurrentStep(step.id)}
+                  onClick={() => openStep(step.id)}
+                  disabled={!canOpenStep(step.id)}
                   className={cn(
-                    "rounded-[20px] border border-[rgba(24,20,14,0.1)] px-4 py-3 text-left transition-transform hover:-translate-y-0.5",
+                    "rounded-[20px] border border-[rgba(24,20,14,0.1)] px-4 py-3 text-left transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0",
                     stepTone(done, active)
                   )}
                 >
@@ -1311,6 +1382,81 @@ function OnboardingWizard() {
               );
             })}
           </nav>
+          <details
+            data-testid="onboarding-optional-steps"
+            className="mt-4 rounded-[20px] border border-[rgba(24,20,14,0.1)] bg-white/72 px-4 py-4"
+            open={LATER_STEP_IDS.has(currentStep) || currentStep === "finish"}
+          >
+            <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.56)]">
+              稍后可补
+            </summary>
+            <p className="mt-3 text-sm leading-6 text-[rgba(24,20,14,0.66)]">
+              模板、GitHub 和默认智能体不会挡住开始，用到时再回来调整。
+            </p>
+            <div className="mt-4 grid gap-2">
+              {laterSteps.map((step) => {
+                const done = stepIndex(step.id) < stepIndex(naturalStep);
+                const active = currentStep === step.id;
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={() => openStep(step.id)}
+                    disabled={!canOpenStep(step.id)}
+                    className={cn(
+                      "rounded-[18px] border border-[rgba(24,20,14,0.1)] px-4 py-3 text-left transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0",
+                      stepTone(done, active)
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-display text-[18px] font-bold leading-6 text-[var(--shock-ink)]">{step.label}</p>
+                          <span className="rounded-full bg-white/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[rgba(24,20,14,0.56)]">
+                            可选
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-5 text-[rgba(24,20,14,0.62)]">{step.summary}</p>
+                      </div>
+                      <span className="rounded-full bg-white/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[rgba(24,20,14,0.56)]">
+                        {stepStatusLabel(done, active)}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+          <button
+            type="button"
+            onClick={() => openStep(finishStep.id)}
+            disabled={!canOpenStep(finishStep.id)}
+            className={cn(
+              "mt-4 w-full rounded-[20px] border border-[rgba(24,20,14,0.1)] px-4 py-3 text-left transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0",
+              stepTone(
+                stepIndex(finishStep.id) < stepIndex(naturalStep) || state.workspace.onboarding.status === "done",
+                currentStep === finishStep.id
+              )
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(24,20,14,0.12)] bg-white/88 font-mono text-[11px] uppercase tracking-[0.1em]">
+                04
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-display text-[18px] font-bold leading-6 text-[var(--shock-ink)]">{finishStep.label}</p>
+                  <span className="rounded-full bg-white/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[rgba(24,20,14,0.56)]">
+                    {stepStatusLabel(
+                      stepIndex(finishStep.id) < stepIndex(naturalStep) || state.workspace.onboarding.status === "done",
+                      currentStep === finishStep.id
+                    )}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm leading-5 text-[rgba(24,20,14,0.62)]">确认当前默认值，然后进入工作区。</p>
+              </div>
+            </div>
+          </button>
         </aside>
 
         <div className="flex min-h-0 flex-col overflow-hidden">

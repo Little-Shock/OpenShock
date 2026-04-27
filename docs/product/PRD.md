@@ -46,6 +46,19 @@
 - 验证项与执行结果，看 [Test Cases](../testing/Test-Cases.md) 和 [Testing Index](../testing/README.md)
 - 当前仓库已经把 `workspace-file / search-sidecar / external-persistent` 的 memory provider binding、health/recovery timeline 收成 `/v1/memory-center/providers*` durable truth，并进入 `/memory` 与 next-run preview；真实 remote external durable adapter 仍属后续范围。
 
+### 先用产品语言说清楚
+
+如果用户今天第一次打开 OpenShock，产品应该先回答这 4 个问题：
+
+1. 我现在可以做什么。
+2. 我接下来应该点哪里。
+3. 我创建的一项工作会怎样进入讨论和执行。
+4. 我明天回来时怎么继续，而不是重新找上下文。
+
+所以这份 PRD 里的所有页面、对象和系统规则，最终都要服务这条主线：
+
+**在同一套协作壳里，把聊天、执行、交付和交接收成一条连续工作流。**
+
 ---
 
 ## 二、调研来源与结论

@@ -1,405 +1,85 @@
-# Testing Docs
+# Testing Index
 
-## 先走最短信任路径
+这份文档只回答一件事：**现在该跑哪条验证线，去哪里看证据。**
 
-如果你只想回答一个问题: “这个仓库现在能不能作为一条可验证的产品基线继续发布和演示”，先按这个顺序走。
+## 先走最短验证路径
 
-| 目的 | 命令 | 说明 |
+| 目的 | 命令 | 结果 |
 | --- | --- | --- |
-| repo gate | `pnpm verify:release` | 统一跑静态门、Go 测试和 release gate 自检 |
-| live stack gate | `pnpm ops:smoke` | 直接打当前 server / daemon live stack，检查 pairing、registry、repo、GitHub readiness、run control fail-closed |
-| strict GitHub gate | `OPENSHOCK_REQUIRE_GITHUB_READY=1 pnpm ops:smoke` | 只有这次发布明确要求 GitHub fully ready 才加这一条 |
-| 代表性浏览器链路 | `OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-onboarding-studio` | 确认首启、恢复和真实前台主链没漂 |
+| release candidate gate | `pnpm verify:release:rc` | repo gate + server/daemon integration + 5 条 browser 主链；内含 strict GitHub-ready + actual-live-parity smoke；自动写 RC 报告和原始日志 |
+| 非 RC 全跑 | `pnpm verify:release:full` | repo gate + 5 条 browser 主链 + live smoke；自动写 full gate 报告和原始日志 |
+| repo gate | `pnpm verify:release` | 静态门、Go 测试、release gate 自检 |
+| live stack smoke | `pnpm ops:smoke` | 当前 server / daemon live stack 健康和 fail-closed 边界 |
+| strict live smoke | `pnpm ops:smoke:strict` | GitHub-ready + branch-head aligned 的严格 smoke |
 
 说明：
 
-- 这条是当前唯一推荐的发布前信任路径。
-- 根 README 和 Release Gate 都以这里为索引，不再各自维护第三套最小命令集。
-- 如果你只是做前台快检，再继续看下面这组高频链路。
+- 发布前默认先看这 5 条，不要先翻历史报告。
+- RC 现在要求 `OPENSHOCK_INTERNAL_WORKER_SECRET` 和 `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET` 都已配置。
+- 更完整的发布 contract 看 [../engineering/Release-Gate.md](../engineering/Release-Gate.md)。
+- 这两条命令会生成报告，但仓库中的 `docs/testing/Test-Report-*` 属于归档，可能不是你这次运行生成的最新结果。
 
-## 最新增量真值
+## 最新证据怎么看
 
-除了下面的历史报告索引，最近两批新增验证主要先写回 [Test Cases](./Test-Cases.md)：
+### Latest RC Evidence Bundle
 
-- `2026-04-16` daemon continuity / scoped Codex home / provider thread state persistence
-  - 代表命令：`go test -tags=integration ./apps/daemon/internal/integration`、`go test ./apps/daemon/...`
-- `2026-04-19` subtractive sweep
-  - 代表命令：`pnpm test:headed-cross-room-governance-orchestration`、`pnpm typecheck:web`、`pnpm build:web`
-- `2026-04-22` 九分冲刺首屏与 release gate 加硬
-  - 代表命令：`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-work-shell-smoke -- --report docs/testing/Test-Report-2026-04-22-work-shell-smoke.md`、`OPENSHOCK_E2E_HEADLESS=1 pnpm test:headed-agent-mailbox-handoff`、`OPENSHOCK_SERVER_URL=http://127.0.0.1:45068 OPENSHOCK_DAEMON_URL=http://127.0.0.1:45054 pnpm ops:smoke`
-  - 增量范围：`ops:smoke` 继续补 `run control` fail-closed 探测；memory preview / daemon session workspace 前滚到 `SOUL.md + MEMORY.md + notes/*` 规则栈。
+不要手动在这里维护“最新日期 / commit”。直接用生成物定位：
 
-如果你要看“最新新增能力”而不是“历史代表性报告”，先看这里，再往下翻归档。
+```bash
+ls -1t docs/testing/Test-Report-*-release-candidate-gate.md | head -n 1
+ls -1t docs/testing/Test-Report-*-release-full-gate.md | head -n 1
+```
 
-## 前台高频链路快检
+对应原始日志目录固定是：
 
-如果你只是想快速判断“现在这套产品大体站没站住”，可以补跑下面这几条，再往下翻完整归档。
+- RC: `docs/testing/artifacts/<date>/release-candidate/`
+- Full: `docs/testing/artifacts/<date>/release-full/`
 
-| 场景 | 命令 | 代表性报告 | 结果 |
-| --- | --- | --- | --- |
-| 静态门 + no-shadow-truth | `pnpm verify:web` | [Verification Sweep Report 2026-04-13](./Test-Report-2026-04-13-verification-sweep.md) | PASS |
-| 首次启动 / 首屏引导 | `pnpm test:headed-onboarding-studio` | [Headed First-Start Journey Report 2026-04-13](../../output/testing/headed-onboarding-studio-report.md) | PASS |
-| 讨论间 workbench | `pnpm test:headed-room-workbench-topic-context` | [Test Report 2026-04-11 Windows Chrome Room Simplified Sheet / Topic Context](./Test-Report-2026-04-11-windows-chrome-room-simplified-sheet-topic-context.md) | PASS |
-| 任务板 planning mirror | `pnpm test:headed-board-planning-surface` | [Test Report 2026-04-11 Windows Chrome Board Planning Mirror Surface](./Test-Report-2026-04-11-windows-chrome-board-planning-surface.md) | PASS |
-| 交付入口 / release gate | `pnpm test:headed-delivery-entry-release-gate` | [Test Report 2026-04-11 Windows Chrome Delivery Entry / Release Gate](./Test-Report-2026-04-11-windows-chrome-delivery-entry-release-gate.md) | PASS |
+也就是说：
 
-说明：
+- `pnpm verify:release:rc` 是生成最新 RC 证据的入口
+- `pnpm verify:release:full` 是生成最新非 RC 全跑证据的入口
+- 仓库里已有报告用于归档和回放，不应默认视为当前最新一次运行结果
 
-- 上面这 5 条是前台高频链路快检，不替代上面的 release trust path。
-- 下面的长列表按时间与专题保留，适合查历史证据和深挖单能力。
+## 当前 browser 主链
 
-- [Verification Sweep Report 2026-04-13](./Test-Report-2026-04-13-verification-sweep.md)
-  - 本轮 dev 分支收口报告，汇总 `verify:server`、`verify:web`、handoff contract 回归，以及已闭环的发送流 browser 回放
-- [Headed First-Start Journey Report 2026-04-13](../../output/testing/headed-onboarding-studio-report.md)
-  - 本轮重新生成的首次启动有头报告，覆盖 `/access -> /onboarding -> /chat/all`、setup truth 回显、server restart 与第二浏览器上下文恢复
-- [Headed Message Send Flow Report 2026-04-13](../../output/testing/headed-message-send-flow-report.md)
-  - 本轮新增的发送链路有头报告，覆盖频道与讨论间发送时的人类消息先落流、发送态占位、控制面回写与 reload 后持久化
-- [Headed Room Chat Reload Continuity Report 2026-04-14](../../output/testing/headed-room-chat-reload-continuity-report.md)
-  - 本轮新增的房间恢复有头报告，覆盖 thread 选择、reply target、thread rail 与未发送 draft 在 reload 后的连续恢复
-- [Headed Room Clarification Wait Report 2026-04-14](../../output/testing/headed-room-clarification-wait-report.md)
-  - 本轮新增的房间等待补充有头报告，覆盖显式等待卡片、等待 owner/问题展示、reload 后继续可回复、锁定阻塞问题与补充后自动恢复执行
-- [Headed Movie Site Multi-Agent Report 2026-04-12](../../output/testing/headed-multi-agent-movie-studio-report.md)
-  - 本轮重新生成的多智能体顺序交接有头报告，覆盖 `星野产品 -> 折光交互 -> 青岚策展` 的 room-auto 协作链、Mailbox walkthrough、`/memory` next-run preview continuity、最终 owner 上下文、公开发言压缩后的 protocol leak probe
-- [Headed Run History Resume Context Report 2026-04-12](../../output/testing/headed-run-history-resume-context-report.md)
-  - 本轮重新生成的恢复链有头报告，覆盖 `/runs` 分页历史、prior-run reopen、session resume context 与回到 room run tab 后重新锚定当前 continuity
-- [Test Report 2026-04-11 Windows Chrome Identity Template Recovery Journey](./Test-Report-2026-04-11-windows-chrome-identity-template-recovery-journey.md)
-  - `TKT-44` 的 Windows Chrome 有头报告，覆盖 `/settings` identity template chain 与 `/access` invite / verify / reset / blocked recovery 同链路回放
-- [Test Report 2026-04-11 Windows Chrome Restricted Sandbox Policy](./Test-Report-2026-04-11-windows-chrome-restricted-sandbox-policy.md)
-  - `TKT-46` 的 Windows Chrome 有头报告，覆盖 `/runs/:id` restricted profile、allowlist、approval_required 与 same-target override/retry
-- [Test Report 2026-04-11 Windows Chrome Delivery Entry / Release Gate](./Test-Report-2026-04-11-windows-chrome-delivery-entry-release-gate.md)
-  - `TKT-49` 的 Windows Chrome 有头报告，覆盖 PR detail 的 release gate、handoff note、delivery template、evidence bundle 与回链
-- [Test Report 2026-04-11 Windows Chrome PR Conversation / Usage Observability](./Test-Report-2026-04-11-windows-chrome-pr-conversation-usage-observability.md)
-  - `TKT-39` `TKT-41` `TKT-48` 的 Windows Chrome 有头报告，覆盖 `webhook review/comment/thread -> Inbox -> Room PR tab -> PR Detail -> run/room/workspace usage`
-- [Test Report 2026-04-11 Windows Chrome Room Simplified Sheet / Topic Context](./Test-Report-2026-04-11-windows-chrome-room-simplified-sheet-topic-context.md)
-  - `TKT-23` 的 Windows Chrome 有头报告，覆盖 chat-first room shell、secondary `Topic / Run / PR / Context` sheets、reload persistence 与 inbox back-link
-- [Test Report 2026-04-11 Windows Chrome Stop / Resume / Follow-Thread](./Test-Report-2026-04-11-windows-chrome-stop-resume-follow-thread.md)
-  - `TKT-13` 的 Windows Chrome 有头报告，覆盖 room / run 的 stop、resume、follow-thread exact replay
-- [Test Report 2026-04-11 Windows Chrome Notification Preference Delivery](./Test-Report-2026-04-11-windows-chrome-notification-preference-delivery.md)
-  - `TKT-11` 的 Windows Chrome 有头报告，覆盖 advanced notifications section 下的 browser/email policy、subscriber、receipts 与 retry
-- [Test Report 2026-04-11 Windows Chrome Credential Profile Scope](./Test-Report-2026-04-11-windows-chrome-credential-profile-scope.md)
-  - `TKT-45` 的 Windows Chrome 有头报告，覆盖 advanced credentials section 下的 encrypted secret create、agent bind、run effective scope 与 plaintext leak check
-- [Test Report 2026-04-11 Windows Chrome Shell Profile Hub](./Test-Report-2026-04-11-windows-chrome-shell-profile-hub.md)
-  - `TKT-88` 的 Windows Chrome 有头报告，覆盖左栏 `Profile Hub` 的 current `Human / Machine / Agent` 入口，以及 shell footer / room context 到统一 profile surface 的同源回放
-- [Test Report 2026-04-11 Windows Chrome Mailbox Formal Comment](./Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md)
-  - `TKT-63` 的 Windows Chrome 有头报告，覆盖 `create -> source comment -> blocked -> target comment -> acknowledged -> completed` 的双边 mailbox 通信链路
-- [Test Report 2026-04-11 Windows Chrome Mailbox Batch Queue](./Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md)
-  - `TKT-91` 的 Windows Chrome 有头报告，覆盖 `/mailbox` 当前 room ledger 的 multi-select `Batch Queue`、batch `acknowledged / comment / completed`、selection auto-clear 与 inbox summary sync
-- [Test Report 2026-04-11 Windows Chrome Mailbox Batch Policy](./Test-Report-2026-04-11-windows-chrome-mailbox-batch-policy.md)
-  - `TKT-94` 的 Windows Chrome 有头报告，覆盖 governed batch policy、`Batch Complete + Auto-Advance`、followup handoff auto-create 与 batch queue regression
-- [Test Report 2026-04-11 Windows Chrome Governance Escalation Queue](./Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md)
-  - `TKT-92` 的 Windows Chrome 有头报告，覆盖 `workspace.governance.escalationSla.queue` 在 `/mailbox` 与 `/agents` 的同源镜像、blocked inbox escalation 与 queue clear-down
-- [Test Report 2026-04-11 Windows Chrome Governance Escalation Rollup](./Test-Report-2026-04-11-windows-chrome-governance-escalation-rollup.md)
-  - `TKT-93` 的 Windows Chrome 有头报告，覆盖 cross-room escalation rollup 在 `/mailbox` 与 `/agents` 的同源镜像、blocked+active hot rooms 与 baseline restore
-- [Test Report 2026-04-11 Windows Chrome Cross-Room Governance Orchestration](./Test-Report-2026-04-11-windows-chrome-cross-room-governance-orchestration.md)
-  - `TKT-95` 的 Windows Chrome 有头报告，覆盖 hot room rollup 的 `current owner / current lane / next governed route`、`Create Governed Handoff`、`/agents` mirror 与 Inbox deep-link
-- [Test Report 2026-04-14 Windows Chrome Cross-Room Governance Dependency Graph](./Test-Report-2026-04-14-windows-chrome-cross-room-governance-dependency-graph.md)
-  - `TC-084` 的增量 Windows Chrome 有头报告，覆盖 `/mailbox` 与 `/agents` 上新增的 `room -> current owner/lane -> next route` cross-room dependency graph，以及 route `ready -> active` 前滚
-- [Test Report 2026-04-14 Windows Chrome Cross-Room Governance Auto-Closeout](./Test-Report-2026-04-14-windows-chrome-cross-room-governance-auto-closeout.md)
-  - `TC-061` + `TC-084` 的联动报告，覆盖 `reviewer -> QA -> auto-complete` 之后 runtime room 继续因原 blocker 保持 hot、route 切到 `done`、且 `delivery-closeout / delivery-reply` sidecar 不污染 cross-room rollup / graph
-- [Test Report 2026-04-11 Windows Chrome Memory Provider Orchestration](./Test-Report-2026-04-11-windows-chrome-memory-provider-orchestration.md)
-  - `TKT-96` 的 Windows Chrome 有头报告，覆盖 `/memory` 上的 provider binding 保存、next-run preview provider projection 与 reload persistence
-- [Test Report 2026-04-11 Windows Chrome Memory Provider Health Recovery](./Test-Report-2026-04-11-windows-chrome-memory-provider-health-recovery.md)
-  - `TKT-97` 的 Windows Chrome 有头报告，覆盖 provider `degraded -> check -> recover -> workspace drift -> dependent degrade -> reload persistence`
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Route](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-route.md)
-  - `TKT-64` 的 Windows Chrome 有头报告，覆盖 `/mailbox` 与 Inbox compose 的 governed next-handoff 默认路由、active focus 与 missing-target blocked fallback
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Auto-Create](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-autocreate.md)
-  - `TKT-65` 的 Windows Chrome 有头报告，覆盖 `/mailbox` 与 Inbox compose 上的 governed 一键起单、双面 active 同步与 blocked replay
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Auto-Advance](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-auto-advance.md)
-  - `TKT-66` 的 Windows Chrome 有头报告，覆盖 reviewer closeout 后的 `Complete + Auto-Advance`、QA followup 自动起单与双面 active 同步
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Closeout](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-closeout.md)
-  - `TKT-67` 的 Windows Chrome 有头报告，覆盖 final lane closeout 后的 PR delivery entry 回链、operator handoff note governed closeout sync 与双面 done-state backlink
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegation](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegation.md)
-  - `TKT-68` 的 Windows Chrome 有头报告，覆盖 final lane closeout 后的 delivery delegate card、`PM / Spec Captain` fallback 与 PR-related inbox delegation signal
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Handoff](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-handoff.md)
-  - `TKT-69` 的 Windows Chrome 有头报告，覆盖 final QA closeout 后 delegated closeout handoff 自动创建、PR detail handoff deep link 与 Mailbox focus
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Lifecycle Sync](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-lifecycle.md)
-  - `TKT-70` 的 Windows Chrome 有头报告，覆盖 delegated closeout handoff blocked/completed 后的 PR detail delegation card、related inbox signal 与 governance done-state 保持
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Policy](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-policy.md)
-  - `TKT-71` 的 Windows Chrome 有头报告，覆盖 `signal-only` delivery delegation policy、PR detail delegation signal、Mailbox no-auto-create 与 `/settings` durable policy truth
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Auto-Complete](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-auto-complete.md)
-  - `TKT-72` 的 Windows Chrome 有头报告，覆盖 `auto-complete` delivery delegation policy、PR detail delegation done、related inbox auto-closeout signal 与 `/settings` durable policy truth
-- [Test Report 2026-04-14 Windows Chrome Governed Mailbox Delegate Auto-Complete Regression](./Test-Report-2026-04-14-windows-chrome-governed-mailbox-delegate-auto-complete-regression.md)
-  - `TC-061` 的回归报告，覆盖 `auto-complete` delivery delegation policy 继续保持 `delegation done / no delivery-closeout handoff / durable workspace policy truth`
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Comment Sync](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-comment-sync.md)
-  - `TKT-73` 的 Windows Chrome 有头报告，覆盖 delegated closeout source / target formal comment、PR detail delegation summary sync 与 related inbox latest-comment sync
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Response](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-response.md)
-  - `TKT-74` 的 Windows Chrome 有头报告，覆盖 delegated closeout blocked 后的 `delivery-reply` auto-create、PR detail `reply requested / reply completed` 状态与 unblock response orchestration
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Retry](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-retry.md)
-  - `TKT-75` 的 Windows Chrome 有头报告，覆盖 delegated closeout 第二轮 response retry、最新 `delivery-reply` handoff 重建，以及 PR detail `reply x2` retry truth
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Response Comment Sync](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-response-comment-sync.md)
-  - `TKT-76` 的 Windows Chrome 有头报告，覆盖 `delivery-reply` source / target formal comment、PR detail delegation summary sync、related inbox latest response-comment signal 与 `reply requested` lifecycle 保持
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Resume Signal](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume.md)
-  - `TKT-77` 的 Windows Chrome 有头报告，覆盖 `delivery-reply` response progress 回推父级 delegated handoff、其 inbox resume signal，以及 `blocked` lifecycle 保持
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Visibility](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md)
-  - `TKT-78` 的 Windows Chrome 有头报告，覆盖 delegated closeout parent/child mailbox visibility、`reply requested / reply completed` chip、`reply x1` attempt 与 parent deep-link
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Resume Parent](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume-parent.md)
-  - `TKT-79` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 的 `Resume Parent Closeout`、parent re-ack orchestration 与 `reply completed` 证据保持
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate History Sync](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-history-sync.md)
-  - `TKT-80` 的 Windows Chrome 有头报告，覆盖 parent closeout resume / complete 后的 `reply xN / 第 N 轮 unblock response` 历史保留，以及 PR detail / related inbox sync
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Communication Thread](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-communication-thread.md)
-  - `TKT-89` 的 Windows Chrome 有头报告，覆盖 PR detail `Delivery Collaboration Thread`、parent closeout chronology、child reply progress sync 与 Mailbox deep-link
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Thread Actions](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-thread-actions.md)
-  - `TKT-90` 的 Windows Chrome 有头报告，覆盖 PR detail `Thread Actions`、parent closeout block、child reply comment/complete 与 same-page `Resume Parent Closeout`
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Parent Status](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-status.md)
-  - `TKT-81` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` card 上的 `parent blocked / parent acknowledged / parent completed` 状态前滚
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Parent Context](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-context.md)
-  - `TKT-82` 的 Windows Chrome 有头报告，覆盖 parent delegated closeout 在 resume / complete 后的 Mailbox card、handoff inbox signal 与 Run detail context history preservation
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Child Context](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-child-context.md)
-  - `TKT-83` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 在 parent resume / complete 后的 `lastAction` 与 child inbox summary 同步前滚
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Child Timeline](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-child-timeline.md)
-  - `TKT-84` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 在 parent resume / complete 后的 `parent-progress` lifecycle messages，以及 latest formal comment preservation
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Parent Timeline](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-timeline.md)
-  - `TKT-85` 的 Windows Chrome 有头报告，覆盖 parent delegated closeout 上的 `response-progress` lifecycle messages 与 child response history preservation
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Room Trace](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-room-trace.md)
-  - `TKT-86` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 对 parent closeout 的 `[Mailbox Sync]` room main-trace writeback 与 comment/completion history preservation
-- [Test Report 2026-04-11 Windows Chrome Governed Mailbox Delegate Blocked Room Trace](./Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-room-trace-blocked.md)
-  - `TKT-87` 的 Windows Chrome 有头报告，覆盖 child `delivery-reply` 再次 `blocked` 后回写到 Room `[Mailbox Sync]` 主消息流的二次阻塞叙事
-- [Test Report 2026-04-09 Windows Chrome Full Suite](./Test-Report-2026-04-09-windows-chrome-full-suite.md)
-  - 当前主线最新的全量有头自动化回归基线，覆盖 chat / room / setup / onboarding / authz / multi-agent / memory / runtime recovery 等 33 条链路
-- [Test Report 2026-04-10 Windows Chrome Control-Plane / Runtime Replay / Governance](./Test-Report-2026-04-10-windows-chrome-control-plane-runtime-governance.md)
-  - `TKT-58` `TKT-59` `TKT-60` `TKT-61` 的 Windows Chrome 有头报告，覆盖 `/v1` control-plane、runtime replay evidence、routing SLA / aggregation 与 dirty projection fail-closed
-- [Test Report 2026-04-09 Windows Chrome Remaining Suite](./Test-Report-2026-04-09-windows-chrome-remaining-suite.md)
-  - 2026-04-09 当天补跑的 setup / onboarding / session / authz / notification / runtime / CJK 字体链路汇总
-- [Test Cases](./Test-Cases.md)
-  - 以 `PRD -> Checklist -> Test Case` 链路整理的全量验证项
-- [Test Report 2026-04-06 Main](./Test-Report-2026-04-06-main.md)
-  - 本轮在 `main` 基线上的实际执行结果、失败项和 GAP
-- [Test Report 2026-04-07 Headed Setup](./Test-Report-2026-04-07-headed-setup.md)
-  - `TKT-03` headed Chromium 自动化回放，覆盖 `TC-001` `TC-002` `TC-003` `TC-026`
-- [Test Report 2026-04-07 GitHub App Onboarding](./Test-Report-2026-04-07-github-app-onboarding.md)
-  - `TKT-04` headed GitHub App onboarding / repo binding blocked contract 回放，覆盖 `TC-015` `TC-022` `TC-026` 的 blocked-path 证据
-- [Test Report 2026-04-07 Webhook Replay](./Test-Report-2026-04-07-webhook-replay.md)
-  - `TKT-05` 的 webhook replay / review sync exact replay evidence
-- [Test Report 2026-04-07 Remote PR Browser Loop](./Test-Report-2026-04-07-remote-pr-browser-loop.md)
-  - `TKT-06` 的真实远端 PR create / merge browser-level exact evidence
-- [Test Report 2026-04-07 Login Session Foundation](./Test-Report-2026-04-07-login-session-foundation.md)
-  - `TKT-07` 的 login / logout / session persistence browser evidence
-- [Test Report 2026-04-07 Workspace Invite Member Role](./Test-Report-2026-04-07-workspace-invite-member-role.md)
-  - `TKT-08` 的 owner-side invite / member role-status mutation browser evidence
-- [Test Report 2026-04-07 Action AuthZ Matrix](./Test-Report-2026-04-07-action-authz-matrix.md)
-  - `TKT-09` 的 board / room / inbox / setup action-level authz matrix exact evidence
-- [Test Report 2026-04-07 Approval Center Lifecycle](./Test-Report-2026-04-07-approval-center-lifecycle.md)
-  - `TKT-10` 的 approval / blocked / review lifecycle browser evidence
-- [Test Report 2026-04-07 Notification Preference Delivery](./Test-Report-2026-04-07-notification-preference-delivery.md)
-  - `TKT-11` 的 browser push / email policy, subscriber, fanout, retry evidence
-- [Test Report 2026-04-07 Memory Governance](./Test-Report-2026-04-07-memory-governance.md)
-  - `TKT-12` 的 memory injection preview, skill/policy promotion, governed ledger evidence
-- [Test Report 2026-04-07 Stop Resume Follow-thread](./Test-Report-2026-04-07-stop-resume-follow-thread.md)
-  - `TKT-13` 的 stop / resume / follow-thread browser exact replay evidence
-- [Test Report 2026-04-07 Multi-runtime Scheduler Failover](./Test-Report-2026-04-07-multi-runtime-scheduler-failover.md)
-  - `TKT-14` 的 multi-runtime scheduler / active lease / offline failover browser exact evidence
-- [Test Report 2026-04-08 Shell Thread Polish](./Test-Report-2026-04-08-shell-thread-polish.md)
-  - `TKT-16` `TKT-17` `TKT-20` 当前这轮 shell / thread / board demotion 的 headed walkthrough evidence
-- [Test Report 2026-04-08 Quick Search](./Test-Report-2026-04-08-quick-search.md)
-  - `TKT-21` 的 real quick search / search result surface headed exact replay evidence
-- [Test Report 2026-04-09 Quick Search Message Surface Contract](./Test-Report-2026-04-09-quick-search-message-surface-contract.md)
-  - `TKT-27` 的 `dm / followed / saved` server-backed search result、reopen 与 jump-target evidence
-- [Test Report 2026-04-08 Work Shell Smoke](./Test-Report-2026-04-08-work-shell-smoke.md)
-  - `chat / setup / issues / memory / inbox / board / room / run` 在统一 workspace shell 下的当前有头走查结果
-- [Test Report 2026-04-22 Work Shell Smoke](./Test-Report-2026-04-22-work-shell-smoke.md)
-  - 九分冲刺后重跑的 headless workspace shell 走查，覆盖 `chat / setup / issues / memory / inbox / board / room / run`
-- [Test Report 2026-04-08 Frontend Interaction Polish](./Test-Report-2026-04-08-frontend-interaction-polish.md)
-  - `TKT-24` 的 sidebar / topbar hit area、channel / room scrollback、composer 常驻与窄屏抽查证据
-- [Test Report 2026-04-08 Memory Governance](./Test-Report-2026-04-08-memory-governance.md)
-  - `TKT-12` 当天重跑后的有头记忆治理证据
-- [Test Report 2026-04-08 Stop Resume Follow-thread](./Test-Report-2026-04-08-stop-resume-follow-thread.md)
-  - `TKT-13` 当天重跑后的有头 stop / resume / follow-thread 证据
-- [Test Report 2026-04-08 DM Followed Thread Saved Later](./Test-Report-2026-04-08-dm-followed-thread-saved-later.md)
-  - `TKT-22` 的 DM entry、followed thread revisit、saved-later revisit 有头证据
-- [Test Report 2026-04-08 Room Workbench Topic Context](./Test-Report-2026-04-08-room-workbench-topic-context.md)
-  - `TKT-23` 的 chat-first room shell、secondary sheets、reload persistence 与 inbox back-link evidence
-- [Test Report 2026-04-08 Profile Surface](./Test-Report-2026-04-08-profile-surface.md)
-  - `TKT-25` 的 `Agent / Machine / Human` unified profile surface、shell / room drill-in 与 live presence evidence
-- [Test Report 2026-04-08 Destructive Guard](./Test-Report-2026-04-08-destructive-guard.md)
-  - `TKT-30` 的 destructive approval、sandbox / secret boundary 与 room / inbox / run guard truth headed evidence
-- [Test Report 2026-04-08 GitHub Installation Callback](./Test-Report-2026-04-08-github-installation-callback.md)
-  - `TKT-28` 的 installation-complete callback、repo binding refresh、tracked PR backfill 与 Setup callback return evidence
-- [Test Report 2026-04-08 Device Auth / Email Recovery](./Test-Report-2026-04-08-device-auth-email-recovery.md)
-  - `TKT-29` 的 device authorization、email verification、password reset、session recovery 与 external identity binding headed evidence
-- [Test Report 2026-04-09 Config Persistence / Recovery](./Test-Report-2026-04-09-config-persistence-recovery.md)
-  - `TKT-37` 的 workspace/member durable config、reload/restart recovery 与 second-device replay evidence
-- [Test Report 2026-04-09 Onboarding Studio / Scenario Templates](./Test-Report-2026-04-09-onboarding-studio.md)
-  - `TKT-34` 的 template selection、resumable progress、bootstrap package materialization 与 reload/restart recovery evidence
-- [Test Report 2026-04-09 Agent Mailbox / Handoff Contract](./Test-Report-2026-04-09-agent-mailbox-handoff.md)
-  - `TKT-35` 的 mailbox create/blocked/acknowledged/completed lifecycle、room/inbox back-link 与 owner transfer headed evidence
-- [Test Report 2026-04-08 Agent Profile Editor](./Test-Report-2026-04-08-agent-profile-editor.md)
-  - `TKT-32` 的 Agent profile edit、memory binding / recall policy、file-level `SOUL.md / MEMORY.md / notes/*` surface、next-run preview 与 profile audit headed evidence
-- [Test Report 2026-04-09 Machine Profile / Local CLI Model Capability Binding](./Test-Report-2026-04-09-machine-profile-capability-binding.md)
-  - `TKT-33` 的 machine shell / daemon / provider-model catalog 与 Agent provider+model+runtime affinity headed evidence
-- [Test Report 2026-04-09 Live Truth Hygiene](./Test-Report-2026-04-09-live-truth-hygiene.md)
-  - `TKT-38` 的 state / SSE visible truth negative scan、copy cleanup 与 release-gate hygiene evidence
-- [Test Report 2026-04-11 Windows Chrome Board Planning Mirror Surface](./Test-Report-2026-04-11-windows-chrome-board-planning-surface.md)
-  - `TKT-26` 的 room / issue -> board planning mirror -> room exact replay，与紧凑 lane 概览、room-return card 语言 evidence
-- [Test Report 2026-04-09 Runtime Lease Conflict / Scheduler Hardening](./Test-Report-2026-04-09-runtime-lease-conflict-scheduler-hardening.md)
-  - `TKT-31` 的 lease conflict recovery、scheduler failover continuity 与 `/setup` `/agents` live decision-reason evidence
-- [Test Report 2026-04-09 Memory Viewer / Correction / Forget Surface](./Test-Report-2026-04-09-memory-viewer-correction-forget.md)
-  - `TKT-42` 的 memory detail audit、human correction/forget 写回与 recall preview removal headed evidence
-- [Test Report 2026-04-09 Memory Cleanup / TTL / Promotion Worker](./Test-Report-2026-04-09-memory-cleanup-ttl-worker.md)
-  - `TKT-43` 的 cleanup ledger、TTL prune、promotion queue hardening 与 release-gate evidence
-- [Test Report 2026-04-09 Credential Profile / Encrypted Secret Scope](./Test-Report-2026-04-09-credential-profile-scope-refresh.md)
-  - `TKT-45` 的 settings -> agent profile -> run guard truth、vault ciphertext persistence 与 no-plaintext evidence
-- [Test Report 2026-04-09 Run History / Resume Context](./Test-Report-2026-04-09-run-history-resume-context.md)
-  - `TKT-40` 的 paginated `/runs` history、prior-run reopen、resume context 与 room-current continuity evidence
-- [Test Report 2026-04-09 Topic Route / Resume Lifecycle](./Test-Report-2026-04-09-topic-route-resume-lifecycle.md)
-  - `TKT-52` 的 standalone `/topics/:topicId`、guidance edit、reload persistence 与 resume deep-link evidence
+这 5 条已经被 release gate 直接收进默认路径：
 
-常用入口：
+| 场景 | 独立命令 |
+| --- | --- |
+| setup spine e2e | `pnpm test:headed-setup` |
+| onboarding first-start journey | `pnpm test:headed-onboarding-studio` |
+| fresh workspace critical loop | `pnpm test:headed-critical-loop` |
+| rooms continue entry | `pnpm test:headed-rooms-continue-entry` |
+| config persistence recovery | `pnpm test:headed-config-persistence-recovery` |
 
-- `pnpm test:headed-setup`
-  - 启动临时 workspace、daemon、server、web 和 headed Chromium，产出 `/tmp/openshock-tkt03-headed-setup-*` 证据目录
-- `pnpm test:headed-github-onboarding`
-  - 启动临时 workspace、daemon、server、web 和 headed Chromium，模拟 GitHub App installation pending，产出 `/tmp/openshock-tkt04-github-onboarding-*` 证据目录
-- `pnpm test:webhook-replay`
-  - 回放 signed GitHub webhook fixture，验证 review/comment/check/merge 写回与 failure-path observability
-- `pnpm test:headed-remote-pr-loop`
-  - 在 headed Chromium 中串起 `/setup -> issue -> room -> remote PR create -> merge`
-- `pnpm test:headed-session-foundation`
-  - 验证 login / logout / session persistence
-- `pnpm test:headed-workspace-member-role`
-  - 验证 invite / role / status / member login lifecycle
-- `pnpm test:headed-action-authz-matrix`
-  - 验证 owner / member / viewer / signed-out 的关键动作矩阵
-- `pnpm test:headed-approval-center-lifecycle`
-  - 验证 approval center 的 approval / blocked / review lifecycle
-- `pnpm test:headed-notification-preference-delivery`
-  - 验证 browser push / email policy、subscriber、receipt、retry
-- `pnpm test:headed-identity-template-recovery-journey`
-  - 验证 `/settings` identity template chain 与 `/access` invite / verify / reset / blocked recovery 是否属于同一条 delivery journey
-- `pnpm test:headed-restricted-sandbox-policy`
-  - 验证 `/runs/:id` restricted profile、allowlist、approval_required、same-target override/retry 与 reload persistence
-- `pnpm test:headed-delivery-entry-release-gate`
-  - 验证 `/pull-requests/:id` 的 release gate、handoff note、delivery template、evidence bundle 与 gate/back-link drill-in
-- `pnpm test:headed-memory-governance`
-  - 验证 memory center 的 injection preview、promotion queue、governed ledger
-- `pnpm test:headed-memory-provider-orchestration`
-  - 验证 `/memory` 的 provider binding、degraded fallback note、next-run preview provider projection 与 reload persistence
-- `pnpm test:headed-memory-provider-health-recovery`
-  - 验证 provider 的 health check、manual recovery、dependency degrade propagation、preview projection 与 reload persistence
-- `node ./scripts/headed-multi-agent-movie-studio.mjs --report output/testing/headed-multi-agent-movie-studio-report.md`
-  - 验证 `A -> B -> C` 顺序 room-auto handoff、当前 owner continuity、`/memory` next-run preview continuity、Mailbox walkthrough，以及公开房间不泄露 `SEND_PUBLIC_MESSAGE` / `OPENSHOCK_HANDOFF:` 内部协议
-- `pnpm test:headed-memory-viewer-correction-forget`
-  - 验证 memory detail 的 correction / forget mutation、version audit 与 recall preview removal
-- `pnpm test:headed-stop-resume-follow-thread`
-  - 验证 stop / resume / follow-thread exact replay
-- `pnpm test:headed-run-history-resume-context`
-  - 验证 `/runs` paginated history、Load Older Runs、prior-run reopen 与 room-current resume context
-- `pnpm test:headed-dm-followed-thread-saved-later`
-  - 验证 DM entry、thread follow、saved-later、reopen thread 回访闭环
-- `pnpm test:headed-room-workbench-topic-context`
-  - 验证 chat-first room shell、secondary `Topic / Run / PR / Context` sheets、follow_thread、PR surface 与 inbox back-link
-- `pnpm test:headed-room-chat-reload-continuity`
-  - 验证房间里的 thread 选择、reply target、thread rail 与未发送 draft 在 reload 后继续恢复
-- `pnpm test:headed-topic-route-resume-lifecycle`
-  - 验证 `/topics/:topicId` 的 guidance edit、reload persistence、resume control 与 room backlink
-- `pnpm test:headed-profile-surface`
-  - 验证左栏 `Profile Hub`、`Agent / Machine / Human` unified profile surface、shell / room drill-in、presence / capability / recent activity
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-profile-surface -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-shell-profile-hub.md`
-  - 验证左栏 footer 的 current `Human / Machine / Agent` 入口、统一 profile drill-in，以及 room context regression
-- `pnpm test:headed-destructive-guard`
-  - 验证 destructive git、越界写入、secret boundary 的 guard truth，以及 Inbox / Room / Run 三处同步
-- `pnpm test:headed-device-auth-email-recovery`
-  - 验证 device authorization、email verification、password reset、session recovery 与 external identity binding
-- `pnpm test:headed-config-persistence-recovery`
-  - 验证 workspace/member config 在 `/settings -> /access -> /setup` 的同源投影，以及 reload / server restart / second browser context recovery
-- `pnpm test:headed-configurable-team-topology`
-  - 验证 `/settings` team topology editor、`/setup` `/mailbox` `/agents` 的同源治理投影，以及 reload / server restart / second browser context recovery
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-agent-mailbox-handoff -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-formal-comment.md`
-  - 验证 mailbox 的 source / target formal comment、blocked note guard、blocked-tone preservation 与 lifecycle closeout 回放
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-queue.md`
-  - 验证 `/mailbox` 当前 room ledger 的 multi-select `Batch Queue`、batch acknowledge / comment / complete、selection auto-clear 与 inbox summary sync
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-mailbox-batch-policy -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-mailbox-batch-policy.md`
-  - 验证 `Create Governed Handoff` 会保留 `kind=governed`，pure governed selection 可 `Batch Complete + Auto-Advance`，并自动物化单条 followup handoff
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-queue -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-queue.md`
-  - 验证 `workspace.governance.escalationSla.queue` 会把 active handoff 与 blocked inbox signal 收成正式 queue truth，并在 `/mailbox` 与 `/agents` 同源镜像
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governance-escalation-rollup -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governance-escalation-rollup.md`
-  - 验证 `workspace.governance.escalationSla.rollup` 会把整个 workspace 的 hot rooms 收成正式 rollup，并在 `/mailbox` 与 `/agents` 同源镜像
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-cross-room-governance-orchestration -- --report docs/testing/Test-Report-2026-04-14-windows-chrome-cross-room-governance-dependency-graph.md`
-  - 验证 cross-room governance rollup 不只会给出 room-level `current owner / current lane / next governed route`，还会在 `/mailbox` 与 `/agents` 组织成 `room -> current owner/lane -> next route` dependency graph，并在 `/mailbox` 上对 `ready` hot room 直接起 governed handoff，随后在 `/agents` 与 Inbox deep-link 上保持同源
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-cross-room-governance-auto-closeout -- --report docs/testing/Test-Report-2026-04-14-windows-chrome-cross-room-governance-auto-closeout.md`
-  - 验证 cross-room hot room 在 `reviewer -> QA -> auto-complete` 之后，会把 PR delivery closeout 收成 `done route`，同时继续保留原 blocker hot-room truth，且不会因为 `delivery-closeout / delivery-reply` sidecar 污染 rollup / graph
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-route -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-route.md`
-  - 验证 governed route suggestion 会按当前 room truth 自动填充 source/target、聚焦 active handoff，并在缺少 QA target 时显式 blocked
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-route -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-autocreate.md`
-  - 验证 governed route 在 `/mailbox` 与 Inbox compose 的一键起单、双面 active 同步，以及 handoff 完成后的 blocked replay
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-auto-advance -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-auto-advance.md`
-  - 验证 acknowledged handoff 的 `Complete + Auto-Advance`、QA followup 自动创建，以及 `/mailbox` / Inbox compose 双面 active 前滚
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-closeout -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-closeout.md`
-  - 验证 final lane closeout 后的 done-state delivery backlink，以及 PR detail handoff note / evidence 是否接住最新 governed closeout note
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegation -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegation.md`
-  - 验证 final lane closeout 后的 delivery delegate ready、`PM · Spec Captain` topology fallback，以及 PR detail related inbox delegation signal
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-handoff -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-handoff.md`
-  - 验证 final lane closeout 后 delegated formal handoff 自动创建、`handoff requested` 状态与 Inbox / Mailbox 聚焦回链
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-lifecycle -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-lifecycle.md`
-  - 验证 delegated closeout handoff 的 `blocked -> completed` lifecycle 是否同步回 PR detail delegation card、related inbox signal 与 governed done-state
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-policy -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-policy.md`
-  - 验证 `signal-only` delivery delegation policy 是否只派 signal、不自动起 delegated closeout handoff，并且 `/settings` / PR detail / Mailbox 读取同一份 durable truth
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-auto-complete -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-auto-complete.md`
-  - 验证 `auto-complete` delivery delegation policy 是否直接把 delegation 收成 `done`、不自动起 delegated closeout handoff，并且 PR detail / Mailbox / related inbox / durable workspace policy truth 继续保持一致
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-comment-sync -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-comment-sync.md`
-  - 验证 delegated closeout handoff 上的 source / target formal comment 是否同步回 PR detail `Delivery Delegation` summary 与 related inbox latest-comment signal，并保持 handoff lifecycle 不变
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-response -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-response.md`
-  - 验证 delegated closeout handoff 在 `blocked` 后是否自动创建 `delivery-reply` response handoff、PR detail 是否显示 `reply requested / reply completed`，以及 response completion 是否保持主 closeout handoff 继续 blocked
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-retry -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-retry.md`
-  - 验证 delegated closeout 第二轮及后续 retry 是否创建新的 `delivery-reply` handoff、PR detail 是否显示 `reply xN`，以及最新 response deep link 是否始终指向当前 attempt
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-response-comment-sync -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-response-comment-sync.md`
-  - 验证 `delivery-reply` response handoff 上的 source / target formal comment 是否同步回 PR detail `Delivery Delegation` summary 与 related inbox latest-comment signal，并保持 `reply requested` lifecycle 不变
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-resume -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume.md`
-  - 验证 `delivery-reply` 的 response progress 是否回推父级 delegated closeout handoff、其 inbox signal 与 re-ack guidance，并保持父级 `blocked` lifecycle 不变
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-visibility -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-visibility.md`
-  - 验证 delegated closeout parent card 是否直接显示 `reply requested / reply completed` 与 `reply xN`，以及 child `delivery-reply` card 是否支持 parent 回跳
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-resume-parent -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-resume-parent.md`
-  - 验证 child `delivery-reply` 完成后是否可直接 `Resume Parent Closeout`，以及父级 closeout 是否切到 `acknowledged` 并保留 `reply completed`
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-history-sync -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-history-sync.md`
-  - 验证 parent closeout 被重新接住乃至最终完成后，PR detail `Delivery Delegation` summary 与 related inbox 是否继续保留 `reply xN / 第 N 轮 unblock response` 历史
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-communication-thread -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-communication-thread.md`
-  - 验证 PR detail 是否把 parent `delivery-closeout` 与 child `delivery-reply` 收成同一条 `Delivery Collaboration Thread`，并按真实时间顺序回放 request / blocker / comment / progress
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-thread-actions -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-thread-actions.md`
-  - 验证 PR detail 是否能直接执行 parent/child current handoff 的 `blocked / comment / acknowledged / completed`，以及 child complete 后的 same-page `Resume Parent Closeout`
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-parent-status -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-status.md`
-  - 验证 child `delivery-reply` card 是否会随 parent closeout 前滚为 `parent blocked / parent acknowledged / parent completed`
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-parent-context -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-context.md`
-  - 验证 parent delegated closeout 在 reply 驱动 resume / complete 后，parent Mailbox card、handoff inbox signal 与 Run detail 是否继续保留 `reply xN / 第 N 轮 unblock response` 历史
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-child-context -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-child-context.md`
-  - 验证 child `delivery-reply` 在 parent closeout resume / complete 后，child `lastAction` 与 child inbox summary 是否同步前滚到 parent follow-through 真相
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-child-timeline -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-child-timeline.md`
-  - 验证 child `delivery-reply` 在 parent closeout resume / complete 后，child lifecycle messages 是否追加 `parent-progress` entry，且 PR detail 是否继续保留 latest formal comment
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-parent-timeline -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-parent-timeline.md`
-  - 验证 parent delegated closeout 的 lifecycle messages 是否显式追加 child response 的 `response-progress` entry，并在 parent 后续动作后继续保留
-- `OPENSHOCK_WINDOWS_CHROME=1 pnpm test:headed-governed-mailbox-delegate-room-trace -- --report docs/testing/Test-Report-2026-04-11-windows-chrome-governed-mailbox-delegate-room-trace.md`
-  - 验证 child `delivery-reply` 的 comment / complete 是否会把 parent-synced orchestration 追加进 Room 主消息流，并保留 `[Mailbox Sync]` 历史
-- `pnpm test:headed-onboarding-studio`
-  - 验证 `/access -> /onboarding -> /chat/all` 的首次引导链路，以及 `/setup` / `/settings` / second browser context recovery
-- `pnpm test:headed-message-send-flow`
-  - 验证频道与讨论间发送时的人类消息先落流、发送态占位、控制面回写和 reload 后仍可见
-- `pnpm test:headed-room-clarification-wait`
-  - 验证房间等待补充卡片、等待 owner/问题展示、reload 后继续可回复、锁定阻塞问题与补充后自动恢复执行
-- `pnpm test:headed-agent-profile-editor`
-  - 验证 Agent profile edit、memory binding / recall policy、file-level `SOUL.md / MEMORY.md / notes/*` surface、next-run preview 与 audit persistence
-- `pnpm test:headed-machine-profile-capability-binding`
-  - 验证 `/setup`、machine profile、`/agents` 与 Agent profile editor 是否共享同一份 machine capability / provider-model catalog truth，并允许写回 provider+model+runtime affinity
-- `pnpm test:headed-control-plane-runtime-governance`
-  - 用 Windows Chrome 串起 `/v1/control-plane/*`、`/v1/runtime/publish*`、`/agents` 治理面和 dirty projection fail-closed browser evidence
-- `pnpm test:headed-pr-conversation-usage-observability`
-  - 用 Windows Chrome 串起 `review webhook -> Inbox -> Room PR tab -> PR Detail -> /runs -> /settings`，验证 `TKT-39` `TKT-41`
-- `pnpm test:headed-multi-runtime-scheduler-failover`
-  - 验证 multi-runtime scheduler、active lease、offline failover
-- `pnpm test:headed-runtime-lease-conflict-recovery`
-  - 验证 runtime lease conflict 的 blocked/recovery truth，以及 `/setup` `/agents` 是否显示同一条恢复说明
-- `pnpm test:headed-quick-search`
-  - 验证 Quick Search 的 channel / room / issue / run / agent 命中、跳转、高亮和 empty state
-- `pnpm test:headed-frontend-interaction-polish`
-  - 验证 sidebar / topbar 命中区、channel / room scrollback、composer 常驻与窄屏无横向溢出
-- `pnpm test:headed-work-shell-smoke`
-  - 验证统一 workspace shell 下的 `chat / setup / issues / memory / inbox / board / room / run` 页面走查
-- `pnpm test:headed-board-planning-surface`
-  - 验证 `room -> board -> issue -> board -> room` 的 planning mirror 回跳与轻量 card 语言
+这一组 release-critical browser suite 的 canonical source 现在固定在：
 
-说明：
+- `scripts/release-browser-suite.sh`
 
-- 名字带 `headed` 的浏览器脚本现在默认都按有头模式执行。
-- 如果确实要在无显示环境里回放，再显式传 `OPENSHOCK_E2E_HEADLESS=1`。
+也就是说，release gate、Testing Index 和 reviewer 证据都应该跟这份 manifest 对齐，不再各自维护一份手写列表。
 
-如果 `Test Cases` 和 `Test Report` 冲突：
+如果你只做前台快检，先看这 5 条，不要一上来跑历史大套件。
 
-- 用 `Test Cases` 判断应该测什么
-- 用 `Test Report` 判断这一轮实际测到了什么、结果如何
+## 高频补充检查
+
+- `pnpm verify:server`
+  - server core 包回归 + `server ↔ daemon` integration loop
+- `pnpm verify:server:integration`
+  - 单独重放 release baseline 使用的 `server ↔ daemon` integration loop
+- `pnpm verify:web`
+  - 前端静态门和关键 contract 快检
+- `pnpm test:web-contracts`
+  - 前端 contract 回归
+- `cd apps/server && ../../scripts/go.sh test ./internal/api -count=1`
+  - server API 合同面
+- `cd apps/server && ../../scripts/go.sh test -tags=integration ./internal/integration -count=1`
+  - server/daemon integration 原始 Go 入口；日常优先用 `pnpm verify:server:integration`
+
+## 全量范围去哪里看
+
+- 全量测试矩阵：[`Test-Cases.md`](./Test-Cases.md)
+- 当前产品范围：[`../product/Checklist.md`](../product/Checklist.md)
+- 历史报告：当前目录下所有 `Test-Report-*.md`
+
+历史报告现在只做归档和专题回放，不再承担“今天先跑什么”的入口职责。

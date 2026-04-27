@@ -234,6 +234,26 @@ async function capture(page, name) {
   return filePath;
 }
 
+async function ensureDetailsOpen(page, testID) {
+  await page.waitForFunction(
+    (currentTestID) => document.querySelector(`[data-testid="${currentTestID}"]`) instanceof HTMLDetailsElement,
+    testID,
+    { timeout: 30_000 }
+  );
+  const open = await page.evaluate((currentTestID) => {
+    const element = document.querySelector(`[data-testid="${currentTestID}"]`);
+    return element instanceof HTMLDetailsElement ? element.open : false;
+  }, testID);
+  if (!open) {
+    await page.evaluate((currentTestID) => {
+      const element = document.querySelector(`[data-testid="${currentTestID}"]`);
+      if (element instanceof HTMLDetailsElement) {
+        element.open = true;
+      }
+    }, testID);
+  }
+}
+
 function resolveChromiumExecutable() {
   const candidates = [
     process.env.OPENSHOCK_CHROMIUM_PATH,
@@ -658,9 +678,9 @@ async function runCallbackPhase(chromiumExecutable) {
 
   const page = await context.newPage();
   await page.goto(`${ingressURL}/setup`, { waitUntil: "load" });
-  await page.getByText("展开仓库与远端").click();
+  await ensureDetailsOpen(page, "setup-repo-section");
   await page.locator('[data-testid="setup-github-connection"]:visible').waitFor({ state: "visible" });
-  await page.getByText("回流地址").click();
+  await ensureDetailsOpen(page, "setup-github-ingress-details");
   await page.locator('[data-testid="setup-github-callback-link"]:visible').waitFor({ state: "visible" });
   await page.locator('[data-testid="setup-github-webhook-url"]:visible').waitFor({ state: "visible" });
 
@@ -686,7 +706,7 @@ async function runCallbackPhase(chromiumExecutable) {
   await capture(page, "callback-success");
 
   await page.waitForURL(`${ingressURL}/setup?github_installation=connected`, { timeout: 30_000 });
-  await page.getByText("展开仓库与远端").click();
+  await ensureDetailsOpen(page, "setup-repo-section");
   await page.locator('[data-testid="setup-github-connection"]:visible').waitFor({ state: "visible" });
   await page.locator('[data-testid="setup-github-readiness-status"]:visible').waitFor({ state: "visible" });
   await page.waitForFunction(
@@ -794,7 +814,7 @@ async function runWebhookPhase() {
 
 function renderReport(callbackPhase, webhookPhase, chromiumExecutable) {
   const lines = [
-    "# Test Report 2026-04-09 GitHub Public Ingress Verification",
+    "# Test Report 2026-04-23 GitHub Public Ingress Verification",
     "",
     "- Branch: `tkt-57-github-public-ingress`",
     "- Scope: `TKT-57 / CHK-07 / TC-015 / TC-045`",
@@ -810,7 +830,7 @@ function renderReport(callbackPhase, webhookPhase, chromiumExecutable) {
     "",
     "## Commands",
     "",
-    "- `pnpm test:headed-github-public-ingress -- --report docs/testing/Test-Report-2026-04-09-github-public-ingress.md`",
+    "- `pnpm test:headed-github-public-ingress -- --report docs/testing/Test-Report-2026-04-23-github-public-ingress.md`",
     "",
     "## Checks",
     "",

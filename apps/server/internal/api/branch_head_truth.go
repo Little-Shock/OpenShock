@@ -75,9 +75,7 @@ func (s *Server) handleBranchHeadTruth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildBranchHeadTruth() branchHeadTruthResponse {
 	workspace := s.store.Snapshot().Workspace
 	connection, probeErr := s.github.Probe(s.workspaceRoot)
-	if probeErr == nil {
-		connection = s.withGitHubPublicIngress(connection)
-	}
+	connection = markGitHubProbeStatus(s.withGitHubPublicIngress(connection))
 
 	var binding RepoBindingResponse
 	if probeErr == nil {
@@ -115,30 +113,13 @@ func fallbackGitHubConnectionTruth(workspace store.WorkspaceSnapshot, live githu
 	if probeErr == nil {
 		return live
 	}
-	binding := storeBindingSnapshot(workspace)
-	installation := workspaceGitHubInstallationSnapshot(workspace)
-	message := strings.TrimSpace(installation.ConnectionMessage)
-	if message == "" {
-		message = fmt.Sprintf("GitHub probe failed: %s", probeErr.Error())
+	fallback := buildWorkspaceGitHubStatus(workspace, "")
+	fallback.CallbackURL = live.CallbackURL
+	fallback.WebhookURL = live.WebhookURL
+	if strings.TrimSpace(fallback.Message) == "" {
+		fallback.Message = fmt.Sprintf("GitHub probe failed: %s", probeErr.Error())
 	}
-	return githubsvc.Status{
-		Repo:              defaultString(binding.Repo, workspace.Repo),
-		RepoURL:           defaultString(binding.RepoURL, workspace.RepoURL),
-		Branch:            defaultString(binding.Branch, workspace.Branch),
-		Provider:          defaultString(binding.Provider, defaultString(workspace.RepoProvider, "github")),
-		RemoteConfigured:  strings.TrimSpace(defaultString(binding.RepoURL, workspace.RepoURL)) != "",
-		AppConfigured:     installation.AppConfigured,
-		AppInstalled:      installation.AppInstalled,
-		InstallationID:    installation.InstallationID,
-		InstallationURL:   installation.InstallationURL,
-		CallbackURL:       live.CallbackURL,
-		WebhookURL:        live.WebhookURL,
-		Missing:           append([]string(nil), installation.Missing...),
-		Ready:             installation.ConnectionReady,
-		AuthMode:          defaultString(strings.TrimSpace(workspace.RepoAuthMode), "unavailable"),
-		PreferredAuthMode: defaultString(strings.TrimSpace(installation.PreferredAuthMode), defaultString(strings.TrimSpace(workspace.RepoAuthMode), "unavailable")),
-		Message:           message,
-	}
+	return fallback
 }
 
 func detectBranchHeadCheckoutTruth(workspaceRoot string) branchHeadCheckoutTruth {
@@ -298,8 +279,12 @@ func buildBranchHeadDrifts(binding RepoBindingResponse, connection githubsvc.Sta
 	}
 
 	appendIfMismatch("binding_vs_checkout_branch", "repo binding branch", binding.Branch, "current checkout branch", checkout.Branch)
+	appendIfMismatch("binding_vs_checkout_repo", "repo binding repo", binding.Repo, "current checkout repo", checkout.Repo)
+	appendIfMismatch("binding_vs_checkout_provider", "repo binding provider", strings.ToLower(binding.Provider), "current checkout provider", strings.ToLower(checkout.Provider))
 	if probeErr == nil {
 		appendIfMismatch("binding_vs_github_branch", "repo binding branch", binding.Branch, "GitHub probe branch", connection.Branch)
+		appendIfMismatch("binding_vs_github_repo", "repo binding repo", binding.Repo, "GitHub probe repo", connection.Repo)
+		appendIfMismatch("binding_vs_github_provider", "repo binding provider", strings.ToLower(binding.Provider), "GitHub probe provider", strings.ToLower(connection.Provider))
 	}
 	if liveService.Managed {
 		appendIfMismatch("live_service_vs_binding_branch", "live service branch", liveService.Branch, "repo binding branch", binding.Branch)

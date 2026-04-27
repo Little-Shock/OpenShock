@@ -64,8 +64,7 @@ func freshState(workspaceRoot string) State {
 	device := newAuthDevice(owner.ID, "Local Browser", authDeviceStatusAuthorized, now, now, now)
 	owner.TrustedDeviceIDs = []string{device.ID}
 
-	session := authSessionFromMember(owner, now)
-	session = hydrateSessionWithDevice(session, device, "local-bootstrap")
+	session := signedOutAuthSession()
 
 	runtimeProviders := append([]RuntimeProvider{}, seed.Runtimes[0].Providers...)
 
@@ -117,8 +116,8 @@ func freshState(workspaceRoot string) State {
 		Rooms:                 []Room{},
 		RoomMessages:          map[string][]Message{},
 		Runs:                  []Run{},
-		Agents: []Agent{},
-		Machines: []Machine{},
+		Agents:                []Agent{},
+		Machines:              []Machine{},
 		Runtimes: []RuntimeRecord{
 			normalizeRuntimeRecord(RuntimeRecord{
 				ID:              "shock-main",

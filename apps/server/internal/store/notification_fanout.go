@@ -135,9 +135,18 @@ func (s *Store) DispatchNotificationFanout() (State, NotificationCenter, Notific
 		RanAt:    now,
 		Receipts: []NotificationFanoutReceipt{},
 	}
+	sentReceiptsByDeliveryID := map[string]NotificationFanoutReceipt{}
+	for _, receipt := range fanoutState.Receipts {
+		if receipt.Status == notificationFanoutReceiptStatusSent {
+			sentReceiptsByDeliveryID[receipt.DeliveryID] = receipt
+		}
+	}
 
 	for _, delivery := range center.Deliveries {
 		if delivery.Status != notificationDeliveryStatusReady {
+			continue
+		}
+		if _, alreadySent := sentReceiptsByDeliveryID[delivery.ID]; alreadySent {
 			continue
 		}
 
@@ -194,7 +203,9 @@ func (s *Store) DispatchNotificationFanout() (State, NotificationCenter, Notific
 
 	state = s.normalizeNotificationStateLocked(state)
 	fanoutState.LastRun = run
-	fanoutState.Receipts = append([]NotificationFanoutReceipt{}, run.Receipts...)
+	for _, receipt := range run.Receipts {
+		fanoutState.Receipts = replaceNotificationFanoutReceipt(fanoutState.Receipts, receipt)
+	}
 	if err := s.saveNotificationStateLocked(state); err != nil {
 		return State{}, NotificationCenter{}, NotificationFanoutRun{}, err
 	}

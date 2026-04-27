@@ -45,18 +45,7 @@ func TestNotificationFanoutWorkerDispatchesReadyBrowserPushAndEmailDeliveries(t 
 	wantReady := countDeliveriesForSubscriber(notifications.Deliveries, browserID, "ready") +
 		countDeliveriesForSubscriber(notifications.Deliveries, emailID, "ready")
 
-	fanoutResp, err := http.Post(server.URL+"/v1/notifications/fanout", "application/json", bytes.NewReader(nil))
-	if err != nil {
-		t.Fatalf("POST /v1/notifications/fanout error = %v", err)
-	}
-	if fanoutResp.StatusCode != http.StatusOK {
-		t.Fatalf("POST /v1/notifications/fanout status = %d, want %d", fanoutResp.StatusCode, http.StatusOK)
-	}
-
-	var payload struct {
-		Worker store.NotificationFanoutRun `json:"worker"`
-	}
-	decodeJSON(t, fanoutResp, &payload)
+	payload := postNotificationFanout(t, server.URL)
 	if payload.Worker.Attempted != wantReady || payload.Worker.Delivered != wantReady || payload.Worker.Failed != 0 {
 		t.Fatalf("fanout summary = %#v, want attempted=delivered=%d failed=0", payload.Worker, wantReady)
 	}
@@ -116,18 +105,7 @@ func TestNotificationFanoutWorkerFailsClosedForInvalidEmailTarget(t *testing.T) 
 		t.Fatalf("pending browser subscriber should expose blocked deliveries: %#v", notifications.Deliveries)
 	}
 
-	fanoutResp, err := http.Post(server.URL+"/v1/notifications/fanout", "application/json", bytes.NewReader(nil))
-	if err != nil {
-		t.Fatalf("POST /v1/notifications/fanout error = %v", err)
-	}
-	if fanoutResp.StatusCode != http.StatusOK {
-		t.Fatalf("POST /v1/notifications/fanout status = %d, want %d", fanoutResp.StatusCode, http.StatusOK)
-	}
-
-	var payload struct {
-		Worker store.NotificationFanoutRun `json:"worker"`
-	}
-	decodeJSON(t, fanoutResp, &payload)
+	payload := postNotificationFanout(t, server.URL)
 	if payload.Worker.Attempted != wantAttempted || payload.Worker.Delivered != 0 || payload.Worker.Failed != wantAttempted {
 		t.Fatalf("fanout failure summary = %#v, want attempted=failed=%d delivered=0", payload.Worker, wantAttempted)
 	}
@@ -145,6 +123,106 @@ func TestNotificationFanoutWorkerFailsClosedForInvalidEmailTarget(t *testing.T) 
 	pendingBrowser := fetchNotificationSubscriber(t, server.URL, browserID)
 	if pendingBrowser.LastDeliveredAt != "" || pendingBrowser.LastError != "" || pendingBrowser.Status != "pending" {
 		t.Fatalf("pending browser subscriber should remain unattempted: %#v", pendingBrowser)
+	}
+}
+
+func TestNotificationFanoutWorkerDoesNotRedeliverSentDeliveriesOnRepeatedRun(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	createNotificationSubscriber(t, server.URL, NotificationSubscriberRequest{
+		Channel:    "browser_push",
+		Target:     "https://push.example/devices/main-browser",
+		Label:      "Main Browser",
+		Preference: "all",
+		Status:     "ready",
+	})
+	createNotificationSubscriber(t, server.URL, NotificationSubscriberRequest{
+		Channel:    "email",
+		Target:     "ops@openshock.dev",
+		Label:      "Ops Oncall",
+		Preference: "all",
+		Status:     "ready",
+	})
+
+	firstRun := postNotificationFanout(t, server.URL)
+	if firstRun.Worker.Attempted == 0 || firstRun.Worker.Delivered != firstRun.Worker.Attempted || firstRun.Worker.Failed != 0 {
+		t.Fatalf("initial fanout summary = %#v", firstRun.Worker)
+	}
+
+	secondRun := postNotificationFanout(t, server.URL)
+	if secondRun.Worker.Attempted != 0 || secondRun.Worker.Delivered != 0 || secondRun.Worker.Failed != 0 {
+		t.Fatalf("repeated fanout should be idempotent, got %#v", secondRun.Worker)
+	}
+	if len(secondRun.Worker.Receipts) != 0 {
+		t.Fatalf("repeated fanout receipts = %#v, want empty", secondRun.Worker.Receipts)
+	}
+
+	afterRepeat := fetchNotificationCenter(t, server.URL)
+	if afterRepeat.Worker.Attempted != 0 || afterRepeat.Worker.Delivered != 0 || afterRepeat.Worker.Failed != 0 {
+		t.Fatalf("notification center latest run after repeated fanout = %#v, want zeroed latest run", afterRepeat.Worker)
+	}
+}
+
+func TestNotificationFanoutWorkerRejectsMissingInternalWorkerSecret(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/v1/notifications/fanout", "application/json", bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("POST /v1/notifications/fanout error = %v", err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("POST /v1/notifications/fanout status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+
+	var payload map[string]string
+	decodeJSON(t, resp, &payload)
+	if payload["error"] != "internal worker authentication failed" {
+		t.Fatalf("fanout auth payload = %#v, want authentication failure", payload)
+	}
+}
+
+func TestNotificationRoutesFailClosedWhenNotificationSidecarsAreCorrupt(t *testing.T) {
+	root := t.TempDir()
+	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	subscriberID := createNotificationSubscriber(t, server.URL, NotificationSubscriberRequest{
+		Channel:    "email",
+		Target:     "ops@openshock.dev",
+		Label:      "Ops Oncall",
+		Preference: "all",
+		Status:     "ready",
+	})
+
+	if err := os.WriteFile(filepath.Join(root, "data", "notifications.json"), []byte("{broken"), 0o644); err != nil {
+		t.Fatalf("WriteFile(notifications.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "data", "notification-fanout.json"), []byte("{broken"), 0o644); err != nil {
+		t.Fatalf("WriteFile(notification-fanout.json) error = %v", err)
+	}
+
+	for _, endpoint := range []string{
+		"/v1/notifications",
+		"/v1/notifications/subscribers",
+		"/v1/notifications/subscribers/" + subscriberID,
+		"/v1/approval-center",
+	} {
+		resp, err := http.Get(server.URL + endpoint)
+		if err != nil {
+			t.Fatalf("GET %s error = %v", endpoint, err)
+		}
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("GET %s status = %d, want %d", endpoint, resp.StatusCode, http.StatusInternalServerError)
+		}
+		var payload map[string]string
+		decodeJSON(t, resp, &payload)
+		if payload["error"] == "" {
+			t.Fatalf("GET %s error payload = %#v, want explicit error", endpoint, payload)
+		}
 	}
 }
 
@@ -210,7 +288,7 @@ func TestNotificationFanoutWorkerExposesRetryableLatestRunInNotificationCenter(t
 
 func TestNotificationFanoutWorkerRoutesIdentityTemplatesIntoUnifiedDeliveryChain(t *testing.T) {
 	root := t.TempDir()
-	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	s, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
 	defer server.Close()
 
 	emailID := createNotificationSubscriber(t, server.URL, NotificationSubscriberRequest{
@@ -249,12 +327,20 @@ func TestNotificationFanoutWorkerRoutesIdentityTemplatesIntoUnifiedDeliveryChain
 		t.Fatalf("POST /v1/auth/session status = %d, want %d", loginResp.StatusCode, http.StatusOK)
 	}
 
-	resetResp, err := http.Post(server.URL+"/v1/auth/recovery", "application/json", bytes.NewReader([]byte(`{"action":"request_password_reset","email":"reviewer@openshock.dev"}`)))
-	if err != nil {
-		t.Fatalf("POST /v1/auth/recovery request_password_reset error = %v", err)
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner reauth) error = %v", err)
 	}
-	if resetResp.StatusCode != http.StatusOK {
-		t.Fatalf("POST /v1/auth/recovery request_password_reset status = %d, want %d", resetResp.StatusCode, http.StatusOK)
+	if _, _, _, err := s.RequestPasswordReset(store.AuthRecoveryInput{Email: "mina@openshock.dev"}); err != nil {
+		t.Fatalf("RequestPasswordReset(mina) error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "reviewer@openshock.dev",
+		DeviceLabel: "Reviewer Phone",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(reviewer restore) error = %v", err)
 	}
 
 	afterRecovery := fetchNotificationCenter(t, server.URL)
@@ -364,7 +450,14 @@ func postNotificationFanout(t *testing.T, baseURL string) struct {
 } {
 	t.Helper()
 
-	resp, err := http.Post(baseURL+"/v1/notifications/fanout", "application/json", bytes.NewReader(nil))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/notifications/fanout", bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("NewRequest(POST /v1/notifications/fanout) error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-OpenShock-Worker-Secret", contractInternalWorkerSecret)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST /v1/notifications/fanout error = %v", err)
 	}

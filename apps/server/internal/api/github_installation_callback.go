@@ -28,7 +28,7 @@ func (s *Server) handleGitHubInstallationCallback(w http.ResponseWriter, r *http
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !s.requireSessionPermission(w, "repo.admin") {
+	if !s.requireRequestSessionPermission(w, r, "repo.admin") {
 		return
 	}
 
@@ -83,7 +83,7 @@ func (s *Server) handleGitHubInstallationCallback(w http.ResponseWriter, r *http
 				"setupAction":     req.SetupAction,
 				"connection":      connection,
 				"binding":         bindingResponseFromWorkspace(nextState.Workspace, "", &connection),
-				"state":           nextState,
+				"state":           s.sanitizedStateSnapshotForRequest(nextState, r),
 				"syncedPullCount": syncableCount,
 			})
 			return
@@ -95,9 +95,13 @@ func (s *Server) handleGitHubInstallationCallback(w http.ResponseWriter, r *http
 		SetupAction:     req.SetupAction,
 		Connection:      connection,
 		Binding:         bindingResponseFromWorkspace(nextState.Workspace, "", &connection),
-		State:           &nextState,
+		State:           ptrStoreState(s.sanitizedStateSnapshotForRequest(nextState, r)),
 		SyncedPullCount: syncableCount,
 	})
+}
+
+func ptrStoreState(snapshot store.State) *store.State {
+	return &snapshot
 }
 
 func countSyncablePullRequests(snapshot store.State) int {

@@ -24,6 +24,7 @@ type liveRolloutParityResponse struct {
 type liveRolloutCurrentTruth struct {
 	Repo                   string `json:"repo,omitempty"`
 	Branch                 string `json:"branch,omitempty"`
+	Head                   string `json:"head,omitempty"`
 	StartRoute             string `json:"startRoute"`
 	HomeRoute              string `json:"homeRoute"`
 	FirstScreenStatus      string `json:"firstScreenStatus"`
@@ -135,12 +136,13 @@ func (s *Server) buildLiveRolloutParity() liveRolloutParityResponse {
 	snapshot := s.store.Snapshot()
 	currentMetrics := s.store.ExperienceMetrics()
 	currentFirstScreen, _ := findExperienceMetricInSections(currentMetrics.Sections, "collaboration-shell-first")
-	currentRepo, currentBranch := detectLiveRolloutCurrentCheckout(s.workspaceRoot)
+	currentRepo, currentBranch, currentHead := detectLiveRolloutCurrentCheckout(s.workspaceRoot)
 	targetBaseURL := s.actualLiveURLValue()
 
 	current := liveRolloutCurrentTruth{
 		Repo:                   defaultString(currentMetrics.Repo, defaultString(currentRepo, snapshot.Workspace.Repo)),
 		Branch:                 defaultString(currentBranch, currentMetrics.Branch),
+		Head:                   currentHead,
 		StartRoute:             defaultString(currentFirstScreen.Value, "/chat/all"),
 		HomeRoute:              "/chat/all",
 		FirstScreenStatus:      defaultString(currentFirstScreen.Status, "blocked"),
@@ -323,6 +325,16 @@ func buildLiveRolloutParityDrifts(current liveRolloutCurrentTruth, actual liveRo
 	if currentBranch != "" && actualBranch != "" && currentBranch != actualBranch {
 		appendDrift("actual_live_branch_mismatch", "drift", fmt.Sprintf("current branch = %s, but actual live branch = %s", currentBranch, actualBranch))
 	}
+	currentHead := strings.TrimSpace(current.Head)
+	actualHead := strings.TrimSpace(actual.LiveService.Head)
+	if actual.LiveService.Available && currentHead != "" {
+		switch {
+		case actualHead == "":
+			appendDrift("actual_live_head_missing", "drift", fmt.Sprintf("actual live target %s does not report a live-service head for current head %s", targetBaseURL, currentHead))
+		case actualHead != currentHead:
+			appendDrift("actual_live_head_mismatch", "drift", fmt.Sprintf("current head = %s, but actual live head = %s", currentHead, actualHead))
+		}
+	}
 
 	actualStartRoute := actualFirstScreenRoute(actual)
 	if actualStartRoute != "" && !parityStartRouteIsCollaborationShell(actualStartRoute) {
@@ -343,7 +355,7 @@ func buildLiveRolloutParityDrifts(current liveRolloutCurrentTruth, actual liveRo
 
 func summarizeLiveRolloutParity(current liveRolloutCurrentTruth, actual liveRolloutActualTruth, drifts []liveRolloutParityDrift, targetBaseURL string) (string, string) {
 	if len(drifts) == 0 {
-		return "aligned", fmt.Sprintf("actual live %s exposes live-service + experience-metrics and matches current branch %s / first-screen %s", targetBaseURL, defaultString(current.Branch, "unknown"), defaultString(current.StartRoute, "unknown"))
+		return "aligned", fmt.Sprintf("actual live %s exposes live-service + experience-metrics and matches current branch %s @ %s / first-screen %s", targetBaseURL, defaultString(current.Branch, "unknown"), defaultString(current.Head, "unknown"), defaultString(current.StartRoute, "unknown"))
 	}
 
 	status := "attention"
@@ -391,7 +403,7 @@ func findExperienceMetricInSections(sections []store.ExperienceMetricSection, id
 	return store.ExperienceMetric{}, false
 }
 
-func detectLiveRolloutCurrentCheckout(workspaceRoot string) (string, string) {
+func detectLiveRolloutCurrentCheckout(workspaceRoot string) (string, string, string) {
 	repoURL, err := runGit(workspaceRoot, "remote", "get-url", "origin")
 	repo, _ := parseRepoIdentity(repoURL)
 	if err != nil {
@@ -401,5 +413,9 @@ func detectLiveRolloutCurrentCheckout(workspaceRoot string) (string, string) {
 	if err != nil {
 		branch = ""
 	}
-	return strings.TrimSpace(repo), strings.TrimSpace(branch)
+	head, err := runGit(workspaceRoot, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		head = ""
+	}
+	return strings.TrimSpace(repo), strings.TrimSpace(branch), strings.TrimSpace(head)
 }

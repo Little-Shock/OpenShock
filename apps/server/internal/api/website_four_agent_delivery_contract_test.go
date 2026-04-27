@@ -64,6 +64,7 @@ func newDirectContractHandler(t *testing.T, root string) (*store.Store, http.Han
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	client := &http.Client{Transport: directWorktreeDaemonRoundTripper{t: t}}
 	handler := New(s, client, Config{

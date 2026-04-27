@@ -10,8 +10,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +32,124 @@ type fakeGitHubClient struct {
 	created     githubsvc.PullRequest
 	synced      map[int]githubsvc.PullRequest
 	merged      githubsvc.PullRequest
+}
+
+const (
+	contractInternalWorkerSecret   = "contract-worker-secret"
+	contractRuntimeHeartbeatSecret = "contract-runtime-heartbeat-secret"
+)
+
+var (
+	contractAuthTransportOnce sync.Once
+	contractAuthCookiesMu     sync.RWMutex
+	contractAuthCookies       = map[string]string{}
+)
+
+type contractAuthTransport struct {
+	base http.RoundTripper
+}
+
+func (t contractAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	next := req
+	if value := registeredContractAuthCookie(contractAuthBaseURL(req.URL)); value != "" && !requestHasExplicitContractAuth(req) {
+		cloned := req.Clone(req.Context())
+		cloned.Header = req.Header.Clone()
+		cloned.Header.Add("Cookie", authTokenCookieName+"="+value)
+		next = cloned
+	}
+
+	resp, err := t.base.RoundTrip(next)
+	if err != nil {
+		return nil, err
+	}
+	if next.Method == http.MethodDelete && next.URL != nil && next.URL.Path == "/v1/auth/session" && resp.StatusCode == http.StatusOK {
+		clearContractAuthCookie(contractAuthBaseURL(next.URL))
+	}
+	recordContractAuthCookies(contractAuthBaseURL(next.URL), resp.Cookies(), resp.Header.Values("Set-Cookie"))
+	return resp, nil
+}
+
+func ensureContractAuthTransport() {
+	contractAuthTransportOnce.Do(func() {
+		base := http.DefaultClient.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		http.DefaultClient.Transport = contractAuthTransport{base: base}
+	})
+}
+
+func contractAuthBaseURL(value *url.URL) string {
+	if value == nil {
+		return ""
+	}
+	return value.Scheme + "://" + value.Host
+}
+
+func requestHasExplicitContractAuth(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	if strings.TrimSpace(req.Header.Get(authTokenHeaderName)) != "" {
+		return true
+	}
+	return strings.Contains(req.Header.Get("Cookie"), authTokenCookieName+"=")
+}
+
+func registeredContractAuthCookie(baseURL string) string {
+	contractAuthCookiesMu.RLock()
+	defer contractAuthCookiesMu.RUnlock()
+	return strings.TrimSpace(contractAuthCookies[baseURL])
+}
+
+func recordContractAuthCookies(baseURL string, cookies []*http.Cookie, headers []string) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return
+	}
+	contractAuthCookiesMu.Lock()
+	defer contractAuthCookiesMu.Unlock()
+	for _, header := range headers {
+		if !strings.HasPrefix(header, authTokenCookieName+"=") {
+			continue
+		}
+		value := header[len(authTokenCookieName)+1:]
+		if separator := strings.Index(value, ";"); separator >= 0 {
+			value = value[:separator]
+		}
+		value = strings.TrimSpace(value)
+		lowerHeader := strings.ToLower(header)
+		if value == "" || strings.Contains(lowerHeader, "max-age=0") || strings.Contains(lowerHeader, "max-age=-1") {
+			delete(contractAuthCookies, baseURL)
+			return
+		}
+		contractAuthCookies[baseURL] = value
+		return
+	}
+	for _, cookie := range cookies {
+		if cookie == nil || cookie.Name != authTokenCookieName {
+			continue
+		}
+		if strings.TrimSpace(cookie.Value) == "" || cookie.MaxAge < 0 {
+			delete(contractAuthCookies, baseURL)
+			continue
+		}
+		contractAuthCookies[baseURL] = strings.TrimSpace(cookie.Value)
+	}
+}
+
+func clearContractAuthCookie(baseURL string) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return
+	}
+	contractAuthCookiesMu.Lock()
+	defer contractAuthCookiesMu.Unlock()
+	delete(contractAuthCookies, baseURL)
+}
+
+func plainContractHTTPClient() *http.Client {
+	return &http.Client{Transport: http.DefaultTransport}
 }
 
 func (f *fakeGitHubClient) Probe(_ string) (githubsvc.Status, error) {
@@ -306,7 +426,7 @@ func TestWorkspaceMembersCORSPreflightAllowsPatch(t *testing.T) {
 	}
 	req.Header.Set("Origin", "http://127.0.0.1:3000")
 	req.Header.Set("Access-Control-Request-Method", http.MethodPatch)
-	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+	req.Header.Set("Access-Control-Request-Headers", "Content-Type, X-OpenShock-Auth-Token")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -315,14 +435,17 @@ func TestWorkspaceMembersCORSPreflightAllowsPatch(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("OPTIONS /v1/workspace/members/:id status = %d, want %d", resp.StatusCode, http.StatusNoContent)
 	}
-	if allowOrigin := resp.Header.Get("Access-Control-Allow-Origin"); allowOrigin != "*" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want *", allowOrigin)
+	if allowOrigin := resp.Header.Get("Access-Control-Allow-Origin"); allowOrigin != "http://127.0.0.1:3000" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want request origin echoed", allowOrigin)
 	}
 	if allowMethods := resp.Header.Get("Access-Control-Allow-Methods"); !strings.Contains(allowMethods, http.MethodPatch) {
 		t.Fatalf("Access-Control-Allow-Methods = %q, want PATCH included", allowMethods)
 	}
-	if allowHeaders := resp.Header.Get("Access-Control-Allow-Headers"); !strings.Contains(allowHeaders, "Content-Type") {
-		t.Fatalf("Access-Control-Allow-Headers = %q, want Content-Type included", allowHeaders)
+	if allowHeaders := resp.Header.Get("Access-Control-Allow-Headers"); !strings.Contains(allowHeaders, "Content-Type") || !strings.Contains(allowHeaders, authTokenHeaderName) {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want Content-Type and %s included", allowHeaders, authTokenHeaderName)
+	}
+	if allowCredentials := resp.Header.Get("Access-Control-Allow-Credentials"); allowCredentials != "true" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", allowCredentials)
 	}
 }
 
@@ -660,6 +783,7 @@ func TestRuntimePairingColdStartPrefersCurrentDaemonTruth(t *testing.T) {
 			if err != nil {
 				t.Fatalf("store.New() error = %v", err)
 			}
+			mustLoginReadyOwner(t, s)
 			if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
 				RuntimeID:  "shock-main",
 				DaemonURL:  "http://127.0.0.1:8090",
@@ -738,6 +862,7 @@ func TestRuntimeHeartbeatsKeepPairingAndExecAligned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
 		RuntimeID:  "shock-main",
 		DaemonURL:  "http://127.0.0.1:8090",
@@ -766,8 +891,9 @@ func TestRuntimeHeartbeatsKeepPairingAndExecAligned(t *testing.T) {
 	defer daemon.Close()
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
-		DaemonURL:     "http://127.0.0.1:8090",
-		WorkspaceRoot: root,
+		DaemonURL:              "http://127.0.0.1:8090",
+		WorkspaceRoot:          root,
+		RuntimeHeartbeatSecret: contractRuntimeHeartbeatSecret,
 	}).Handler())
 	defer server.Close()
 
@@ -781,7 +907,7 @@ func TestRuntimeHeartbeatsKeepPairingAndExecAligned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal() heartbeat error = %v", err)
 	}
-	heartbeatResp, err := http.Post(server.URL+"/v1/runtime/heartbeats", "application/json", bytes.NewReader(heartbeatBody))
+	heartbeatResp, err := doRuntimeHeartbeatRequest(server.URL, heartbeatBody, contractRuntimeHeartbeatSecret)
 	if err != nil {
 		t.Fatalf("POST /v1/runtime/heartbeats error = %v", err)
 	}
@@ -825,6 +951,349 @@ func TestRuntimeHeartbeatsKeepPairingAndExecAligned(t *testing.T) {
 	}
 }
 
+func TestRuntimeHeartbeatsRejectWhenSharedSecretIsNotConfigured(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:8090",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	body, err := json.Marshal(RuntimeSnapshotResponse{
+		RuntimeID:  "shock-main",
+		DaemonURL:  "http://127.0.0.1:8090",
+		Machine:    "shock-main",
+		State:      "online",
+		ReportedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("Marshal() heartbeat error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/runtime/heartbeats", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /v1/runtime/heartbeats error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("heartbeat status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+	}
+
+	var payload map[string]string
+	decodeJSON(t, resp, &payload)
+	if payload["error"] != "runtime heartbeat secret not configured" {
+		t.Fatalf("payload = %#v, want missing secret error", payload)
+	}
+}
+
+func TestRuntimeHeartbeatsRejectMissingSharedSecretWhenConfigured(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	mustLoginReadyOwner(t, s)
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:              "http://127.0.0.1:8090",
+		WorkspaceRoot:          root,
+		RuntimeHeartbeatSecret: "runtime-heartbeat-secret",
+	}).Handler())
+	defer server.Close()
+
+	body, err := json.Marshal(RuntimeSnapshotResponse{
+		RuntimeID:  "shock-main",
+		DaemonURL:  "http://127.0.0.1:8090",
+		Machine:    "shock-main",
+		State:      "online",
+		ReportedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("Marshal() heartbeat error = %v", err)
+	}
+
+	resp, err := http.Post(server.URL+"/v1/runtime/heartbeats", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /v1/runtime/heartbeats error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("heartbeat status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+
+	var payload map[string]string
+	decodeJSON(t, resp, &payload)
+	if payload["error"] != "runtime heartbeat authentication failed" {
+		t.Fatalf("payload = %#v, want authentication failure", payload)
+	}
+}
+
+func TestRuntimeHeartbeatsAcceptBearerSharedSecretWhenConfigured(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:              "http://127.0.0.1:8090",
+		WorkspaceRoot:          root,
+		RuntimeHeartbeatSecret: "runtime-heartbeat-secret",
+	}).Handler())
+	defer server.Close()
+
+	body, err := json.Marshal(RuntimeSnapshotResponse{
+		RuntimeID:  "shock-main",
+		DaemonURL:  "http://127.0.0.1:8090",
+		Machine:    "shock-main",
+		State:      "online",
+		ReportedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("Marshal() heartbeat error = %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/runtime/heartbeats", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer runtime-heartbeat-secret")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /v1/runtime/heartbeats error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+func TestRuntimeReadSurfacesRequireRuntimeManagePermission(t *testing.T) {
+	root := t.TempDir()
+	s, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "mina@openshock.dev",
+		DeviceLabel: "Mina Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(member) error = %v", err)
+	}
+
+	for _, path := range []string{
+		"/v1/runtime",
+		"/v1/runtime/pairing",
+		"/v1/runtime/registry",
+		"/v1/runtime/selection",
+	} {
+		resp, err := http.Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s error = %v", path, err)
+		}
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("GET %s status = %d, want %d", path, resp.StatusCode, http.StatusForbidden)
+		}
+
+		var payload map[string]any
+		decodeJSON(t, resp, &payload)
+		resp.Body.Close()
+		if payload["permission"] != "runtime.manage" {
+			t.Fatalf("GET %s permission = %#v, want runtime.manage", path, payload["permission"])
+		}
+	}
+}
+
+func TestCollectionReadSurfacesRespectSanitizedSessionReadiness(t *testing.T) {
+	root := t.TempDir()
+	_, signedOutServer := newSignedOutContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer signedOutServer.Close()
+
+	signedOutIssuesResp, err := http.Get(signedOutServer.URL + "/v1/issues")
+	if err != nil {
+		t.Fatalf("GET /v1/issues signed out error = %v", err)
+	}
+	defer signedOutIssuesResp.Body.Close()
+	if signedOutIssuesResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/issues signed out status = %d, want %d", signedOutIssuesResp.StatusCode, http.StatusOK)
+	}
+	var signedOutIssues []store.Issue
+	decodeJSON(t, signedOutIssuesResp, &signedOutIssues)
+	if len(signedOutIssues) != 0 {
+		t.Fatalf("signed out issues = %#v, want empty", signedOutIssues)
+	}
+
+	signedOutWorkspaceResp, err := http.Get(signedOutServer.URL + "/v1/workspace")
+	if err != nil {
+		t.Fatalf("GET /v1/workspace signed out error = %v", err)
+	}
+	defer signedOutWorkspaceResp.Body.Close()
+	if signedOutWorkspaceResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/workspace signed out status = %d, want %d", signedOutWorkspaceResp.StatusCode, http.StatusOK)
+	}
+	var signedOutWorkspace store.WorkspaceSnapshot
+	decodeJSON(t, signedOutWorkspaceResp, &signedOutWorkspace)
+	if signedOutWorkspace.Repo != "" || signedOutWorkspace.PairedRuntimeURL != "" {
+		t.Fatalf("signed out workspace = %#v, want repo/runtime url redacted", signedOutWorkspace)
+	}
+
+	signedOutMemoryResp, err := http.Get(signedOutServer.URL + "/v1/memory")
+	if err != nil {
+		t.Fatalf("GET /v1/memory signed out error = %v", err)
+	}
+	defer signedOutMemoryResp.Body.Close()
+	if signedOutMemoryResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /v1/memory signed out status = %d, want %d", signedOutMemoryResp.StatusCode, http.StatusUnauthorized)
+	}
+
+	s, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	defer server.Close()
+
+	if _, _, err := s.InviteWorkspaceMember(store.WorkspaceMemberUpsertInput{
+		Email: "reviewer@openshock.dev",
+		Name:  "Reviewer",
+		Role:  "member",
+	}); err != nil {
+		t.Fatalf("InviteWorkspaceMember() error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "reviewer@openshock.dev",
+		DeviceLabel: "Reviewer Phone",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(invited reviewer) error = %v", err)
+	}
+
+	unreadyIssuesResp, err := http.Get(server.URL + "/v1/issues")
+	if err != nil {
+		t.Fatalf("GET /v1/issues unready session error = %v", err)
+	}
+	defer unreadyIssuesResp.Body.Close()
+	if unreadyIssuesResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/issues unready session status = %d, want %d", unreadyIssuesResp.StatusCode, http.StatusOK)
+	}
+	var unreadyIssues []store.Issue
+	decodeJSON(t, unreadyIssuesResp, &unreadyIssues)
+	if len(unreadyIssues) != 0 {
+		t.Fatalf("unready issues = %#v, want empty", unreadyIssues)
+	}
+
+	unreadyDMResp, err := http.Get(server.URL + "/v1/direct-messages")
+	if err != nil {
+		t.Fatalf("GET /v1/direct-messages unready session error = %v", err)
+	}
+	defer unreadyDMResp.Body.Close()
+	if unreadyDMResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/direct-messages unready session status = %d, want %d", unreadyDMResp.StatusCode, http.StatusOK)
+	}
+	var unreadyDMs []store.DirectMessage
+	decodeJSON(t, unreadyDMResp, &unreadyDMs)
+	if len(unreadyDMs) != 0 {
+		t.Fatalf("unready direct messages = %#v, want empty", unreadyDMs)
+	}
+
+	unreadyMemoryResp, err := http.Get(server.URL + "/v1/memory")
+	if err != nil {
+		t.Fatalf("GET /v1/memory unready session error = %v", err)
+	}
+	defer unreadyMemoryResp.Body.Close()
+	if unreadyMemoryResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("GET /v1/memory unready session status = %d, want %d", unreadyMemoryResp.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestStateRouteRefreshesStalePairedRuntimeFromDaemon(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	mustLoginReadyOwner(t, s)
+
+	staleReportedAt := time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339)
+	if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
+		RuntimeID:  "shock-main",
+		DaemonURL:  "http://127.0.0.1:8090",
+		Machine:    "shock-main",
+		State:      "online",
+		ReportedAt: staleReportedAt,
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	staleSnapshot := s.RuntimeSnapshot(time.Now())
+	if staleSnapshot.Workspace.PairingStatus != "degraded" {
+		t.Fatalf("stale pairing status = %q, want degraded", staleSnapshot.Workspace.PairingStatus)
+	}
+
+	var runtimeProbeHits int
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runtime" {
+			http.NotFound(w, r)
+			return
+		}
+		runtimeProbeHits++
+		writeJSON(w, http.StatusOK, RuntimeSnapshotResponse{
+			RuntimeID:   "shock-main",
+			DaemonURL:   "http://127.0.0.1:8090",
+			Machine:     "shock-main",
+			DetectedCLI: []string{"codex"},
+			State:       "online",
+			ReportedAt:  time.Now().UTC().Format(time.RFC3339),
+		})
+	}))
+	defer daemon.Close()
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     daemon.URL,
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	stateResp, err := http.Get(server.URL + "/v1/state")
+	if err != nil {
+		t.Fatalf("GET /v1/state error = %v", err)
+	}
+	defer stateResp.Body.Close()
+	if stateResp.StatusCode != http.StatusOK {
+		t.Fatalf("state status = %d, want %d", stateResp.StatusCode, http.StatusOK)
+	}
+
+	var payload store.State
+	decodeJSON(t, stateResp, &payload)
+	if payload.Workspace.PairingStatus != "paired" {
+		t.Fatalf("workspace pairing status = %q, want paired", payload.Workspace.PairingStatus)
+	}
+	runtimeRecord, ok := findRuntimeRecord(payload, "shock-main")
+	if !ok {
+		t.Fatalf("runtime registry missing refreshed shock-main: %#v", payload.Runtimes)
+	}
+	if runtimeRecord.State != "online" {
+		t.Fatalf("runtime state = %q, want online", runtimeRecord.State)
+	}
+	if runtimeProbeHits == 0 {
+		t.Fatal("expected state route to probe paired daemon at least once")
+	}
+
+	recovered := s.RuntimeSnapshot(time.Now())
+	if recovered.Workspace.PairingStatus != "paired" {
+		t.Fatalf("recovered pairing status = %q, want paired", recovered.Workspace.PairingStatus)
+	}
+}
+
 func TestCreatePullRequestRouteCreatesGitHubBackedPullRequest(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -833,6 +1302,7 @@ func TestCreatePullRequestRouteCreatesGitHubBackedPullRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, err := s.CreateIssue(store.CreateIssueInput{
 		Title:    "Ship Real PR Loop",
 		Summary:  "verify github-backed create",
@@ -914,6 +1384,7 @@ func TestCreatePullRequestRouteUsesGitHubAppEffectiveAuthWhenGHCLIIsMissing(t *t
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, err := s.CreateIssue(store.CreateIssueInput{
 		Title:    "App Auth PR Create",
 		Summary:  "verify github app create path",
@@ -1033,6 +1504,7 @@ func TestCreatePullRequestRouteEscalatesBlockedOnGitHubCreateFailure(t *testing.
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, err := s.CreateIssue(store.CreateIssueInput{
 		Title:    "Blocked PR Create",
 		Summary:  "verify create failure escalation",
@@ -1114,6 +1586,7 @@ func TestPullRequestRouteSyncsAndMergesRemoteState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, err := s.CreateIssue(store.CreateIssueInput{
 		Title:    "Sync Remote PR",
 		Summary:  "verify sync and merge",
@@ -1230,6 +1703,7 @@ func TestPullRequestDetailRouteReturnsConversationAndBacklinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, err := s.CreateIssue(store.CreateIssueInput{
 		Title:    "PR Detail Route",
 		Summary:  "verify PR detail backlinks",
@@ -4137,6 +4611,7 @@ func TestRunDetailRouteBuildsRecoveryAuditFromInterruptedSessionAndFollowupTruth
 	}); err != nil {
 		t.Fatalf("PublishRuntimeEvent() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -4207,6 +4682,7 @@ func TestRunDetailRouteBuildsRecoveryAuditFromFormalHandoffFollowupTruth(t *test
 	if _, _, err := s.UpdateRoomAutoHandoffFollowup(handoff.ID, "blocked", "当前还未登录模型服务"); err != nil {
 		t.Fatalf("UpdateRoomAutoHandoffFollowup(governed blocked) error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -4248,6 +4724,7 @@ func TestRunDetailRouteRecoveryAuditReadIsSideEffectFree(t *testing.T) {
 		t.Fatalf("MarkRoomConversationInterrupted() error = %v", err)
 	}
 	before := s.Snapshot()
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -4321,6 +4798,7 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubSyncFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePullRequestFromRemote() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	github := &fakeGitHubClient{syncErr: errors.New("github api timeout")}
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -4419,6 +4897,7 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubAppReviewDecisionSyncFailure(t 
 	if err != nil {
 		t.Fatalf("CreatePullRequestFromRemote() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	githubAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -4545,6 +5024,7 @@ func TestPullRequestRouteSyncFailureIsIdempotentAcrossRepeatedReads(t *testing.T
 	if err != nil {
 		t.Fatalf("CreatePullRequestFromRemote() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	github := &fakeGitHubClient{syncErr: errors.New("github api timeout")}
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -4621,6 +5101,7 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubMergeFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, err := s.CreateIssue(store.CreateIssueInput{
 		Title:    "Merge Failure Escalation",
 		Summary:  "verify merge failure escalation",
@@ -4718,8 +5199,9 @@ func TestPullRequestRouteEscalatesBlockedOnGitHubMergeFailure(t *testing.T) {
 	}
 }
 
-func newContractTestServer(t *testing.T, root, daemonURL string) (*store.Store, *httptest.Server) {
+func newSignedOutContractTestServer(t *testing.T, root, daemonURL string) (*store.Store, *httptest.Server) {
 	t.Helper()
+	ensureContractAuthTransport()
 
 	statePath := filepath.Join(root, "data", "state.json")
 	s, err := store.New(statePath, root)
@@ -4731,10 +5213,97 @@ func newContractTestServer(t *testing.T, root, daemonURL string) (*store.Store, 
 	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
-		DaemonURL:     daemonURL,
-		WorkspaceRoot: root,
+		DaemonURL:              daemonURL,
+		WorkspaceRoot:          root,
+		InternalWorkerSecret:   contractInternalWorkerSecret,
+		RuntimeHeartbeatSecret: contractRuntimeHeartbeatSecret,
 	}).Handler())
+	clearContractAuthCookie(server.URL)
 	return s, server
+}
+
+func newContractTestServer(t *testing.T, root, daemonURL string) (*store.Store, *httptest.Server) {
+	t.Helper()
+
+	s, server := newSignedOutContractTestServer(t, root, daemonURL)
+	mustLoginReadyOwner(t, s)
+	mustEstablishContractBrowserSession(t, server.URL, "larkspur@openshock.dev", "Owner Browser")
+	return s, server
+}
+
+func mustEstablishContractBrowserSession(t *testing.T, serverURL, email, deviceLabel string) store.AuthSession {
+	t.Helper()
+	ensureContractAuthTransport()
+	clearContractAuthCookie(serverURL)
+
+	body, err := json.Marshal(map[string]string{
+		"email":       email,
+		"deviceLabel": deviceLabel,
+	})
+	if err != nil {
+		t.Fatalf("Marshal(contract browser login) error = %v", err)
+	}
+
+	resp, err := http.Post(serverURL+"/v1/auth/session", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /v1/auth/session contract browser login error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/auth/session contract browser login status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload struct {
+		Session store.AuthSession `json:"session"`
+	}
+	decodeJSON(t, resp, &payload)
+	if registeredContractAuthCookie(serverURL) == "" {
+		t.Fatalf("contract browser login did not persist %s cookie for %s", authTokenCookieName, serverURL)
+	}
+	return payload.Session
+}
+
+func mustLoginReadyOwner(t *testing.T, s *store.Store) {
+	t.Helper()
+	_, session, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+	if session.EmailVerificationStatus != "verified" {
+		if _, nextSession, _, err := s.VerifyMemberEmail(store.AuthRecoveryInput{Email: session.Email}); err != nil {
+			t.Fatalf("VerifyMemberEmail(owner) error = %v", err)
+		} else {
+			session = nextSession
+		}
+	}
+	if session.DeviceAuthStatus != "authorized" {
+		if _, nextSession, _, _, err := s.AuthorizeAuthDevice(store.AuthRecoveryInput{
+			DeviceID:    session.DeviceID,
+			DeviceLabel: session.DeviceLabel,
+		}); err != nil {
+			t.Fatalf("AuthorizeAuthDevice(owner) error = %v", err)
+		} else {
+			session = nextSession
+		}
+	}
+	if session.MemberStatus != "active" {
+		t.Fatalf("owner session = %#v, want ready active owner", session)
+	}
+}
+
+func doRuntimeHeartbeatRequest(serverURL string, body []byte, secret string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/v1/runtime/heartbeats", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(secret) != "" {
+		req.Header.Set("X-OpenShock-Runtime-Secret", secret)
+	}
+	return http.DefaultClient.Do(req)
 }
 
 func decodeJSON(t *testing.T, response *http.Response, target any) {

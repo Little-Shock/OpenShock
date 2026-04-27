@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,12 +19,14 @@ import (
 )
 
 type Config struct {
-	DaemonURL           string
-	ControlURL          string
-	ActualLiveURL       string
-	WorkspaceRoot       string
-	GitHub              githubsvc.Client
-	GitHubWebhookSecret string
+	DaemonURL              string
+	ControlURL             string
+	ActualLiveURL          string
+	WorkspaceRoot          string
+	InternalWorkerSecret   string
+	RuntimeHeartbeatSecret string
+	GitHub                 githubsvc.Client
+	GitHubWebhookSecret    string
 }
 
 type Server struct {
@@ -35,8 +38,12 @@ type Server struct {
 	actualLiveURL          string
 	daemonMu               sync.RWMutex
 	workspaceRoot          string
+	internalWorkerSecret   string
+	runtimeHeartbeatSecret string
 	github                 githubsvc.Client
 	githubWebhookSecret    string
+	authTokenMu            sync.RWMutex
+	authTokens             map[string]authRequestBinding
 	roomAutoLoopOnce       sync.Once
 	roomAutoRecoveryMu     sync.Mutex
 	roomAutoInFlight       map[string]struct{}
@@ -54,8 +61,8 @@ func registerServerRoutes(fn serverRouteRegistrar) {
 	serverRouteRegistrars = append(serverRouteRegistrars, fn)
 }
 
-type requestGuard func(*Server, http.ResponseWriter) bool
-type pullRequestStatusGuard func(*Server, http.ResponseWriter, string) bool
+type requestGuard func(*Server, http.ResponseWriter, *http.Request) bool
+type pullRequestStatusGuard func(*Server, http.ResponseWriter, *http.Request, string) bool
 
 var (
 	issueCreateGuard      requestGuard           = allowRequest
@@ -66,11 +73,11 @@ var (
 	pullRequestRouteGuard pullRequestStatusGuard = allowPullRequestRoute
 )
 
-func allowRequest(_ *Server, _ http.ResponseWriter) bool {
+func allowRequest(_ *Server, _ http.ResponseWriter, _ *http.Request) bool {
 	return true
 }
 
-func allowPullRequestRoute(_ *Server, _ http.ResponseWriter, _ string) bool {
+func allowPullRequestRoute(_ *Server, _ http.ResponseWriter, _ *http.Request, _ string) bool {
 	return true
 }
 
@@ -82,9 +89,10 @@ type CreateIssueRequest struct {
 }
 
 type RoomMessageRequest struct {
-	Provider string `json:"provider"`
-	Prompt   string `json:"prompt"`
-	Cwd      string `json:"cwd"`
+	Provider         string `json:"provider"`
+	Prompt           string `json:"prompt"`
+	Cwd              string `json:"cwd"`
+	ReplyToMessageID string `json:"replyToMessageId,omitempty"`
 }
 
 type UpdatePullRequestRequest struct {
@@ -192,15 +200,18 @@ func New(s *store.Store, httpClient *http.Client, cfg Config) *Server {
 		githubService = githubsvc.NewService(nil)
 	}
 	return &Server{
-		store:               s,
-		httpClient:          httpClient,
-		defaultDaemonURL:    strings.TrimRight(cfg.DaemonURL, "/"),
-		daemonURL:           daemonURL,
-		controlURL:          strings.TrimRight(strings.TrimSpace(cfg.ControlURL), "/"),
-		actualLiveURL:       strings.TrimRight(strings.TrimSpace(cfg.ActualLiveURL), "/"),
-		workspaceRoot:       cfg.WorkspaceRoot,
-		github:              githubService,
-		githubWebhookSecret: strings.TrimSpace(cfg.GitHubWebhookSecret),
+		store:                  s,
+		httpClient:             httpClient,
+		defaultDaemonURL:       strings.TrimRight(cfg.DaemonURL, "/"),
+		daemonURL:              daemonURL,
+		controlURL:             strings.TrimRight(strings.TrimSpace(cfg.ControlURL), "/"),
+		actualLiveURL:          strings.TrimRight(strings.TrimSpace(cfg.ActualLiveURL), "/"),
+		workspaceRoot:          cfg.WorkspaceRoot,
+		internalWorkerSecret:   strings.TrimSpace(cfg.InternalWorkerSecret),
+		runtimeHeartbeatSecret: strings.TrimSpace(cfg.RuntimeHeartbeatSecret),
+		github:                 githubService,
+		githubWebhookSecret:    strings.TrimSpace(cfg.GitHubWebhookSecret),
+		authTokens:             map[string]authRequestBinding{},
 	}
 }
 
@@ -248,10 +259,10 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	snapshot := s.store.Snapshot()
+	snapshot := s.runtimeAwareStateSnapshotForRequest(r)
 	if authSessionHasPermission(snapshot.Auth.Session, "room.reply") || authSessionHasPermission(snapshot.Auth.Session, "run.execute") {
 		s.kickRoomAutoRecovery()
-		snapshot = s.store.Snapshot()
+		snapshot = s.runtimeAwareStateSnapshotForRequest(r)
 	}
 	w.Header().Set("X-OpenShock-State-Sequence", strconv.Itoa(s.store.CurrentStateSequence()))
 	writeJSON(w, http.StatusOK, sanitizeLiveState(snapshot))
@@ -260,9 +271,9 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.Snapshot().Workspace)
+		writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Workspace)
 	case http.MethodPatch:
-		if !s.requireSessionPermission(w, "workspace.manage") {
+		if !s.requireRequestSessionPermission(w, r, "workspace.manage") {
 			return
 		}
 		var req WorkspaceUpdateRequest
@@ -303,7 +314,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			Sandbox:     sandbox,
 			Onboarding:  onboarding,
 			Governance:  governance,
-			UpdatedBy:   currentAuthActor(s.store.Snapshot().Auth.Session),
+			UpdatedBy:   s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeWorkspaceConfigError(w, err)
@@ -333,7 +344,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Channels)
+	writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Channels)
 }
 
 func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
@@ -359,11 +370,12 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 		execPrompt := buildChannelExecPrompt(snapshot, channelID, provider, prompt)
 		if blocked := execProviderPreflightMessage("频道消息", snapshot, provider); blocked != "" {
 			nextState, appendErr := s.store.AppendChannelConversation(channelID, store.ChannelConversationInput{
-				Prompt:       prompt,
-				ReplySpeaker: "System",
-				ReplyRole:    "system",
-				ReplyTone:    "blocked",
-				ReplyMessage: blocked,
+				Prompt:           prompt,
+				ReplySpeaker:     "System",
+				ReplyRole:        "system",
+				ReplyTone:        "blocked",
+				ReplyMessage:     blocked,
+				ReplyToMessageID: req.ReplyToMessageID,
 			})
 			if appendErr != nil {
 				writeJSON(w, http.StatusConflict, map[string]string{"error": appendErr.Error()})
@@ -387,11 +399,12 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 				message = buildConflictRoomMessage("频道 runtime lease 冲突", err)
 			}
 			nextState, appendErr := s.store.AppendChannelConversation(channelID, store.ChannelConversationInput{
-				Prompt:       prompt,
-				ReplySpeaker: "System",
-				ReplyRole:    "system",
-				ReplyTone:    "blocked",
-				ReplyMessage: message,
+				Prompt:           prompt,
+				ReplySpeaker:     "System",
+				ReplyRole:        "system",
+				ReplyTone:        "blocked",
+				ReplyMessage:     message,
+				ReplyToMessageID: req.ReplyToMessageID,
 			})
 			if appendErr != nil {
 				if strings.Contains(strings.ToLower(appendErr.Error()), "not found") {
@@ -411,12 +424,13 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 		replyMessage := directives.DisplayOutput
 		suppressReply := directives.SuppressReply || strings.TrimSpace(replyMessage) == ""
 		nextState, err := s.store.AppendChannelConversation(channelID, store.ChannelConversationInput{
-			Prompt:        prompt,
-			ReplySpeaker:  channelReplySpeaker(provider),
-			ReplyRole:     "agent",
-			ReplyTone:     channelReplyTone(directives.ReplyKind),
-			ReplyMessage:  replyMessage,
-			SuppressReply: suppressReply,
+			Prompt:           prompt,
+			ReplySpeaker:     channelReplySpeaker(provider),
+			ReplyRole:        "agent",
+			ReplyTone:        channelReplyTone(directives.ReplyKind),
+			ReplyMessage:     replyMessage,
+			ReplyToMessageID: req.ReplyToMessageID,
+			SuppressReply:    suppressReply,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -436,9 +450,9 @@ func (s *Server) handleChannelRoutes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.Snapshot().Issues)
+		writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Issues)
 	case http.MethodPost:
-		if !issueCreateGuard(s, w) {
+		if !issueCreateGuard(s, w, r) {
 			return
 		}
 		var req CreateIssueRequest
@@ -540,7 +554,7 @@ func (s *Server) handleRooms(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Rooms)
+	writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Rooms)
 }
 
 func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
@@ -556,7 +570,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
-		if !roomReplyGuard(s, w) {
+		if !roomReplyGuard(s, w, r) {
 			return
 		}
 		var req RoomMessageRequest
@@ -573,7 +587,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 		provider := resolveRoomTurnExecProvider(snapshot, roomID, req.Provider, prompt)
 		execPrompt := buildRoomExecPrompt(snapshot, roomID, provider, prompt)
 		if blocked := execProviderPreflightMessage("讨论间消息", snapshot, provider); blocked != "" {
-			nextState, appendErr := s.store.AppendConversationFailure(roomID, prompt, blocked)
+			nextState, appendErr := s.store.AppendConversationFailure(roomID, prompt, blocked, req.ReplyToMessageID)
 			if appendErr != nil {
 				writeJSON(w, http.StatusConflict, map[string]string{"error": blocked})
 				return
@@ -586,7 +600,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			Prompt:         execPrompt,
 			Cwd:            req.Cwd,
 			TimeoutSeconds: roomStreamExecTimeoutSeconds,
-		}, prompt)
+		}, prompt, req.ReplyToMessageID)
 		return
 	}
 
@@ -596,7 +610,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
-		if !roomReplyGuard(s, w) {
+		if !roomReplyGuard(s, w, r) {
 			return
 		}
 		var req RoomMessageRequest
@@ -617,7 +631,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			recoverySource = "user_message"
 		}
 		if blocked := execProviderPreflightMessage("讨论间消息", snapshot, provider); blocked != "" {
-			nextState, appendErr := s.store.AppendConversationFailure(roomID, prompt, blocked)
+			nextState, appendErr := s.store.AppendConversationFailure(roomID, prompt, blocked, req.ReplyToMessageID)
 			if appendErr != nil {
 				writeJSON(w, http.StatusConflict, map[string]string{"error": blocked})
 				return
@@ -660,7 +674,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 					runtimeLeaseConflictControlNote(daemonErr.Conflict),
 				)
 			} else {
-				nextState, appendErr = s.store.AppendConversationFailure(roomID, prompt, message)
+				nextState, appendErr = s.store.AppendConversationFailure(roomID, prompt, message, req.ReplyToMessageID)
 			}
 			if appendErr != nil {
 				writeJSON(w, status, map[string]string{"error": message})
@@ -684,13 +698,13 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 		suppressRelay := shouldSuppressRoomHandoffRelay(snapshot, roomID, directives)
 		var nextState store.State
 		if directives.SuppressReply || suppressRelay {
-			nextState, err = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, provider)
+			nextState, err = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, provider, req.ReplyToMessageID)
 		} else if directives.ReplyKind == "clarification_request" {
-			nextState, err = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, provider)
+			nextState, err = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, provider, req.ReplyToMessageID)
 		} else if directives.ReplyKind == "summary" {
-			nextState, err = s.store.AppendConversationSummary(roomID, prompt, replySpeaker, directives.DisplayOutput, provider)
+			nextState, err = s.store.AppendConversationSummary(roomID, prompt, replySpeaker, directives.DisplayOutput, provider, req.ReplyToMessageID)
 		} else {
-			nextState, err = s.store.AppendConversationAsAgent(roomID, prompt, replySpeaker, directives.DisplayOutput, provider)
+			nextState, err = s.store.AppendConversationAsAgent(roomID, prompt, replySpeaker, directives.DisplayOutput, provider, req.ReplyToMessageID)
 		}
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -703,7 +717,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 		} else if suppressRelay {
 			if strings.TrimSpace(directives.DisplayOutput) != "" {
 				if strings.TrimSpace(followupOutput) == "" {
-					if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, provider); restoreErr == nil {
+					if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, provider, req.ReplyToMessageID); restoreErr == nil {
 						nextState = restoredState
 					}
 					visibleOutput = directives.DisplayOutput
@@ -731,17 +745,17 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
-		if !roomPullRequestGuard(s, w) {
+		if !roomPullRequestGuard(s, w, r) {
 			return
 		}
 		snapshot := s.store.Snapshot()
 		if existing, ok := findPullRequestByRoom(snapshot, roomID); ok {
 			nextState, err := s.syncStoredPullRequest(existing)
 			if err != nil {
-				writePullRequestFailure(w, "sync", roomID, existing.ID, err, nextState)
+				writePullRequestFailure(w, "sync", roomID, existing.ID, err, s.sanitizedStateSnapshotForRequest(nextState, r))
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"pullRequestId": existing.ID, "state": nextState})
+			writeJSON(w, http.StatusOK, map[string]any{"pullRequestId": existing.ID, "state": s.sanitizedStateSnapshotForRequest(nextState, r)})
 			return
 		}
 
@@ -764,7 +778,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 				return
 			}
-			writePullRequestFailure(w, "create", roomID, "", err, nextState)
+			writePullRequestFailure(w, "create", roomID, "", err, s.sanitizedStateSnapshotForRequest(nextState, r))
 			return
 		}
 
@@ -773,7 +787,7 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"pullRequestId": pullRequestID, "state": nextState})
+		writeJSON(w, http.StatusOK, map[string]any{"pullRequestId": pullRequestID, "state": s.sanitizedStateSnapshotForRequest(nextState, r)})
 		return
 	}
 
@@ -781,16 +795,21 @@ func (s *Server) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	detail, ok := s.store.RoomDetail(strings.TrimSuffix(path, "/"))
+	roomID := strings.TrimSuffix(path, "/")
+	if _, ok := findVisibleRoom(s.sanitizedLiveStateSnapshotForRequest(r).Rooms, roomID); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
+		return
+	}
+	detail, ok := s.store.RoomDetail(roomID)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, detail)
+	writeJSON(w, http.StatusOK, sanitizeLivePayload(detail))
 }
 
 func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
-	snapshot := s.store.Snapshot()
+	snapshot := s.sanitizedLiveStateSnapshotForRequest(r)
 	if r.URL.Path == "/v1/runs" {
 		if !requireMethod(w, r, http.MethodGet) {
 			return
@@ -815,7 +834,7 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
-		if !runExecuteGuard(s, w) {
+		if !runExecuteGuard(s, w, r) {
 			return
 		}
 		var req RunControlRequest
@@ -826,7 +845,7 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 		nextState, err := s.store.ControlRun(runID, store.RunControlInput{
 			Action: req.Action,
 			Note:   req.Note,
-			Actor:  currentAuthActor(s.store.Snapshot().Auth.Session),
+			Actor:  s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			switch {
@@ -869,7 +888,7 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 		runID := strings.TrimSuffix(path, "/sandbox")
 		switch r.Method {
 		case http.MethodPatch:
-			if !runExecuteGuard(s, w) {
+			if !runExecuteGuard(s, w, r) {
 				return
 			}
 			var req SandboxPolicyRequest
@@ -882,7 +901,7 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 				AllowedHosts:    req.AllowedHosts,
 				AllowedCommands: req.AllowedCommands,
 				AllowedTools:    req.AllowedTools,
-			}, currentAuthActor(s.store.Snapshot().Auth.Session))
+			}, s.currentRequestAuthActor(r))
 			if err != nil {
 				switch {
 				case errors.Is(err, store.ErrSandboxRunNotFound):
@@ -897,7 +916,7 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"state": nextState, "run": run, "sandbox": run.Sandbox})
 			return
 		case http.MethodPost:
-			if !runExecuteGuard(s, w) {
+			if !runExecuteGuard(s, w, r) {
 				return
 			}
 			var req RunSandboxCheckRequest
@@ -905,13 +924,12 @@ func (s *Server) handleRunRoutes(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
 				return
 			}
-			session := s.store.Snapshot().Auth.Session
+			session := s.currentRequestAuthSession(r)
 			if req.Override && !authSessionHasPermission(session, "workspace.manage") {
 				writeJSON(w, http.StatusForbidden, map[string]any{
 					"error":      "permission \"workspace.manage\" required for sandbox override",
 					"permission": "workspace.manage",
 					"session":    session,
-					"state":      s.store.Snapshot(),
 				})
 				return
 			}
@@ -976,6 +994,11 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request, runID s
 		return
 	}
 
+	if _, ok := findVisibleRun(s.sanitizedLiveStateSnapshotForRequest(r).Runs, runID); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "run not found"})
+		return
+	}
+
 	detail, ok := s.store.RunDetail(runID)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "run not found"})
@@ -997,7 +1020,7 @@ func (s *Server) handleRunCredentialRoutes(w http.ResponseWriter, r *http.Reques
 
 	switch r.Method {
 	case http.MethodPatch:
-		if !s.requireSessionPermission(w, "run.execute") {
+		if !s.requireRequestSessionPermission(w, r, "run.execute") {
 			return
 		}
 		var req RunCredentialBindingRequest
@@ -1007,7 +1030,7 @@ func (s *Server) handleRunCredentialRoutes(w http.ResponseWriter, r *http.Reques
 		}
 		nextState, run, err := s.store.UpdateRunCredentialBindings(runID, store.RunCredentialBindingInput{
 			CredentialProfileIDs: req.CredentialProfileIDs,
-			UpdatedBy:            currentAuthActor(s.store.Snapshot().Auth.Session),
+			UpdatedBy:            s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			switch {
@@ -1033,11 +1056,11 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Agents)
+	writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Agents)
 }
 
 func (s *Server) handleSessionRoutes(w http.ResponseWriter, r *http.Request) {
-	snapshot := s.store.Snapshot()
+	snapshot := s.sanitizedLiveStateSnapshotForRequest(r)
 	if r.URL.Path == "/v1/sessions" {
 		if !requireMethod(w, r, http.MethodGet) {
 			return
@@ -1074,20 +1097,25 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Inbox)
+	writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Inbox)
 }
 
 func (s *Server) handlePullRequests(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	snapshot := s.store.Snapshot()
-	nextState, err := s.syncStoredPullRequests(snapshot.PullRequests)
-	if err != nil {
-		writePullRequestFailure(w, "sync", "", "", err, nextState)
+	snapshot := s.runtimeAwareStateSnapshotForRequest(r)
+	visibleSnapshot := sanitizeLiveState(snapshot)
+	if len(visibleSnapshot.PullRequests) == 0 {
+		writeJSON(w, http.StatusOK, visibleSnapshot.PullRequests)
 		return
 	}
-	writeJSON(w, http.StatusOK, nextState.PullRequests)
+	nextState, err := s.syncStoredPullRequests(snapshot.PullRequests)
+	if err != nil {
+		writePullRequestFailure(w, "sync", "", "", err, s.sanitizedStateSnapshotForRequest(nextState, r))
+		return
+	}
+	writeJSON(w, http.StatusOK, s.sanitizedStateSnapshotForRequest(nextState, r).PullRequests)
 }
 
 func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request) {
@@ -1102,7 +1130,12 @@ func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request)
 	}
 	pullRequestID := path
 	if r.Method == http.MethodGet {
-		snapshot := s.store.Snapshot()
+		visibleSnapshot := s.sanitizedLiveStateSnapshotForRequest(r)
+		if _, ok := findPullRequest(visibleSnapshot, pullRequestID); !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
+			return
+		}
+		snapshot := s.runtimeAwareStateSnapshotForRequest(r)
 		item, ok := findPullRequest(snapshot, pullRequestID)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
@@ -1110,10 +1143,10 @@ func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request)
 		}
 		nextState, err := s.syncStoredPullRequest(item)
 		if err != nil {
-			writePullRequestFailure(w, "sync", item.RoomID, pullRequestID, err, nextState)
+			writePullRequestFailure(w, "sync", item.RoomID, pullRequestID, err, s.sanitizedStateSnapshotForRequest(nextState, r))
 			return
 		}
-		synced, ok := findPullRequest(nextState, pullRequestID)
+		synced, ok := findPullRequest(s.sanitizedStateSnapshotForRequest(nextState, r), pullRequestID)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
 			return
@@ -1131,7 +1164,7 @@ func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
 		return
 	}
-	if !pullRequestRouteGuard(s, w, req.Status) {
+	if !pullRequestRouteGuard(s, w, r, req.Status) {
 		return
 	}
 	snapshot := s.store.Snapshot()
@@ -1164,7 +1197,7 @@ func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
-		writePullRequestFailure(w, operation, item.RoomID, pullRequestID, err, nextState)
+		writePullRequestFailure(w, operation, item.RoomID, pullRequestID, err, s.sanitizedStateSnapshotForRequest(nextState, r))
 		return
 	}
 
@@ -1173,7 +1206,7 @@ func (s *Server) handlePullRequestRoutes(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"state": nextState})
+	writeJSON(w, http.StatusOK, map[string]any{"state": s.sanitizedStateSnapshotForRequest(nextState, r)})
 }
 
 func (s *Server) handlePullRequestDetail(w http.ResponseWriter, r *http.Request, pullRequestID string) {
@@ -1187,7 +1220,12 @@ func (s *Server) handlePullRequestDetail(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	snapshot := s.store.Snapshot()
+	if _, ok := findPullRequest(s.sanitizedLiveStateSnapshotForRequest(r), pullRequestID); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
+		return
+	}
+
+	snapshot := s.runtimeAwareStateSnapshotForRequest(r)
 	item, ok := findPullRequest(snapshot, pullRequestID)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
@@ -1196,7 +1234,12 @@ func (s *Server) handlePullRequestDetail(w http.ResponseWriter, r *http.Request,
 
 	nextState, err := s.syncStoredPullRequest(item)
 	if err != nil {
-		writePullRequestFailure(w, "sync", item.RoomID, pullRequestID, err, nextState)
+		writePullRequestFailure(w, "sync", item.RoomID, pullRequestID, err, s.sanitizedStateSnapshotForRequest(nextState, r))
+		return
+	}
+
+	if _, ok := findPullRequest(s.sanitizedStateSnapshotForRequest(nextState, r), pullRequestID); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pull request not found"})
 		return
 	}
 
@@ -1373,6 +1416,24 @@ func findPullRequest(snapshot store.State, pullRequestID string) (store.PullRequ
 	return store.PullRequest{}, false
 }
 
+func findVisibleRoom(items []store.Room, roomID string) (store.Room, bool) {
+	for _, item := range items {
+		if item.ID == roomID {
+			return item, true
+		}
+	}
+	return store.Room{}, false
+}
+
+func findVisibleRun(items []store.Run, runID string) (store.Run, bool) {
+	for _, item := range items {
+		if item.ID == runID {
+			return item, true
+		}
+	}
+	return store.Run{}, false
+}
+
 func findPullRequestByRoom(snapshot store.State, roomID string) (store.PullRequest, bool) {
 	for _, item := range snapshot.PullRequests {
 		if item.RoomID == roomID {
@@ -1397,6 +1458,9 @@ func buildPullRequestBody(issue store.Issue, room store.Room, run store.Run) str
 
 func (s *Server) handleRuntime(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !runtimeManageGuard(s, w, r) {
 		return
 	}
 	snapshot := s.store.RuntimeSnapshot(time.Now())
@@ -1455,7 +1519,10 @@ func (s *Server) handleRuntime(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRuntimePairing(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		snapshot := s.store.RuntimeSnapshot(time.Now())
+		if !runtimeManageGuard(s, w, r) {
+			return
+		}
+		snapshot := s.runtimeAwareStateSnapshotForRequest(r)
 		workspace := snapshot.Workspace
 		writeJSON(w, http.StatusOK, PairingStatusResponse{
 			DaemonURL:     resolveWorkspaceDaemonURL(snapshot, s.daemonURLValue()),
@@ -1465,7 +1532,7 @@ func (s *Server) handleRuntimePairing(w http.ResponseWriter, r *http.Request) {
 			LastPairedAt:  workspace.LastPairedAt,
 		})
 	case http.MethodPost:
-		if !runtimeManageGuard(s, w) {
+		if !runtimeManageGuard(s, w, r) {
 			return
 		}
 		var req PairRuntimeRequest
@@ -1530,7 +1597,7 @@ func (s *Server) handleRuntimePairing(w http.ResponseWriter, r *http.Request) {
 			"state":     nextState,
 		})
 	case http.MethodDelete:
-		if !runtimeManageGuard(s, w) {
+		if !runtimeManageGuard(s, w, r) {
 			return
 		}
 		nextState, err := s.store.ClearRuntimePairing()
@@ -1553,7 +1620,10 @@ func (s *Server) handleRuntimeRegistry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, runtimeRegistryResponse(s.store.RuntimeSnapshot(time.Now())))
+	if !runtimeManageGuard(s, w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, runtimeRegistryResponse(s.runtimeAwareStateSnapshotForRequest(r)))
 }
 
 func (s *Server) handleRuntimeBridgeCheck(w http.ResponseWriter, r *http.Request) {
@@ -1561,7 +1631,7 @@ func (s *Server) handleRuntimeBridgeCheck(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if !runExecuteGuard(s, w) {
+	if !runExecuteGuard(s, w, r) {
 		return
 	}
 
@@ -1615,6 +1685,9 @@ func (s *Server) handleRuntimeHeartbeats(w http.ResponseWriter, r *http.Request)
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if !s.authorizeRuntimeHeartbeat(w, r) {
+		return
+	}
 
 	var req RuntimeSnapshotResponse
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1642,12 +1715,59 @@ func (s *Server) handleRuntimeHeartbeats(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+func (s *Server) authorizeRuntimeHeartbeat(w http.ResponseWriter, r *http.Request) bool {
+	secret := strings.TrimSpace(s.runtimeHeartbeatSecret)
+	if secret == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "runtime heartbeat secret not configured"})
+		return false
+	}
+
+	presented := strings.TrimSpace(r.Header.Get("X-OpenShock-Runtime-Secret"))
+	if presented == "" {
+		authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+		if len(authorization) >= len("Bearer ") && strings.EqualFold(authorization[:len("Bearer ")], "Bearer ") {
+			presented = strings.TrimSpace(authorization[len("Bearer "):])
+		}
+	}
+
+	if subtle.ConstantTimeCompare([]byte(presented), []byte(secret)) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "runtime heartbeat authentication failed"})
+		return false
+	}
+	return true
+}
+
+func (s *Server) authorizeInternalWorker(w http.ResponseWriter, r *http.Request) bool {
+	secret := strings.TrimSpace(s.internalWorkerSecret)
+	if secret == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "internal worker secret not configured"})
+		return false
+	}
+
+	presented := strings.TrimSpace(r.Header.Get("X-OpenShock-Worker-Secret"))
+	if presented == "" {
+		authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+		if len(authorization) >= len("Bearer ") && strings.EqualFold(authorization[:len("Bearer ")], "Bearer ") {
+			presented = strings.TrimSpace(authorization[len("Bearer "):])
+		}
+	}
+
+	if subtle.ConstantTimeCompare([]byte(presented), []byte(secret)) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "internal worker authentication failed"})
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleRuntimeSelection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, buildRuntimeSelectionResponse(s.store.RuntimeSnapshot(time.Now()), s.daemonURLValue()))
+		if !runtimeManageGuard(s, w, r) {
+			return
+		}
+		writeJSON(w, http.StatusOK, buildRuntimeSelectionResponse(s.runtimeAwareStateSnapshotForRequest(r), s.daemonURLValue()))
 	case http.MethodPost:
-		if !runtimeManageGuard(s, w) {
+		if !runtimeManageGuard(s, w, r) {
 			return
 		}
 		var req SelectRuntimeRequest
@@ -1683,7 +1803,7 @@ func (s *Server) handleExecRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if !runExecuteGuard(s, w) {
+	if !runExecuteGuard(s, w, r) {
 		return
 	}
 	var req ExecRequest
@@ -1715,7 +1835,7 @@ func (s *Server) handleExecRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.RunID) != "" {
-		if err := s.store.RecordCredentialUse(req.RunID, currentAuthActor(s.store.Snapshot().Auth.Session)); err != nil && !errors.Is(err, store.ErrCredentialRunNotFound) {
+		if err := s.store.RecordCredentialUse(req.RunID, s.currentRequestAuthActor(r)); err != nil && !errors.Is(err, store.ErrCredentialRunNotFound) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -1723,13 +1843,13 @@ func (s *Server) handleExecRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request, roomID string, req ExecRequest, prompt string) {
+func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request, roomID string, req ExecRequest, prompt, replyToMessageID string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming not supported"})
 		return
 	}
-	if _, err := s.store.MarkRoomConversationPending(roomID, prompt, req.Provider); err != nil {
+	if _, err := s.store.MarkRoomConversationPending(roomID, prompt, req.Provider, replyToMessageID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -1773,7 +1893,7 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		if roomStreamInterruptedByClient(r, err) {
 			preview := buildInterruptedPendingTurnPreview(outputBuilder.String())
-			_, _ = s.store.MarkRoomConversationInterrupted(roomID, prompt, req.Provider, preview)
+			_, _ = s.store.MarkRoomConversationInterrupted(roomID, prompt, req.Provider, preview, replyToMessageID)
 			return
 		}
 		message := execFailureMessage("讨论间消息", err)
@@ -1795,7 +1915,7 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 				runtimeLeaseConflictControlNote(daemonErr.Conflict),
 			)
 		} else {
-			nextState, appendErr = s.store.AppendConversationFailure(roomID, prompt, message)
+			nextState, appendErr = s.store.AppendConversationFailure(roomID, prompt, message, replyToMessageID)
 		}
 		if appendErr != nil {
 			_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "error", Error: message})
@@ -1821,13 +1941,13 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 	replySpeaker := roomReplySpeaker(s.store.Snapshot(), roomID, prompt)
 	suppressRelay := shouldSuppressRoomHandoffRelay(s.store.Snapshot(), roomID, directives)
 	if directives.SuppressReply || suppressRelay {
-		nextState, appendErr = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, req.Provider)
+		nextState, appendErr = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, req.Provider, replyToMessageID)
 	} else if directives.ReplyKind == "clarification_request" {
-		nextState, appendErr = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, req.Provider)
+		nextState, appendErr = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, req.Provider, replyToMessageID)
 	} else if directives.ReplyKind == "summary" {
-		nextState, appendErr = s.store.AppendConversationSummary(roomID, prompt, replySpeaker, directives.DisplayOutput, req.Provider)
+		nextState, appendErr = s.store.AppendConversationSummary(roomID, prompt, replySpeaker, directives.DisplayOutput, req.Provider, replyToMessageID)
 	} else {
-		nextState, appendErr = s.store.AppendConversationAsAgent(roomID, prompt, replySpeaker, directives.DisplayOutput, req.Provider)
+		nextState, appendErr = s.store.AppendConversationAsAgent(roomID, prompt, replySpeaker, directives.DisplayOutput, req.Provider, replyToMessageID)
 	}
 	if appendErr != nil {
 		_ = writeNDJSON(w, flusher, DaemonStreamEvent{Type: "error", Error: appendErr.Error()})
@@ -1840,7 +1960,7 @@ func (s *Server) handleRoomMessageStream(w http.ResponseWriter, r *http.Request,
 	} else if suppressRelay {
 		if strings.TrimSpace(directives.DisplayOutput) != "" {
 			if strings.TrimSpace(followupOutput) == "" {
-				if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, req.Provider); restoreErr == nil {
+				if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, req.Provider, replyToMessageID); restoreErr == nil {
 					nextState = restoredState
 				}
 				visibleOutput = directives.DisplayOutput
@@ -3322,6 +3442,7 @@ func (s *Server) continueInterruptedPendingTurn(snapshot store.State, session st
 	}
 
 	prompt := strings.TrimSpace(session.PendingTurn.Prompt)
+	replyToMessageID := strings.TrimSpace(session.PendingTurn.ReplyToMessageID)
 	execPrompt := buildRoomExecPrompt(snapshot, roomID, provider, prompt)
 	payload, err := s.runRoomDaemonExec(roomID, ExecRequest{
 		Provider:       provider,
@@ -3341,13 +3462,13 @@ func (s *Server) continueInterruptedPendingTurn(snapshot store.State, session st
 
 	var nextState store.State
 	if directives.SuppressReply || suppressRelay {
-		nextState, err = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, provider)
+		nextState, err = s.store.AppendConversationWithoutVisibleReply(roomID, prompt, provider, replyToMessageID)
 	} else if directives.ReplyKind == "clarification_request" {
-		nextState, err = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, provider)
+		nextState, err = s.store.AppendClarificationRequest(roomID, prompt, replySpeaker, directives.DisplayOutput, provider, replyToMessageID)
 	} else if directives.ReplyKind == "summary" {
-		nextState, err = s.store.AppendConversationSummary(roomID, prompt, replySpeaker, directives.DisplayOutput, provider)
+		nextState, err = s.store.AppendConversationSummary(roomID, prompt, replySpeaker, directives.DisplayOutput, provider, replyToMessageID)
 	} else {
-		nextState, err = s.store.AppendConversationAsAgent(roomID, prompt, replySpeaker, directives.DisplayOutput, provider)
+		nextState, err = s.store.AppendConversationAsAgent(roomID, prompt, replySpeaker, directives.DisplayOutput, provider, replyToMessageID)
 	}
 	if err != nil {
 		return snapshot, ""
@@ -3360,7 +3481,7 @@ func (s *Server) continueInterruptedPendingTurn(snapshot store.State, session st
 	} else if suppressRelay {
 		if strings.TrimSpace(directives.DisplayOutput) != "" {
 			if strings.TrimSpace(followupOutput) == "" {
-				if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, provider); restoreErr == nil {
+				if restoredState, restoreErr := s.store.AppendAgentRoomMessage(roomID, replySpeaker, directives.DisplayOutput, provider, replyToMessageID); restoreErr == nil {
 					nextState = restoredState
 				}
 				visibleOutput = directives.DisplayOutput
@@ -3663,6 +3784,18 @@ func (s *Server) currentWorkspaceDaemonURL() string {
 	return resolveWorkspaceDaemonURL(s.store.RuntimeSnapshot(time.Now()), s.daemonURLValue())
 }
 
+func (s *Server) runtimeAwareStateSnapshot() store.State {
+	snapshot := s.store.RuntimeSnapshot(time.Now())
+	if !pairedRuntimeNeedsRefresh(snapshot) {
+		return snapshot
+	}
+	return s.refreshPairedRuntimeSnapshot(snapshot)
+}
+
+func (s *Server) sanitizedLiveStateSnapshot() store.State {
+	return sanitizeLiveState(s.runtimeAwareStateSnapshot())
+}
+
 func (s *Server) daemonURLValue() string {
 	s.daemonMu.RLock()
 	defer s.daemonMu.RUnlock()
@@ -3680,6 +3813,51 @@ func (s *Server) setDaemonURL(url string) {
 	s.daemonMu.Lock()
 	defer s.daemonMu.Unlock()
 	s.daemonURL = strings.TrimRight(url, "/")
+}
+
+func (s *Server) refreshPairedRuntimeSnapshot(snapshot store.State) store.State {
+	daemonURL := resolveWorkspaceDaemonURL(snapshot, s.daemonURLValue())
+	if strings.TrimSpace(daemonURL) == "" {
+		return snapshot
+	}
+
+	runtimeSnapshot, err := s.fetchRuntimeSnapshot(daemonURL)
+	if err != nil {
+		return snapshot
+	}
+	if strings.TrimSpace(runtimeSnapshot.DaemonURL) == "" {
+		runtimeSnapshot.DaemonURL = daemonURL
+	}
+	if strings.TrimSpace(runtimeSnapshot.Machine) == "" {
+		runtimeSnapshot.Machine = strings.TrimSpace(snapshot.Workspace.PairedRuntime)
+	}
+	if strings.TrimSpace(runtimeSnapshot.RuntimeID) == "" {
+		runtimeSnapshot.RuntimeID = defaultString(strings.TrimSpace(runtimeSnapshot.Machine), strings.TrimSpace(snapshot.Workspace.PairedRuntime))
+	}
+
+	nextState, err := s.store.UpsertRuntimeHeartbeat(runtimeHeartbeatInputFromSnapshot(runtimeSnapshot))
+	if err != nil {
+		return snapshot
+	}
+	if strings.TrimSpace(nextState.Workspace.PairedRuntimeURL) != "" {
+		s.setDaemonURL(nextState.Workspace.PairedRuntimeURL)
+	}
+	return nextState
+}
+
+func pairedRuntimeNeedsRefresh(snapshot store.State) bool {
+	pairedRuntime := strings.TrimSpace(snapshot.Workspace.PairedRuntime)
+	if pairedRuntime == "" {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(snapshot.Workspace.PairingStatus), "paired") {
+		return true
+	}
+	record, ok := findRuntimeRecord(snapshot, pairedRuntime)
+	if !ok {
+		return true
+	}
+	return runtimeStateIsUnroutable(record.State)
 }
 
 func offlineRuntimeSnapshot(machine, reportedAt string) RuntimeSnapshotResponse {
@@ -3725,9 +3903,15 @@ func requireMethod(w http.ResponseWriter, r *http.Request, methods ...string) bo
 
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-OpenShock-Auth-Token")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

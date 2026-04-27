@@ -54,7 +54,7 @@ func (s *Server) handleInboxRoutes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "inbox item not found"})
 		return
 	}
-	if !s.requireSessionPermission(w, permissionForInboxDecision(item, req.Decision)) {
+	if !s.requireRequestSessionPermission(w, r, permissionForInboxDecision(item, req.Decision)) {
 		return
 	}
 
@@ -85,7 +85,7 @@ func (s *Server) handleInboxRoutes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"state": nextState})
+	writeJSON(w, http.StatusOK, map[string]any{"state": s.sanitizedStateSnapshotForRequest(nextState, r)})
 }
 
 func (s *Server) applyReviewInboxDecision(snapshot store.State, item store.InboxItem, decision string) (store.State, error) {

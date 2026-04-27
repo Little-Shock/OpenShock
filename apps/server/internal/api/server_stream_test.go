@@ -24,6 +24,7 @@ func TestRoomMessageStreamPersistsConversation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	reportedAt := time.Now().UTC().Format(time.RFC3339)
 
@@ -849,6 +850,7 @@ func TestRoomAutoHandoffBlockedFollowupPersistsDurableContinuationAcrossRestart(
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -907,6 +909,7 @@ func TestRoomAutoHandoffBlockedFollowupPersistsDurableContinuationAcrossRestart(
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -1005,6 +1008,7 @@ func TestGovernedHandoffBlockedFollowupPersistsDurableContinuationAcrossRestart(
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Blocked Governed Handoff Continuation", "Codex Dockmaster")
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -1060,6 +1064,7 @@ func TestGovernedHandoffBlockedFollowupPersistsDurableContinuationAcrossRestart(
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -1142,6 +1147,7 @@ func TestGovernedHandoffAcknowledgeDoesNotDuplicateInFlightImmediateContinue(t *
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	created, _ := createLeaseTestIssue(t, s, root, daemon.URL, "Governed Immediate Continue Dedup", "Codex Dockmaster")
 
 	api := New(s, http.DefaultClient, Config{
@@ -1446,6 +1452,7 @@ func TestStateRouteAutonomouslyRecoversBlockedRoomAutoFollowupAfterReload(t *tes
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -1494,6 +1501,7 @@ func TestStateRouteAutonomouslyRecoversBlockedRoomAutoFollowupAfterReload(t *tes
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -1627,6 +1635,7 @@ func TestStateRouteRecoveryTickDoesNotDuplicateInFlightRoomAutoRetry(t *testing.
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -1657,6 +1666,7 @@ func TestStateRouteRecoveryTickDoesNotDuplicateInFlightRoomAutoRetry(t *testing.
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedServer := httptest.NewServer(New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -1755,6 +1765,7 @@ func TestBackgroundRecoveryLoopAutonomouslyRecoversBlockedRoomAutoFollowupAfterR
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -1785,6 +1796,7 @@ func TestBackgroundRecoveryLoopAutonomouslyRecoversBlockedRoomAutoFollowupAfterR
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -1899,6 +1911,7 @@ func TestBackgroundRecoveryLoopDoesNotRecoverBlockedRoomAutoFollowupWhileRunPaus
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -1966,6 +1979,7 @@ func TestBackgroundRecoveryLoopDoesNotRecoverBlockedRoomAutoFollowupWhileRunPaus
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -2066,6 +2080,7 @@ func TestBackgroundRecoveryLoopDoesNotDuplicateInFlightRoomAutoRetry(t *testing.
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -2096,6 +2111,7 @@ func TestBackgroundRecoveryLoopDoesNotDuplicateInFlightRoomAutoRetry(t *testing.
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -2186,6 +2202,7 @@ func TestBackgroundRecoveryLoopAutonomouslyResumesInterruptedPendingTurnAfterRel
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -2246,6 +2263,7 @@ func TestBackgroundRecoveryLoopAutonomouslyResumesInterruptedPendingTurnAfterRel
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -2356,6 +2374,7 @@ func TestBackgroundRecoveryLoopDoesNotResumeInterruptedPendingTurnWhileRunPaused
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -2440,6 +2459,7 @@ func TestBackgroundRecoveryLoopDoesNotResumeInterruptedPendingTurnWhileRunPaused
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -2521,6 +2541,7 @@ func TestBackgroundRecoveryLoopPersistsSessionRecoveryReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -2577,6 +2598,7 @@ func TestBackgroundRecoveryLoopPersistsSessionRecoveryReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -2692,6 +2714,7 @@ func TestBackgroundRecoveryLoopDoesNotDuplicateInFlightInterruptedPendingTurnRec
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -2748,6 +2771,7 @@ func TestBackgroundRecoveryLoopDoesNotDuplicateInFlightInterruptedPendingTurnRec
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -2862,6 +2886,7 @@ func TestBackgroundRecoveryLoopPrefersInterruptedPendingTurnOverRoomAutoFollowup
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	pairMainRuntime(t, s, daemon.URL)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -2933,6 +2958,7 @@ func TestBackgroundRecoveryLoopPrefersInterruptedPendingTurnOverRoomAutoFollowup
 	if err != nil {
 		t.Fatalf("store.New(reload) error = %v", err)
 	}
+	mustLoginReadyOwner(t, reloadedStore)
 	reloadedAPI := New(reloadedStore, http.DefaultClient, Config{
 		DaemonURL:     daemon.URL,
 		WorkspaceRoot: root,
@@ -2982,6 +3008,7 @@ func TestRoomMessageStreamPersistsBlockedConversationOnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	reportedAt := time.Now().UTC().Format(time.RFC3339)
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3092,6 +3119,7 @@ func TestRoomMessagePersistsBlockedConversationOnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	reportedAt := time.Now().UTC().Format(time.RFC3339)
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5693,6 +5721,7 @@ func TestRuntimePairingPersistsWorkspaceBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -5811,6 +5840,7 @@ func TestRuntimeRegistryTracksHeartbeatsAndPairingSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	if _, err := s.ClearRuntimePairing(); err != nil {
 		t.Fatalf("ClearRuntimePairing() error = %v", err)
 	}
@@ -5885,8 +5915,9 @@ func TestRuntimeRegistryTracksHeartbeatsAndPairingSelection(t *testing.T) {
 	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
-		DaemonURL:     mainDaemonURL,
-		WorkspaceRoot: root,
+		DaemonURL:              mainDaemonURL,
+		WorkspaceRoot:          root,
+		RuntimeHeartbeatSecret: contractRuntimeHeartbeatSecret,
 	}).Handler())
 	defer server.Close()
 
@@ -5895,7 +5926,7 @@ func TestRuntimeRegistryTracksHeartbeatsAndPairingSelection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Marshal heartbeat payload error = %v", err)
 		}
-		resp, err := http.Post(server.URL+"/v1/runtime/heartbeats", "application/json", bytes.NewReader(body))
+		resp, err := doRuntimeHeartbeatRequest(server.URL, body, contractRuntimeHeartbeatSecret)
 		if err != nil {
 			t.Fatalf("POST heartbeat error = %v", err)
 		}
@@ -5971,6 +6002,7 @@ func TestRuntimePairingRejectsExplicitRuntimeWithoutDaemonURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	var mainDaemonURL string
 	mainDaemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6068,6 +6100,7 @@ func TestRuntimePairingRejectsExplicitRuntimeIdentityMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	if _, err := s.ClearRuntimePairing(); err != nil {
 		t.Fatalf("ClearRuntimePairing() error = %v", err)
 	}
@@ -6141,6 +6174,7 @@ func TestRuntimeSelectionExposesMultiRuntimeSurfaceAndDispatchesByRun(t *testing
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	mainWorktreeHits := 0
 	mainDaemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6332,6 +6366,7 @@ func TestRuntimeSelectionRejectsOfflineRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{
 		DaemonURL:   "http://127.0.0.1:8090",
@@ -6397,6 +6432,7 @@ func TestCreateIssueRejectsWhenAllRuntimesOffline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	now := time.Now().UTC()
 	if _, err := s.UpdateRuntimePairing(store.RuntimePairingInput{

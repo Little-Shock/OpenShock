@@ -384,6 +384,8 @@ func notificationRecoveryLabel(status string) string {
 		return "邮箱验证待完成"
 	case authRecoveryStatusDeviceApprovalRequired:
 		return "设备授权待完成"
+	case authRecoveryStatusApprovalRequired:
+		return "等待 owner 批准"
 	case authRecoveryStatusPasswordResetPending:
 		return "密码重置待完成"
 	case authRecoveryStatusRecovered:
@@ -808,34 +810,59 @@ func buildNotificationCenter(snapshot State, state notificationStateFile, worker
 	}
 }
 
-func (s *Store) NotificationCenter() NotificationCenter {
-	snapshot := s.Snapshot()
-
-	s.mu.RLock()
+func (s *Store) notificationCenterStatusLocked(snapshot State) (NotificationCenter, error) {
 	state, err := s.loadNotificationStateLocked()
-	fanoutState, fanoutErr := s.loadNotificationFanoutStateLocked()
-	s.mu.RUnlock()
-	if err != nil || fanoutErr != nil {
-		now := time.Now().UTC().Format(time.RFC3339)
-		state = defaultNotificationState(now, snapshot.Workspace.BrowserPush)
-		fanoutState = defaultNotificationFanoutState()
+	if err != nil {
+		return NotificationCenter{}, err
 	}
-	return buildNotificationCenter(snapshot, state, fanoutState.LastRun)
+	fanoutState, err := s.loadNotificationFanoutStateLocked()
+	if err != nil {
+		return NotificationCenter{}, err
+	}
+	return buildNotificationCenter(snapshot, state, fanoutState.LastRun), nil
 }
 
-func (s *Store) NotificationSubscriber(subscriberID string) (NotificationSubscriber, bool) {
+func (s *Store) NotificationCenterStatus() (NotificationCenter, error) {
 	s.mu.RLock()
-	state, err := s.loadNotificationStateLocked()
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
+
+	return s.notificationCenterStatusLocked(cloneState(s.state))
+}
+
+func (s *Store) NotificationCenter() NotificationCenter {
+	center, err := s.NotificationCenterStatus()
 	if err != nil {
-		return NotificationSubscriber{}, false
+		now := time.Now().UTC().Format(time.RFC3339)
+		snapshot := s.Snapshot()
+		state := defaultNotificationState(now, snapshot.Workspace.BrowserPush)
+		fanoutState := defaultNotificationFanoutState()
+		return buildNotificationCenter(snapshot, state, fanoutState.LastRun)
+	}
+	return center
+}
+
+func (s *Store) NotificationSubscriberStatus(subscriberID string) (NotificationSubscriber, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	state, err := s.loadNotificationStateLocked()
+	if err != nil {
+		return NotificationSubscriber{}, false, err
 	}
 	for _, item := range state.Subscribers {
 		if item.ID == subscriberID {
-			return item, true
+			return item, true, nil
 		}
 	}
-	return NotificationSubscriber{}, false
+	return NotificationSubscriber{}, false, nil
+}
+
+func (s *Store) NotificationSubscriber(subscriberID string) (NotificationSubscriber, bool) {
+	subscriber, ok, err := s.NotificationSubscriberStatus(subscriberID)
+	if err != nil {
+		return NotificationSubscriber{}, false
+	}
+	return subscriber, ok
 }
 
 func (s *Store) UpdateNotificationPolicy(input NotificationPolicyInput) (State, NotificationPolicy, NotificationCenter, error) {

@@ -49,7 +49,7 @@ func (s *Server) handleRuntimePublish(w http.ResponseWriter, r *http.Request) {
 			"hasMore":      page.HasMore,
 		})
 	case http.MethodPost:
-		if !runtimeManageGuard(s, w) {
+		if !runtimeManageGuard(s, w, r) {
 			return
 		}
 		var req runtimePublishRequest

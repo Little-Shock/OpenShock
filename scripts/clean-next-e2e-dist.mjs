@@ -23,7 +23,7 @@ export async function normalizeNextE2ETsconfig(projectRoot = path.resolve(__dirn
     if (nextE2EWildcards.has(entry)) {
       return true;
     }
-    return !/^\.next-e2e-[^*]/.test(entry);
+    return !/^\.next-e2e-[^*]/.test(entry) && !/^\.next-verify(?:\/|$)/.test(entry);
   });
 
   const normalized = normalizedInclude.length !== include.length;
@@ -39,7 +39,11 @@ export async function cleanNextE2EArtifacts(projectRoot = path.resolve(__dirname
   const webRoot = path.join(projectRoot, "apps", "web");
   const entries = await readdir(webRoot, { withFileTypes: true });
   const staleDirs = entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(".next-e2e"))
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        (entry.name.startsWith(".next-e2e") || entry.name === ".next-verify")
+    )
     .map((entry) => path.join(webRoot, entry.name));
 
   await Promise.all(staleDirs.map((target) => rm(target, { recursive: true, force: true })));

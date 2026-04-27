@@ -12,6 +12,9 @@ func (s *Server) handleNotificationFanout(w http.ResponseWriter, r *http.Request
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if !s.authorizeInternalWorker(w, r) {
+		return
+	}
 
 	nextState, notifications, worker, err := s.store.DispatchNotificationFanout()
 	if err != nil {

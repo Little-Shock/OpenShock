@@ -33,6 +33,8 @@ func TestMutationRoutesRequireActiveAuthSession(t *testing.T) {
 	}{
 		{name: "issue create", method: http.MethodPost, path: "/v1/issues", body: `{"title":"Blocked issue"}`, permission: "issue.create"},
 		{name: "room reply", method: http.MethodPost, path: "/v1/rooms/room-runtime/messages", body: `{"prompt":"继续推进"}`, permission: "room.reply"},
+		{name: "direct message reply", method: http.MethodPost, path: "/v1/direct-messages/dm-mina/messages", body: `{"prompt":"继续这条 DM"}`, permission: "room.reply"},
+		{name: "message surface collection", method: http.MethodPost, path: "/v1/message-surface/collections", body: `{"kind":"followed","channelId":"roadmap","messageId":"msg-roadmap-1","enabled":true}`, permission: "room.reply"},
 		{name: "topic guidance", method: http.MethodPatch, path: "/v1/topics/topic-runtime", body: `{"summary":"继续沿当前 topic 收单值"}`, permission: "room.reply"},
 		{name: "room reply stream", method: http.MethodPost, path: "/v1/rooms/room-runtime/messages/stream", body: `{"prompt":"继续推进"}`, permission: "room.reply"},
 		{name: "run exec", method: http.MethodPost, path: "/v1/exec", body: `{"prompt":"继续推进"}`, permission: "run.execute"},
@@ -55,6 +57,8 @@ func TestMutationRoutesRequireActiveAuthSession(t *testing.T) {
 		{name: "memory promotion create", method: http.MethodPost, path: "/v1/memory-center/promotions", body: `{"memoryId":"memory-demo","kind":"skill","title":"demo","rationale":"demo"}`, permission: "memory.write"},
 		{name: "memory promotion review", method: http.MethodPost, path: "/v1/memory-center/promotions/memory-promotion-demo/review", body: `{"status":"approved"}`, permission: "memory.write"},
 		{name: "credential create", method: http.MethodPost, path: "/v1/credentials", body: `{"label":"GitHub App","summary":"repo sync","secretKind":"github-app","secretValue":"super-secret","workspaceDefault":true}`, permission: "workspace.manage"},
+		{name: "notification policy", method: http.MethodPost, path: "/v1/notifications/policy", body: `{"browserPush":"all","email":"critical"}`, permission: "workspace.manage"},
+		{name: "notification subscriber", method: http.MethodPost, path: "/v1/notifications/subscribers", body: `{"channel":"email","target":"ops@openshock.dev","label":"Ops Oncall","preference":"critical","status":"ready"}`, permission: "workspace.manage"},
 		{name: "agent profile patch", method: http.MethodPatch, path: "/v1/agents/agent-codex-dockmaster", body: `{"role":"Platform Architect","avatar":"control-tower","prompt":"keep live truth first","operatingInstructions":"stay on current head","providerPreference":"Codex CLI","modelPreference":"gpt-5.3-codex","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"]}`, permission: "workspace.manage"},
 		{name: "run credential binding", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/credentials", body: `{"credentialProfileIds":[]}`, permission: "run.execute"},
 		{name: "repo binding", method: http.MethodPost, path: "/v1/repo/binding", body: `{"repo":"example/phase-zero","repoUrl":"https://github.com/example/phase-zero.git","branch":"main"}`, permission: "repo.admin"},
@@ -92,8 +96,11 @@ func TestMutationRoutesRequireActiveAuthSession(t *testing.T) {
 			if payload.Session.Status != "signed_out" {
 				t.Fatalf("session = %#v, want signed_out", payload.Session)
 			}
-			if !reflect.DeepEqual(normalizeAuthGuardState(payload.State), normalizeAuthGuardState(baseline)) {
-				t.Fatalf("state mutated on unauthorized %s", testCase.path)
+			if !reflect.DeepEqual(payload.State, store.State{}) {
+				t.Fatalf("unauthorized payload leaked state on %s: %#v", testCase.path, payload.State)
+			}
+			if !reflect.DeepEqual(normalizeAuthGuardState(s.Snapshot()), normalizeAuthGuardState(baseline)) {
+				t.Fatalf("store state mutated on unauthorized %s", testCase.path)
 			}
 		})
 	}
@@ -105,7 +112,10 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 	defer cleanup()
 	defer server.Close()
 
-	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{Email: "mina@openshock.dev"}); err != nil {
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "mina@openshock.dev",
+		DeviceLabel: "Mina Browser",
+	}); err != nil {
 		t.Fatalf("LoginWithEmail(member) error = %v", err)
 	}
 
@@ -154,6 +164,43 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 				decodeJSON(t, resp, &payload)
 				if !strings.Contains(payload.Output, "synthetic daemon output") {
 					t.Fatalf("room reply output = %q, want daemon output", payload.Output)
+				}
+			},
+		},
+		{
+			name:   "direct message reply",
+			method: http.MethodPost,
+			path:   "/v1/direct-messages/dm-mina/messages",
+			body:   `{"prompt":"继续保留这条 DM。"}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("POST direct message reply status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					State store.State `json:"state"`
+				}
+				decodeJSON(t, resp, &payload)
+				messages := payload.State.DirectMessageMessages["dm-mina"]
+				if len(messages) == 0 || messages[len(messages)-1].Speaker != "Mina" {
+					t.Fatalf("direct message payload = %#v, want appended Mina reply", messages)
+				}
+			},
+		},
+		{
+			name:   "message surface collection",
+			method: http.MethodPost,
+			path:   "/v1/message-surface/collections",
+			body:   `{"kind":"followed","channelId":"roadmap","messageId":"msg-roadmap-1","enabled":true}`,
+			verify: func(t *testing.T, resp *http.Response) {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("POST message surface collection status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+				var payload struct {
+					Entry store.MessageSurfaceEntry `json:"entry"`
+				}
+				decodeJSON(t, resp, &payload)
+				if payload.Entry.ChannelID != "roadmap" || payload.Entry.MessageID != "msg-roadmap-1" {
+					t.Fatalf("message surface payload = %#v, want roadmap followed entry", payload.Entry)
 				}
 			},
 		},
@@ -357,6 +404,8 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 		{name: "memory promotion create", method: http.MethodPost, path: "/v1/memory-center/promotions", body: `{"memoryId":"memory-demo","kind":"skill","title":"demo","rationale":"demo"}`, permission: "memory.write"},
 		{name: "memory promotion review", method: http.MethodPost, path: "/v1/memory-center/promotions/memory-promotion-demo/review", body: `{"status":"approved"}`, permission: "memory.write"},
 		{name: "credential create", method: http.MethodPost, path: "/v1/credentials", body: `{"label":"GitHub App","summary":"repo sync","secretKind":"github-app","secretValue":"super-secret","workspaceDefault":true}`, permission: "workspace.manage"},
+		{name: "notification policy", method: http.MethodPost, path: "/v1/notifications/policy", body: `{"browserPush":"all","email":"critical"}`, permission: "workspace.manage"},
+		{name: "notification subscriber", method: http.MethodPost, path: "/v1/notifications/subscribers", body: `{"channel":"email","target":"ops@openshock.dev","label":"Ops Oncall","preference":"critical","status":"ready"}`, permission: "workspace.manage"},
 		{name: "agent profile patch", method: http.MethodPatch, path: "/v1/agents/agent-codex-dockmaster", body: `{"role":"Platform Architect","avatar":"control-tower","prompt":"keep live truth first","operatingInstructions":"stay on current head","providerPreference":"Codex CLI","modelPreference":"gpt-5.3-codex","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"]}`, permission: "workspace.manage"},
 		{name: "repo binding", method: http.MethodPost, path: "/v1/repo/binding", body: `{"repo":"example/phase-zero","repoUrl":"https://github.com/example/phase-zero.git","branch":"main"}`, permission: "repo.admin"},
 		{name: "github installation callback", method: http.MethodPost, path: "/v1/github/installation-callback", body: `{"installationId":"67890","setupAction":"install"}`, permission: "repo.admin"},
@@ -392,8 +441,11 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 			if payload.Session.Role != "member" || payload.Session.Email != "mina@openshock.dev" {
 				t.Fatalf("session = %#v, want member session", payload.Session)
 			}
-			if !reflect.DeepEqual(normalizeAuthGuardState(payload.State), normalizeAuthGuardState(baseline)) {
-				t.Fatalf("state mutated on forbidden %s", testCase.path)
+			if !reflect.DeepEqual(payload.State, store.State{}) {
+				t.Fatalf("forbidden payload leaked state on %s: %#v", testCase.path, payload.State)
+			}
+			if !reflect.DeepEqual(normalizeAuthGuardState(s.Snapshot()), normalizeAuthGuardState(baseline)) {
+				t.Fatalf("store state mutated on forbidden %s", testCase.path)
 			}
 		})
 	}
@@ -424,10 +476,191 @@ func TestMemberRoleGuardsAllowReviewAndExecutionButDenyAdminAndMergeMutations(t 
 		if payload.Session.Role != "member" || payload.Session.Email != "mina@openshock.dev" {
 			t.Fatalf("session = %#v, want member session", payload.Session)
 		}
-		if !reflect.DeepEqual(normalizeAuthGuardState(payload.State), normalizeAuthGuardState(baseline)) {
-			t.Fatalf("state mutated on forbidden sandbox override")
+		if !reflect.DeepEqual(payload.State, store.State{}) {
+			t.Fatalf("sandbox override denial leaked state: %#v", payload.State)
+		}
+		if !reflect.DeepEqual(normalizeAuthGuardState(s.Snapshot()), normalizeAuthGuardState(baseline)) {
+			t.Fatalf("store state mutated on forbidden sandbox override")
 		}
 	})
+}
+
+func TestMutationRoutesRequireVerifiedEmailAndAuthorizedDevice(t *testing.T) {
+	root := t.TempDir()
+	s, _, server, cleanup := newAuthGuardTestServer(t, root)
+	defer cleanup()
+	defer server.Close()
+
+	_, invited, err := s.InviteWorkspaceMember(store.WorkspaceMemberUpsertInput{
+		Email: "reviewer@openshock.dev",
+		Name:  "Reviewer",
+		Role:  "member",
+	})
+	if err != nil {
+		t.Fatalf("InviteWorkspaceMember() error = %v", err)
+	}
+
+	_, session, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Phone",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithEmail(invited member) error = %v", err)
+	}
+	if session.EmailVerificationStatus != "pending" || session.DeviceAuthStatus != "pending" {
+		t.Fatalf("session = %#v, want pending verify/device", session)
+	}
+
+	baseline := s.Snapshot()
+	resp := doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/issues", `{"title":"Blocked pending member issue"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST /v1/issues pending email status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+
+	var blockedByEmail struct {
+		Error      string            `json:"error"`
+		Permission string            `json:"permission"`
+		Session    store.AuthSession `json:"session"`
+		State      store.State       `json:"state"`
+	}
+	decodeJSON(t, resp, &blockedByEmail)
+
+	if blockedByEmail.Error != "email verification required" {
+		t.Fatalf("pending email error = %q, want %q", blockedByEmail.Error, "email verification required")
+	}
+	if blockedByEmail.Permission != "issue.create" {
+		t.Fatalf("pending email permission = %q, want %q", blockedByEmail.Permission, "issue.create")
+	}
+	if blockedByEmail.Session.Email != invited.Email || blockedByEmail.Session.EmailVerificationStatus != "pending" {
+		t.Fatalf("pending email session = %#v, want invited pending session", blockedByEmail.Session)
+	}
+	if !reflect.DeepEqual(blockedByEmail.State, store.State{}) {
+		t.Fatalf("pending email payload leaked state: %#v", blockedByEmail.State)
+	}
+	if !reflect.DeepEqual(normalizeAuthGuardState(s.Snapshot()), normalizeAuthGuardState(baseline)) {
+		t.Fatalf("store state mutated on pending email denial")
+	}
+
+	_, verifiedSession, _, err := s.VerifyMemberEmail(store.AuthRecoveryInput{Email: invited.Email})
+	if err != nil {
+		t.Fatalf("VerifyMemberEmail() error = %v", err)
+	}
+	if verifiedSession.EmailVerificationStatus != "verified" || verifiedSession.DeviceAuthStatus != "pending" {
+		t.Fatalf("verified session = %#v, want verified email + pending device", verifiedSession)
+	}
+
+	baseline = s.Snapshot()
+	resp = doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/issues", `{"title":"Blocked pending device issue"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST /v1/issues pending device status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+
+	var blockedByDevice struct {
+		Error      string            `json:"error"`
+		Permission string            `json:"permission"`
+		Session    store.AuthSession `json:"session"`
+		State      store.State       `json:"state"`
+	}
+	decodeJSON(t, resp, &blockedByDevice)
+
+	if blockedByDevice.Error != "device authorization required" {
+		t.Fatalf("pending device error = %q, want %q", blockedByDevice.Error, "device authorization required")
+	}
+	if blockedByDevice.Permission != "issue.create" {
+		t.Fatalf("pending device permission = %q, want %q", blockedByDevice.Permission, "issue.create")
+	}
+	if blockedByDevice.Session.Email != invited.Email || blockedByDevice.Session.DeviceAuthStatus != "pending" {
+		t.Fatalf("pending device session = %#v, want invited pending device session", blockedByDevice.Session)
+	}
+	if !reflect.DeepEqual(blockedByDevice.State, store.State{}) {
+		t.Fatalf("pending device payload leaked state: %#v", blockedByDevice.State)
+	}
+	if !reflect.DeepEqual(normalizeAuthGuardState(s.Snapshot()), normalizeAuthGuardState(baseline)) {
+		t.Fatalf("store state mutated on pending device denial")
+	}
+
+	_, authorizedSession, _, device, err := s.AuthorizeAuthDevice(store.AuthRecoveryInput{
+		Email:    invited.Email,
+		DeviceID: session.DeviceID,
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeAuthDevice() error = %v", err)
+	}
+	if authorizedSession.DeviceAuthStatus != "authorized" || device.Status != "authorized" {
+		t.Fatalf("authorized session/device = %#v / %#v, want authorized device", authorizedSession, device)
+	}
+	if authorizedSession.MemberStatus != "invited" {
+		t.Fatalf("authorized session member status = %q, want invited until owner activation", authorizedSession.MemberStatus)
+	}
+
+	baseline = s.Snapshot()
+	resp = doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/issues", `{"title":"Blocked pending owner approval issue"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST /v1/issues pending owner approval status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+
+	var blockedByApproval struct {
+		Error      string            `json:"error"`
+		Permission string            `json:"permission"`
+		Session    store.AuthSession `json:"session"`
+		State      store.State       `json:"state"`
+	}
+	decodeJSON(t, resp, &blockedByApproval)
+
+	if blockedByApproval.Error != store.ErrWorkspaceMemberApprovalRequired.Error() {
+		t.Fatalf("pending approval error = %q, want %q", blockedByApproval.Error, store.ErrWorkspaceMemberApprovalRequired.Error())
+	}
+	if blockedByApproval.Session.MemberStatus != "invited" {
+		t.Fatalf("pending approval session = %#v, want invited member status", blockedByApproval.Session)
+	}
+	if !reflect.DeepEqual(blockedByApproval.State, store.State{}) {
+		t.Fatalf("pending approval payload leaked state: %#v", blockedByApproval.State)
+	}
+	if !reflect.DeepEqual(normalizeAuthGuardState(s.Snapshot()), normalizeAuthGuardState(baseline)) {
+		t.Fatalf("store state mutated on pending owner approval denial")
+	}
+
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner reauth) error = %v", err)
+	}
+	if _, _, err := s.UpdateWorkspaceMember(invited.ID, store.WorkspaceMemberUpdateInput{Status: "active"}); err != nil {
+		t.Fatalf("UpdateWorkspaceMember(activate invited) error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Phone",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(invited after activation) error = %v", err)
+	}
+
+	resp = doJSONRequest(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/issues", `{"title":"Ready member issue","summary":"recovery gates cleared","owner":"Reviewer","priority":"medium"}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /v1/issues ready member status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+
+	var allowed struct {
+		RoomID string      `json:"roomId"`
+		RunID  string      `json:"runId"`
+		State  store.State `json:"state"`
+	}
+	decodeJSON(t, resp, &allowed)
+	if allowed.RoomID == "" || allowed.RunID == "" {
+		t.Fatalf("ready member payload = %#v, want roomId/runId", allowed)
+	}
+	if allowed.State.Auth.Session.Email != invited.Email || allowed.State.Auth.Session.DeviceAuthStatus != "authorized" {
+		t.Fatalf("ready member session = %#v, want authorized invited session", allowed.State.Auth.Session)
+	}
 }
 
 func TestMemberRoleCanAdvanceMailboxLifecycle(t *testing.T) {
@@ -436,7 +669,10 @@ func TestMemberRoleCanAdvanceMailboxLifecycle(t *testing.T) {
 	defer cleanup()
 	defer server.Close()
 
-	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{Email: "mina@openshock.dev"}); err != nil {
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "mina@openshock.dev",
+		DeviceLabel: "Mina Browser",
+	}); err != nil {
 		t.Fatalf("LoginWithEmail(member) error = %v", err)
 	}
 
@@ -480,7 +716,10 @@ func TestViewerRoleCannotMutateProtectedSurfaces(t *testing.T) {
 	defer cleanup()
 	defer server.Close()
 
-	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{Email: "longwen@openshock.dev"}); err != nil {
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "longwen@openshock.dev",
+		DeviceLabel: "Longwen Browser",
+	}); err != nil {
 		t.Fatalf("LoginWithEmail(viewer) error = %v", err)
 	}
 
@@ -493,6 +732,8 @@ func TestViewerRoleCannotMutateProtectedSurfaces(t *testing.T) {
 	}{
 		{name: "issue create", method: http.MethodPost, path: "/v1/issues", body: `{"title":"Viewer blocked issue"}`, permission: "issue.create"},
 		{name: "room reply", method: http.MethodPost, path: "/v1/rooms/room-runtime/messages", body: `{"prompt":"viewer should not reply"}`, permission: "room.reply"},
+		{name: "direct message reply", method: http.MethodPost, path: "/v1/direct-messages/dm-mina/messages", body: `{"prompt":"viewer should not DM"}`, permission: "room.reply"},
+		{name: "message surface collection", method: http.MethodPost, path: "/v1/message-surface/collections", body: `{"kind":"followed","channelId":"roadmap","messageId":"msg-roadmap-1","enabled":true}`, permission: "room.reply"},
 		{name: "topic guidance", method: http.MethodPatch, path: "/v1/topics/topic-runtime", body: `{"summary":"viewer should not guide topic"}`, permission: "room.reply"},
 		{name: "run execute", method: http.MethodPost, path: "/v1/exec", body: `{"prompt":"viewer should not exec"}`, permission: "run.execute"},
 		{name: "run control", method: http.MethodPost, path: "/v1/runs/run_runtime_01/control", body: `{"action":"stop","note":"viewer should not stop"}`, permission: "run.execute"},
@@ -514,6 +755,8 @@ func TestViewerRoleCannotMutateProtectedSurfaces(t *testing.T) {
 		{name: "memory promotion create", method: http.MethodPost, path: "/v1/memory-center/promotions", body: `{"memoryId":"memory-demo","kind":"skill","title":"demo","rationale":"demo"}`, permission: "memory.write"},
 		{name: "memory promotion review", method: http.MethodPost, path: "/v1/memory-center/promotions/memory-promotion-demo/review", body: `{"status":"approved"}`, permission: "memory.write"},
 		{name: "credential create", method: http.MethodPost, path: "/v1/credentials", body: `{"label":"GitHub App","summary":"repo sync","secretKind":"github-app","secretValue":"super-secret","workspaceDefault":true}`, permission: "workspace.manage"},
+		{name: "notification policy", method: http.MethodPost, path: "/v1/notifications/policy", body: `{"browserPush":"all","email":"critical"}`, permission: "workspace.manage"},
+		{name: "notification subscriber", method: http.MethodPost, path: "/v1/notifications/subscribers", body: `{"channel":"email","target":"ops@openshock.dev","label":"Ops Oncall","preference":"critical","status":"ready"}`, permission: "workspace.manage"},
 		{name: "agent profile patch", method: http.MethodPatch, path: "/v1/agents/agent-codex-dockmaster", body: `{"role":"Platform Architect","avatar":"control-tower","prompt":"keep live truth first","operatingInstructions":"stay on current head","providerPreference":"Codex CLI","modelPreference":"gpt-5.3-codex","recallPolicy":"agent-first","runtimePreference":"shock-main","memorySpaces":["workspace","user"]}`, permission: "workspace.manage"},
 		{name: "run credential binding", method: http.MethodPatch, path: "/v1/runs/run_runtime_01/credentials", body: `{"credentialProfileIds":[]}`, permission: "run.execute"},
 		{name: "repo binding", method: http.MethodPost, path: "/v1/repo/binding", body: `{"repo":"example/phase-zero","repoUrl":"https://github.com/example/phase-zero.git","branch":"main"}`, permission: "repo.admin"},
@@ -550,8 +793,11 @@ func TestViewerRoleCannotMutateProtectedSurfaces(t *testing.T) {
 			if payload.Session.Role != "viewer" || payload.Session.Email != "longwen@openshock.dev" {
 				t.Fatalf("session = %#v, want viewer session", payload.Session)
 			}
-			if !reflect.DeepEqual(normalizeAuthGuardState(payload.State), normalizeAuthGuardState(baseline)) {
-				t.Fatalf("state mutated on forbidden %s", testCase.path)
+			if !reflect.DeepEqual(payload.State, store.State{}) {
+				t.Fatalf("forbidden payload leaked state on %s: %#v", testCase.path, payload.State)
+			}
+			if !reflect.DeepEqual(normalizeAuthGuardState(s.Snapshot()), normalizeAuthGuardState(baseline)) {
+				t.Fatalf("store state mutated on forbidden %s", testCase.path)
 			}
 		})
 	}
@@ -564,6 +810,12 @@ func newAuthGuardTestServer(t *testing.T, root string) (*store.Store, *fakeGitHu
 	s, err := store.New(statePath, root)
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
 	}
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

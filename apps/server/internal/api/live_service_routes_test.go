@@ -13,6 +13,7 @@ type liveServiceStatusPayload struct {
 	Managed       bool   `json:"managed"`
 	Status        string `json:"status"`
 	Message       string `json:"message"`
+	ResponderPID  int    `json:"responderPid"`
 	Owner         string `json:"owner"`
 	PID           int    `json:"pid"`
 	WorkspaceRoot string `json:"workspaceRoot"`
@@ -60,6 +61,9 @@ func TestLiveServiceRouteReturnsUnmanagedStatusWithoutMetadata(t *testing.T) {
 	}
 	if !strings.Contains(payload.Message, "no managed owner metadata") {
 		t.Fatalf("message = %q, want missing metadata guidance", payload.Message)
+	}
+	if payload.ResponderPID <= 0 {
+		t.Fatalf("responderPid = %d, want current server pid", payload.ResponderPID)
 	}
 	if payload.MetadataPath != filepath.Join(root, "data", "ops", "live-server.json") {
 		t.Fatalf("metadataPath = %q", payload.MetadataPath)
@@ -117,6 +121,9 @@ func TestLiveServiceRouteReturnsRecordedOwnerReloadMetadata(t *testing.T) {
 	decodeJSON(t, resp, &payload)
 	if !payload.Managed || payload.Status != "running" {
 		t.Fatalf("payload managed/status = %#v, want managed running metadata", payload)
+	}
+	if payload.ResponderPID <= 0 {
+		t.Fatalf("responderPid = %d, want current server pid", payload.ResponderPID)
 	}
 	if payload.Owner != "@Max_开发" || payload.PID != 4242 {
 		t.Fatalf("payload owner/pid = %#v, want recorded owner metadata", payload)

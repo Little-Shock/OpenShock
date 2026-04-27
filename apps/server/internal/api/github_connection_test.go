@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	githubsvc "github.com/Larkspur-Wang/OpenShock/apps/server/internal/github"
@@ -77,6 +78,12 @@ func TestGitHubConnectionEndpointReturnsProbeStatus(t *testing.T) {
 	}
 	if !payload.Ready {
 		t.Fatalf("payload.Ready = false, want true")
+	}
+	if payload.Source != "probe" {
+		t.Fatalf("payload.Source = %q, want probe", payload.Source)
+	}
+	if payload.Stale {
+		t.Fatalf("payload.Stale = true, want false")
 	}
 	if payload.AuthMode != "gh-cli" {
 		t.Fatalf("payload.AuthMode = %q, want gh-cli", payload.AuthMode)
@@ -173,6 +180,15 @@ func TestGitHubConnectionEndpointBuildsPublicIngressURLsWhenProbeFallsBackToWork
 	if payload.Repo != "example/phase-zero" {
 		t.Fatalf("payload.Repo = %q, want example/phase-zero", payload.Repo)
 	}
+	if payload.Source != "workspace_snapshot" {
+		t.Fatalf("payload.Source = %q, want workspace_snapshot", payload.Source)
+	}
+	if payload.Stale {
+		t.Fatalf("payload.Stale = true, want false for current workspace snapshot")
+	}
+	if !strings.Contains(payload.Message, "工作区快照") {
+		t.Fatalf("payload.Message = %q, want workspace snapshot provenance", payload.Message)
+	}
 	if payload.CallbackURL != "https://public.openshock.dev/setup/github/callback" {
 		t.Fatalf("payload.CallbackURL = %q, want public callback URL", payload.CallbackURL)
 	}
@@ -240,6 +256,50 @@ func TestGitHubConnectionEndpointReturnsGitHubAppContract(t *testing.T) {
 	}
 	if payload.InstallationID != "67890" {
 		t.Fatalf("payload.InstallationID = %q, want 67890", payload.InstallationID)
+	}
+}
+
+func TestBuildWorkspaceGitHubStatusMarksStalePersistedSnapshotNotReady(t *testing.T) {
+	status := buildWorkspaceGitHubStatus(store.WorkspaceSnapshot{
+		Repo:              "example/phase-zero",
+		RepoURL:           "https://github.com/example/phase-zero.git",
+		Branch:            "main",
+		RepoProvider:      "github",
+		RepoBindingStatus: "bound",
+		RepoAuthMode:      "github-app",
+		RepoBinding: store.WorkspaceRepoBindingSnapshot{
+			Repo:          "example/phase-zero",
+			RepoURL:       "https://github.com/example/phase-zero.git",
+			Branch:        "main",
+			Provider:      "github",
+			BindingStatus: "bound",
+			AuthMode:      "github-app",
+			DetectedAt:    "2026-04-10T12:00:00Z",
+			SyncedAt:      "2026-04-10T12:00:00Z",
+		},
+		GitHubInstallation: store.WorkspaceGitHubInstallSnapshot{
+			Provider:          "github",
+			PreferredAuthMode: "github-app",
+			ConnectionReady:   true,
+			AppConfigured:     true,
+			AppInstalled:      true,
+			InstallationID:    "67890",
+			ConnectionMessage: "GitHub 应用已接通。",
+			SyncedAt:          "2026-04-09T12:00:00Z",
+		},
+	}, "https://public.openshock.dev")
+
+	if status.Ready {
+		t.Fatalf("status.Ready = true, want false for stale persisted GitHub snapshot")
+	}
+	if status.Source != "workspace_snapshot" {
+		t.Fatalf("status.Source = %q, want workspace_snapshot", status.Source)
+	}
+	if !status.Stale {
+		t.Fatalf("status.Stale = false, want true for stale persisted GitHub snapshot")
+	}
+	if !strings.Contains(status.Message, "过期") {
+		t.Fatalf("status.Message = %q, want stale marker", status.Message)
 	}
 }
 

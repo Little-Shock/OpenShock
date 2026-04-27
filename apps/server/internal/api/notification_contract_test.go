@@ -247,6 +247,7 @@ func TestApprovalCenterLifecycleTracksInboxDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
 		WorkspaceRoot: root,
@@ -315,6 +316,7 @@ func TestApprovalCenterRecentDedupesMergedDeliveryDelegationStatus(t *testing.T)
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
 		WorkspaceRoot: root,

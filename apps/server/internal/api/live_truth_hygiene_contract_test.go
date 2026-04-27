@@ -9,6 +9,16 @@ import (
 
 func TestSanitizeLiveStateFailClosesGovernanceAndAdapterResidue(t *testing.T) {
 	snapshot := store.State{
+		Auth: store.AuthSnapshot{
+			Session: store.AuthSession{
+				ID:          "auth-session-current",
+				Status:      "active",
+				MemberID:    "member-larkspur",
+				Email:       "larkspur@openshock.dev",
+				Role:        "owner",
+				Permissions: []string{"members.manage"},
+			},
+		},
 		Workspace: store.WorkspaceSnapshot{
 			Name:              "OpenShock",
 			Repo:              "repo",

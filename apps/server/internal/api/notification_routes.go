@@ -30,12 +30,25 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodGet) {
 			return
 		}
-		writeJSON(w, http.StatusOK, s.store.NotificationCenter())
+		notifications, err := s.store.NotificationCenterStatus()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, notifications)
 	case r.URL.Path == "/v1/notifications/policy":
 		switch r.Method {
 		case http.MethodGet:
-			writeJSON(w, http.StatusOK, s.store.NotificationCenter().Policy)
+			notifications, err := s.store.NotificationCenterStatus()
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, notifications.Policy)
 		case http.MethodPost:
+			if !s.requireRequestSessionPermission(w, r, "workspace.manage") {
+				return
+			}
 			var req NotificationPolicyRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
@@ -49,15 +62,23 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 				writeNotificationError(w, err)
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"policy": policy, "notifications": notifications, "state": nextState})
+			writeJSON(w, http.StatusOK, map[string]any{"policy": policy, "notifications": notifications, "state": s.sanitizedStateSnapshotForRequest(nextState, r)})
 		default:
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		}
 	case r.URL.Path == "/v1/notifications/subscribers":
 		switch r.Method {
 		case http.MethodGet:
-			writeJSON(w, http.StatusOK, s.store.NotificationCenter().Subscribers)
+			notifications, err := s.store.NotificationCenterStatus()
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, notifications.Subscribers)
 		case http.MethodPost:
+			if !s.requireRequestSessionPermission(w, r, "workspace.manage") {
+				return
+			}
 			var req NotificationSubscriberRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
@@ -80,7 +101,7 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 			if created {
 				status = http.StatusCreated
 			}
-			writeJSON(w, status, map[string]any{"subscriber": subscriber, "notifications": notifications, "state": nextState})
+			writeJSON(w, status, map[string]any{"subscriber": subscriber, "notifications": notifications, "state": s.sanitizedStateSnapshotForRequest(nextState, r)})
 		default:
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		}
@@ -93,7 +114,11 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "notification subscriber not found"})
 			return
 		}
-		subscriber, ok := s.store.NotificationSubscriber(subscriberID)
+		subscriber, ok, err := s.store.NotificationSubscriberStatus(subscriberID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "notification subscriber not found"})
 			return
@@ -108,7 +133,12 @@ func (s *Server) handleApprovalCenter(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.NotificationCenter().ApprovalCenter)
+	notifications, err := s.store.NotificationCenterStatus()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, notifications.ApprovalCenter)
 }
 
 func writeNotificationError(w http.ResponseWriter, err error) {

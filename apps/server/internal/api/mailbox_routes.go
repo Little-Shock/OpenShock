@@ -42,7 +42,7 @@ func registerMailboxRoutes(s *Server, mux *http.ServeMux) {
 func (s *Server) handleGovernedMailbox(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "run.execute") {
+		if !s.requireRequestSessionPermission(w, r, "run.execute") {
 			return
 		}
 
@@ -61,7 +61,7 @@ func (s *Server) handleGovernedMailbox(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"handoff":    sanitizeLivePayload(handoff),
 			"suggestion": sanitizeLivePayload(suggestion),
-			"state":      sanitizeLivePayload(nextState),
+			"state":      s.sanitizedStateSnapshotForRequest(nextState, r),
 		})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -71,9 +71,9 @@ func (s *Server) handleGovernedMailbox(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMailbox(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, sanitizeLivePayload(s.store.Snapshot().Mailbox))
+		writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).Mailbox)
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "run.execute") {
+		if !s.requireRequestSessionPermission(w, r, "run.execute") {
 			return
 		}
 
@@ -98,7 +98,7 @@ func (s *Server) handleMailbox(w http.ResponseWriter, r *http.Request) {
 
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"handoff": sanitizeLivePayload(handoff),
-			"state":   sanitizeLivePayload(nextState),
+			"state":   s.sanitizedStateSnapshotForRequest(nextState, r),
 		})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -114,14 +114,14 @@ func (s *Server) handleMailboxRoutes(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		handoff, ok := s.store.Handoff(handoffID)
+		handoff, ok := findVisibleMailboxHandoff(s.sanitizedLiveStateSnapshotForRequest(r).Mailbox, handoffID)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "handoff not found"})
 			return
 		}
-		writeJSON(w, http.StatusOK, sanitizeLivePayload(handoff))
+		writeJSON(w, http.StatusOK, handoff)
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "run.execute") {
+		if !s.requireRequestSessionPermission(w, r, "run.execute") {
 			return
 		}
 
@@ -153,11 +153,20 @@ func (s *Server) handleMailboxRoutes(w http.ResponseWriter, r *http.Request) {
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"handoff": sanitizeLivePayload(handoff),
-			"state":   sanitizeLivePayload(nextState),
+			"state":   s.sanitizedStateSnapshotForRequest(nextState, r),
 		})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
+}
+
+func findVisibleMailboxHandoff(items []store.AgentHandoff, handoffID string) (store.AgentHandoff, bool) {
+	for _, item := range items {
+		if item.ID == handoffID {
+			return item, true
+		}
+	}
+	return store.AgentHandoff{}, false
 }
 
 func writeMailboxError(w http.ResponseWriter, err error) {

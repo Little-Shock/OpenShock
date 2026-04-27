@@ -268,7 +268,7 @@ try {
   await context.grantPermissions(["notifications"], { origin: services.webURL });
   page = await context.newPage();
 
-  await page.goto(`${services.webURL}/settings`, { waitUntil: "load" });
+  await page.goto(`${services.webURL}/settings/advanced`, { waitUntil: "load" });
   await page.getByTestId("settings-advanced-notifications-toggle").click();
   await page.getByTestId("notification-subscribers-count").waitFor({ state: "visible" });
   await waitForContainsText(page, "notification-subscribers-count", "0");
@@ -345,7 +345,7 @@ try {
     "",
     "### 默认规则与接收端",
     "",
-    "- `/settings` 可以直接保存浏览器通知和邮件通知默认值 -> PASS",
+    "- `/settings/advanced` 可以直接保存浏览器通知和邮件通知默认值 -> PASS",
     "- 当前浏览器可以启用通知接收并进入已就绪状态 -> PASS",
     "- 邮件通知地址也能在同页保存并立即参与发送 -> PASS",
     "",

@@ -69,8 +69,17 @@ func TestExperienceMetricsTreatsCompletedFreshBootstrapAndEmptyInboxAsReady(t *t
 	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
 
 	root := t.TempDir()
-	backingStore, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
+	backingStore, server := newSignedOutContractTestServer(t, root, "http://127.0.0.1:65531")
 	defer server.Close()
+
+	_, _, err := backingStore.LoginWithEmail(store.AuthLoginInput{
+		Email:       "owner@openshock.local",
+		Name:        "Workspace Owner",
+		DeviceLabel: "Local Browser",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithEmail(placeholder owner) error = %v", err)
+	}
 
 	if _, _, err := backingStore.UpdateWorkspaceConfig(store.WorkspaceConfigUpdateInput{
 		Onboarding: &store.WorkspaceOnboardingSnapshot{

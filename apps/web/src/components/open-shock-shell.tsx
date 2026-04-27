@@ -9,6 +9,7 @@ import { usePhaseZeroState } from "@/lib/live-phase0";
 import type { AppTab, MachineState, PresenceState } from "@/lib/phase-zero-types";
 import { buildProfileHref } from "@/lib/profile-surface";
 import { useQuickSearchController } from "@/lib/quick-search";
+import { buildWorkspaceRuleHighlights } from "@/lib/workspace-rule-highlights";
 import {
   QuickSearchSurface,
   StitchSidebar,
@@ -288,6 +289,21 @@ export function OpenShockShell({
   }
   const quickSearch = useQuickSearchController(resolvedState);
   const statsSummary = stats.map((stat) => `${stat.label} ${stat.value}`).join(" · ");
+  const isEntryView = view === "setup" || view === "access";
+  const activeShellSession =
+    (selectedRoomId ? resolvedState.sessions.find((session) => session.roomId === selectedRoomId) : undefined) ??
+    resolvedState.sessions.find((session) =>
+      session.status === "running" ||
+      session.status === "blocked" ||
+      session.status === "review" ||
+      session.status === "paused"
+    ) ??
+    resolvedState.sessions.find((session) => session.status !== "done") ??
+    resolvedState.sessions[0];
+  const shellRuleHighlights = buildWorkspaceRuleHighlights(
+    resolvedState.workspace.governance,
+    activeShellSession?.memoryPaths ?? []
+  );
 
   return (
     <main className="h-[100dvh] min-h-[100dvh] overflow-hidden bg-[var(--shock-paper)] text-[var(--shock-ink)]">
@@ -300,33 +316,48 @@ export function OpenShockShell({
         onQueryChange={quickSearch.onQueryChange}
         onSelect={quickSearch.onSelectQuickSearch}
       />
-      <div className="grid h-full min-h-0 w-full overflow-hidden border-y-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] md:grid-cols-[258px_minmax(0,1fr)]">
-        <StitchSidebar
-          active={activeTab}
-          mode={shellMode}
-          channels={resolvedState.channels}
-          rooms={resolvedState.rooms}
-          machines={resolvedState.machines}
-          agents={resolvedState.agents}
-          workspaceName={workspaceTitle}
-          workspaceSubtitle={workspaceSubtitle}
-          selectedChannelId={selectedChannelId}
-          selectedRoomId={selectedRoomId}
-          inboxCount={inboxCount}
-          profileEntries={shellProfileEntries}
-          onOpenQuickSearch={quickSearch.onOpenQuickSearch}
-        />
+      <div
+        className={cn(
+          "grid h-full min-h-0 w-full overflow-hidden border-y-2 border-[var(--shock-ink)] bg-[var(--shock-paper)]",
+          isEntryView ? "md:grid-cols-[minmax(0,1fr)]" : "md:grid-cols-[258px_minmax(0,1fr)]"
+        )}
+      >
+        {!isEntryView ? (
+          <StitchSidebar
+            active={activeTab}
+            mode={shellMode}
+            channels={resolvedState.channels}
+            rooms={resolvedState.rooms}
+            machines={resolvedState.machines}
+            agents={resolvedState.agents}
+            workspaceName={workspaceTitle}
+            workspaceSubtitle={workspaceSubtitle}
+            selectedChannelId={selectedChannelId}
+            selectedRoomId={selectedRoomId}
+            inboxCount={inboxCount}
+            profileEntries={shellProfileEntries}
+            onOpenQuickSearch={quickSearch.onOpenQuickSearch}
+          />
+        ) : null}
 
         <section className="flex min-h-0 flex-col bg-[var(--shock-paper)]">
           <WorkspaceStatusStrip workspaceName={workspaceTitle} disconnected={disconnected} />
-          <StitchTopBar
-            eyebrow={eyebrow}
-            title={title}
-            description={description}
-            searchPlaceholder="搜索频道 / 讨论间 / 话题 / 事项 / 运行 / 智能体"
-            currentHref={currentHref}
-            onOpenQuickSearch={quickSearch.onOpenQuickSearch}
-          />
+          {!isEntryView ? (
+            <StitchTopBar
+              eyebrow={eyebrow}
+              title={title}
+              description={description}
+              searchPlaceholder="搜索频道 / 讨论间 / 话题 / 事项 / 运行 / 智能体"
+              currentHref={currentHref}
+              onOpenQuickSearch={quickSearch.onOpenQuickSearch}
+            />
+          ) : (
+            <div className="border-b-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4 md:px-5">
+              <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(24,20,14,0.56)]">{eyebrow}</p>
+              <h1 className="mt-2 font-display text-[1.8rem] font-bold leading-none">{title}</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[rgba(24,20,14,0.72)]">{description}</p>
+            </div>
+          )}
 
           <div className="border-b-2 border-[var(--shock-ink)] bg-[#f3ead3] px-3 py-2 md:px-4">
             <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
@@ -336,17 +367,41 @@ export function OpenShockShell({
                   {contextDescription}
                 </p>
               </div>
-              <p className="rounded-[10px] border border-[color:rgba(24,20,14,0.26)] bg-white/70 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.64)]">
-                {statsSummary}
-              </p>
+              {!isEntryView ? (
+                <p className="rounded-[10px] border border-[color:rgba(24,20,14,0.26)] bg-white/70 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.64)]">
+                  {statsSummary}
+                </p>
+              ) : null}
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_288px]">
+          <div
+            className={cn(
+              "grid min-h-0 flex-1 overflow-hidden",
+              isEntryView ? "xl:grid-cols-[minmax(0,1fr)]" : "xl:grid-cols-[minmax(0,1fr)_288px]"
+            )}
+          >
             <div className="min-h-0 overflow-y-auto bg-[var(--shock-paper)] px-2 py-2.5 md:px-3 xl:min-h-0">
               {children}
+              {isEntryView ? (
+                <div className="mt-3 space-y-3">
+                  {contextBody}
+                  <section
+                    data-testid="shell-entry-next-panel"
+                    className="rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]"
+                  >
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em]">补完后会发生什么</p>
+                    <ul className="mt-2.5 space-y-1.5 text-[12px] leading-5 text-[color:rgba(24,20,14,0.76)]">
+                      <li>聊天会变回默认入口。</li>
+                      <li>讨论、交接和机器状态会接着上次继续。</li>
+                      <li>只有真的卡住时，才需要再回这里排查。</li>
+                    </ul>
+                  </section>
+                </div>
+              ) : null}
             </div>
-            <aside className="hidden min-h-0 border-l-2 border-[var(--shock-ink)] bg-[#efe5ce] xl:flex xl:flex-col">
+            {!isEntryView ? (
+              <aside className="hidden min-h-0 border-l-2 border-[var(--shock-ink)] bg-[#efe5ce] xl:flex xl:flex-col">
               <div className="flex-1 overflow-y-auto p-2.5">
                 {contextBody ?? (
                   <section className="rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]">
@@ -358,92 +413,137 @@ export function OpenShockShell({
                     </ul>
                   </section>
                 )}
-
-                <section className="mt-2.5 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]">
-                  <div className="flex items-center justify-between">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.16em]">运行机器</p>
-                    <span className="font-mono text-[10px] uppercase">{resolvedState.machines.length}</span>
-                  </div>
-                  <div className="mt-2.5 space-y-2">
-                    {resolvedState.machines.map((machine) => (
-                      <Link
-                        key={machine.id}
-                        href={buildProfileHref("machine", machine.id)}
-                        data-testid={`shell-machine-profile-${machine.id}`}
-                        className="block rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-2.5 transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe5ce]"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-semibold">{machine.name}</p>
-                          <span className={cn("rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase", machineTone(machine.state))}>
-                            {machineStateLabel(machine.state)}
-                          </span>
+                <>
+                    <section
+                      data-testid="shell-rule-panel"
+                      className="mt-2.5 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-mono text-[10px] uppercase tracking-[0.16em]">协作规则</p>
+                          <p className="mt-1.5 text-sm font-semibold">继续前先按这组规则。</p>
                         </div>
-                        <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
-                          {machine.cli}
-                        </p>
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="mt-2.5 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]">
-                  <div className="flex items-center justify-between">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.16em]">智能体</p>
-                    <span className="font-mono text-[10px] uppercase">{resolvedState.agents.length}</span>
-                  </div>
-                  <div className="mt-2.5 space-y-2">
-                    {resolvedState.agents.slice(0, 5).map((agent) => (
-                      <Link
-                        key={agent.id}
-                        href={buildProfileHref("agent", agent.id)}
-                        data-testid={`shell-agent-profile-${agent.id}`}
-                        className="block rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-2.5 transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe5ce]"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="min-w-0 flex-1 truncate font-semibold">{agent.name}</p>
-                          <span className={cn("rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase", agentTone(agent.state))}>
-                            {agentStateLabel(agent.state)}
-                          </span>
+                        <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase">
+                          {activeShellSession ? activeShellSession.issueKey : "工作区"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">
+                        {activeShellSession
+                          ? `当前会先对齐 ${activeShellSession.branch} 这条工作线的协作文件和路由规则。`
+                          : "当前会先按工作区的协作规则继续。"}
+                      </p>
+                      {shellRuleHighlights.length > 0 ? (
+                        <div className="mt-3 space-y-2">
+                          {shellRuleHighlights.map((item) => (
+                            <div
+                              key={item.id}
+                              data-testid={`shell-rule-${item.id}`}
+                              className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em]">
+                                  {item.badge}
+                                </span>
+                                <p className="text-sm font-semibold">{item.label}</p>
+                              </div>
+                              <p className="mt-1.5 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">{item.summary}</p>
+                            </div>
+                          ))}
                         </div>
-                        <p className="mt-1.5 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
-                          {agent.lane}
+                      ) : (
+                        <p className="mt-3 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">
+                          当前工作区没有额外规则文件，直接继续协作。
                         </p>
-                      </Link>
-                    ))}
-                  </div>
-                </section>
+                      )}
+                    </section>
 
-                <section className="mt-2.5 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]">
-                  <div className="flex items-center justify-between">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.16em]">成员</p>
-                    <span className="font-mono text-[10px] uppercase">{resolvedState.auth.members.length}</span>
-                  </div>
-                  <div className="mt-2.5 space-y-2">
-                    {resolvedState.auth.members.slice(0, 5).map((member) => {
-                      const active = activeMemberId === member.id && resolvedState.auth.session.status === "active";
-                      return (
-                        <Link
-                          key={member.id}
-                          href={buildProfileHref("human", member.id)}
-                          data-testid={`shell-human-profile-${member.id}`}
-                          className="block rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-2.5 transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe5ce]"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="min-w-0 flex-1 truncate font-semibold">{member.name}</p>
-                            <span className={cn("rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase", humanTone(active, member.status))}>
-                              {humanStateLabel(active, member.status)}
-                            </span>
-                          </div>
-                          <p className="mt-1.5 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
-                            {workspaceRoleLabel(member.role)} · {member.email}
-                          </p>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </section>
+                    <section className="mt-2.5 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]">
+                      <div className="flex items-center justify-between">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.16em]">运行机器</p>
+                        <span className="font-mono text-[10px] uppercase">{resolvedState.machines.length}</span>
+                      </div>
+                      <div className="mt-2.5 space-y-2">
+                        {resolvedState.machines.map((machine) => (
+                          <Link
+                            key={machine.id}
+                            href={buildProfileHref("machine", machine.id)}
+                            data-testid={`shell-machine-profile-${machine.id}`}
+                            className="block rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-2.5 transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe5ce]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-semibold">{machine.name}</p>
+                              <span className={cn("rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase", machineTone(machine.state))}>
+                                {machineStateLabel(machine.state)}
+                              </span>
+                            </div>
+                            <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
+                              {machine.cli}
+                            </p>
+                          </Link>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="mt-2.5 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]">
+                      <div className="flex items-center justify-between">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.16em]">智能体</p>
+                        <span className="font-mono text-[10px] uppercase">{resolvedState.agents.length}</span>
+                      </div>
+                      <div className="mt-2.5 space-y-2">
+                        {resolvedState.agents.slice(0, 5).map((agent) => (
+                          <Link
+                            key={agent.id}
+                            href={buildProfileHref("agent", agent.id)}
+                            data-testid={`shell-agent-profile-${agent.id}`}
+                            className="block rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-2.5 transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe5ce]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="min-w-0 flex-1 truncate font-semibold">{agent.name}</p>
+                              <span className={cn("rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase", agentTone(agent.state))}>
+                                {agentStateLabel(agent.state)}
+                              </span>
+                            </div>
+                            <p className="mt-1.5 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
+                              {agent.lane}
+                            </p>
+                          </Link>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="mt-2.5 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white p-2.5 shadow-[var(--shock-shadow-sm)]">
+                      <div className="flex items-center justify-between">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.16em]">成员</p>
+                        <span className="font-mono text-[10px] uppercase">{resolvedState.auth.members.length}</span>
+                      </div>
+                      <div className="mt-2.5 space-y-2">
+                        {resolvedState.auth.members.slice(0, 5).map((member) => {
+                          const active = activeMemberId === member.id && resolvedState.auth.session.status === "active";
+                          return (
+                            <Link
+                              key={member.id}
+                              href={buildProfileHref("human", member.id)}
+                              data-testid={`shell-human-profile-${member.id}`}
+                              className="block rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2.5 py-2.5 transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe5ce]"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="min-w-0 flex-1 truncate font-semibold">{member.name}</p>
+                                <span className={cn("rounded-full border border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase", humanTone(active, member.status))}>
+                                  {humanStateLabel(active, member.status)}
+                                </span>
+                              </div>
+                              <p className="mt-1.5 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[color:rgba(24,20,14,0.56)]">
+                                {workspaceRoleLabel(member.role)} · {member.email}
+                              </p>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </section>
+                </>
               </div>
-            </aside>
+              </aside>
+            ) : null}
           </div>
         </section>
       </div>

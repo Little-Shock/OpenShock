@@ -223,9 +223,9 @@ export function RepoBindingConsole() {
         </span>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">当前仓库有没有接通，以及还卡在哪一步。</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">这里只回答三件事: 现在是不是正确仓库、当前分支对不对、还差哪一步。</p>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">仓库</p>
           <p className="mt-2 font-display text-xl font-semibold break-all">
@@ -239,14 +239,6 @@ export function RepoBindingConsole() {
           </p>
         </div>
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">代码平台</p>
-          <p className="mt-2 font-display text-xl font-semibold">{providerLabel(binding?.provider)}</p>
-        </div>
-        <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">绑定模式</p>
-          <p className="mt-2 font-display text-xl font-semibold">{authModeLabel(binding?.authMode)}</p>
-        </div>
-        <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">连接就绪</p>
           <p className="mt-2 font-display text-xl font-semibold">
             {binding ? (binding.connectionReady ? "已就绪" : "待补全") : "等待扫描"}
@@ -255,12 +247,6 @@ export function RepoBindingConsole() {
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">GitHub 应用</p>
           <p className="mt-2 font-display text-xl font-semibold">{githubAppLabel(binding)}</p>
-        </div>
-        <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">安装记录</p>
-          <p className="mt-2 font-display text-xl font-semibold">
-            {valueOrFallback(binding?.installationId, binding?.installationUrl ? "待完成安装" : "未生成")}
-          </p>
         </div>
       </div>
 
@@ -272,11 +258,30 @@ export function RepoBindingConsole() {
           </p>
           <details className="mt-4 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
-              绑定依据
+              查看扫描依据
             </summary>
-            <p className="mt-3 font-mono text-xs leading-6 break-all text-[color:rgba(24,20,14,0.78)]">
-              {valueOrFallback(binding?.repoUrl, "正在同步当前仓库远端地址")}
-            </p>
+            <dl className="mt-3 grid gap-3 md:grid-cols-2">
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">代码平台</dt>
+                <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">{providerLabel(binding?.provider)}</dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">绑定模式</dt>
+                <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">{authModeLabel(binding?.authMode)}</dd>
+              </div>
+              <div className="md:col-span-2">
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">远端地址</dt>
+                <dd className="mt-1 break-all font-mono text-xs leading-6 text-[color:rgba(24,20,14,0.78)]">
+                  {valueOrFallback(binding?.repoUrl, "正在同步当前仓库远端地址")}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">安装记录</dt>
+                <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
+                  {valueOrFallback(binding?.installationId, binding?.installationUrl ? "待完成安装" : "未生成")}
+                </dd>
+              </div>
+            </dl>
             {binding?.missing?.length ? (
               <p
                 data-testid="setup-repo-binding-missing-fields"
@@ -294,13 +299,13 @@ export function RepoBindingConsole() {
         </div>
 
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">安装动作</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">下一步动作</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
             {binding?.appInstalled
-              ? "GitHub 应用已完成，仓库状态可回流。"
+              ? "仓库已经接到 GitHub，重新同步一次就能继续。"
               : binding?.appConfigured
                 ? "GitHub 应用已配置，但安装还没完成。"
-                : "GitHub 应用还没配好，先补全设置。"}
+                : "如果要走远端交付，先把 GitHub 应用装好。"}
           </p>
           {binding?.installationUrl ? (
             <a

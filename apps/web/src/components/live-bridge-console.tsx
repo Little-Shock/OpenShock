@@ -372,18 +372,30 @@ export function LiveBridgeConsole() {
       ) : null}
 
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
-        当前已识别 {state.runtimes.length} 台机器；当前机器的心跳节奏为 {selectedHeartbeatCadence}。
+        当前已识别 {registryRuntimes.length} 台机器；首屏只保留当前机器、配对状态和一次连接测试。
       </p>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_0.8fr]">
+      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_0.95fr]">
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
-              已连接机器
-            </p>
-            <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em]">
-              {runtimes.length} 台{refreshing ? " · 同步中" : ""}
-            </span>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">当前机器</p>
+              <p data-testid="setup-runtime-selection-value" className="mt-2 font-display text-xl font-semibold">
+                {selectedRuntimeName || "未选择"}
+              </p>
+            </div>
+            <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">授权 / 配对</p>
+              <p data-testid="setup-runtime-pairing-value" className="mt-2 text-sm leading-6">
+                {pairing?.deviceAuth || "未授权"} / {pairingStatusLabel(pairing?.pairingStatus || selection?.pairingStatus || "")}
+              </p>
+            </div>
+            <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">最近心跳</p>
+              <p className="mt-2 text-sm leading-6">
+                {selectedMachineTruth?.lastHeartbeat || selectedRuntimeTruth?.lastHeartbeatAt || "未返回"}
+              </p>
+            </div>
           </div>
 
           {runtimeLoading && runtimes.length === 0 ? (
@@ -395,71 +407,66 @@ export function LiveBridgeConsole() {
               当前还没有可用机器。先在右侧填写地址并连接，再继续测试。
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {registryRuntimes.map((item) => {
-                const selected = item.machine === selectedRuntimeName || item.id === selectedRuntimeName;
-                const machine = selection?.runtimes.find((candidate) => candidate.name === item.machine || candidate.id === item.id);
-                const actionable = isSchedulableRuntime(item.state) && Boolean(item.daemonUrl);
+            <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">当前连接说明</p>
+              <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
+                当前页只检查这台机器和通道是否可用；真正的执行会在聊天和讨论间里发生。
+              </p>
+              <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                {registryRuntimes.length} 台机器{refreshing ? " · 同步中" : ""} · 心跳节奏 {selectedHeartbeatCadence}
+              </p>
+            </div>
+          )}
 
-                return (
-                  <article
-                    key={item.id}
-                    data-testid={`setup-runtime-card-${item.machine}`}
-                    className={cn(
-                      "rounded-[18px] border-2 border-[var(--shock-ink)] px-4 py-4",
-                      selected ? "bg-[var(--shock-yellow)]" : "bg-white"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-display text-2xl font-bold">{item.machine}</p>
-                        <p className="mt-1 text-sm text-[color:rgba(24,20,14,0.72)]">
-                          {item.detectedCli.join(" + ") || machine?.cli || "未返回 CLI 标签"}
-                        </p>
+          {registryRuntimes.length > 1 ? (
+            <details data-testid="setup-runtime-switcher-details" className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+              <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
+                切换当前机器
+              </summary>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {registryRuntimes.map((item) => {
+                  const selected = item.machine === selectedRuntimeName || item.id === selectedRuntimeName;
+                  const actionable = isSchedulableRuntime(item.state) && Boolean(item.daemonUrl);
+
+                  return (
+                    <article
+                      key={item.id}
+                      className={cn(
+                        "rounded-[16px] border-2 border-[var(--shock-ink)] px-4 py-3",
+                        selected ? "bg-[var(--shock-yellow)]" : "bg-[var(--shock-paper)]"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-display text-[20px] font-bold leading-6">{item.machine}</p>
+                          <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+                            {item.detectedCli.join(" + ") || "未返回 CLI 标签"}
+                          </p>
+                        </div>
+                        <span className={cn("rounded-full border-2 border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em]", runtimeStatusTone(item.state))}>
+                          {selected ? "当前机器" : statusLabel(item.state)}
+                        </span>
                       </div>
-                      <span
-                        className={cn(
-                          "rounded-full border-2 border-[var(--shock-ink)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em]",
-                          runtimeStatusTone(item.state)
-                        )}
-                      >
-                        {selected ? "当前机器" : statusLabel(item.state)}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 space-y-2 font-mono text-[10px] leading-5 text-[color:rgba(24,20,14,0.68)]">
-                      <p>地址：{item.daemonUrl || "未连接"}</p>
-                      <p>连接状态：{pairingStatusLabel(item.pairingState || "")} / 工作区 {pairingStatusLabel(pairing?.pairingStatus || selection?.pairingStatus || "")}</p>
-                      <p>最近心跳：{machine?.lastHeartbeat || item.lastHeartbeatAt || "未返回"}</p>
-                      <p>心跳节奏：{formatHeartbeatCadence(item.heartbeatIntervalSeconds, item.heartbeatTimeoutSeconds)}</p>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
                       <button
                         type="button"
                         data-testid={`setup-runtime-select-${item.machine}`}
                         disabled={runtimeActionLoading || !actionable || selected || !canManageRuntime}
                         onClick={() => void handleSelectRuntime(item.machine)}
-                        className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="mt-3 rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {selected ? "当前机器" : !canManageRuntime ? "仅所有者可切换" : actionable ? "切换到这里" : "不可切换"}
                       </button>
-                      {selected ? (
-                        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.62)]">
-                          当前页默认会把测试请求发到这台机器。
-                        </span>
-                      ) : null}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
+                    </article>
+                  );
+                })}
+              </div>
+            </details>
+          ) : null}
         </div>
 
         <div className="space-y-3 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] p-4">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
-            连接新机器
+            连接或更换机器
           </p>
           <label className="space-y-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
@@ -497,24 +504,13 @@ export function LiveBridgeConsole() {
             {permissionStatusLabel(runtimeManageStatus)}
           </p>
           {!canManageRuntime ? <p className="text-sm leading-6 text-[var(--shock-pink)]">{runtimeManageBoundary}</p> : null}
-          <div className="grid gap-3 pt-2">
-            <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">当前机器</p>
-              <p data-testid="setup-runtime-selection-value" className="mt-2 font-display text-xl font-semibold">
-                {selectedRuntimeName || "未选择"}
-              </p>
-            </div>
-            <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">授权 / 配对</p>
-              <p data-testid="setup-runtime-pairing-value" className="mt-2 text-sm leading-6">
-                {pairing?.deviceAuth || "未授权"} / {pairingStatusLabel(pairing?.pairingStatus || selection?.pairingStatus || "")}
-              </p>
-            </div>
-            <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">最近切换</p>
-              <p className="mt-2 break-all font-mono text-xs leading-5">{pairing?.lastPairedAt || "未返回"}</p>
-            </div>
+          <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">最近切换</p>
+            <p className="mt-2 break-all font-mono text-xs leading-5">{pairing?.lastPairedAt || "未返回"}</p>
           </div>
+          <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+            连接后会优先把当前机器设为默认执行入口。
+          </p>
         </div>
       </div>
 

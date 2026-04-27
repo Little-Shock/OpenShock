@@ -264,19 +264,23 @@ try {
   await capture(page, "room-chat");
   results.push("- 默认房间现在直接回到聊天主面，thread rail 仍保留在右侧，不再先展示一排一级 workbench tabs。");
 
-  await page.goto(`${webURL}/rooms/room-runtime?tab=topic`, { waitUntil: "domcontentloaded" });
-  await waitForUrlIncludes(page, "?tab=topic");
-  await waitForVisible(page.locator('[data-testid="room-workbench-topic-panel"]'), "topic workbench panel did not render");
+  await page.goto(`${webURL}/rooms/room-runtime?tab=context`, { waitUntil: "domcontentloaded" });
+  await waitForUrlIncludes(page, "?tab=context");
+  await waitForVisible(page.locator('[data-testid="room-workbench-context-panel"]'), "context workbench panel did not render");
   assert(
-    (await page.getByTestId("room-workbench-topic-panel").getByRole("link", { name: "回到聊天", exact: true }).count()) === 0,
-    "room topic sheet should not keep a generic return-to-chat CTA once the room shell already owns the chat-first return path"
+    (await page.getByTestId("room-workbench-context-panel").getByRole("link", { name: "回到聊天", exact: true }).count()) === 0,
+    "room context surface should not keep a generic return-to-chat CTA once the room shell already owns the chat-first return path"
   );
   assert(
-    (await page.getByTestId("room-workbench-topic-panel").getByRole("link", { name: "话题详情", exact: true }).count()) === 1,
-    "room topic sheet should keep the concrete topic-route deep link"
+    (await page.getByTestId("room-workbench-context-panel").getByRole("link", { name: "话题详情", exact: true }).count()) === 1,
+    "room context surface should keep the concrete topic-route deep link"
   );
-  await capture(page, "room-topic");
-  results.push("- Topic 继续作为 room 内的次级 sheet 保留，可从同一条 room URL 打开 topic summary 和最近 guidance。");
+  assert(
+    (await page.getByTestId("room-workbench-context-panel").getByText("最近三条", { exact: true }).count()) === 1,
+    "room context surface should keep the recent message summary after topic-tab removal"
+  );
+  await capture(page, "room-context-summary");
+  results.push("- Topic 摘要和最近三条消息现在并入 room context，同一条 room URL 就能继续判断当前上下文。");
 
   await page.goto(`${webURL}/rooms/room-runtime?tab=run`, { waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "?tab=run");
@@ -414,7 +418,7 @@ try {
   results.push("- 移动端在 sidebar 隐藏时仍保留 room context 的 inbox 逃生入口，并能从 Inbox 返回同一条 context state。");
 
   const report = [
-    "# 2026-04-11 Room Simplified Sheet / Topic Context Report",
+    "# 2026-04-23 Room Workbench Topic Context Report",
     "",
     `- Command: \`${process.env.OPENSHOCK_WINDOWS_CHROME === "1" ? "OPENSHOCK_WINDOWS_CHROME=1 " : ""}pnpm test:headed-room-workbench-topic-context -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,
@@ -426,7 +430,7 @@ try {
     ...screenshots.map((shot) => `- ${shot.name}: ${shot.path}`),
     "",
     "## Single Value",
-    "- `/rooms/:roomId` 现在默认回到 chat-first room shell：聊天主面始终优先，`Topic / Run / PR / Context` 退成次级 sheet，但 `follow_thread`、PR review 入口、reload persistence 与 inbox back-links 仍完整保留。",
+    "- `/rooms/:roomId` 现在默认回到 chat-first room shell：聊天主面始终优先，`Run / PR / Context` 退成次级 sheet，原来的 topic 摘要已并入 context，而 `follow_thread`、PR review 入口、reload persistence 与 inbox back-links 仍完整保留。",
   ].join("\n");
 
   await writeFile(reportPath, `${report}\n`, "utf8");

@@ -1,10 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SERVER_URL="${OPENSHOCK_SERVER_URL:-http://127.0.0.1:8080}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+LIVE_SERVER_METADATA="${OPENSHOCK_LIVE_SERVER_METADATA:-${PROJECT_ROOT}/data/ops/live-server.json}"
+
+discover_managed_live_server_url() {
+  local metadata_path="$1"
+
+  if [[ ! -f "$metadata_path" ]]; then
+    return 1
+  fi
+
+  OPENSHOCK_METADATA_FILE="$metadata_path" node <<'NODE'
+const fs = require("node:fs")
+
+try {
+  const payload = JSON.parse(fs.readFileSync(process.env.OPENSHOCK_METADATA_FILE || "", "utf8") || "{}")
+  const baseUrl = String(payload.baseUrl || "").trim().replace(/\/+$/, "")
+  const managed = payload.managed
+  const status = String(payload.status || "").trim()
+
+  if (managed === false || status !== "running" || !baseUrl) {
+    process.exit(1)
+  }
+
+  process.stdout.write(baseUrl)
+} catch {
+  process.exit(1)
+}
+NODE
+}
+
+SERVER_URL="${OPENSHOCK_SERVER_URL:-}"
+if [[ -z "$SERVER_URL" ]]; then
+  if discovered_server_url="$(discover_managed_live_server_url "$LIVE_SERVER_METADATA")"; then
+    SERVER_URL="$discovered_server_url"
+  else
+    SERVER_URL="http://127.0.0.1:8080"
+  fi
+fi
+
 DAEMON_URL="${OPENSHOCK_DAEMON_URL:-http://127.0.0.1:8090}"
 CURL_MAX_TIME="${OPENSHOCK_CURL_MAX_TIME:-10}"
 REQUIRE_GITHUB_READY="${OPENSHOCK_REQUIRE_GITHUB_READY:-0}"
+REQUIRE_BRANCH_HEAD_ALIGNED="${OPENSHOCK_REQUIRE_BRANCH_HEAD_ALIGNED:-0}"
+ACTUAL_LIVE_URL="${OPENSHOCK_ACTUAL_LIVE_URL:-}"
+REQUIRE_ACTUAL_LIVE_PARITY="${OPENSHOCK_REQUIRE_ACTUAL_LIVE_PARITY:-0}"
 
 last_status=""
 last_body=""
@@ -134,7 +176,10 @@ if (runtimeURL !== expectedDaemonURL) {
   fail(`Server runtime snapshot daemonUrl mismatch: got ${runtimeURL}, want ${expectedDaemonURL}`)
 }
 
-const daemonURL = normalize(daemon.daemonUrl || expectedDaemonURL)
+const daemonURL = normalize(daemon.daemonUrl)
+if (!daemonURL) {
+  fail("Daemon runtime missing daemonUrl")
+}
 if (daemonURL !== expectedDaemonURL) {
   fail(`Daemon runtime daemonUrl mismatch: got ${daemonURL}, want ${expectedDaemonURL}`)
 }
@@ -205,6 +250,76 @@ NODE
   trap - RETURN
 }
 
+assert_state_runtime_truth() {
+  local state_body="$1"
+  local state_file
+
+  state_file="$(mktemp)"
+  trap 'rm -f "$state_file"' RETURN
+  printf '%s' "$state_body" >"$state_file"
+
+  STATE_BODY_FILE="$state_file" \
+  EXPECTED_DAEMON_URL="$(normalize_url "$DAEMON_URL")" \
+    node <<'NODE'
+const fail = (message) => {
+  console.error(message)
+  process.exit(1)
+}
+
+const fs = require("node:fs")
+
+const normalize = (value) => String(value ?? "").trim().replace(/\/+$/, "")
+
+let state
+try {
+  state = JSON.parse(fs.readFileSync(process.env.STATE_BODY_FILE || "", "utf8") || "{}")
+} catch (error) {
+  fail(`STATE_BODY_FILE invalid json: ${error.message}`)
+}
+
+const expectedDaemonURL = normalize(process.env.EXPECTED_DAEMON_URL)
+const workspace = state.workspace || {}
+const pairedRuntime = String(workspace.pairedRuntime || "").trim()
+if (!pairedRuntime) {
+  fail("Server state missing workspace pairedRuntime")
+}
+if (String(workspace.pairingStatus || "").trim() !== "paired") {
+  fail(`Server state pairingStatus = ${workspace.pairingStatus || ""}, want paired`)
+}
+const workspaceDaemonURL = normalize(workspace.pairedRuntimeUrl)
+if (!workspaceDaemonURL) {
+  fail("Server state missing workspace pairedRuntimeUrl")
+}
+if (workspaceDaemonURL !== expectedDaemonURL) {
+  fail(`Server state pairedRuntimeUrl mismatch: got ${workspaceDaemonURL}, want ${expectedDaemonURL}`)
+}
+
+const runtimes = Array.isArray(state.runtimes) ? state.runtimes : []
+const pairedRecord = runtimes.find((item) => {
+  const id = String(item?.id || "").trim()
+  const machine = String(item?.machine || "").trim()
+  return id === pairedRuntime || machine === pairedRuntime
+})
+if (!pairedRecord) {
+  fail(`Server state missing paired runtime record ${pairedRuntime}`)
+}
+const runtimeDaemonURL = normalize(pairedRecord.daemonUrl)
+if (!runtimeDaemonURL) {
+  fail(`Server state paired runtime ${pairedRuntime} missing daemonUrl`)
+}
+if (runtimeDaemonURL !== expectedDaemonURL) {
+  fail(`Server state paired runtime daemonUrl mismatch: got ${runtimeDaemonURL}, want ${expectedDaemonURL}`)
+}
+const runtimeState = String(pairedRecord.state || "").trim().toLowerCase()
+if (runtimeState === "offline" || runtimeState === "stale") {
+  fail(`Server state paired runtime ${pairedRuntime} is not live: ${pairedRecord.state || ""}`)
+}
+NODE
+
+  rm -f "$state_file"
+  trap - RETURN
+}
+
 assert_experience_metrics_truth() {
   local body="$1"
   local body_file
@@ -233,6 +348,110 @@ if (!Array.isArray(snapshot.sections) || snapshot.sections.length === 0) {
 }
 if (!snapshot.summary || !snapshot.workspace || !snapshot.methodology) {
   fail("Experience metrics missing summary fields")
+}
+NODE
+
+  rm -f "$body_file"
+  trap - RETURN
+}
+
+assert_repo_binding_truth() {
+  local body="$1"
+  local body_file
+
+  body_file="$(mktemp)"
+  trap 'rm -f "$body_file"' RETURN
+  printf '%s' "$body" >"$body_file"
+
+  REPO_BINDING_BODY_FILE="$body_file" node <<'NODE'
+const fail = (message) => {
+  console.error(message)
+  process.exit(1)
+}
+
+const fs = require("node:fs")
+
+let binding
+try {
+  binding = JSON.parse(fs.readFileSync(process.env.REPO_BINDING_BODY_FILE || "", "utf8") || "{}")
+} catch (error) {
+  fail(`REPO_BINDING_BODY_FILE invalid json: ${error.message}`)
+}
+
+const bindingStatus = String(binding.bindingStatus || "").trim().toLowerCase()
+if (bindingStatus !== "bound") {
+  fail(`Repo binding not bound: bindingStatus=${String(binding.bindingStatus || "")}`)
+}
+
+for (const field of ["repo", "repoUrl", "branch", "provider"]) {
+  if (!String(binding[field] || "").trim()) {
+    fail(`Repo binding missing ${field}`)
+  }
+}
+
+const authModes = [binding.authMode, binding.preferredAuthMode]
+  .map((value) => String(value || "").trim().toLowerCase())
+  .filter(Boolean)
+if (authModes.includes("github-app")) {
+  if (binding.connectionReady !== true) {
+    fail(`Repo binding github-app mode not ready: connectionReady=${String(binding.connectionReady)}`)
+  }
+  if (binding.appInstalled !== true) {
+    fail(`Repo binding github-app mode missing installation: appInstalled=${String(binding.appInstalled)}`)
+  }
+}
+NODE
+
+  rm -f "$body_file"
+  trap - RETURN
+}
+
+assert_branch_head_truth() {
+  local body="$1"
+  local body_file
+
+  body_file="$(mktemp)"
+  trap 'rm -f "$body_file"' RETURN
+  printf '%s' "$body" >"$body_file"
+
+  BRANCH_HEAD_BODY_FILE="$body_file" node <<'NODE'
+const fail = (message) => {
+  console.error(message)
+  process.exit(1)
+}
+
+const fs = require("node:fs")
+
+let snapshot
+try {
+  snapshot = JSON.parse(fs.readFileSync(process.env.BRANCH_HEAD_BODY_FILE || "", "utf8") || "{}")
+} catch (error) {
+  fail(`BRANCH_HEAD_BODY_FILE invalid json: ${error.message}`)
+}
+
+if (String(snapshot.status || "").trim() !== "aligned") {
+  fail(`Branch head truth not aligned: status=${String(snapshot.status || "")} summary=${String(snapshot.summary || "")}`)
+}
+if (!Array.isArray(snapshot.drifts)) {
+  fail("Branch head truth missing drifts array")
+}
+if (snapshot.drifts.length !== 0) {
+  fail(`Branch head truth has drift entries: count=${snapshot.drifts.length}`)
+}
+
+const binding = snapshot.repoBinding || {}
+if (String(binding.bindingStatus || "").trim().toLowerCase() !== "bound") {
+  fail(`Branch head truth repo binding not bound: bindingStatus=${String(binding.bindingStatus || "")}`)
+}
+for (const field of ["repo", "repoUrl", "branch", "provider"]) {
+  if (!String(binding[field] || "").trim()) {
+    fail(`Branch head truth repo binding missing ${field}`)
+  }
+}
+
+const checkout = snapshot.checkout || {}
+if (String(checkout.status || "").trim() !== "ready") {
+  fail(`Branch head truth checkout not ready: status=${String(checkout.status || "")}`)
 }
 NODE
 
@@ -307,8 +526,38 @@ probe_github_connection() {
   assert_status "200" "GitHub connection"
   assert_contains '"ready":' "GitHub connection"
   if [[ "$REQUIRE_GITHUB_READY" == "1" ]]; then
-    assert_contains '"ready":true' "GitHub connection"
+    GITHUB_CONNECTION_BODY="$last_body" node <<'NODE'
+const fail = (message) => {
+  console.error(message)
+  process.exit(1)
+}
+
+let connection
+try {
+  connection = JSON.parse(process.env.GITHUB_CONNECTION_BODY || "{}")
+} catch (error) {
+  fail(`GitHub connection invalid json: ${error.message}`)
+}
+
+if (connection.ready !== true) {
+  fail(`GitHub connection not ready for strict release gate: ready=${String(connection.ready)}`)
+}
+NODE
   fi
+  preview_body "$last_body"
+}
+
+probe_branch_head_truth() {
+  local url="$1"
+
+  echo "==> Branch head truth"
+  request_json "$url"
+  assert_status "200" "Branch head truth"
+  assert_contains '"status"' "Branch head truth"
+  assert_contains '"summary"' "Branch head truth"
+  assert_contains '"repoBinding"' "Branch head truth"
+  assert_contains '"githubConnection"' "Branch head truth"
+  assert_contains '"drifts"' "Branch head truth"
   preview_body "$last_body"
 }
 
@@ -319,6 +568,87 @@ probe_run_control_fail_closed() {
   assert_contains '"error"' "Server run control fail-closed"
   assert_contains 'run not found' "Server run control fail-closed"
   preview_body "$last_body"
+}
+
+probe_runtime_bridge_check() {
+  echo "==> Server runtime bridge check"
+  request_json_with_method "POST" "$SERVER_URL/v1/runtime/bridge-check" '{}'
+  assert_status "200" "Server runtime bridge check"
+  assert_contains '"command"' "Server runtime bridge check"
+  assert_contains 'bridge-check' "Server runtime bridge check"
+  assert_contains '"output"' "Server runtime bridge check"
+  preview_body "$last_body"
+}
+
+assert_actual_live_parity_truth() {
+  local live_service_body="$1"
+  local parity_body="$2"
+
+  LIVE_SERVICE_BODY="$live_service_body" \
+  PARITY_BODY="$parity_body" \
+  EXPECTED_ACTUAL_LIVE_URL="$(normalize_url "$ACTUAL_LIVE_URL")" \
+    node <<'NODE'
+const fail = (message) => {
+  console.error(message)
+  process.exit(1)
+}
+
+const normalize = (value) => String(value ?? "").trim().replace(/\/+$/, "")
+const parse = (name) => {
+  try {
+    return JSON.parse(process.env[name] || "{}")
+  } catch (error) {
+    fail(`${name} invalid json: ${error.message}`)
+  }
+}
+
+const liveService = parse("LIVE_SERVICE_BODY")
+const parity = parse("PARITY_BODY")
+const expectedActualLiveURL = normalize(process.env.EXPECTED_ACTUAL_LIVE_URL)
+const targetBaseURL = normalize(parity.targetBaseUrl)
+
+if (liveService.managed !== true) {
+  fail(`Actual live service is not managed: managed=${String(liveService.managed)} status=${String(liveService.status || "")}`)
+}
+if (String(parity.status || "").trim() !== "aligned") {
+  fail(`Actual live rollout parity drifted: status=${String(parity.status || "")} summary=${String(parity.summary || "")}`)
+}
+if (!targetBaseURL) {
+  fail("Actual live rollout parity missing targetBaseUrl")
+}
+if (targetBaseURL !== expectedActualLiveURL) {
+  fail(`Actual live rollout target mismatch: got ${targetBaseURL}, want ${expectedActualLiveURL}`)
+}
+NODE
+}
+
+probe_actual_live_rollout() {
+  if [[ -z "$ACTUAL_LIVE_URL" && "$REQUIRE_ACTUAL_LIVE_PARITY" != "1" ]]; then
+    return
+  fi
+
+  if [[ -z "$ACTUAL_LIVE_URL" && "$REQUIRE_ACTUAL_LIVE_PARITY" == "1" ]]; then
+    echo "OPENSHOCK_ACTUAL_LIVE_URL is required when OPENSHOCK_REQUIRE_ACTUAL_LIVE_PARITY=1" >&2
+    exit 1
+  fi
+
+  echo "==> Current live service ownership"
+  request_json "$SERVER_URL/v1/runtime/live-service"
+  assert_status "200" "Current live service ownership"
+  assert_contains '"managed"' "Current live service ownership"
+  live_service_body="$last_body"
+  preview_body "$live_service_body"
+
+  echo "==> Actual live rollout parity"
+  request_json "$SERVER_URL/v1/workspace/live-rollout-parity"
+  assert_status "200" "Actual live rollout parity"
+  assert_contains '"status"' "Actual live rollout parity"
+  parity_body="$last_body"
+  preview_body "$parity_body"
+
+  if [[ "$REQUIRE_ACTUAL_LIVE_PARITY" == "1" ]]; then
+    assert_actual_live_parity_truth "$live_service_body" "$parity_body"
+  fi
 }
 
 require_cmd curl
@@ -333,6 +663,7 @@ assert_contains '"workspace"' "Server state"
 state_body="$last_body"
 preview_body "$state_body"
 assert_usage_observability_truth "$state_body"
+assert_state_runtime_truth "$state_body"
 probe_state_stream_snapshot
 echo "==> Server experience metrics"
 request_json "$SERVER_URL/v1/experience-metrics"
@@ -341,9 +672,30 @@ assert_contains '"sections"' "Server experience metrics"
 experience_body="$last_body"
 preview_body "$experience_body"
 assert_experience_metrics_truth "$experience_body"
-probe "Server repo binding" "$SERVER_URL/v1/repo/binding" '"bindingStatus"'
+echo "==> Server repo binding"
+request_json "$SERVER_URL/v1/repo/binding"
+assert_status "200" "Server repo binding"
+assert_contains '"bindingStatus"' "Server repo binding"
+repo_binding_body="$last_body"
+preview_body "$repo_binding_body"
+assert_repo_binding_truth "$repo_binding_body"
 probe_github_connection "$SERVER_URL/v1/github/connection"
+echo "==> Branch head truth"
+request_json "$SERVER_URL/v1/workspace/branch-head-truth"
+assert_status "200" "Branch head truth"
+assert_contains '"status"' "Branch head truth"
+assert_contains '"summary"' "Branch head truth"
+assert_contains '"repoBinding"' "Branch head truth"
+assert_contains '"githubConnection"' "Branch head truth"
+assert_contains '"drifts"' "Branch head truth"
+branch_head_body="$last_body"
+preview_body "$branch_head_body"
+if [[ "$REQUIRE_BRANCH_HEAD_ALIGNED" == "1" ]]; then
+  assert_branch_head_truth "$branch_head_body"
+fi
 probe_run_control_fail_closed
+probe_runtime_bridge_check
+probe_actual_live_rollout
 
 echo "==> Server runtime registry"
 request_json "$SERVER_URL/v1/runtime/registry"

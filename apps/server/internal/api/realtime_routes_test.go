@@ -46,6 +46,12 @@ func TestStateStreamEmitsInitialSnapshotAndDeltaUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -72,8 +78,8 @@ func TestStateStreamEmitsInitialSnapshotAndDeltaUpdates(t *testing.T) {
 
 	reader := bufio.NewReader(resp.Body)
 	first := decodeSnapshotFrame(t, readStateStreamFrame(t, reader))
-	if first.Type != "snapshot" || first.Sequence != 1 {
-		t.Fatalf("first event = %#v, want snapshot seq=1", first)
+	if first.Type != "snapshot" || first.Sequence != 2 {
+		t.Fatalf("first event = %#v, want snapshot seq=2 after login", first)
 	}
 	if first.Presence.Unread == 0 {
 		t.Fatalf("first presence = %#v, want seeded unread truth", first.Presence)
@@ -95,8 +101,8 @@ func TestStateStreamEmitsInitialSnapshotAndDeltaUpdates(t *testing.T) {
 	}
 
 	second := decodeDeltaFrame(t, readStateStreamFrame(t, reader))
-	if second.Type != "delta" || second.Sequence != 2 {
-		t.Fatalf("second event = %#v, want delta seq=2", second)
+	if second.Type != "delta" || second.Sequence != 3 {
+		t.Fatalf("second event = %#v, want delta seq=3 after login", second)
 	}
 	if second.Presence.BusyMachines == 0 {
 		t.Fatalf("second presence = %#v, want busy machine truth", second.Presence)
@@ -122,6 +128,13 @@ func TestStateStreamDeltaBundlesCrossObjectProjectionUpdates(t *testing.T) {
 	s, err := store.New(statePath, root)
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
+	}
+	mustLoginReadyOwner(t, s)
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
 	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -201,6 +214,45 @@ func TestStateStreamDeltaBundlesCrossObjectProjectionUpdates(t *testing.T) {
 	}
 }
 
+func TestSignedOutStateStreamRedactsPrivateLiveSurfaces(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		WorkspaceRoot: root,
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/state/stream")
+	if err != nil {
+		t.Fatalf("GET state stream error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	first := decodeSnapshotFrame(t, readStateStreamFrame(t, bufio.NewReader(resp.Body)))
+	if first.Sequence != 1 {
+		t.Fatalf("signed-out snapshot sequence = %d, want 1", first.Sequence)
+	}
+	if first.Presence.Unread != 0 || first.Presence.ActiveRuns != 0 || first.Presence.OnlineMachines != 0 {
+		t.Fatalf("signed-out presence leaked private live truth: %#v", first.Presence)
+	}
+	if first.State.Workspace.Name == "" || first.State.Workspace.Onboarding.ResumeURL == "" {
+		t.Fatalf("signed-out workspace bootstrap = %#v, want public bootstrap fields", first.State.Workspace)
+	}
+	if first.State.Workspace.Repo != "" || first.State.Workspace.Branch != "" || first.State.Workspace.PairedRuntime != "" {
+		t.Fatalf("signed-out workspace leaked private details: %#v", first.State.Workspace)
+	}
+	if len(first.State.Channels) != 0 || len(first.State.Rooms) != 0 || len(first.State.Runs) != 0 || len(first.State.Inbox) != 0 {
+		t.Fatalf("signed-out state leaked private surfaces: %#v", first.State)
+	}
+}
+
 func TestStateStreamDeltaEmitsMemberPreferenceAndOnboardingSignals(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, "data", "state.json")
@@ -208,6 +260,18 @@ func TestStateStreamDeltaEmitsMemberPreferenceAndOnboardingSignals(t *testing.T)
 	s, err := store.New(statePath, root)
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
 	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -308,6 +372,12 @@ func TestStateRouteExposesCurrentStateSequenceHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -333,16 +403,16 @@ func TestStateRouteExposesCurrentStateSequenceHeader(t *testing.T) {
 		return sequence
 	}
 
-	if sequence := readSequence(); sequence != 1 {
-		t.Fatalf("initial state sequence = %d, want 1", sequence)
+	if sequence := readSequence(); sequence != 2 {
+		t.Fatalf("initial state sequence = %d, want 2 after login", sequence)
 	}
 
 	if _, _, _, err := s.UpdateNotificationPolicy(store.NotificationPolicyInput{BrowserPush: "all"}); err != nil {
 		t.Fatalf("UpdateNotificationPolicy() error = %v", err)
 	}
 
-	if sequence := readSequence(); sequence != 2 {
-		t.Fatalf("updated state sequence = %d, want 2", sequence)
+	if sequence := readSequence(); sequence != 3 {
+		t.Fatalf("updated state sequence = %d, want 3 after login and update", sequence)
 	}
 }
 
@@ -353,6 +423,12 @@ func TestStateStreamReplaysMissedSnapshotsFromRequestedSequence(t *testing.T) {
 	s, err := store.New(statePath, root)
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
 	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
@@ -368,8 +444,8 @@ func TestStateStreamReplaysMissedSnapshotsFromRequestedSequence(t *testing.T) {
 	initialReader := bufio.NewReader(initialResp.Body)
 	initial := decodeSnapshotFrame(t, readStateStreamFrame(t, initialReader))
 	initialResp.Body.Close()
-	if initial.Sequence != 1 {
-		t.Fatalf("initial snapshot = %#v, want sequence 1", initial)
+	if initial.Sequence != 2 {
+		t.Fatalf("initial snapshot = %#v, want sequence 2 after login", initial)
 	}
 
 	if _, _, _, err := s.UpdateNotificationPolicy(store.NotificationPolicyInput{BrowserPush: "all"}); err != nil {
@@ -391,7 +467,7 @@ func TestStateStreamReplaysMissedSnapshotsFromRequestedSequence(t *testing.T) {
 		t.Fatalf("UpsertRuntimeHeartbeat() error = %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/state/stream?since=1", nil)
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/state/stream?since="+strconv.Itoa(initial.Sequence), nil)
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
@@ -405,8 +481,8 @@ func TestStateStreamReplaysMissedSnapshotsFromRequestedSequence(t *testing.T) {
 	first := decodeSnapshotFrame(t, readStateStreamFrame(t, reader))
 	second := decodeDeltaFrame(t, readStateStreamFrame(t, reader))
 
-	if first.Sequence != 2 || second.Sequence != 3 {
-		t.Fatalf("replay sequences = (%d, %d), want (2, 3)", first.Sequence, second.Sequence)
+	if first.Sequence != 3 || second.Sequence != 4 {
+		t.Fatalf("replay sequences = (%d, %d), want (3, 4)", first.Sequence, second.Sequence)
 	}
 	if first.State.Workspace.BrowserPush != "推全部 live 通知" {
 		t.Fatalf("first replay workspace = %#v, want updated browser push", first.State.Workspace)
@@ -426,6 +502,12 @@ func TestStateStreamReplaysMissedSnapshotsFromLastEventIDHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -440,8 +522,8 @@ func TestStateStreamReplaysMissedSnapshotsFromLastEventIDHeader(t *testing.T) {
 	initialReader := bufio.NewReader(initialResp.Body)
 	initial := decodeSnapshotFrame(t, readStateStreamFrame(t, initialReader))
 	initialResp.Body.Close()
-	if initial.Sequence != 1 {
-		t.Fatalf("initial snapshot = %#v, want sequence 1", initial)
+	if initial.Sequence != 2 {
+		t.Fatalf("initial snapshot = %#v, want sequence 2 after login", initial)
 	}
 
 	if _, _, _, err := s.UpdateNotificationPolicy(store.NotificationPolicyInput{BrowserPush: "all"}); err != nil {
@@ -452,7 +534,7 @@ func TestStateStreamReplaysMissedSnapshotsFromLastEventIDHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
-	req.Header.Set("Last-Event-ID", "1")
+	req.Header.Set("Last-Event-ID", strconv.Itoa(initial.Sequence))
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -462,11 +544,11 @@ func TestStateStreamReplaysMissedSnapshotsFromLastEventIDHeader(t *testing.T) {
 
 	frame := readStateStreamFrame(t, bufio.NewReader(resp.Body))
 	replay := decodeSnapshotFrame(t, frame)
-	if replay.Sequence != 2 {
-		t.Fatalf("replay snapshot = %#v, want sequence 2", replay)
+	if replay.Sequence != 3 {
+		t.Fatalf("replay snapshot = %#v, want sequence 3 after login and update", replay)
 	}
-	if frame.ID != "2" {
-		t.Fatalf("frame id = %q, want 2", frame.ID)
+	if frame.ID != "3" {
+		t.Fatalf("frame id = %q, want 3", frame.ID)
 	}
 	if replay.State.Workspace.BrowserPush != "推全部 live 通知" {
 		t.Fatalf("replay workspace = %#v, want updated browser push", replay.State.Workspace)
@@ -481,6 +563,7 @@ func TestStateSequenceHeaderBridgesFetchToStreamReplayGap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	mustLoginReadyOwner(t, s)
 
 	server := httptest.NewServer(New(s, http.DefaultClient, Config{
 		DaemonURL:     "http://127.0.0.1:65531",
@@ -497,8 +580,8 @@ func TestStateSequenceHeaderBridgesFetchToStreamReplayGap(t *testing.T) {
 	}
 	sequenceHeader := strings.TrimSpace(stateResp.Header.Get("X-OpenShock-State-Sequence"))
 	stateResp.Body.Close()
-	if sequenceHeader != "1" {
-		t.Fatalf("state sequence header = %q, want 1", sequenceHeader)
+	if sequenceHeader != "2" {
+		t.Fatalf("state sequence header = %q, want 2 after login", sequenceHeader)
 	}
 
 	reportedAt := time.Now().UTC().Format(time.RFC3339)
@@ -524,11 +607,11 @@ func TestStateSequenceHeaderBridgesFetchToStreamReplayGap(t *testing.T) {
 
 	frame := readStateStreamFrame(t, bufio.NewReader(resp.Body))
 	replay := decodeSnapshotFrame(t, frame)
-	if replay.Sequence != 2 {
-		t.Fatalf("replay snapshot = %#v, want sequence 2", replay)
+	if replay.Sequence != 3 {
+		t.Fatalf("replay snapshot = %#v, want sequence 3 after login and heartbeat", replay)
 	}
-	if frame.ID != "2" {
-		t.Fatalf("frame id = %q, want 2", frame.ID)
+	if frame.ID != "3" {
+		t.Fatalf("frame id = %q, want 3", frame.ID)
 	}
 	if len(replay.State.Runtimes) == 0 || replay.State.Runtimes[0].ID != "shock-gap" {
 		t.Fatalf("replay runtimes = %#v, want shock-gap runtime", replay.State.Runtimes)

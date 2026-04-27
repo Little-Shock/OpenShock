@@ -1,4 +1,5 @@
 import type { AuthSession, WorkspaceSnapshot } from "@/lib/phase-zero-types";
+import { normalizeSupportedStartRoute, supportedStartRouteLabel } from "./start-route.ts";
 
 export type FirstStartJourneyStepStatus = "pending" | "active" | "ready";
 
@@ -66,16 +67,8 @@ function onboardingStatusLabel(workspace: WorkspaceSnapshot) {
   }
 }
 
-function setupResumeHref(workspace: WorkspaceSnapshot) {
-  const resume = workspace.onboarding.resumeUrl?.trim();
-  if (resume) {
-    return resume;
-  }
-  const template = workspace.onboarding.templateId?.trim();
-  if (template) {
-    return `/onboarding?template=${template}`;
-  }
-  return "/onboarding";
+function onboardingJourneyHref() {
+  return "/setup";
 }
 
 function onboardingTemplateLabel(workspace: WorkspaceSnapshot) {
@@ -92,36 +85,36 @@ function onboardingTemplateLabel(workspace: WorkspaceSnapshot) {
 }
 
 function launchHref(session: AuthSession) {
-  const preferred = session.preferences.startRoute?.trim();
-  if (preferred && preferred !== "/access" && preferred !== "/setup" && preferred !== "/onboarding") {
-    return preferred;
-  }
-  return "/chat/all";
+  return normalizeSupportedStartRoute(session.preferences.startRoute);
 }
 
 export function firstStartSurfaceLabel(href: string) {
+  const startRouteSurface = supportedStartRouteLabel(href);
+  if (startRouteSurface) {
+    return startRouteSurface;
+  }
   if (href.startsWith("/chat/")) {
     return "聊天";
   }
   if (href.startsWith("/rooms")) {
     return "讨论间";
   }
-  if (href.startsWith("/board")) {
-    return "任务板";
-  }
   if (href.startsWith("/inbox")) {
     return "收件箱";
   }
-  if (href.startsWith("/onboarding")) {
-    return "引导";
+  if (href.startsWith("/mailbox")) {
+    return "交接箱";
   }
   if (href.startsWith("/setup")) {
+    return "设置";
+  }
+  if (href.startsWith("/onboarding")) {
     return "设置";
   }
   if (href.startsWith("/access")) {
     return "身份";
   }
-  return "下一步";
+  return "聊天";
 }
 
 function accessSummary(session: AuthSession) {
@@ -146,11 +139,11 @@ function identitySummary(session: AuthSession) {
 
 function setupSummary(workspace: WorkspaceSnapshot) {
   if (onboardingIsDone(workspace)) {
-    return `工作区已经准备好，下一步进入 ${firstStartSurfaceLabel(setupResumeHref(workspace))}。`;
+    return "工作区已经准备好，可以直接进入聊天。";
   }
 
   const template = onboardingTemplateLabel(workspace);
-  return `当前模板为 ${template}，进度为 ${onboardingStatusLabel(workspace)}。完成模板、仓库和运行环境设置后即可进入工作区。`;
+  return `当前模板为 ${template}，进度为 ${onboardingStatusLabel(workspace)}。继续在首次设置里确认模板、仓库、GitHub 和运行环境后即可进入工作区。`;
 }
 
 export function buildFirstStartJourney(workspace: WorkspaceSnapshot, session: AuthSession): FirstStartJourney {
@@ -158,17 +151,17 @@ export function buildFirstStartJourney(workspace: WorkspaceSnapshot, session: Au
   const identityReady = activeSession && emailVerificationReady(session) && deviceAuthorizationReady(session);
   const onboardingDone = onboardingIsDone(workspace);
   const onboardingStarted = onboardingIsStarted(workspace);
-  const resumeHref = setupResumeHref(workspace);
+  const journeyHref = onboardingJourneyHref();
   const finalLaunchHref = launchHref(session);
 
-  let nextHref = resumeHref;
-  let nextLabel = onboardingStarted ? "继续引导" : "开始引导";
-  let nextSummary = "向导会先帮你进入工作区，再完成模板、仓库、运行环境和智能体设置。";
+  let nextHref = journeyHref;
+  let nextLabel = onboardingStarted ? "继续设置" : "开始设置";
+  let nextSummary = "下一步在首次设置里完成模板、仓库、GitHub、运行环境和智能体设置。";
 
   if (!activeSession) {
-    nextHref = "/access";
-    nextLabel = "先登录";
-    nextSummary = "先在账号页进入工作区，再继续模板、仓库、运行环境和智能体设置。";
+      nextHref = "/access";
+      nextLabel = "先登录";
+      nextSummary = "先在账号页进入工作区，再继续模板、仓库、运行环境和智能体设置。";
   } else if (!emailVerificationReady(session) || !deviceAuthorizationReady(session)) {
     nextHref = "/access";
     nextLabel = "确认邮箱和设备";
@@ -178,9 +171,9 @@ export function buildFirstStartJourney(workspace: WorkspaceSnapshot, session: Au
     nextLabel = "进入聊天";
     nextSummary = `工作区已经准备好，直接进入 ${firstStartSurfaceLabel(finalLaunchHref)}。`;
   } else {
-    nextHref = resumeHref;
-    nextLabel = onboardingStarted ? "继续引导" : "开始引导";
-    nextSummary = "下一步在向导里完成模板、仓库、运行环境和智能体设置，然后即可进入工作区。";
+    nextHref = journeyHref;
+    nextLabel = onboardingStarted ? "继续设置" : "开始设置";
+    nextSummary = "下一步在首次设置里完成模板、仓库、GitHub、运行环境和智能体设置，然后即可进入工作区。";
   }
 
   const nextSurfaceLabel = firstStartSurfaceLabel(nextHref);
@@ -206,7 +199,7 @@ export function buildFirstStartJourney(workspace: WorkspaceSnapshot, session: Au
       label: "配置工作区",
       status: onboardingDone ? "ready" : identityReady ? "active" : "pending",
       summary: setupSummary(workspace),
-      href: onboardingDone ? finalLaunchHref : resumeHref,
+      href: onboardingDone ? finalLaunchHref : journeyHref,
     },
   ];
 

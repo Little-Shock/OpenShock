@@ -11,6 +11,7 @@ type GitHubConnectionStatus = {
   repoUrl: string;
   branch: string;
   provider: string;
+  source?: string;
   remoteConfigured: boolean;
   ghCliInstalled: boolean;
   ghAuthenticated: boolean;
@@ -24,6 +25,7 @@ type GitHubConnectionStatus = {
   webhookUrl?: string;
   missing?: string[];
   ready: boolean;
+  stale?: boolean;
   authMode: string;
   preferredAuthMode?: string;
   message: string;
@@ -65,6 +67,17 @@ function providerLabel(value: string | undefined) {
       return "Bitbucket";
     default:
       return valueOrFallback(value, "未知");
+  }
+}
+
+function sourceLabel(value: string | undefined) {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "probe":
+      return "实时探测";
+    case "workspace_snapshot":
+      return "工作区快照";
+    default:
+      return valueOrFallback(value, "待确认");
   }
 }
 
@@ -110,7 +123,9 @@ export function GitHubConnectionConsole() {
       installationUrl: "",
       callbackUrl: "",
       webhookUrl: "",
+      source: "workspace_snapshot",
       ready: state.workspace.repoBindingStatus === "bound",
+      stale: false,
       authMode: state.workspace.repoAuthMode,
       preferredAuthMode: state.workspace.repoAuthMode,
       message: state.workspace.repo
@@ -184,36 +199,22 @@ export function GitHubConnectionConsole() {
         </span>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">只显示 GitHub 是否已配置完成，不会自动发起远端操作。</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">这里只保留当前结果和下一步，不会在首屏摊开回调地址或历史状态。</p>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">远端</p>
-          <p className="mt-2 font-display text-xl font-semibold">
-            {status ? boolLabel(status.remoteConfigured, "已配置", "未配置") : "等待探测"}
-          </p>
-        </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">当前认证路径</p>
           <p className="mt-2 font-display text-xl font-semibold">{authModeLabel(status?.authMode)}</p>
-        </div>
-        <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">偏好模式</p>
-          <p className="mt-2 font-display text-xl font-semibold">{authModeLabel(status?.preferredAuthMode)}</p>
         </div>
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">GitHub 应用</p>
           <p className="mt-2 font-display text-xl font-semibold">{githubAppLabel(status)}</p>
         </div>
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">安装记录</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">远端</p>
           <p className="mt-2 font-display text-xl font-semibold">
-            {valueOrFallback(status?.installationId, status?.installationUrl ? "待完成安装" : "未生成")}
+            {status ? boolLabel(status.remoteConfigured, "已配置", "未配置") : "等待探测"}
           </p>
-        </div>
-        <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">命令行登录</p>
-          <p className="mt-2 font-display text-xl font-semibold">{ghCliLabel(status)}</p>
         </div>
       </div>
 
@@ -225,7 +226,7 @@ export function GitHubConnectionConsole() {
           </p>
           <details className="mt-4 rounded-[16px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
-              连接细节
+              查看连接细节
             </summary>
             {status?.missing?.length ? (
               <p
@@ -250,8 +251,19 @@ export function GitHubConnectionConsole() {
                 </dd>
               </div>
               <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">当前来源</dt>
+                <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
+                  {sourceLabel(status?.source)}
+                  {status?.stale ? " · 可能过期" : ""}
+                </dd>
+              </div>
+              <div>
                 <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">代码平台</dt>
                 <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">{providerLabel(status?.provider)}</dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">偏好模式</dt>
+                <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">{authModeLabel(status?.preferredAuthMode)}</dd>
               </div>
               <div>
                 <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">应用标识</dt>
@@ -259,33 +271,54 @@ export function GitHubConnectionConsole() {
                   {valueOrFallback(status?.appSlug, "当前未配置应用标识")}
                 </dd>
               </div>
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">安装记录</dt>
+                <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
+                  {valueOrFallback(status?.installationId, status?.installationUrl ? "待完成安装" : "未生成")}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">命令行登录</dt>
+                <dd className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">{ghCliLabel(status)}</dd>
+              </div>
             </dl>
           </details>
         </div>
 
         <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">安装动作</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">下一步动作</p>
           <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.82)]">
             {status?.appInstalled
-              ? "GitHub 应用已就绪，设置页可直接读状态。"
+              ? "GitHub 已就绪，可以回到聊天继续协作。"
               : status?.appConfigured
                 ? "GitHub 应用已配置，但安装还没完成。"
-                : "GitHub 应用还没配好，先补全设置。"}
+                : "如果要走远端交付，先补全 GitHub 安装。"}
           </p>
-          {status?.installationUrl ? (
-            <a
-              data-testid="setup-github-install-link"
-              href={status.installationUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-flex rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5"
+          <div className="mt-4 flex flex-wrap gap-3">
+            {status?.installationUrl ? (
+              <a
+                data-testid="setup-github-install-link"
+                href={status.installationUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5"
+              >
+                GitHub 安装页
+              </a>
+            ) : null}
+            <button
+              data-testid="setup-github-refresh-button"
+              type="button"
+              onClick={() => void loadStatus(true)}
+              disabled={loading}
+              className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              GitHub 安装页
-            </a>
-          ) : null}
-          <details className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+              {loading ? "检查中..." : "重新检查 GitHub"}
+            </button>
+          </div>
+          <details data-testid="setup-github-ingress-details" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.56)]">
-              回流地址
+              查看公开入口
             </summary>
             <div className="mt-3 space-y-3">
               <div>
@@ -321,18 +354,6 @@ export function GitHubConnectionConsole() {
             完成安装后会自动返回并刷新当前状态。如未自动更新，再手动重新检查。
           </p>
         </div>
-      </div>
-
-      <div className="mt-4 flex justify-end">
-        <button
-          data-testid="setup-github-refresh-button"
-          type="button"
-          onClick={() => void loadStatus(true)}
-          disabled={loading}
-          className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {loading ? "检查中..." : "重新检查 GitHub"}
-        </button>
       </div>
 
       {error ? (

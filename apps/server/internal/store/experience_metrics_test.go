@@ -135,8 +135,8 @@ func TestExperienceMetricsAutoCompleteOperationalFreshOnboarding(t *testing.T) {
 		t.Fatalf("product section missing: %#v", snapshot.Sections)
 	}
 	onboardingCompletion, ok := findExperienceMetricByID(product.Metrics, "onboarding-completion")
-	if !ok || onboardingCompletion.Status != experienceMetricReady {
-		t.Fatalf("onboarding-completion metric = %#v, want ready after operational auto-complete", onboardingCompletion)
+	if !ok || onboardingCompletion.Status != experienceMetricWarning {
+		t.Fatalf("onboarding-completion metric = %#v, want warning before template confirmation", onboardingCompletion)
 	}
 
 	experience, ok := findExperienceMetricsSection(snapshot.Sections, "experience")
@@ -144,8 +144,39 @@ func TestExperienceMetricsAutoCompleteOperationalFreshOnboarding(t *testing.T) {
 		t.Fatalf("experience section missing: %#v", snapshot.Sections)
 	}
 	templateOnboarding, ok := findExperienceMetricByID(experience.Metrics, "template-onboarding")
+	if !ok || templateOnboarding.Status != experienceMetricWarning {
+		t.Fatalf("template-onboarding metric = %#v, want warning before template confirmation", templateOnboarding)
+	}
+
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Onboarding: &WorkspaceOnboardingSnapshot{
+			Status:         workspaceOnboardingInProgress,
+			TemplateID:     "dev-team",
+			CurrentStep:    "runtime",
+			CompletedSteps: []string{"workspace-created", "account-ready", "template-selected", "github-choice"},
+			ResumeURL:      "/setup",
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig(template confirm) error = %v", err)
+	}
+
+	snapshot = s.ExperienceMetrics()
+	product, ok = findExperienceMetricsSection(snapshot.Sections, "product")
+	if !ok {
+		t.Fatalf("product section missing after confirmation: %#v", snapshot.Sections)
+	}
+	onboardingCompletion, ok = findExperienceMetricByID(product.Metrics, "onboarding-completion")
+	if !ok || onboardingCompletion.Status != experienceMetricReady {
+		t.Fatalf("onboarding-completion metric = %#v, want ready after template confirmation and operational auto-complete", onboardingCompletion)
+	}
+
+	experience, ok = findExperienceMetricsSection(snapshot.Sections, "experience")
+	if !ok {
+		t.Fatalf("experience section missing after confirmation: %#v", snapshot.Sections)
+	}
+	templateOnboarding, ok = findExperienceMetricByID(experience.Metrics, "template-onboarding")
 	if !ok || templateOnboarding.Status != experienceMetricReady {
-		t.Fatalf("template-onboarding metric = %#v, want ready after operational auto-complete", templateOnboarding)
+		t.Fatalf("template-onboarding metric = %#v, want ready after template confirmation and operational auto-complete", templateOnboarding)
 	}
 }
 

@@ -17,7 +17,7 @@ func seedState() State {
 			PairedRuntime:     "shock-main",
 			PairedRuntimeURL:  "http://127.0.0.1:8090",
 			PairingStatus:     "paired",
-			DeviceAuth:        "browser-approved",
+			DeviceAuth:        workspaceDeviceAuthLabel(""),
 			LastPairedAt:      now,
 			BrowserPush:       "只推高优先级",
 			MemoryMode:        "MEMORY.md + notes/ + decisions/",
@@ -44,7 +44,7 @@ func seedState() State {
 				TemplateID:     "delivery-ops",
 				CurrentStep:    "github",
 				CompletedSteps: []string{"workspace-created", "member-seeded"},
-				ResumeURL:      "/onboarding",
+				ResumeURL:      "/setup",
 				UpdatedAt:      now,
 			},
 		},
@@ -57,10 +57,13 @@ func seedState() State {
 			"all": {
 				{ID: "msg-all-1", Speaker: "Mina", Role: "human", Tone: "human", Message: "前台一定要轻。频道就是频道，严肃工作一律升级成讨论间。", Time: "09:12"},
 				{ID: "msg-all-2", Speaker: "Codex Dockmaster", Role: "agent", Tone: "agent", Message: "Runtime 在线状态已经同步。下一步是把真实 Run 和审批链路拉进前台。", Time: "09:16"},
+				{ID: "thread-all-1", Speaker: "Mina", Role: "human", Tone: "human", Message: "那就别把机器状态塞进设置页了，直接留在主壳和讨论间里常驻。", Time: "09:18", ReplyToMessageID: "msg-all-2"},
+				{ID: "thread-all-2", Speaker: "Codex Dockmaster", Role: "agent", Tone: "agent", Message: "收到。我会把在线状态和讨论间上下文一起留在左栏和右侧摘要，不再只给后台页。", Time: "09:19", ReplyToMessageID: "msg-all-2"},
 				{ID: "msg-all-3", Speaker: "System", Role: "system", Tone: "system", Message: "OPS-12 已经升级成讨论间，因为它开始涉及 runtime、branch 和 PR 收口。", Time: "09:17"},
 			},
 			"roadmap": {
 				{ID: "msg-roadmap-1", Speaker: "Longwen", Role: "human", Tone: "human", Message: "默认入口必须聊天优先。任务板只能是辅助视图，不许反客为主。", Time: "10:04"},
+				{ID: "thread-roadmap-1", Speaker: "系统", Role: "system", Tone: "system", Message: "已记录：看板仅保留为规划镜像，不再作为首页主心智。", Time: "10:06", ReplyToMessageID: "msg-roadmap-1"},
 				{ID: "msg-roadmap-2", Speaker: "Claude Review Runner", Role: "agent", Tone: "agent", Message: "Inbox 现在更像决策驾驶舱，不像一个冷冰冰的告警后台了。", Time: "10:07"},
 			},
 			"announcements": {
@@ -93,10 +96,12 @@ func seedState() State {
 			"dm-codex-dockmaster": {
 				{ID: "msg-dm-codex-1", Speaker: "Codex Dockmaster", Role: "agent", Tone: "agent", Message: "我先不把这条抬成 room。等 thread follow / reopen 真闭环了，再升级。", Time: "11:12"},
 				{ID: "msg-dm-codex-2", Speaker: "Larkspur", Role: "human", Tone: "human", Message: "可以。DM 先承担快速澄清，真正需要 run / PR / approval 时再升房间。", Time: "11:14"},
+				{ID: "thread-dm-codex-1", Speaker: "Larkspur", Role: "human", Tone: "human", Message: "先把回访做顺，再谈是不是要升成新讨论间。", Time: "11:15", ReplyToMessageID: "msg-dm-codex-1"},
 			},
 			"dm-mina": {
 				{ID: "msg-dm-mina-1", Speaker: "Mina", Role: "human", Tone: "human", Message: "稍后查看不应该像任务板，它更像“我晚点回来看这条线程”。", Time: "11:22"},
 				{ID: "msg-dm-mina-2", Speaker: "System", Role: "system", Tone: "system", Message: "已记录：稍后查看用于回访，不单独再造一层待办。", Time: "11:24"},
+				{ID: "thread-dm-mina-1", Speaker: "系统", Role: "system", Tone: "system", Message: "已记录：稍后查看是当前消息工作流的正式入口。", Time: "11:25", ReplyToMessageID: "msg-dm-mina-1"},
 			},
 		},
 		FollowedThreads: []MessageSurfaceEntry{
@@ -150,14 +155,19 @@ func seedState() State {
 			"room-runtime": {
 				{ID: "msg-room-1", Speaker: "Codex Dockmaster", Role: "agent", Tone: "agent", Message: "左下角状态区已经接上，下一步把 Run 详情和机器 heartbeat 带进房间。", Time: "09:20"},
 				{ID: "msg-room-2", Speaker: "Longwen", Role: "human", Tone: "human", Message: "机器和 Agent 的状态必须常驻可见，它们不是设置项，而是协作者。", Time: "09:23"},
+				{ID: "thread-room-runtime-1", Speaker: "Larkspur", Role: "human", Tone: "human", Message: "房间里只保留当前讨论间的执行信息，不再额外铺一层总览。", Time: "09:24", ReplyToMessageID: "msg-room-1"},
+				{ID: "thread-room-runtime-2", Speaker: "Codex Dockmaster", Role: "agent", Tone: "agent", Message: "明白。当前讨论间会只盯住分支、运行环境、PR 和当前话题，不再分散视线。", Time: "09:25", ReplyToMessageID: "msg-room-1"},
 				{ID: "msg-room-3", Speaker: "System", Role: "system", Tone: "system", Message: "run_runtime_01 已经在 shock-main 上进入实时执行。", Time: "09:26"},
+				{ID: "thread-room-runtime-3", Speaker: "System", Role: "system", Tone: "system", Message: "关注线程已经可以把后续恢复继续锁在同一条讨论上。", Time: "09:27", ReplyToMessageID: "msg-room-2"},
 			},
 			"room-inbox": {
 				{ID: "msg-room-4", Speaker: "Claude Review Runner", Role: "agent", Tone: "agent", Message: "审批卡片现在都会回到房间和 Run，不再掉进孤立的弹窗里。", Time: "10:01"},
+				{ID: "thread-room-inbox-1", Speaker: "Mina", Role: "human", Tone: "human", Message: "收件箱入口放左下角是对的，但卡片正文还得更克制。", Time: "10:03", ReplyToMessageID: "msg-room-4"},
 				{ID: "msg-room-5", Speaker: "Mina", Role: "human", Tone: "human", Message: "动作文案要冷静，不要官僚化，更不能像告警系统在尖叫。", Time: "10:08"},
 			},
 			"room-memory": {
 				{ID: "msg-room-6", Speaker: "Memory Clerk", Role: "agent", Tone: "blocked", Message: "我已经定位到冲突源，但现在缺少记忆优先级规则，不能继续写回。", Time: "10:30"},
+				{ID: "thread-room-memory-1", Speaker: "Larkspur", Role: "human", Tone: "human", Message: "先别写回，优先级策略没定之前必须卡住。", Time: "10:32", ReplyToMessageID: "msg-room-6"},
 				{ID: "msg-room-7", Speaker: "System", Role: "system", Tone: "system", Message: "已经把阻塞事件升级到 Inbox，等待人类确定优先级。", Time: "10:33"},
 			},
 		},

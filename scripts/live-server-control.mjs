@@ -4,13 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { launchedProcessOwnsLiveService, normalizeLiveServiceTruth, resolveControlAddress } from "./live-server-control-lib.mjs";
 
 const cli = parseCli(process.argv.slice(2));
 const repoRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
 const workspaceRoot = path.resolve(cli.options.workspaceRoot ?? process.env.OPENSHOCK_WORKSPACE_ROOT ?? repoRoot);
-const serverAddress = cli.options.serverAddress ?? process.env.OPENSHOCK_SERVER_ADDR ?? ":8080";
-const baseUrl = resolveBaseUrl(serverAddress, cli.options.serverUrl ?? process.env.OPENSHOCK_SERVER_URL);
 const metadataPath = path.join(workspaceRoot, "data", "ops", "live-server.json");
+const storedMetadata = readMetadataAt(metadataPath);
+const serverAddress = resolveControlAddress(cli.options.serverAddress ?? process.env.OPENSHOCK_SERVER_ADDR, storedMetadata?.address);
+const baseUrl = resolveBaseUrl(serverAddress, (cli.options.serverUrl ?? process.env.OPENSHOCK_SERVER_URL) || storedMetadata?.baseUrl);
 const logPath = path.join(workspaceRoot, "data", "logs", "openshock-server.log");
 const binaryPath = path.join(workspaceRoot, "data", "ops", "bin", "openshock-server-live");
 const commands = buildCommands({ repoRoot, workspaceRoot, serverAddress, baseUrl });
@@ -202,7 +204,7 @@ async function startManagedServer(reload) {
   writeMetadata(metadata);
 
   try {
-    await waitForHealth(child.pid);
+    await waitForManagedServiceReady(child.pid);
   } catch (error) {
     metadata.status = "start_failed";
     metadata.lastError = error instanceof Error ? error.message : String(error);
@@ -344,19 +346,24 @@ function pidAlive(pid) {
   }
 }
 
-async function waitForHealth(pid) {
+async function waitForManagedServiceReady(pid) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (pid && !pidAlive(pid)) {
-      throw new Error(`managed live service exited before ${baseUrl}/healthz became ready`);
+      throw new Error(`managed live service pid ${pid} exited before ${baseUrl}/v1/runtime/live-service confirmed ownership`);
     }
-    const probe = await probeJSON(`${baseUrl}/healthz`);
-    if (probe.ok && probe.service === "openshock-server") {
+    const health = await probeJSON(`${baseUrl}/healthz`);
+    if (!health.ok || health.service !== "openshock-server") {
+      await sleep(500);
+      continue;
+    }
+    const liveService = await probeLiveService();
+    if (liveService.ok && launchedProcessOwnsLiveService(liveService.body, pid, baseUrl)) {
       return;
     }
     await sleep(500);
   }
-  throw new Error(`managed live service did not become healthy at ${baseUrl}/healthz within 30s`);
+  throw new Error(`managed live service did not prove ownership at ${baseUrl}/v1/runtime/live-service within 30s`);
 }
 
 async function waitForExit(pid, timeoutMs) {
@@ -401,39 +408,6 @@ async function probeJSON(url) {
 
 async function probeLiveService() {
   return probeJSON(`${baseUrl}/v1/runtime/live-service`);
-}
-
-function normalizeLiveServiceTruth(payload) {
-  if (!payload || typeof payload !== "object") {
-    return null;
-  }
-  return {
-    service: readString(payload.service),
-    managed: Boolean(payload.managed),
-    status: readString(payload.status),
-    message: readString(payload.message),
-    owner: readString(payload.owner),
-    pid: readInteger(payload.pid),
-    workspaceRoot: readString(payload.workspaceRoot),
-    repoRoot: readString(payload.repoRoot),
-    address: readString(payload.address),
-    baseUrl: readString(payload.baseUrl),
-    healthUrl: readString(payload.healthUrl),
-    stateUrl: readString(payload.stateUrl),
-    metadataPath: readString(payload.metadataPath),
-    logPath: readString(payload.logPath),
-    branch: readString(payload.branch),
-    head: readString(payload.head),
-    launchCommand: readString(payload.launchCommand),
-    launchedAt: readString(payload.launchedAt),
-    reloadedAt: readString(payload.reloadedAt),
-    stoppedAt: readString(payload.stoppedAt),
-    lastError: readString(payload.lastError),
-    statusCommand: readString(payload.statusCommand),
-    startCommand: readString(payload.startCommand),
-    stopCommand: readString(payload.stopCommand),
-    reloadCommand: readString(payload.reloadCommand),
-  };
 }
 
 function resolveBaseUrl(address, explicitBaseUrl) {

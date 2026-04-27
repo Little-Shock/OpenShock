@@ -18,16 +18,40 @@
 
 ---
 
-## 二、Phase 0 当前仓库真值
+## 二、Phase 0 对用户真正成立的 3 个承诺
+
+1. 你可以在同一套工作台里继续聊天、回到讨论、查看执行和处理交付，不必来回切页面拼上下文。
+2. 你可以从 `Board` 创建一项工作，并让系统把它自动连到讨论、执行和后续回看。
+3. 你可以用 `Setup` 和 release gate 验证这套本地协作栈现在是不是真的可用，而不是只看静态页面。
+
+## 三、Phase 0 现在不承诺什么
+
+- 不承诺托管云服务或完整 SaaS 运维闭环
+- 不承诺真实远端长期记忆 provider 已经产品化落地
+- 不承诺大规模组织治理、外部插件市场或更重的跨团队运营能力
+
+## 四、Canonical 首次成功路径
+
+第一次跑 OpenShock 时，最短成功路径应该是：
+
+1. 启动一套干净的本地工作区并进入同一套协作壳。
+2. 在 `Setup` 确认仓库、GitHub 和运行环境都有状态。
+3. 进入 `Chat`，确认你已经进入主界面。
+4. 从 `Board` 创建一项工作，确认系统会自动连出讨论和执行。
+5. 回到 `Rooms`，确认系统直接告诉你下一间该回去的讨论和下一步动作。
+
+---
+
+## 五、Phase 0 当前仓库真值
 
 ### 1. 已有骨架
 
 当前仓库已经有：
 
 - Next.js 前端壳
-- 统一的 workspace shell，`chat / rooms / board / inbox / issues / runs / agents / mailbox / memory / onboarding / access / setup / settings` 不再各走各的导航
+- 统一的 workspace shell，`chat / rooms / board / inbox / issues / runs / agents / mailbox / memory / access / setup / settings` 不再各走各的导航；`/onboarding` 只保留兼容跳转
 - 当前前台主路由已经覆盖：
-  - `chat / rooms / issues / topics / runs / pull-requests / mailbox / profiles / onboarding`
+  - `chat / rooms / issues / topics / runs / pull-requests / mailbox / profiles / setup`
   - canonical profile route 以 `/profiles/[kind]/[profileId]` 为准；历史 `/agents/[id]` 只保留兼容跳转
 - Go server 控制面
 - Go daemon 本地 runtime bridge
@@ -68,7 +92,7 @@
 
 ---
 
-## 三、Phase 0 一句话定义
+## 六、Phase 0 一句话定义
 
 在一个真实本地仓库里，把：
 
@@ -84,7 +108,7 @@
 
 ---
 
-## 四、第一轮必须成立的能力
+## 七、第一轮必须成立的能力
 
 ### 1. 协作壳入口成立
 
@@ -99,7 +123,7 @@
 - Run 列表
 - Agent 列表
 - Profile drill-in
-- Onboarding / Access 首启链路
+- Setup / Access 首启链路（`/onboarding` 仅兼容别名）
 - Setup
 - Settings
 
@@ -159,7 +183,7 @@ Inbox 必须能把：
 
 ---
 
-## 五、第一轮执行票应该围绕什么拆
+## 八、第一轮执行票应该围绕什么拆
 
 ### 1. Web 壳层票
 
@@ -201,7 +225,7 @@ Inbox 必须能把：
 
 ---
 
-## 六、Phase 0 验收门
+## 九、Phase 0 验收门
 
 ### Gate 1: 启动门
 

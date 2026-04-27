@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { openSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -58,11 +59,17 @@ async function startFreshStack({ openBrowser }) {
     home: `http://127.0.0.1:${ports.web}`,
     web: `http://127.0.0.1:${ports.web}`,
     access: `http://127.0.0.1:${ports.web}/access`,
-    onboarding: `http://127.0.0.1:${ports.web}/onboarding`,
+    onboarding: `http://127.0.0.1:${ports.web}/setup`,
     chat: `http://127.0.0.1:${ports.web}/chat/all`,
     setup: `http://127.0.0.1:${ports.web}/setup`,
     server: `http://127.0.0.1:${ports.server}`,
     daemon: `http://127.0.0.1:${ports.daemon}`,
+  };
+  const secrets = {
+    internalWorkerConfigured: true,
+    runtimeHeartbeatConfigured: true,
+    internalWorkerValue: `fresh-worker-${randomUUID()}`,
+    runtimeHeartbeatValue: `fresh-heartbeat-${randomUUID()}`,
   };
 
   const server = spawnLoggedProcess(
@@ -79,6 +86,8 @@ async function startFreshStack({ openBrowser }) {
         OPENSHOCK_WORKSPACE_ROOT: workspaceRoot,
         OPENSHOCK_STATE_FILE: statePath,
         OPENSHOCK_BOOTSTRAP_MODE: "fresh",
+        OPENSHOCK_INTERNAL_WORKER_SECRET: secrets.internalWorkerValue,
+        OPENSHOCK_RUNTIME_HEARTBEAT_SECRET: secrets.runtimeHeartbeatValue,
       },
     }
   );
@@ -103,6 +112,7 @@ async function startFreshStack({ openBrowser }) {
       env: {
         ...process.env,
         OPENSHOCK_WORKSPACE_ROOT: workspaceRoot,
+        OPENSHOCK_RUNTIME_HEARTBEAT_SECRET: secrets.runtimeHeartbeatValue,
       },
     }
   );
@@ -127,6 +137,10 @@ async function startFreshStack({ openBrowser }) {
     workspaceRoot,
     statePath,
     webDistDir,
+    security: {
+      internalWorkerConfigured: secrets.internalWorkerConfigured,
+      runtimeHeartbeatConfigured: secrets.runtimeHeartbeatConfigured,
+    },
     urls,
     processes: {
       server,
@@ -138,7 +152,14 @@ async function startFreshStack({ openBrowser }) {
 
   try {
     await waitForURL(`${urls.server}/healthz`, (response, body) => response.ok && body.includes("ok"));
-    await waitForURL(urls.home, (response, body) => response.ok && body.includes("现在可以做什么"));
+    await waitForURL(
+      urls.home,
+      (response, body) =>
+        response.ok &&
+        (body.includes("让人和智能体在同一条对话里继续工作") ||
+          body.includes("home-primary-chat-cta") ||
+          body.includes("继续前先看一眼"))
+    );
   } catch (error) {
     await stopFreshStack(false, { server, daemon, web });
     throw error;
@@ -164,9 +185,10 @@ async function startFreshStack({ openBrowser }) {
   console.log("OpenShock fresh stack is ready.");
   console.log(`Entry: ${urls.home}`);
   console.log(`Access: ${urls.access}`);
-  console.log(`Onboarding: ${urls.onboarding}`);
+  console.log(`Guided setup: ${urls.setup}`);
   console.log(`Chat: ${urls.chat}`);
   console.log(`Setup: ${urls.setup}`);
+  console.log("Local security baseline: internal worker secret and runtime heartbeat secret are configured.");
   console.log(`Workspace root: ${workspaceRoot}`);
   console.log(`State file: ${statePath}`);
 }
@@ -199,10 +221,12 @@ async function printFreshStackStatus() {
     "OpenShock fresh stack status",
     `Status: ${metadata.status ?? "unknown"}`,
     `Started at: ${metadata.startedAt}`,
-    `Entry URL: ${metadata.urls.home ?? metadata.urls.onboarding ?? metadata.urls.chat ?? metadata.urls.setup}`,
+    `Entry URL: ${metadata.urls.home ?? metadata.urls.setup ?? metadata.urls.chat}`,
     `Access URL: ${metadata.urls.access ?? "-"}`,
     `Chat URL: ${metadata.urls.chat}`,
     `Setup URL: ${metadata.urls.setup}`,
+    `Internal worker secret configured: ${metadata.security?.internalWorkerConfigured ? "yes" : "no"}`,
+    `Runtime heartbeat secret configured: ${metadata.security?.runtimeHeartbeatConfigured ? "yes" : "no"}`,
     `Workspace root: ${metadata.workspaceRoot}`,
     `State file: ${metadata.statePath}`,
     `Web dist dir: ${metadata.webDistDir ?? "-"}`,

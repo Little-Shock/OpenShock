@@ -45,8 +45,8 @@ function buildWorkspace(overrides: Partial<WorkspaceSnapshot["onboarding"]> = {}
       status: "in_progress",
       templateId: "dev-team",
       currentStep: "account",
-      completedSteps: ["workspace-created", "template-selected"],
-      resumeUrl: "/onboarding",
+      completedSteps: ["workspace-created"],
+      resumeUrl: "/setup",
       materialization: {
         label: "开发团队",
         channels: [],
@@ -156,11 +156,11 @@ test("buildFirstStartJourney keeps unverified identity on access before setup", 
   assert.equal(journey.steps[2]?.status, "pending");
 });
 
-test("buildFirstStartJourney uses plain template label when setup is next", () => {
+test("buildFirstStartJourney uses plain template label when onboarding is next", () => {
   const journey = buildFirstStartJourney(buildWorkspace(), buildSession());
 
-  assert.equal(journey.nextHref, "/onboarding");
-  assert.equal(journey.nextLabel, "继续引导");
+  assert.equal(journey.nextHref, "/setup");
+  assert.equal(journey.nextLabel, "继续设置");
   assert.match(journey.steps[2]?.summary ?? "", /开发团队/);
   assert.doesNotMatch(journey.steps[2]?.summary ?? "", /dev-team/);
 });
@@ -174,6 +174,28 @@ test("buildFirstStartJourney launches chat after onboarding is done", () => {
   assert.equal(journey.nextHref, "/rooms");
   assert.equal(journey.nextLabel, "进入聊天");
   assert.equal(journey.steps[2]?.status, "ready");
+});
+
+test("buildFirstStartJourney falls back to chat when saved start route points to internal configuration pages", () => {
+  const journey = buildFirstStartJourney(
+    buildWorkspace({ status: "done", resumeUrl: "/chat/all" }),
+    buildSession({ preferences: { startRoute: "/settings" } })
+  );
+
+  assert.equal(journey.nextHref, "/chat/all");
+  assert.equal(journey.launchHref, "/chat/all");
+  assert.equal(journey.launchSurfaceLabel, "聊天");
+});
+
+test("buildFirstStartJourney labels mailbox as a plain customer-facing surface", () => {
+  const journey = buildFirstStartJourney(
+    buildWorkspace({ status: "done", resumeUrl: "/chat/all" }),
+    buildSession({ preferences: { startRoute: "/mailbox" } })
+  );
+
+  assert.equal(journey.nextHref, "/mailbox");
+  assert.equal(journey.launchSurfaceLabel, "交接箱");
+  assert.match(journey.nextSummary, /交接箱/);
 });
 
 test("buildFirstStartJourney still requires access when onboarding is done but session is signed out", () => {
@@ -193,7 +215,7 @@ test("buildFirstStartJourney treats bootstrap-finished as launch-ready once iden
       status: "ready",
       currentStep: "bootstrap-finished",
       completedSteps: ["template-selected", "repo-bound", "github-ready", "runtime-paired", "bootstrap-finished"],
-      resumeUrl: "/onboarding?template=dev-team",
+      resumeUrl: "/setup",
     }),
     buildSession({ preferences: { startRoute: "/rooms" } })
   );
@@ -209,7 +231,7 @@ test("buildFirstStartJourney treats bootstrap-finished onboarding as launchable 
       status: "ready",
       currentStep: "bootstrap-finished",
       completedSteps: ["workspace-created", "template-selected", "bootstrap-finished"],
-      resumeUrl: "/onboarding?template=dev-team",
+      resumeUrl: "/setup",
     }),
     buildSession()
   );

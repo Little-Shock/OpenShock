@@ -17,6 +17,12 @@ import {
   useLiveNotifications,
 } from "@/lib/live-notifications";
 import { usePhaseZeroState } from "@/lib/live-phase0";
+import {
+  buildSettingsNotificationSummary,
+  currentBrowserSubscriberStatus,
+  deriveBrowserConnectReadiness,
+} from "@/lib/settings-notification-ux";
+import { START_ROUTE_OPTIONS, startRouteLabel } from "@/lib/start-route";
 import { formatSandboxList, sandboxPolicyDraft, sandboxPolicySummary, sandboxProfileLabel } from "@/lib/sandbox-policy";
 import { permissionBoundaryCopy } from "@/lib/session-authz";
 import type {
@@ -116,8 +122,8 @@ const ONBOARDING_STATUS_OPTIONS = [
   { value: "ready", label: "待收口" },
   { value: "done", label: "已完成" },
 ] as const;
-const START_ROUTE_OPTIONS = ["/chat/all", "/rooms", "/inbox", "/mailbox", "/setup", "/board", "/settings", "/access"] as const;
 type GovernanceLaneDraft = WorkspaceGovernanceLaneConfig;
+type SettingsRouteMode = "primary" | "advanced";
 
 type DeliveryDelegationMode = "formal-handoff" | "signal-only" | "auto-complete";
 
@@ -244,19 +250,6 @@ function deliveryStatusLabel(status: NotificationDelivery["status"] | Notificati
   }
 }
 
-function currentBrowserSubscriberStatus(surface: {
-  permission: NotificationPermission | "unsupported";
-  registrationState: "idle" | "registering" | "ready" | "blocked" | "error";
-}): NotificationSubscriberStatus {
-  if (surface.permission === "denied" || surface.registrationState === "blocked" || surface.registrationState === "error") {
-    return "blocked";
-  }
-  if (surface.permission === "granted" && surface.registrationState === "ready") {
-    return "ready";
-  }
-  return "pending";
-}
-
 function formatTimestamp(value?: string) {
   if (!value) {
     return "尚未发生";
@@ -315,6 +308,24 @@ function onboardingStatusLabel(status: string) {
     default:
       return status || "未声明";
   }
+}
+
+function workspacePairingStatusLabel(status?: string) {
+  switch (status) {
+    case "paired":
+      return "已配对";
+    case "degraded":
+      return "配对降级";
+    default:
+      return "未配对";
+  }
+}
+
+function memoryBenefitSummary(memoryMode?: string) {
+  if (!memoryMode || !memoryMode.trim()) {
+    return "未配置记忆模式，先到下方启动与安全补齐。";
+  }
+  return `${memoryMode}，后续任务可直接续上。`;
 }
 
 function findSettingsMember(sessionMemberID: string | undefined, members: WorkspaceMember[]) {
@@ -394,6 +405,73 @@ function credentialUsageSummary(profile: CredentialProfile, state: PhaseZeroStat
   const agentCount = state.agents.filter((agent) => (agent.credentialProfileIds ?? []).includes(profile.id)).length;
   const runCount = state.runs.filter((run) => (run.credentialProfileIds ?? []).includes(profile.id)).length;
   return `${profile.workspaceDefault ? "工作区默认" : "单独绑定"} · ${agentCount} 个智能体 · ${runCount} 次运行`;
+}
+
+function nextSettingsAction(state: PhaseZeroState, member: WorkspaceMember | null) {
+  const workspace = state.workspace;
+  const currentStep = valueOrPlaceholder(workspace.onboarding.currentStep, "继续剩余步骤");
+  const startRoute = member?.preferences.startRoute ?? "/chat/all";
+
+  if (workspace.onboarding.status !== "done") {
+    if (workspace.repoBindingStatus !== "bound") {
+      return {
+        href: "/setup",
+        title: "继续连接仓库",
+        detail: "先把仓库名、地址和默认分支连上，工作区才能继续推进。",
+        cta: "去连接仓库",
+      };
+    }
+
+    if (!workspace.githubInstallation.connectionReady) {
+      return {
+        href: "/setup",
+        title: "继续连接 GitHub",
+        detail: "仓库已写入工作区，但 GitHub 连接还没确认完成。",
+        cta: "去连接 GitHub",
+      };
+    }
+
+    if (workspace.pairingStatus !== "paired") {
+      return {
+        href: "/setup",
+        title: "继续连接机器",
+        detail: "先把当前机器配对好，执行和恢复才会稳定。",
+        cta: "去连接机器",
+      };
+    }
+
+    return {
+      href: "/setup",
+      title: "继续完成首次设置",
+      detail: `当前进度 ${onboardingStatusLabel(workspace.onboarding.status)} · ${currentStep}。剩余设置可以继续在启动页收口。`,
+      cta: "继续启动设置",
+    };
+  }
+
+  if (!workspace.githubInstallation.connectionReady) {
+    return {
+      href: "/setup",
+      title: "继续连接 GitHub",
+      detail: "工作区已经可用，但 GitHub 连接还没确认完成。",
+      cta: "去连接 GitHub",
+    };
+  }
+
+  if (!member?.githubIdentity?.handle) {
+    return {
+      href: "/access",
+      title: "绑定 GitHub 账号",
+      detail: "补上代码身份后，交付记录会直接带上你的 GitHub 账号。",
+      cta: "去绑定 GitHub",
+    };
+  }
+
+  return {
+    href: startRoute,
+    title: "设置已就绪，回到工作台",
+    detail: `${startRouteLabel(startRoute)} 已设为默认入口，${agentLabel(member.preferences.preferredAgentId, state.agents)} 会作为常用智能体。`,
+    cta: `回到${startRouteLabel(startRoute)}`,
+  };
 }
 
 function FactTile({
@@ -588,22 +666,22 @@ function buildIdentityTemplateSummaries(
   return Array.from(templates.values());
 }
 
-function LiveSettingsContextRail({ notifications }: { notifications: LiveNotificationsModel }) {
+function LiveSettingsContextRail() {
   const { state, loading: stateLoading, error: stateError } = usePhaseZeroState();
-  const { center, loading, error } = notifications;
   const member = findSettingsMember(state.auth.session.memberId, state.auth.members);
   const workspace = state.workspace;
+  const nextAction = nextSettingsAction(state, member);
   return (
     <DetailRail
       label="设置状态"
       items={[
         {
-          label: "引导",
+          label: "下一步",
           value: stateLoading
             ? "同步中"
             : stateError
               ? "读取失败"
-              : `${valueOrPlaceholder(state.workspace.onboarding.templateId, "未选模板")} / ${onboardingStatusLabel(state.workspace.onboarding.status)}`,
+              : `${nextAction.cta} / ${nextAction.title}`,
         },
         {
           label: "身份",
@@ -614,34 +692,20 @@ function LiveSettingsContextRail({ notifications }: { notifications: LiveNotific
               : `${agentLabel(member?.preferences.preferredAgentId, state.agents)} / ${valueOrPlaceholder(member?.githubIdentity?.handle, "未绑 GitHub")}`,
         },
         {
-          label: "套餐",
+          label: "机器",
           value: stateLoading
             ? "同步中"
             : stateError
               ? "读取失败"
-              : `${valueOrPlaceholder(workspace.plan, "未声明")} / ${quotaStatusLabel(workspace.quota?.status)} / ${formatQuotaCounter(workspace.quota?.usedAgents, workspace.quota?.maxAgents, "个智能体")}`,
+              : `${workspacePairingStatusLabel(workspace.pairingStatus)} / ${valueOrPlaceholder(workspace.pairedRuntime, "未选机器")}`,
         },
         {
-          label: "保留",
-          value: stateLoading ? "同步中" : stateError ? "读取失败" : formatRetentionSummary(workspace.quota),
-        },
-        {
-          label: "用量",
+          label: "计划",
           value: stateLoading
             ? "同步中"
             : stateError
               ? "读取失败"
-              : `${formatWorkspaceUsageWindow(workspace.usage)} / ${formatCount(workspace.usage?.messageCount)} 条消息`,
-        },
-        {
-          label: "投递",
-          value: loading
-            ? "同步中"
-            : error
-              ? "读取失败"
-              : center.worker.ranAt
-                ? `${center.worker.delivered}/${center.worker.attempted} 已送达`
-                : "未执行",
+              : `${valueOrPlaceholder(workspace.plan, "未声明")} / ${quotaStatusLabel(workspace.quota?.status)}`,
         },
       ]}
     />
@@ -656,6 +720,8 @@ function WorkspacePlanObservabilityPanel() {
   const loadingValue = loading ? "同步中" : error ? "读取失败" : null;
   const metricValue = (value: string) => loadingValue ?? value;
   const metricTone = (tone: "white" | "yellow" | "lime" | "pink") => (loadingValue ? "white" : tone);
+  const pairingTone = workspace.pairingStatus === "paired" ? "lime" : workspace.pairingStatus === "degraded" ? "yellow" : "pink";
+  const memoryTone = workspace.memoryMode?.trim() ? "lime" : "yellow";
   const quotaTone = quotaStatusTone(quota?.status);
   const usageTone = typeof usage?.totalTokens === "number" && usage.totalTokens >= 14000 ? "pink" : "yellow";
 
@@ -663,8 +729,8 @@ function WorkspacePlanObservabilityPanel() {
     <Panel tone="ink" className="shadow-[6px_6px_0_0_var(--shock-yellow)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/72">工作区额度</p>
-          <h2 className="mt-2 font-display text-3xl font-bold">当前套餐、保留期和使用情况</h2>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/72">机器与记忆</p>
+          <h2 className="mt-2 font-display text-3xl font-bold">先把机器连好，让记忆持续可用</h2>
         </div>
         <span
           data-testid="settings-workspace-quota-status"
@@ -683,79 +749,174 @@ function WorkspacePlanObservabilityPanel() {
         </span>
       </div>
       <p className="mt-3 max-w-4xl text-sm leading-6 text-white/84">
-        工作区的额度、保留期和最近使用情况。
+        机器配对后任务不断线，记忆会带着上下文继续。额度和用量细项放在下面。
       </p>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <StatusRow
+          label="机器配对"
+          value={metricValue(
+            `${workspacePairingStatusLabel(workspace.pairingStatus)} · ${valueOrPlaceholder(workspace.pairedRuntime, "未选机器")}`
+          )}
+          tone={metricTone(pairingTone)}
+          testID="settings-workspace-pairing-status"
+        />
+        <StatusRow
+          label="记忆收益"
+          value={metricValue(memoryBenefitSummary(workspace.memoryMode))}
+          tone={metricTone(memoryTone)}
+          testID="settings-workspace-memory-benefit"
+        />
+      </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <FactTile label="当前计划" value={metricValue(valueOrPlaceholder(workspace.plan, "未声明"))} testID="settings-workspace-plan-value" />
-        <FactTile
-          label="统计范围"
-          value={metricValue(formatWorkspaceUsageWindow(usage))}
-          testID="settings-workspace-usage-window"
-        />
+        <FactTile label="统计范围" value={metricValue(formatWorkspaceUsageWindow(usage))} testID="settings-workspace-usage-window" />
         <FactTile label="保留周期" value={metricValue(formatRetentionSummary(quota))} testID="settings-workspace-retention" />
+      </div>
+
+      <StatusRow
+        label="配额提醒"
+        value={metricValue(valueOrPlaceholder(quota?.warning, "目前没有配额提醒。"))}
+        tone={metricTone(quotaTone)}
+        testID="settings-workspace-quota-warning"
+      />
+      <StatusRow
+        label="使用提醒"
+        value={metricValue(valueOrPlaceholder(usage?.warning, "目前没有使用提醒。"))}
+        tone={metricTone(usageTone)}
+        testID="settings-workspace-usage-warning"
+      />
+
+      <details className="mt-5 rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4" data-testid="settings-workspace-quota-details">
+        <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--shock-ink)]">额度明细</summary>
+        <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.08fr)_0.92fr]">
+          <div className="grid gap-3">
+            <StatusRow
+              label="机器"
+              value={metricValue(formatQuotaCounter(quota?.usedMachines, quota?.maxMachines, "台"))}
+              tone={metricTone(quotaCounterTone(quota?.usedMachines, quota?.maxMachines))}
+              testID="settings-workspace-machines"
+            />
+            <StatusRow
+              label="智能体"
+              value={metricValue(formatQuotaCounter(quota?.usedAgents, quota?.maxAgents, "个"))}
+              tone={metricTone(quotaCounterTone(quota?.usedAgents, quota?.maxAgents))}
+              testID="settings-workspace-agents"
+            />
+            <StatusRow
+              label="频道"
+              value={metricValue(formatQuotaCounter(quota?.usedChannels, quota?.maxChannels, "个"))}
+              tone={metricTone(quotaCounterTone(quota?.usedChannels, quota?.maxChannels))}
+              testID="settings-workspace-channels"
+            />
+            <StatusRow
+              label="讨论间"
+              value={metricValue(formatQuotaCounter(quota?.usedRooms, quota?.maxRooms, "个"))}
+              tone={metricTone(quotaCounterTone(quota?.usedRooms, quota?.maxRooms))}
+              testID="settings-workspace-rooms"
+            />
+          </div>
+
+          <div className="grid gap-3">
+            <StatusRow
+              label="最近使用"
+              value={metricValue(`${formatCount(usage?.runCount)} 次执行 / ${formatCount(usage?.messageCount)} 条消息`)}
+              tone="white"
+              testID="settings-workspace-usage-detail"
+            />
+            <StatusRow
+              label="工作区使用量"
+              value={metricValue(`${formatCount(usage?.totalTokens)} 令牌 / ${formatCount(usage?.runCount)} 次执行 / ${formatCount(usage?.messageCount)} 条消息`)}
+              tone={metricTone(usageTone)}
+              testID="settings-workspace-usage-summary"
+            />
+            <StatusRow
+              label="最近刷新"
+              value={metricValue(formatTimestamp(usage?.refreshedAt))}
+              tone="white"
+              testID="settings-workspace-usage-refresh"
+            />
+          </div>
+        </div>
+      </details>
+    </Panel>
+  );
+}
+
+function SettingsOverviewPanel() {
+  const { state, loading, error } = usePhaseZeroState();
+  const workspace = state.workspace;
+  const member = findSettingsMember(state.auth.session.memberId, state.auth.members);
+  const nextAction = nextSettingsAction(state, member);
+  const loadingValue = loading ? "同步中" : error ? "读取失败" : null;
+  const metricValue = (value: string) => loadingValue ?? value;
+
+  return (
+    <Panel tone="paper">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-3xl">
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-[color:rgba(24,20,14,0.62)]">现在先做什么</p>
+          <h2 className="mt-3 font-display text-4xl font-bold">{metricValue(nextAction.title)}</h2>
+          <p className="mt-3 text-base leading-7 text-[color:rgba(24,20,14,0.78)]" data-testid="settings-next-action-summary">
+            {metricValue(nextAction.detail)}
+          </p>
+        </div>
+        <Link
+          href={nextAction.href}
+          data-testid="settings-next-action-link"
+          className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
+        >
+          {metricValue(nextAction.cta)}
+        </Link>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
         <FactTile
-          label="最近使用"
-          value={metricValue(`${formatCount(usage?.runCount)} 次执行 / ${formatCount(usage?.messageCount)} 条消息`)}
-          testID="settings-workspace-usage-detail"
+          label="启动状态"
+          value={metricValue(`${onboardingStatusLabel(workspace.onboarding.status)} · ${valueOrPlaceholder(workspace.onboarding.currentStep, "未声明当前步骤")}`)}
+          testID="settings-overview-onboarding"
+        />
+        <FactTile
+          label="默认入口"
+          value={metricValue(member ? startRouteLabel(member.preferences.startRoute) : "未建立当前成员")}
+          testID="settings-overview-start-route"
+        />
+        <FactTile
+          label="GitHub"
+          value={metricValue(member ? valueOrPlaceholder(member.githubIdentity?.handle, "未绑定") : "未建立当前成员")}
+          testID="settings-overview-github"
         />
       </div>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_0.92fr]">
-        <div className="grid gap-3">
-          <StatusRow
-            label="机器"
-            value={metricValue(formatQuotaCounter(quota?.usedMachines, quota?.maxMachines, "台"))}
-            tone={metricTone(quotaCounterTone(quota?.usedMachines, quota?.maxMachines))}
-            testID="settings-workspace-machines"
+      <details
+        data-testid="settings-overview-support-details"
+        className="mt-5 rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4"
+      >
+        <summary
+          data-testid="settings-overview-support-toggle"
+          className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.72)]"
+        >
+          查看工作区摘要
+        </summary>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <FactTile
+            label="当前模板"
+            value={metricValue(valueOrPlaceholder(workspace.onboarding.templateId, "未选模板"))}
+            testID="settings-overview-template"
           />
-          <StatusRow
-            label="智能体"
-            value={metricValue(formatQuotaCounter(quota?.usedAgents, quota?.maxAgents, "个"))}
-            tone={metricTone(quotaCounterTone(quota?.usedAgents, quota?.maxAgents))}
-            testID="settings-workspace-agents"
+          <FactTile
+            label="安全范围"
+            value={metricValue(sandboxProfileLabel(workspace.sandbox.profile))}
+            testID="settings-overview-sandbox"
           />
-          <StatusRow
-            label="频道"
-            value={metricValue(formatQuotaCounter(quota?.usedChannels, quota?.maxChannels, "个"))}
-            tone={metricTone(quotaCounterTone(quota?.usedChannels, quota?.maxChannels))}
-            testID="settings-workspace-channels"
-          />
-          <StatusRow
-            label="讨论间"
-            value={metricValue(formatQuotaCounter(quota?.usedRooms, quota?.maxRooms, "个"))}
-            tone={metricTone(quotaCounterTone(quota?.usedRooms, quota?.maxRooms))}
-            testID="settings-workspace-rooms"
-          />
-        </div>
-
-        <div className="grid gap-3">
-          <StatusRow
-            label="工作区使用量"
-            value={metricValue(`${formatCount(usage?.totalTokens)} 令牌 / ${formatCount(usage?.runCount)} 次执行 / ${formatCount(usage?.messageCount)} 条消息`)}
-            tone={metricTone(usageTone)}
-            testID="settings-workspace-usage-summary"
-          />
-          <StatusRow
-            label="最近刷新"
-            value={metricValue(formatTimestamp(usage?.refreshedAt))}
-            tone="white"
-            testID="settings-workspace-usage-refresh"
-          />
-          <StatusRow
-            label="配额提醒"
-            value={metricValue(valueOrPlaceholder(quota?.warning, "目前没有配额提醒。"))}
-            tone={metricTone(quotaTone)}
-            testID="settings-workspace-quota-warning"
-          />
-          <StatusRow
-            label="使用提醒"
-            value={metricValue(valueOrPlaceholder(usage?.warning, "目前没有使用提醒。"))}
-            tone={metricTone(usageTone)}
-            testID="settings-workspace-usage-warning"
+          <FactTile
+            label="常用智能体"
+            value={metricValue(member ? agentLabel(member.preferences.preferredAgentId, state.agents) : "未建立当前成员")}
+            testID="settings-overview-preferred-agent"
           />
         </div>
-      </div>
+      </details>
     </Panel>
   );
 }
@@ -1404,7 +1565,7 @@ function MemberPreferencePanel() {
           testID="settings-member-preferred-agent-value"
         />
         <p className="hidden" data-testid="settings-member-preferred-agent-text">{agentLabel(currentMember.preferences.preferredAgentId, state.agents)}</p>
-        <FactTile label="默认入口" value={valueOrPlaceholder(currentMember.preferences.startRoute, "未声明")} testID="settings-member-start-route-value" />
+        <FactTile label="默认入口" value={startRouteLabel(currentMember.preferences.startRoute)} testID="settings-member-start-route-value" />
         <p className="hidden" data-testid="settings-member-start-route-text">{valueOrPlaceholder(currentMember.preferences.startRoute, "未声明")}</p>
         <FactTile label="GitHub" value={valueOrPlaceholder(currentMember.githubIdentity?.handle, "未绑定")} testID="settings-member-github-handle-value" />
         <p className="hidden" data-testid="settings-member-github-handle-text">{valueOrPlaceholder(currentMember.githubIdentity?.handle, "未绑定")}</p>
@@ -1444,7 +1605,7 @@ function MemberPreferencePanel() {
             >
               {START_ROUTE_OPTIONS.map((route) => (
                 <option key={route} value={route}>
-                  {route}
+                  {startRouteLabel(route)}
                 </option>
               ))}
             </select>
@@ -1813,12 +1974,89 @@ function CredentialProfilesPanel() {
   );
 }
 
+function SettingsAdvancedEntryPanel({
+  governanceSummary,
+  credentialSummary,
+  notificationSummary,
+}: {
+  governanceSummary: string;
+  credentialSummary: string;
+  notificationSummary: string;
+}) {
+  return (
+    <Panel tone="ink" className="shadow-[6px_6px_0_0_var(--shock-yellow)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-3xl">
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/72">不常改的设置</p>
+          <h2 className="mt-3 font-display text-4xl font-bold">管理不常改的设置</h2>
+          <p className="mt-3 text-base leading-7 text-white/84">
+            团队规则、凭据和通知都放到单独一页，需要时再进入。
+          </p>
+        </div>
+        <Link
+          href="/settings/advanced"
+          data-testid="settings-advanced-link"
+          className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--shock-ink)]"
+        >
+          打开高级设置
+        </Link>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <FactTile label="治理编排" value={governanceSummary} testID="settings-advanced-governance-summary" />
+        <FactTile label="凭据配置" value={credentialSummary} testID="settings-advanced-credential-summary" />
+        <FactTile label="通知送达" value={notificationSummary} testID="settings-advanced-notification-summary" />
+      </div>
+    </Panel>
+  );
+}
+
+function SettingsAdvancedOverviewPanel({
+  governanceSummary,
+  credentialSummary,
+  notificationSummary,
+}: {
+  governanceSummary: string;
+  credentialSummary: string;
+  notificationSummary: string;
+}) {
+  return (
+    <Panel tone="paper">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-3xl">
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-[color:rgba(24,20,14,0.62)]">高级设置</p>
+          <h2 className="mt-3 font-display text-4xl font-bold">治理、凭据与通知</h2>
+          <p className="mt-3 text-base leading-7 text-[color:rgba(24,20,14,0.78)]">
+            这里保留少用但重要的配置。常用的启动、身份和机器设置已经放回主设置页。
+          </p>
+        </div>
+        <Link
+          href="/settings"
+          data-testid="settings-primary-link"
+          className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em]"
+        >
+          返回主设置
+        </Link>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <FactTile label="治理编排" value={governanceSummary} testID="settings-advanced-page-governance-summary" />
+        <FactTile label="凭据配置" value={credentialSummary} testID="settings-advanced-page-credential-summary" />
+        <FactTile label="通知送达" value={notificationSummary} testID="settings-advanced-page-notification-summary" />
+      </div>
+    </Panel>
+  );
+}
+
 function SettingsDisclosureSection({
   title,
   summary,
   testId,
   tone = "white",
   defaultOpen = false,
+  eyebrow = "高级设置",
+  collapsedLabel = "展开高级配置",
+  expandedLabel = "收起高级配置",
   children,
 }: {
   title: string;
@@ -1826,6 +2064,9 @@ function SettingsDisclosureSection({
   testId: string;
   tone?: "white" | "paper" | "yellow" | "lime" | "ink" | "pink";
   defaultOpen?: boolean;
+  eyebrow?: string;
+  collapsedLabel?: string;
+  expandedLabel?: string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -1834,7 +2075,7 @@ function SettingsDisclosureSection({
     <Panel tone={tone}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-3xl">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em]">高级设置</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.24em]">{eyebrow}</p>
           <h2 className="mt-3 font-display text-3xl font-bold">{title}</h2>
           <p className="mt-3 text-sm leading-6 opacity-80">{summary}</p>
         </div>
@@ -1848,7 +2089,7 @@ function SettingsDisclosureSection({
             tone === "ink" ? "bg-white text-[var(--shock-ink)]" : "bg-[var(--shock-yellow)] text-[var(--shock-ink)]"
           )}
         >
-          {open ? "收起高级配置" : "展开高级配置"}
+          {open ? expandedLabel : collapsedLabel}
         </button>
       </div>
       {open ? <div data-testid={`settings-advanced-${testId}-content`} className="mt-5 space-y-4">{children}</div> : null}
@@ -1856,7 +2097,13 @@ function SettingsDisclosureSection({
   );
 }
 
-function LiveSettingsView({ notifications }: { notifications: LiveNotificationsModel }) {
+function LiveSettingsView({
+  notifications,
+  mode = "primary",
+}: {
+  notifications: LiveNotificationsModel;
+  mode?: SettingsRouteMode;
+}) {
   const { center, loading: notificationLoading, error: notificationError } = notifications;
   const { state, error: stateError } = usePhaseZeroState();
   const {
@@ -1935,6 +2182,18 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
   const identityWorkerSummary = identityReceipts.length
     ? `${identityReceipts.filter((receipt) => receipt.status === "sent").length}/${identityReceipts.length} 已送达`
     : "尚未执行";
+  const governanceSummary = `${state.workspace.governance.teamTopology.length} 个角色 · ${deliveryDelegationModeLabel(normalizeDeliveryDelegationMode(state.workspace.governance.deliveryDelegationMode))}`;
+  const credentialDefaultCount = state.credentials.filter((profile) => profile.workspaceDefault).length;
+  const credentialSummary = `${state.credentials.length} 条凭证 · ${credentialDefaultCount} 条默认`;
+  const notificationSummary = buildSettingsNotificationSummary({
+    loading: notificationLoading,
+    error: notificationError,
+    subscriberCount: center.subscribers.length,
+    readyDeliveries,
+    suppressedDeliveries,
+  });
+  const browserConnectReadiness = deriveBrowserConnectReadiness(surface);
+  const advancedMode = mode === "advanced";
 
   async function runAction(action: string, runner: () => Promise<void>) {
     setBusyAction(action);
@@ -1960,6 +2219,9 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
 
   async function handleConnectBrowserSubscriber() {
     await runAction("connect-browser", async () => {
+      if (!browserConnectReadiness.canConnect) {
+        throw new Error(browserConnectReadiness.hint);
+      }
       const payload = await notifications.upsertSubscriber({
         id: browserSubscriber?.id,
         channel: "browser_push",
@@ -1972,7 +2234,9 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
       const nextSubscriber =
         payload.notifications.subscribers.find((subscriber) => subscriber.id === payload.subscriber.id) ?? payload.subscriber;
       setActionMessage(
-        `当前浏览器已接入通知：${subscriberStatusLabel(nextSubscriber.status)} · ${preferenceLabel(nextSubscriber.effectivePreference)}。`
+        nextSubscriber.status === "ready"
+          ? `当前浏览器已接入通知：${subscriberStatusLabel(nextSubscriber.status)} · ${preferenceLabel(nextSubscriber.effectivePreference)}。`
+          : `当前浏览器已记录为接收端，但还不能接收通知：${subscriberStatusLabel(nextSubscriber.status)} · ${preferenceLabel(nextSubscriber.effectivePreference)}。`
       );
     });
   }
@@ -2014,7 +2278,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
 
   return (
     <div className="space-y-4">
-      {notificationError ? (
+      {advancedMode && notificationError ? (
         <Panel tone="pink">
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">通知加载失败</p>
           <p className="mt-3 text-base leading-7">当前 `/v1/notifications` 拉取失败：{notificationError}</p>
@@ -2028,41 +2292,89 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
         </Panel>
       ) : null}
 
-      <WorkspacePlanObservabilityPanel />
-      <Panel tone="paper">
-        <p className="font-mono text-[11px] uppercase tracking-[0.24em]">核心设置</p>
-        <h2 className="mt-3 font-display text-4xl font-bold">先看高频设置</h2>
-        <p className="mt-3 max-w-3xl text-base leading-7">
-          套餐额度、引导状态、运行环境、常用智能体和默认入口先放前面。治理、凭证和通知收进高级区。
-        </p>
-      </Panel>
+      {advancedMode ? (
+        <SettingsAdvancedOverviewPanel
+          governanceSummary={governanceSummary}
+          credentialSummary={credentialSummary}
+          notificationSummary={notificationSummary}
+        />
+      ) : (
+        <>
+          <SettingsOverviewPanel />
+          <WorkspacePlanObservabilityPanel />
 
-      <WorkspaceDurableConfigPanel />
-      <MemberPreferencePanel />
+          <SettingsDisclosureSection
+            title="启动与安全"
+            summary="模板、恢复入口、记忆模式和执行范围。"
+            testId="workspace"
+            tone="yellow"
+            eyebrow="工作区设置"
+            collapsedLabel="展开编辑"
+            expandedLabel="收起编辑"
+          >
+            <WorkspaceDurableConfigPanel />
+          </SettingsDisclosureSection>
 
-      <SettingsDisclosureSection
-        title="治理编排"
-        summary="默认折叠。"
-        testId="governance"
-        tone="paper"
-      >
-        <GovernanceTopologyPanel />
-      </SettingsDisclosureSection>
+          <SettingsDisclosureSection
+            title="个人偏好"
+            summary="常用智能体、默认入口和 GitHub 身份。"
+            testId="member"
+            tone="paper"
+            eyebrow="成员设置"
+            collapsedLabel="展开编辑"
+            expandedLabel="收起编辑"
+          >
+            <MemberPreferencePanel />
+          </SettingsDisclosureSection>
 
-      <SettingsDisclosureSection
-        title="凭据配置"
-        summary="默认折叠。"
-        testId="credentials"
-      >
-        <CredentialProfilesPanel />
-      </SettingsDisclosureSection>
+          <SettingsAdvancedEntryPanel
+            governanceSummary={governanceSummary}
+            credentialSummary={credentialSummary}
+            notificationSummary={notificationSummary}
+          />
+        </>
+      )}
 
-      <SettingsDisclosureSection
-        title="通知与送达"
-        summary="默认折叠。"
-        testId="notifications"
-        tone="yellow"
-      >
+      {advancedMode ? (
+        <SettingsDisclosureSection
+          title="治理编排"
+          summary={governanceSummary}
+          testId="governance"
+          tone="paper"
+          defaultOpen={true}
+          eyebrow="团队治理"
+          collapsedLabel="展开治理设置"
+          expandedLabel="收起治理设置"
+        >
+          <GovernanceTopologyPanel />
+        </SettingsDisclosureSection>
+      ) : null}
+
+      {advancedMode ? (
+        <SettingsDisclosureSection
+          title="凭据配置"
+          summary={credentialSummary}
+          testId="credentials"
+          defaultOpen={true}
+          eyebrow="工作区凭据"
+          collapsedLabel="展开凭据设置"
+          expandedLabel="收起凭据设置"
+        >
+          <CredentialProfilesPanel />
+        </SettingsDisclosureSection>
+      ) : null}
+
+      {advancedMode ? (
+        <SettingsDisclosureSection
+          title="通知与送达"
+          summary={notificationSummary}
+          testId="notifications"
+          tone="yellow"
+          defaultOpen={true}
+          eyebrow="通知中心"
+          collapsedLabel="展开通知设置"
+          expandedLabel="收起通知设置"
+        >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_0.92fr]">
         <Panel tone="yellow">
           <p className="font-mono text-[11px] uppercase tracking-[0.24em]">通知状态</p>
@@ -2265,7 +2577,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
             <button
               type="button"
               data-testid="notification-connect-browser"
-              disabled={busyAction !== null}
+              disabled={busyAction !== null || !browserConnectReadiness.canConnect}
               onClick={() => void handleConnectBrowserSubscriber()}
               className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:opacity-60"
             >
@@ -2286,6 +2598,11 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
               {busyAction === "browser-smoke" ? "发送中..." : "本地试发"}
             </button>
           </div>
+          {!browserConnectReadiness.canConnect ? (
+            <p className="mt-4 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]" data-testid="notification-connect-browser-hint">
+              {browserConnectReadiness.hint}
+            </p>
+          ) : null}
           {surface.registrationError ? <p className="mt-4 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">{surface.registrationError}</p> : null}
         </Panel>
       </div>
@@ -2534,6 +2851,7 @@ function LiveSettingsView({ notifications }: { notifications: LiveNotificationsM
           </Panel>
         ) : null}
       </SettingsDisclosureSection>
+      ) : null}
     </div>
   );
 }
@@ -2546,12 +2864,30 @@ export function LiveSettingsRoute() {
       view="settings"
       eyebrow="设置"
       title="工作区设置"
-      description="高频设置先放前面；治理、凭证和通知收进高级区。"
+      description="先看下一步和默认入口，不常改的设置放到高级页。"
       contextTitle="设置状态"
-      contextDescription="工作区额度、启动、默认入口和团队协作。"
-      contextBody={<LiveSettingsContextRail notifications={notifications} />}
+      contextDescription="机器、身份和计划状态；细项按需展开。"
+      contextBody={<LiveSettingsContextRail />}
     >
-      <LiveSettingsView notifications={notifications} />
+      <LiveSettingsView notifications={notifications} mode="primary" />
+    </OpenShockShell>
+  );
+}
+
+export function LiveSettingsAdvancedRoute() {
+  const notifications = useLiveNotifications();
+
+  return (
+    <OpenShockShell
+      view="settings"
+      eyebrow="高级设置"
+      title="治理、凭据与通知"
+      description="把少用但重要的配置收在这里，主设置页保持轻量。"
+      contextTitle="高级设置"
+      contextDescription="团队治理、凭据存储和通知送达状态。"
+      contextBody={<LiveSettingsContextRail />}
+    >
+      <LiveSettingsView notifications={notifications} mode="advanced" />
     </OpenShockShell>
   );
 }

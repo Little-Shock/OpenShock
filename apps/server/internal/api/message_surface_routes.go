@@ -19,7 +19,8 @@ func registerMessageSurfaceRoutes(s *Server, mux *http.ServeMux) {
 }
 
 type DirectMessageRequest struct {
-	Prompt string `json:"prompt"`
+	Prompt           string `json:"prompt"`
+	ReplyToMessageID string `json:"replyToMessageId,omitempty"`
 }
 
 type MessageSurfaceCollectionRequest struct {
@@ -33,7 +34,7 @@ func (s *Server) handleDirectMessages(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot().DirectMessages)
+	writeJSON(w, http.StatusOK, s.sanitizedLiveStateSnapshotForRequest(r).DirectMessages)
 }
 
 func (s *Server) handleDirectMessageRoutes(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +46,7 @@ func (s *Server) handleDirectMessageRoutes(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "direct message not found"})
 			return
 		}
-		snapshot := s.store.Snapshot()
+		snapshot := s.sanitizedLiveStateSnapshotForRequest(r)
 		for _, dm := range snapshot.DirectMessages {
 			if dm.ID == dmID {
 				writeJSON(w, http.StatusOK, map[string]any{
@@ -65,6 +66,9 @@ func (s *Server) handleDirectMessageRoutes(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if !s.requireRequestSessionPermission(w, r, "room.reply") {
+		return
+	}
 
 	var req DirectMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -76,8 +80,7 @@ func (s *Server) handleDirectMessageRoutes(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	snapshot := s.store.Snapshot()
-	nextState, err := s.store.AppendDirectMessageConversation(parts[0], req.Prompt, currentAuthActor(snapshot.Auth.Session))
+	nextState, err := s.store.AppendDirectMessageConversation(parts[0], req.Prompt, s.currentRequestAuthActor(r), req.ReplyToMessageID)
 	if err != nil {
 		writeMessageSurfaceError(w, err)
 		return
@@ -87,6 +90,9 @@ func (s *Server) handleDirectMessageRoutes(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleMessageSurfaceCollections(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !s.requireRequestSessionPermission(w, r, "room.reply") {
 		return
 	}
 

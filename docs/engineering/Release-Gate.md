@@ -2,7 +2,7 @@
 
 这份文档只回答一件事：**当前 OpenShock 仓库怎么做发布前 gate，以及 gate 失败后怎么 rollback。**
 
-如果你只想记一条入口，先看 [Testing Index](../testing/README.md) 顶部的“最短信任路径”；这里负责把那条路径展开成 release contract 和 rollback 规则。
+如果你只想记一条入口，先看 [Testing Index](../testing/README.md) 顶部的“最短验证路径”；这里负责把那条路径展开成 release contract 和 rollback 规则。
 
 ---
 
@@ -41,6 +41,7 @@ pnpm verify:release
 这层会做 3 件事：
 
 1. 跑 `pnpm verify`
+   - 其中 `pnpm verify:server` 现在已经包含 server core 包回归和一条 `server ↔ daemon` integration loop
 2. 跑 daemon `-once` heartbeat snapshot
 3. 检查 runbook 里 release / smoke 入口是否仍然可见
 
@@ -73,6 +74,7 @@ pnpm ops:smoke
 - `GET /v1/runtime`
 - `GET /v1/repo/binding`
 - `GET /v1/github/connection`
+- `GET /v1/workspace/branch-head-truth`
 - `POST /v1/runs/__ops_smoke_missing_run__/control`
 - daemon `GET /v1/runtime`
 
@@ -89,13 +91,13 @@ run control gate 现在按 fail-closed 读：
 - 正确结果必须是 `404` 和结构化 `run not found` 错误
 - 这条默认不改 live run 状态，只证明发布栈已暴露控制路由且边界不会误写
 
-如果你希望把 GitHub readiness 也收成硬 gate，再加：
+如果你只想对当前 live stack 做 strict GitHub-ready + branch-head aligned smoke，可以直接跑：
 
 ```bash
-OPENSHOCK_REQUIRE_GITHUB_READY=1 pnpm ops:smoke
+pnpm ops:smoke:strict
 ```
 
-### 一键全跑
+### 一键全跑与 RC gate
 
 ```bash
 pnpm verify:release:full
@@ -104,7 +106,52 @@ pnpm verify:release:full
 这条等价于：
 
 1. 先过 repo gate
-2. 再过 live stack gate
+2. 再过 release browser suite：
+   - setup spine e2e
+   - onboarding first-start journey
+   - fresh workspace critical loop
+   - rooms continue entry
+   - config persistence recovery
+3. 再过 live stack gate
+
+也就是说，`verify:release:full` 现在不再只是“静态 + smoke”，而是最短的非 strict 产品级发布前全跑入口。
+
+GitHub-ready release candidates 用一条 first-class command：
+
+```bash
+pnpm verify:release:rc
+```
+
+这条会先跑 repo gate，再额外落一条可单独审阅日志的 `server ↔ daemon` integration loop，再顺序跑 5 条浏览器主链，最后再跑包含 strict GitHub-ready + actual-live-parity smoke 的 live stack gate：
+
+- setup spine e2e
+- onboarding first-start journey
+- fresh workspace critical loop
+- rooms continue entry
+- config persistence recovery
+
+这 5 条浏览器主链现在以 `scripts/release-browser-suite.sh` 为单一 manifest；release gate、Testing Index 和 reviewer 证据都必须跟这份 manifest 对齐。
+
+也就是说，只要 `/v1/github/connection` 返回 `ready=false`、actual live ownership / rollout parity 漂了、integration loop 漂了、首启链路漂了、继续入口漂了，或者 durable config recovery 漂了，RC gate 就必须 fail-closed。
+
+命令结束时，脚本还会直接打印一段 release summary，带出当前 `branch / head / server / daemon` 和 5 份 browser report / RC report 路径，避免 reviewer 还要回滚整段日志自己找证据。
+
+从这轮开始，`pnpm verify:release:rc` 还会自动：
+
+- 写出 RC summary report
+- 把 repo / integration / browser / strict stack 原始日志落到 `docs/testing/artifacts/<date>/release-candidate/`
+- 在缺少 `OPENSHOCK_INTERNAL_WORKER_SECRET` 或 `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET` 时直接 fail-closed，避免 notification worker 或 runtime heartbeat 配置缺口带着绿灯进入 RC
+
+`pnpm verify:release:full` 现在也会自动：
+
+- 写出 full gate summary report
+- 把 repo / browser / live stack 原始日志落到 `docs/testing/artifacts/<date>/release-full/`
+- 在 reviewer 视角提供和 RC 同级的可审计命令输出，不再只有终端滚动日志
+
+注意：
+
+- 以上命令会生成报告，但仓库中的 `docs/testing/Test-Report-*` 是归档集合，不保证等于最新一次运行产物。
+- 需要确认“最新证据”时，以命令结束时打印的路径和 [Testing Index](../testing/README.md) 的定位命令为准。
 
 ---
 
@@ -113,9 +160,10 @@ pnpm verify:release:full
 1. 确认当前分支和目标 ref 已同步到预期提交。
 2. 跑 `pnpm verify:release`。
 3. 启动 server / daemon。
-4. 跑 `pnpm ops:smoke`。
-5. 如果这一拍要求 GitHub App 也 ready，再补跑 strict smoke。
-6. 只有 repo gate 和 live gate 都绿，才允许收票、merge 或继续发布动作。
+4. 跑 `pnpm verify:release:full`。
+5. 如果这一拍是 release candidate，跑 `pnpm verify:release:rc`。
+6. 如果这一拍要放 RC，先确认 `OPENSHOCK_INTERNAL_WORKER_SECRET` 和 `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET` 都已注入 server / daemon / gate 环境。
+7. 只有 repo gate、server/daemon integration loop、5 条浏览器主链、live gate，以及 RC 所需的 strict GitHub-ready + actual-live-parity gate 都绿，才允许收票、merge 或继续发布动作。
 
 ---
 
@@ -151,14 +199,22 @@ pnpm verify:release:full
 
 1. `pnpm verify:release`
 2. `pnpm ops:smoke`
-3. 如果用 strict 模式：
-   - `OPENSHOCK_REQUIRE_GITHUB_READY=1 pnpm ops:smoke`
+3. 如果是 release candidate：
+   - `pnpm verify:release:rc`
+   - browser suite 5 份报告：
+     - setup spine e2e
+     - onboarding first-start journey
+     - fresh workspace critical loop
+     - rooms continue entry
+     - config persistence recovery
+   - 确认 RC 报告里 `Internal worker secret` 和 `Runtime heartbeat secret` 都是 `configured`
 
 对抗性读法固定成：
 
 - 默认 smoke 可以在 not-ready GitHub 环境下作为观测入口通过
 - 默认 smoke 不允许把 runtime pairing drift 放过去
-- strict smoke 必须 fail-closed，不能把 not-ready GitHub state 放过去
+- daemon `/v1/runtime` 不允许省略自己的 advertise URL；缺失就直接 fail-closed
+- strict smoke 必须 fail-closed，不能把 not-ready GitHub state 或 actual-live drift 放过去
 
 ---
 

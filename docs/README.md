@@ -1,94 +1,71 @@
 # Docs
 
-这份索引只做一件事：告诉你 **OpenShock 当前仓库真值** 应该去哪里看。
+这份索引按读者分流，只回答一件事：**你现在要解决的问题，应该先看哪份文档。**
 
-如果根 README 负责项目入口，这里就负责文档分层和“哪份文档是合同、哪份只是参考”。
-
-## 先看哪几份
-
-### 入口级
+## 如果你是第一次来看产品
 
 - [README](../README.md)
-  - 项目是什么、当前仓库真值、产品入口、`pnpm dev:fresh:*` 启动方式、最短信任路径
-- [Runbook](./engineering/Runbook.md)
-  - Phase 0 本地怎么跑、怎么 pair runtime、当前真实路由/API 怎么看、怎么走最小验收链路
-
-### 产品合同
-
-- [PRD](./product/PRD.md)
-  - OpenShock 的完整产品基线，恢复到最初全量 PRD 口径
+  - 项目是什么、谁适合现在用、`pnpm dev:fresh:*` 启动方式、发布前最短验证入口
 - [Phase 0 MVP](./product/Phase0-MVP.md)
-  - 当前仓库实现切片、第一轮执行范围、验收门
-- [Product Checklist](./product/Checklist.md)
-  - 按 PRD 拆开的合同项、当前状态与 GAP
-- [Execution Tickets](./product/Execution-Tickets.md)
-  - 未完成功能的 canonical ticket backlog，按落地顺序和测试用例对齐
-- [To Do List](./product/TODO-List.md)
-  - 基于 Checklist 收敛出来的近期推进顺序和开票规则
-- [Team Execution Directive](./product/Team-Execution-Directive.md)
-  - 后续团队继续推进时的统一执行指令、交付格式与 merge gate
+  - 当前仓库已经成立的产品承诺、非目标、首个成功路径
+- [Runbook](./engineering/Runbook.md)
+  - 本地怎么跑、怎么 pair runtime、怎么走最小验收链路
 
-### 测试与验证
+## 如果你要判断今天能不能发
 
 - [Testing Index](./testing/README.md)
-  - 当前全部测试报告、headed harness、最近验证入口和证据索引
+  - 今天先跑哪条验证线、如何定位最新证据、release gate 入口
+- [Release Gate](./engineering/Release-Gate.md)
+  - 发布门、rollback、证据包与环境要求
 - [Test Cases](./testing/Test-Cases.md)
-  - 按 `PRD -> Checklist -> Test Case` 整理的全量验证项
-- [Verification Sweep 2026-04-13](./testing/Test-Report-2026-04-13-verification-sweep.md)
-  - 当前这批高频能力的集中验证汇总入口
+  - 全量验证矩阵；按 `PRD -> Checklist -> Test Case` 对齐
 
-### 设计与品牌
+## 如果你要继续做产品或架构
+
+- [PRD](./product/PRD.md)
+  - 完整产品定义、目标用户、核心体验和长期能力边界
+- [Product Checklist](./product/Checklist.md)
+  - 当前已完成项、部分完成项和剩余 GAP
+- [To Do List](./product/TODO-List.md)
+  - 今天优先收哪几条缺口、每张执行票最少要写什么
+- [Execution Tickets](./product/Execution-Tickets.md)
+  - canonical backlog 和落地顺序
+- [Team Execution Directive](./product/Team-Execution-Directive.md)
+  - 后续推进时的统一交付格式与 merge gate
+
+## 如果你要查设计、研究和历史参考
 
 - [DESIGN.md](../DESIGN.md)
-  - 设计约束主文件，前端实现优先读它
 - [Design Notes](./design/README.md)
-  - 设计侧补充记录
-- [Hero Asset](./assets/openshock-hero.png)
-  - 当前 README hero 图
-
-### 调研与参考
-
 - [Research Index](./research/README.md)
 - [Reference Stack](./research/Reference-Stack.md)
 - [Slock Local Notes](./research/Slock-Local-Notes.md)
 - [Upstream Branch Harvest 2026-04-10](./research/Upstream-Branch-Harvest-2026-04-10.md)
 
-## 当前仓库真值应该怎么读
-
-### 文档真值矩阵
+## 当前仓库状态怎么读
 
 | 你想确认什么 | 先看哪份文档 | 命令 / 证据入口 |
 | --- | --- | --- |
 | 产品现在能做什么 | [README](../README.md) | `pnpm dev:fresh:start` |
-| 当前发布前怎么判绿 | [Testing Index](./testing/README.md) | `pnpm verify:release` / `pnpm ops:smoke` |
-| 当前可用路由和 API 清单 | [Runbook](./engineering/Runbook.md) | `GET /v1/state` / `GET /v1/runtime/registry` |
-| 当前已完成和未完成边界 | [Product Checklist](./product/Checklist.md) | 对应 `CHK-*` 项 |
+| 今天发布前怎么判绿 | [Testing Index](./testing/README.md) | `pnpm verify:release:rc`（RC） / `pnpm verify:release:full`（非 RC 全跑） |
+| 当前仓库已经做到哪一层 | [Phase 0 MVP](./product/Phase0-MVP.md) | 对照首个成功路径和非目标 |
+| 已完成和未完成边界 | [Product Checklist](./product/Checklist.md) | 对应 `CHK-*` 项 |
 | 当前完整验证证据 | [Test Cases](./testing/Test-Cases.md) | 对应 `TC-*` + 测试报告 |
 
-### 已落地能力
+稳定规则：
 
-- web 壳：Next.js 16 / React 19，路由和控制面已接到当前 Phase 0 shell
-- server：Go API + 文件状态存储，支持 workspace / issue / room / run / agent / inbox / session / PR / runtime pairing / repo binding / GitHub probe
-- server：GitHub PR 路径已支持按 effective auth path 在 `gh CLI / GitHub App` 间切换，并带 contract tests
-- daemon：Go 本地 runtime bridge，支持 CLI 探测、prompt 执行、流式执行、worktree ensure
-- memory：artifact detail / version / governance contract 已有后端与测试基线
-- 审批与通知：approval center lifecycle、browser push / email delivery 已有浏览器级证据
-- 执行控制：stop / resume / follow-thread、多 runtime scheduler / failover 已有浏览器级证据
-- 前端壳：real quick search、DM / followed / saved、room workbench、profile drill-in、board planning mirror 都已有 headed evidence
-- canonical profile 路由现在以 `/profiles/[kind]/[profileId]` 为准；历史 `/agents/[id]` 只保留兼容跳转
-- onboarding / mailbox / multi-agent：模板 onboarding、Agent Mailbox、governance topology、config persistence 都已有当前主线验证证据
-- control-plane / runtime replay：版本化 `/v1/control-plane/*`、`/v1/runtime/publish*`、runtime replay evidence packet 与 Windows Chrome 有头证据已经补齐
-- no-shadow-truth：visible truth hygiene、dirty projection fail-closed 与 `verify:web` regression gate 已进入主线
-- profile / secrets：Agent profile editor、machine capability binding、credential profile / encrypted secret scope 已接到同一份 live truth
+- 想快速理解产品，先看 [README](../README.md)。
+- 想知道当前仓库的真实边界，先看 [Phase 0 MVP](./product/Phase0-MVP.md) 和 [Product Checklist](./product/Checklist.md)。
+- 想知道今天怎么判绿，先看 [Testing Index](./testing/README.md) 和 [Release Gate](./engineering/Release-Gate.md)。
+- 测试报告会持续生成；仓库里保留的是归档结果，不保证总是最新一次运行。定位最新结果只按 [Testing Index](./testing/README.md) 的方法执行。
 
 ### 还不能在文档里写成“已完成”的能力
 
 - `app.slock.ai` 式 profile-grade 入口和更细的主壳气质仍能继续抠细
-- onboarding 的 identity chain 还没和模板 bootstrap 完全并成一条首次启动旅程
-- PM / Architect / Splitter / Developer / Reviewer / QA 等 team topology 还没做成正式可配置团队模板
+- setup/access 的首次启动链路还在继续收平，`/onboarding` 仍有少量兼容痕迹
 - memory provider health / recovery 已有正式产品面和 Windows Chrome 证据，但真实 remote external provider、cleanup orchestration、workspace plan / retention 仍在后续 backlog
 - restricted sandbox profile / network / tool policy 还没全部完成
-- delivery entry / release-ready contract / handoff note 还没完全收成单一标准
+- delivery entry / release-ready contract / handoff note 已有正式产品面和浏览器级证据，但更重的 operator summary 与日常回归选择器仍在继续收口
 
 如果某份文档把这些写成“已经做完”，那份文档就是漂了。
 
@@ -98,11 +75,11 @@
 - [apps/server/README.md](../apps/server/README.md)
 - [apps/daemon/README.md](../apps/daemon/README.md)
 
-它们更适合回答某一个应用自己的实现边界，不替代产品合同。
+它们更适合回答某一个应用自己的实现边界，不替代产品范围文档。
 
 ## 文档维护规则
 
-- 根 README 只写入口级真值，不堆未来路线图
+- 根 README 只写入口级现状，不堆未来路线图
 - 发布前信任路径只保留一套 canonical 说法：`docs/testing/README.md` 顶部那条
 - PRD 写完整产品合同；当前仓库实现边界由 Phase 0 MVP 和 Checklist 承接
 - Phase 0 MVP 只写第一轮必须交付和验收门，不写超出当前 repo 的幻想

@@ -8,6 +8,7 @@ import { DetailRail, Panel } from "@/components/phase-zero-views";
 import { buildFirstStartJourney, type FirstStartJourneyStepStatus } from "@/lib/first-start-journey";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { permissionLabel } from "@/lib/session-authz";
+import { startRouteLabel } from "@/lib/start-route";
 
 const MEMBER_STATUS_OPTIONS = [
   { value: "active", label: "在线成员", summary: "成员已可正常登录并使用对应角色权限。" },
@@ -21,6 +22,10 @@ function cn(...parts: Array<string | false | null | undefined>) {
 
 function valueOrPlaceholder(value: string | undefined, fallback: string) {
   return value && value.trim() ? value : fallback;
+}
+
+function normalizeEmail(value: string | undefined) {
+  return (value ?? "").trim().toLowerCase();
 }
 
 function findAgentName(agentID: string | undefined, agentItems: Array<{ id: string; name: string }>) {
@@ -106,6 +111,8 @@ function recoveryStatusLabel(status: string | undefined) {
       return "待邮箱验证";
     case "device_approval_required":
       return "待设备授权";
+    case "approval_required":
+      return "待 owner 批准";
     case "reset_pending":
       return "待密码重置";
     case "recovered":
@@ -595,6 +602,13 @@ function SessionActionPanel({
   const [pending, setPending] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
 
+  function authMutationErrorMessage(error: unknown, fallback: string) {
+    if (error instanceof Error && error.message === "direct login requires an approved device") {
+      return "这台设备还没被批准。请先用已批准设备进入，或让 Owner 在成员列表里批准当前浏览器。";
+    }
+    return error instanceof Error ? error.message : fallback;
+  }
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
@@ -602,7 +616,7 @@ function SessionActionPanel({
     try {
       await loginAuthSession({ email, name, deviceLabel });
     } catch (error) {
-      setMutationError(error instanceof Error ? error.message : "登录失败");
+      setMutationError(authMutationErrorMessage(error, "登录失败"));
     } finally {
       setPending(false);
     }
@@ -616,7 +630,7 @@ function SessionActionPanel({
     try {
       await loginAuthSession({ email: member.email, name: member.name, deviceLabel });
     } catch (error) {
-      setMutationError(error instanceof Error ? error.message : "登录失败");
+      setMutationError(authMutationErrorMessage(error, "登录失败"));
     } finally {
       setPending(false);
     }
@@ -818,22 +832,51 @@ function IdentityRecoveryPanel({
   members: WorkspaceMember[];
   devices: AuthDevice[];
 }) {
-  const { verifyMemberEmail, authorizeAuthDevice, requestPasswordReset, completePasswordReset, bindExternalIdentity } = usePhaseZeroState();
+  const { state, verifyMemberEmail, authorizeAuthDevice, requestPasswordReset, completePasswordReset, bindExternalIdentity } = usePhaseZeroState();
   const currentMember = members.find((member) => member.id === session.memberId) ?? null;
   const memberDevices = currentMember ? devices.filter((device) => device.memberId === currentMember.id) : [];
   const [resetEmail, setResetEmail] = useState("");
   const [recoveryDeviceLabel, setRecoveryDeviceLabel] = useState("恢复用笔记本");
+  const [passwordResetChallengeId, setPasswordResetChallengeId] = useState("");
+  const [passwordResetChallengeEmail, setPasswordResetChallengeEmail] = useState("");
   const [identityProvider, setIdentityProvider] = useState("github");
   const [identityHandle, setIdentityHandle] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [mutationSuccess, setMutationSuccess] = useState<string | null>(null);
+  const pendingResetChallenge = (state.auth.challenges ?? []).find((challenge) => {
+    if (challenge.kind !== "password_reset" || challenge.status !== "pending") {
+      return false;
+    }
+    if (currentMember?.id && challenge.memberId === currentMember.id) {
+      return true;
+    }
+    return normalizeEmail(challenge.email) === normalizeEmail(currentMember?.email);
+  });
 
   useEffect(() => {
     if (currentMember?.email && !resetEmail) {
       setResetEmail(currentMember.email);
     }
   }, [currentMember?.email, resetEmail]);
+
+  useEffect(() => {
+    if (!pendingResetChallenge) {
+      return;
+    }
+
+    const challengeID = pendingResetChallenge.id.trim();
+    const challengeEmail = normalizeEmail(pendingResetChallenge.email || currentMember?.email);
+    if (challengeID && passwordResetChallengeId !== challengeID) {
+      setPasswordResetChallengeId(challengeID);
+    }
+    if (challengeEmail && passwordResetChallengeEmail !== challengeEmail) {
+      setPasswordResetChallengeEmail(challengeEmail);
+    }
+    if (challengeEmail && !resetEmail) {
+      setResetEmail(challengeEmail);
+    }
+  }, [currentMember?.email, passwordResetChallengeEmail, passwordResetChallengeId, pendingResetChallenge, resetEmail]);
 
   async function runMutation(action: string, task: () => Promise<void>, successMessage: string) {
     setPendingAction(action);
@@ -852,13 +895,21 @@ function IdentityRecoveryPanel({
   const linkedIdentities = currentMember?.linkedIdentities ?? [];
   const devicePending = session.deviceAuthStatus !== "authorized";
   const verifyPending = session.emailVerificationStatus !== "verified";
+  const normalizedResetEmail = resetEmail.trim().toLowerCase();
+  const resetChallengeReady = passwordResetChallengeId.trim() !== "" && normalizedResetEmail !== "";
+  const currentRecoveryTitle = verifyPending && devicePending ? "先确认邮箱和这台设备" : verifyPending ? "先确认邮箱" : "先授权这台设备";
+  const currentRecoverySummary = verifyPending && devicePending
+    ? "先把邮箱和当前浏览器确认完，完成后就能继续进入工作区设置。"
+    : verifyPending
+      ? "先完成邮箱验证，确认后就能继续工作区设置。"
+      : "先授权当前浏览器，确认后就能继续工作区设置。";
 
   return (
     <Panel tone={sessionIsActive(session) ? "white" : "paper"}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">身份恢复</p>
-          <h2 className="mt-2 font-display text-3xl font-bold">处理邮箱验证、设备授权和登录恢复</h2>
+          <h2 className="mt-2 font-display text-3xl font-bold">先补当前缺的这一步</h2>
         </div>
         <span
           data-testid="access-recovery-status"
@@ -867,7 +918,7 @@ function IdentityRecoveryPanel({
           {recoveryStatusLabel(session.recoveryStatus)}
         </span>
       </div>
-      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">邮箱验证、设备授权、密码重置和外部身份绑定。</p>
+      <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">主区只保留当前缺口；密码重置和身份绑定放到下面按需展开。</p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-4">
         <Metric label="邮箱验证" value={emailVerificationLabel(session.emailVerificationStatus)} />
@@ -882,12 +933,13 @@ function IdentityRecoveryPanel({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">当前恢复动作</p>
-                <h3 className="mt-2 font-display text-2xl font-bold">完成邮箱和设备确认</h3>
+                <h3 className="mt-2 font-display text-2xl font-bold">{currentRecoveryTitle}</h3>
               </div>
               <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em]">
                 {sessionIsActive(session) ? "可操作" : "请先登录"}
               </span>
             </div>
+            <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{currentRecoverySummary}</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 data-testid="access-verify-email-submit"
@@ -926,108 +978,151 @@ function IdentityRecoveryPanel({
             </div>
           </div>
 
-          <div className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">密码重置 / 会话恢复</p>
-            <h3 className="mt-2 font-display text-2xl font-bold">在另一台设备上恢复登录</h3>
-            <div className="mt-4 grid gap-3">
-              <input
-                data-testid="access-request-reset-email"
-                type="email"
-                value={resetEmail}
-                onChange={(event) => setResetEmail(event.target.value)}
-                className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none"
-                placeholder="you@company.com"
-              />
-              <input
-                data-testid="access-complete-reset-device-label"
-                type="text"
-                value={recoveryDeviceLabel}
-                onChange={(event) => setRecoveryDeviceLabel(event.target.value)}
-                className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none"
-                placeholder="恢复用笔记本"
-              />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                data-testid="access-request-reset-submit"
-                type="button"
-                disabled={pendingAction !== null}
-                onClick={() =>
-                  void runMutation(
-                    "request-reset",
-                    async () => {
-                      await requestPasswordReset({ email: resetEmail });
-                    },
-                    `${resetEmail.trim().toLowerCase()} 已进入待重置状态`
-                  )
-                }
-                className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] disabled:opacity-60"
-              >
-                发起重置
-              </button>
-              <button
-                data-testid="access-complete-reset-submit"
-                type="button"
-                disabled={pendingAction !== null}
-                onClick={() =>
-                  void runMutation(
-                    "complete-reset",
-                    async () => {
-                      await completePasswordReset({ email: resetEmail, deviceLabel: recoveryDeviceLabel });
-                    },
-                    `${recoveryDeviceLabel.trim() || "恢复用设备"} 已恢复登录`
-                  )
-                }
-                className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] text-white disabled:opacity-60"
-              >
-                在另一设备完成恢复
-              </button>
-            </div>
-          </div>
+          <details data-testid="access-recovery-secondary-details" className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+            <summary
+              data-testid="access-recovery-secondary-toggle"
+              className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.72)]"
+            >
+              其他恢复方式
+            </summary>
+            <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+              只有你需要换设备恢复登录或补绑外部身份时，再展开这一层。
+            </p>
+            <div className="mt-4 space-y-4">
+              <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">密码重置 / 会话恢复</p>
+                <h3 className="mt-2 font-display text-2xl font-bold">在另一台设备上恢复登录</h3>
+                <div className="mt-4 grid gap-3">
+                  <input
+                    data-testid="access-request-reset-email"
+                    type="email"
+                    value={resetEmail}
+                    onChange={(event) => setResetEmail(event.target.value)}
+                    className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none"
+                    placeholder="you@company.com"
+                  />
+                  <input
+                    data-testid="access-complete-reset-challenge-id"
+                    type="text"
+                    value={passwordResetChallengeId}
+                    onChange={(event) => setPasswordResetChallengeId(event.target.value)}
+                    className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 font-mono text-sm outline-none"
+                    placeholder="auth-challenge-..."
+                  />
+                  <input
+                    data-testid="access-complete-reset-device-label"
+                    type="text"
+                    value={recoveryDeviceLabel}
+                    onChange={(event) => setRecoveryDeviceLabel(event.target.value)}
+                    className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none"
+                    placeholder="恢复用笔记本"
+                  />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    data-testid="access-request-reset-submit"
+                    type="button"
+                    disabled={!sessionIsActive(session) || pendingAction !== null}
+                    onClick={() =>
+                      void runMutation(
+                        "request-reset",
+                        async () => {
+                          const payload = await requestPasswordReset({ email: resetEmail });
+                          const challengeID = payload.challenge?.id?.trim() ?? "";
+                          if (challengeID === "") {
+                            throw new Error("重置挑战没有返回，请重新发起。");
+                          }
+                          setPasswordResetChallengeId(challengeID);
+                          setPasswordResetChallengeEmail(normalizedResetEmail);
+                        },
+                        `${resetEmail.trim().toLowerCase()} 已进入待重置状态`
+                      )
+                    }
+                    className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] disabled:opacity-60"
+                  >
+                    发起重置
+                  </button>
+                  <button
+                    data-testid="access-complete-reset-submit"
+                    type="button"
+                    disabled={pendingAction !== null || !resetChallengeReady}
+                    onClick={() =>
+                      void runMutation(
+                        "complete-reset",
+                        async () => {
+                          await completePasswordReset({
+                            email: resetEmail,
+                            deviceLabel: recoveryDeviceLabel,
+                            challengeId: passwordResetChallengeId,
+                          });
+                          setPasswordResetChallengeId("");
+                          setPasswordResetChallengeEmail("");
+                        },
+                        `${recoveryDeviceLabel.trim() || "恢复用设备"} 已恢复登录`
+                      )
+                    }
+                    className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] text-white disabled:opacity-60"
+                  >
+                    在另一设备完成恢复
+                  </button>
+                </div>
+                {!sessionIsActive(session) ? (
+                  <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+                    先在仍可登录的设备上发起重置，再把 challenge ID 带到这里完成恢复。
+                  </p>
+                ) : null}
+                {passwordResetChallengeId ? (
+                  <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+                    已填入待处理的重置挑战，输入恢复设备名称后即可继续。
+                  </p>
+                ) : null}
+              </div>
 
-          <div className="rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">外部身份绑定</p>
-            <h3 className="mt-2 font-display text-2xl font-bold">绑定外部身份</h3>
-            <div className="mt-4 grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
-              <select
-                data-testid="access-bind-identity-provider"
-                value={identityProvider}
-                onChange={(event) => setIdentityProvider(event.target.value)}
-                className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none"
-              >
-                <option value="github">GitHub</option>
-                <option value="google">Google</option>
-                <option value="sso">工作区 SSO</option>
-              </select>
-              <input
-                data-testid="access-bind-identity-handle"
-                type="text"
-                value={identityHandle}
-                onChange={(event) => setIdentityHandle(event.target.value)}
-                className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] px-3 py-3 text-sm outline-none"
-                placeholder="@openshock-member"
-              />
+              <div className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">外部身份绑定</p>
+                <h3 className="mt-2 font-display text-2xl font-bold">绑定外部身份</h3>
+                <div className="mt-4 grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                  <select
+                    data-testid="access-bind-identity-provider"
+                    value={identityProvider}
+                    onChange={(event) => setIdentityProvider(event.target.value)}
+                    className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none"
+                  >
+                    <option value="github">GitHub</option>
+                    <option value="google">Google</option>
+                    <option value="sso">工作区 SSO</option>
+                  </select>
+                  <input
+                    data-testid="access-bind-identity-handle"
+                    type="text"
+                    value={identityHandle}
+                    onChange={(event) => setIdentityHandle(event.target.value)}
+                    className="w-full rounded-[10px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3 text-sm outline-none"
+                    placeholder="@openshock-member"
+                  />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    data-testid="access-bind-identity-submit"
+                    type="button"
+                    disabled={!sessionIsActive(session) || pendingAction !== null}
+                    onClick={() =>
+                      void runMutation(
+                        "bind-identity",
+                        async () => {
+                          await bindExternalIdentity({ provider: identityProvider, handle: identityHandle });
+                        },
+                        `${identityProvider} 身份已绑定到当前成员`
+                      )
+                    }
+                    className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] disabled:opacity-60"
+                  >
+                    绑定外部身份
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                data-testid="access-bind-identity-submit"
-                type="button"
-                disabled={!sessionIsActive(session) || pendingAction !== null}
-                onClick={() =>
-                  void runMutation(
-                    "bind-identity",
-                    async () => {
-                      await bindExternalIdentity({ provider: identityProvider, handle: identityHandle });
-                    },
-                    `${identityProvider} 身份已绑定到当前成员`
-                  )
-                }
-                className="rounded-[10px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] disabled:opacity-60"
-              >
-                绑定外部身份
-              </button>
-            </div>
-          </div>
+          </details>
         </div>
 
         <div className="space-y-4">
@@ -1146,7 +1241,7 @@ function DurableMemberPreferencePanel() {
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         <Metric label="默认智能体" value={findAgentName(member.preferences.preferredAgentId, state.agents)} />
         <p className="sr-only" data-testid="access-durable-preferred-agent">{findAgentName(member.preferences.preferredAgentId, state.agents)}</p>
-        <Metric label="起始路由" value={valueOrPlaceholder(member.preferences.startRoute, "未声明")} />
+        <Metric label="默认入口" value={startRouteLabel(member.preferences.startRoute)} />
         <p className="sr-only" data-testid="access-durable-start-route">{valueOrPlaceholder(member.preferences.startRoute, "未声明")}</p>
         <Metric label="GitHub 身份" value={valueOrPlaceholder(member.githubIdentity?.handle, "未绑定")} />
         <p className="sr-only" data-testid="access-durable-github-handle">{valueOrPlaceholder(member.githubIdentity?.handle, "未绑定")}</p>
@@ -1225,41 +1320,59 @@ function FirstStartJourneyPanel() {
       >
         {journey.nextSummary}
       </p>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
         <Metric label="现在做什么" value={journey.nextLabel} />
         <p className="sr-only" data-testid="access-first-start-next-label">{journey.nextLabel}</p>
-        <Metric label="准备好后进入" value={journey.launchSurfaceLabel} />
+        <Metric label="完成后进入" value={journey.launchSurfaceLabel} />
         <p className="sr-only" data-testid="access-first-start-launch-route">{journey.launchHref}</p>
-        <Metric label="当前进度" value={onboardingLabel} />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+          当前进度 {onboardingLabel}
+        </span>
+        <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
+          需要时再展开三步说明，先按上面的下一步继续。
+        </p>
         <p className="sr-only" data-testid="access-first-start-onboarding-status">{onboardingLabel}</p>
       </div>
-      <div className="mt-5 grid gap-3 xl:grid-cols-3">
+      <div className="sr-only">
         {journey.steps.map((step) => (
-          <Panel
-            key={step.id}
-            tone={journeyTone(step.status)}
-            className="!p-3.5"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-display text-2xl font-bold">{step.label}</p>
-                <p
-                  data-testid={`access-first-start-step-${step.id}-summary`}
-                  className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]"
-                >
-                  {step.summary}
-                </p>
-              </div>
-              <span
-                data-testid={`access-first-start-step-${step.id}-status`}
-                className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]"
-              >
-                {step.status}
-              </span>
-            </div>
-          </Panel>
+          <div key={step.id}>
+            <p data-testid={`access-first-start-step-${step.id}-summary`}>{step.summary}</p>
+            <p data-testid={`access-first-start-step-${step.id}-status`}>{step.status}</p>
+          </div>
         ))}
       </div>
+      <details
+        data-testid="access-first-start-steps-details"
+        className="mt-5 rounded-[20px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4"
+      >
+        <summary
+          data-testid="access-first-start-steps-toggle"
+          className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.72)]"
+        >
+          查看进入前进度
+        </summary>
+        <div className="mt-4 grid gap-3 xl:grid-cols-3">
+          {journey.steps.map((step) => (
+            <Panel
+              key={step.id}
+              tone={journeyTone(step.status)}
+              className="!p-3.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-display text-2xl font-bold">{step.label}</p>
+                  <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{step.summary}</p>
+                </div>
+                <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]">
+                  {step.status}
+                </span>
+              </div>
+            </Panel>
+          ))}
+        </div>
+      </details>
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <Link
           data-testid="access-first-start-next-link"
@@ -1285,9 +1398,9 @@ export function LiveAccessContextRail() {
         label="登录检查"
         items={[
           { label: "登录", value: loading ? "同步中" : "同步失败" },
-          { label: "角色", value: loading ? "同步中" : "同步失败" },
+          { label: "身份", value: loading ? "同步中" : "同步失败" },
           { label: "成员", value: loading ? "同步中" : "同步失败" },
-          { label: "权限", value: loading ? "同步中" : "同步失败" },
+          { label: "下一步", value: loading ? "同步中" : "同步失败" },
         ]}
       />
     );
@@ -1302,12 +1415,12 @@ export function LiveAccessContextRail() {
       label="登录检查"
       items={[
         { label: "登录", value: `${sessionStatusLabel(session)} / ${valueOrPlaceholder(session.email, "未登录")}` },
-        { label: "恢复", value: recoveryStatusLabel(session.recoveryStatus) },
-        { label: "设备", value: deviceAuthLabel(session.deviceAuthStatus) },
+        {
+          label: "身份",
+          value: `${emailVerificationLabel(session.emailVerificationStatus)} / ${deviceAuthLabel(session.deviceAuthStatus)}`,
+        },
         { label: "成员", value: `${state.auth.members.length} 人 / ${ownerCount} 位所有者` },
-        { label: "模板", value: `${valueOrPlaceholder(state.workspace.onboarding.templateId, "未选模板")} / ${onboardingStatusLabel(state.workspace.onboarding.status)}` },
         { label: "下一步", value: `${journey.nextLabel} / ${journey.nextSurfaceLabel}` },
-        { label: "权限", value: `${session.permissions.length} 项` },
       ]}
     />
   );
@@ -1341,6 +1454,15 @@ export function LiveAccessOverview() {
   const journey = buildFirstStartJourney(state.workspace, session);
   const accessReady = journey.accessReady;
   const onboardingDone = journey.onboardingDone;
+  const showSessionAction = !accessReady && !sessionIsActive(session);
+  const showRecovery = !accessReady && sessionIsActive(session);
+  const primaryGatePanel = !accessReady
+    ? showSessionAction
+      ? <SessionActionPanel session={session} members={members} />
+      : showRecovery
+        ? <IdentityRecoveryPanel session={session} members={members} devices={devices} />
+        : <FirstStartJourneyPanel />
+    : null;
 
   return (
     <div className="space-y-4">
@@ -1357,9 +1479,23 @@ export function LiveAccessOverview() {
         />
       ) : null}
 
-      {!accessReady ? <SessionActionPanel session={session} members={members} /> : null}
-      {!accessReady || !onboardingDone ? <IdentityRecoveryPanel session={session} members={members} devices={devices} /> : null}
-      <FirstStartJourneyPanel />
+      {!accessReady ? primaryGatePanel : null}
+      {!accessReady ? (
+        <details data-testid="access-next-step-details" className="rounded-[24px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+          <summary
+            data-testid="access-next-step-toggle"
+            className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.72)]"
+          >
+            查看下一步说明
+          </summary>
+          <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
+            先完成上面的主步骤；需要时再展开完整首启说明。
+          </p>
+          <div className="mt-4">
+            <FirstStartJourneyPanel />
+          </div>
+        </details>
+      ) : null}
 
       <details data-testid="access-advanced-details" className="rounded-[24px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
         <summary

@@ -12,6 +12,55 @@ import { fileURLToPath } from "node:url";
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
 
+test("resolveControlAddress prefers explicit address, then managed metadata, then default", async () => {
+  const { resolveControlAddress } = await import("./live-server-control-lib.mjs");
+
+  assert.equal(resolveControlAddress(":39082", ":8080"), ":39082");
+  assert.equal(resolveControlAddress("", "127.0.0.1:39082"), "127.0.0.1:39082");
+  assert.equal(resolveControlAddress("", ""), ":8080");
+});
+
+test("launchedProcessOwnsLiveService requires responder pid and baseUrl match", async () => {
+  const { launchedProcessOwnsLiveService } = await import("./live-server-control-lib.mjs");
+
+  assert.equal(
+    launchedProcessOwnsLiveService(
+      {
+        managed: true,
+        baseUrl: "http://127.0.0.1:39082",
+        responderPid: 4242,
+      },
+      4242,
+      "http://127.0.0.1:39082",
+    ),
+    true,
+  );
+  assert.equal(
+    launchedProcessOwnsLiveService(
+      {
+        managed: true,
+        baseUrl: "http://127.0.0.1:39082",
+        responderPid: 9999,
+      },
+      4242,
+      "http://127.0.0.1:39082",
+    ),
+    false,
+  );
+  assert.equal(
+    launchedProcessOwnsLiveService(
+      {
+        managed: true,
+        baseUrl: "http://127.0.0.1:9090",
+        responderPid: 4242,
+      },
+      4242,
+      "http://127.0.0.1:39082",
+    ),
+    false,
+  );
+});
+
 test("status prefers live route truth across workspaces", async () => {
   const ownerRoot = await mkdtemp(path.join(os.tmpdir(), "openshock-live-owner-"));
   const altRoot = await mkdtemp(path.join(os.tmpdir(), "openshock-live-alt-"));

@@ -13,6 +13,7 @@ type Status struct {
 	RepoURL           string   `json:"repoUrl"`
 	Branch            string   `json:"branch"`
 	Provider          string   `json:"provider"`
+	Source            string   `json:"source,omitempty"`
 	RemoteConfigured  bool     `json:"remoteConfigured"`
 	GHCLIInstalled    bool     `json:"ghCliInstalled"`
 	GHAuthenticated   bool     `json:"ghAuthenticated"`
@@ -26,6 +27,7 @@ type Status struct {
 	WebhookURL        string   `json:"webhookUrl,omitempty"`
 	Missing           []string `json:"missing,omitempty"`
 	Ready             bool     `json:"ready"`
+	Stale             bool     `json:"stale,omitempty"`
 	AuthMode          string   `json:"authMode"`
 	PreferredAuthMode string   `json:"preferredAuthMode,omitempty"`
 	Message           string   `json:"message"`

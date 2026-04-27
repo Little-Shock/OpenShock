@@ -1,12 +1,18 @@
 # OpenShock Product Checklist
 
-**版本:** 1.29
-**更新日期:** 2026 年 4 月 14 日
+**版本:** 1.31
+**更新日期:** 2026 年 4 月 23 日
 **关联文档:** [PRD](./PRD.md) · [Phase 0 MVP](./Phase0-MVP.md) · [Execution Tickets](./Execution-Tickets.md) · [Test Cases](../testing/Test-Cases.md)
 
 ---
 
 ## 一、使用方式
+
+如果你只想快速判断当前产品状态，先看这 3 句话：
+
+- 今天用户已经能在同一套工作台里完成 `进入工作区 -> 创建工作 -> 回到讨论 -> 看执行/交付` 的主链。
+- 今天还不够稳的，主要是更重的认证硬化、外部 provider 编排，以及离 `app.slock.ai` 更近的壳层完成度。
+- 今天该看哪份最新验证证据，不要信这里写死的日期；直接回到 [Testing Index](../testing/README.md) 找最新生成物。
 
 - `PRD` 定义完整产品应该是什么
 - `Checklist` 把 PRD 拆成可跟踪的能力合同与 GAP
@@ -46,6 +52,10 @@
   - onboarding 的首次启动主链已站住，但更细的模板运营与团队默认治理仍可继续增强
 - delegated closeout handoff 已能自动起链，且 delivery delegation 已支持 `formal-handoff / signal-only / auto-complete` policy；更深的自动协作策略与 cross-agent closeout 仍待继续前滚
   - 更重的长期记忆整理与外部 provider 编排仍未完成
+- 本轮优先收口方向:
+  - auth challenge hardening
+  - 首启入口继续减法
+  - 发布证据入口继续单源化
 
 ---
 
@@ -60,6 +70,7 @@
   - [x] `Chat / Board / Inbox / Issues / Rooms / Runs / Agents / Setup / Memory / Access / Settings` 已有真实页面
   - [x] OpenShock 已经是 chat-first 壳，而不是单页看板
   - [x] 主要页面可在浏览器走查中打开
+  - [x] `/rooms` 首屏已显式回答“下一间讨论是什么”，blocked / unread / active 会按继续优先级给出单主动作，并已有 headed 回放
   - [x] room / run 现在已有真实的 `stop / resume / follow-thread` 控制面，不再只停在协作文案
   - [x] Board 已退到左下角次级入口，不再和频道 / room 同层抢主导航
   - [x] 2026-04-08 `TKT-24` 已用 headed Chromium 复核 `channel / room` scrollback、composer 常驻、主要命中区与 1180px 窄屏抽查
@@ -67,7 +78,7 @@
   - [ ] `app.slock.ai` 式 workspace shell、quick search、threads/saved 还未完全成型
   - [ ] `DM / Machine / Topic / Thread` 仍未形成完整的一等入口
   - [ ] Board 虽已退到次级入口，但 planning card 语言和 room / issue 回跳还没收平
-- 对应 Test Cases: `TC-001` `TC-007` `TC-018`
+- 对应 Test Cases: `TC-001` `TC-007` `TC-018` `TC-098` `TC-100`
 
 ### CHK-02 Agent 一等公民模型
 
@@ -140,12 +151,17 @@
   - [x] run detail 能展示 runtime、branch/worktree、执行日志等信息
   - [x] bridge 执行链已能跑通同步 prompt
   - [x] room / run 已能真实 stop / resume / follow-thread，并把 paused state 回写到同一条执行真相
-  - [x] `/rooms/:roomId` 已收回 chat-first room shell；默认先显示当前讨论，`Topic / Run / PR / Context` 作为次级 sheet 保留在同一条 room URL 上
-  - [x] Topic summary、Run control、PR entry 与 inbox / issue / board back-links 已能在 room 内闭环，不再强制跳去独立详情页
+  - [x] `/rooms` 首屏已按 blocked / unread / active 给出单 continue 入口；blocked room 会直接带到执行面，先回答“现在该回哪一间讨论、该做哪一步”
+  - [x] `/rooms/:roomId` 已收回 chat-first room shell；默认先显示当前讨论，`Run / PR / Context` 作为次级 sheet 保留在同一条 room URL 上，旧 `?tab=topic` 已折回 `context`
+  - [x] room 内已收成一个主 next-step CTA；旧 summary-only overview card 已移除，顶部和右侧摘要会共享同一条“现在先做什么”
+  - [x] room supporting panel 现在会把收件箱/交接压成摘要而不是重复 `x 条` 计数，PR 详情/远端 PR 也已降成支持链接，不再和主动作并列抢焦点
+  - [x] Topic summary、最近三条消息、Run control、PR entry 与 inbox / issue / board back-links 已能在 room 内闭环，不再强制跳去独立详情页
   - [x] `pnpm test:headed-room-workbench-topic-context` 已完成 exact replay，验证 chat-first room shell、follow_thread、PR surface、reload persistence 与 inbox back-link
+  - [x] `pnpm test:headed-rooms-continue-entry` 已完成 browser replay，验证 `/rooms` continue card 会稳定指向 blocked room 并一跳回到目标讨论间
   - [x] `/runs` 已切成 paginated run history surface；run detail 与 room run tab 会共享 session-backed resume context，并保留同 room prior-run reopen/history
 - 当前 GAP:
   - [x] Topic 已补齐独立 `/topics/:topicId` route、guidance edit surface 与 resume deep link，不再只困在 room workbench tab 内
+  - [ ] room thread、PR conversation 和 usage/operator summary 还可继续压成更短、更一致的支持信息
   - [ ] token-quota 与更细粒度执行可观测性尚未完成
 - 对应 Test Cases: `TC-006` `TC-007` `TC-018` `TC-031` `TC-043` `TC-046`
 
@@ -259,10 +275,12 @@
   - [x] `/access` 已消费 live auth session / members / roles truth，并提供 email login / logout 入口
   - [x] auth session persistence 已有 store test 与 browser reload evidence
   - [x] owner 已可在 `/access` 直接 invite 成员，并 live 调整 member role / status
-  - [x] invited member 首次登录会转成 `active`，role 变化会同步反映到 session / permissions / browser probes
+  - [x] invited member 首次登录会进入同一条 verify email / authorize device / owner activation 身份链；只有完成恢复闸门后才转成 `active`，role 变化会同步反映到 session / permissions / browser probes
   - [x] Board / Room / Inbox / Setup 关键动作已和 `issue.create` / `room.reply` / `run.execute` / `inbox.review` / `inbox.decide` / `repo.admin` / `runtime.manage` / `pull_request.*` 真值对齐
   - [x] `/access` 现在已把 device authorization、email verification、password reset、session recovery 与 external identity binding 收进同一条 live identity chain
+  - [x] `auth/session`、workspace member、member preference、recovery 关键入口已开始支持 token-bound request actor，并有双 token contract 覆盖
 - 当前 GAP:
+  - [ ] request-scoped auth 已覆盖 `state stream` / `mailbox` / `pull request` / `room detail` / `run detail` 这批读链，但无 token 请求仍会回退全局 `Auth.Session`，尚未做到 token-enforced fail-closed
   - [ ] Onboarding 还没把 invite / verify / device auth / template bootstrap 收成同一条首次启动旅程
   - [ ] GitHub 仍主要是 readiness probe，不是完整授权模型
 - 对应 Test Cases: `TC-014` `TC-016` `TC-024` `TC-035` `TC-038`
@@ -301,15 +319,16 @@
   - [x] 2026-04-11 Windows Chrome 有头链路已补齐 restricted sandbox `approval_required -> same-target override/retry -> reload persistence` 证据
   - [x] 2026-04-11 Windows Chrome 有头链路已补齐 `/rooms -> /runs -> /settings` 的 workspace plan / usage / quota / retention 证据
   - [x] 2026-04-11 Windows Chrome 有头链路已补齐 PR delivery entry、release gate、operator handoff note 与 evidence bundle 同页复核证据
+  - [x] `pnpm verify:release:rc` 已成为 release candidate 一等入口，会串起 repo gate、`server ↔ daemon` integration loop、浏览器关键路径与 strict GitHub-ready live smoke，不再靠临时环境变量记忆发布路径
 - 当前 GAP:
   - [ ] 历史型 rate 指标仍有一部分只到 `partial`，后续还要补 durable event rollup / time-series truth
-- 对应 Test Cases: `TC-011` `TC-021` `TC-026` `TC-042` `TC-047` `TC-048` `TC-049`
+- 对应 Test Cases: `TC-011` `TC-021` `TC-026` `TC-042` `TC-047` `TC-048` `TC-049` `TC-099` `TC-100`
 
 ### CHK-16 app.slock.ai 壳层对齐与导航秩序
 
 - PRD 来源: 六、八
 - 优先级: P0
-- 当前状态: 已完成
+- 当前状态: 部分完成
 - 已落地:
   - [x] 当前 web 已有频道、讨论间、收件箱、Setup、Agent、Machine 数据源与基础左栏骨架
   - [x] `OpenShockShell`、`StitchSidebar`、`StitchTopBar` 已提供可演进的全屏壳层原语
@@ -322,6 +341,8 @@
   - [x] `pnpm test:headed-frontend-interaction-polish` 已锁住 sidebar / topbar hit area、channel / room scrollback、composer 常驻与窄屏无横向溢出
   - [x] sidebar 现在已有 `DM / Followed Threads / Saved Later` 入口，且能在同一套壳层内直达对应消息面
   - [x] sidebar footer 现在新增固定 `Profile Hub`，会把当前 `Human / Machine / Agent` 收成 app.slock.ai 式壳层入口，并一跳进入统一 profile surface
+- 当前 GAP:
+  - [ ] `/` front door、`/rooms` 首屏与 room 顶部摘要仍在继续做减法；当前还没完全达到 `app.slock.ai` 式“打开就是工作台、主面只讲协作动作”的完成度
 - 对应 Test Cases: `TC-028` `TC-029` `TC-033` `TC-034` `TC-077`
 
 ### CHK-17 会话上下文、Presence 与 Profile Surface
@@ -455,19 +476,21 @@
 
 - PRD 来源: 五.10、十.工作流 L、十三.5、十四、十八.11
 - 优先级: P1
-- 当前状态: 已完成
+- 当前状态: 部分完成
 - 已落地:
   - [x] server 已有文件状态存储
   - [x] auth session persistence 已成立
   - [x] memory artifact 已有 version / governance / external edit sync contract
   - [x] memory provider binding 现在也会回到同一份 durable `memory-center.json`，reload 后仍能恢复 `enabled / status / degraded fallback`
   - [x] provider health/recovery 的 `failure count / last-check source / activity timeline / last recovery` 现在也会回到同一份 durable `memory-center.json`
-  - [x] workspace / member preference、GitHub identity 与既有 agent profile edit 现在可回到统一 durable store / database schema
+  - [x] workspace / member preference、GitHub identity 与既有 agent profile edit 现在可回到统一 durable store snapshot
   - [x] onboarding progress、template selection、repo binding snapshot、GitHub installation snapshot 已经回到同一份 state/store 真相
   - [x] restart / 换设备后的 config recovery 已有 browser + API 级验证
   - [x] room 当前 owner 的 auto-handoff 连续性也已补 targeted restart 回归；最新接手者会随 durable state 一起恢复，不再依赖进程内临时顺序
   - [x] memory provider preview 的当前 owner / provider summary 也已补 reload continuity 回归；`session-runtime` 不会在重启后漂回旧 owner prompt
   - [x] workspace plan / usage / retention 现在也直接从同一份 durable snapshot 投影到 `/settings`、room workbench 与 run detail
+- 当前 GAP:
+  - [ ] 当前主状态仍是文件快照，不是 DB-backed control plane；如果后续要对外强调更重的 durability / scale / tenancy，还需要继续补真实数据库与迁移层
 - 对应 Test Cases: `TC-040` `TC-085` `TC-086` `TC-087` `TC-088`
 
 ---

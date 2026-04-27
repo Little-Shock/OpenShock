@@ -21,11 +21,18 @@ const (
 var (
 	ErrWorkspaceOnboardingStatusInvalid                 = errors.New("workspace onboarding status is invalid")
 	ErrWorkspaceResumeURLInvalid                        = errors.New("workspace resume url must start with /")
-	ErrWorkspaceStartRouteInvalid                       = errors.New("workspace start route must start with /")
+	ErrWorkspaceStartRouteInvalid                       = errors.New("workspace start route must be one of /chat/all, /rooms, /inbox, /mailbox")
 	ErrWorkspacePreferredAgentNotFound                  = errors.New("preferred agent not found")
 	ErrWorkspaceGovernanceTopologyInvalid               = errors.New("workspace governance topology is invalid")
 	ErrWorkspaceGovernanceDeliveryDelegationModeInvalid = errors.New("workspace governance delivery delegation mode is invalid")
 )
+
+var supportedWorkspaceStartRoutes = map[string]struct{}{
+	"/chat/all": {},
+	"/rooms":    {},
+	"/inbox":    {},
+	"/mailbox":  {},
+}
 
 type WorkspaceConfigUpdateInput struct {
 	Plan        string
@@ -63,8 +70,8 @@ func defaultWorkspaceOnboarding(now string) WorkspaceOnboardingSnapshot {
 		Status:         workspaceOnboardingInProgress,
 		TemplateID:     "dev-team",
 		CurrentStep:    "account",
-		CompletedSteps: []string{"workspace-created", "template-selected"},
-		ResumeURL:      "/onboarding",
+		CompletedSteps: []string{"workspace-created"},
+		ResumeURL:      "/setup",
 		UpdatedAt:      now,
 	}
 }
@@ -195,6 +202,9 @@ func normalizeWorkspaceRoute(value string) (string, error) {
 	if !strings.HasPrefix(value, "/") {
 		return "", ErrWorkspaceStartRouteInvalid
 	}
+	if _, ok := supportedWorkspaceStartRoutes[value]; !ok {
+		return "", ErrWorkspaceStartRouteInvalid
+	}
 	return value, nil
 }
 
@@ -294,7 +304,7 @@ func workspaceOnboardingCanAutoComplete(workspace WorkspaceSnapshot) bool {
 
 	repoBound := strings.EqualFold(defaultString(workspace.RepoBinding.BindingStatus, workspace.RepoBindingStatus), "bound")
 	authMode := strings.TrimSpace(strings.ToLower(defaultString(workspace.RepoBinding.AuthMode, workspace.RepoAuthMode)))
-	githubReady := authMode != "github-app" || workspace.GitHubInstallation.AppInstalled || workspace.GitHubInstallation.ConnectionReady
+	githubReady := authMode != "github-app" || (workspace.GitHubInstallation.AppInstalled && workspace.GitHubInstallation.ConnectionReady)
 	runtimePaired := strings.EqualFold(strings.TrimSpace(workspace.PairingStatus), workspacePairingPaired)
 	materialized := len(workspace.Onboarding.Materialization.Agents) > 0 && len(workspace.Onboarding.Materialization.Channels) > 0
 
@@ -804,6 +814,68 @@ func (s *Store) UpdateWorkspaceMemberPreferences(memberID string, input Workspac
 		return State{}, WorkspaceMember{}, err
 	}
 	return cloneState(s.state), member, nil
+}
+
+func (s *Store) UpdateWorkspaceMemberPreferencesAs(session AuthSession, memberID string, input WorkspaceMemberPreferencesInput) (State, WorkspaceMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	previousSession := s.beginScopedAuthSessionLocked(session)
+
+	if strings.TrimSpace(s.state.Auth.Session.Status) != authSessionStatusActive {
+		s.endScopedAuthSessionLocked(previousSession)
+		return State{}, WorkspaceMember{}, ErrAuthSessionRequired
+	}
+
+	index := s.findWorkspaceMemberByIDLocked(memberID)
+	if index == -1 {
+		s.endScopedAuthSessionLocked(previousSession)
+		return State{}, WorkspaceMember{}, ErrWorkspaceMemberNotFound
+	}
+	session = s.state.Auth.Session
+	if session.MemberID != memberID && !sessionHasPermission(session, "workspace.manage") {
+		s.endScopedAuthSessionLocked(previousSession)
+		return State{}, WorkspaceMember{}, ErrWorkspaceRoleForbidden
+	}
+
+	member := s.state.Auth.Members[index]
+	if agentID := strings.TrimSpace(input.PreferredAgentID); agentID != "" {
+		if s.findAgentByIDLocked(agentID) == -1 {
+			s.endScopedAuthSessionLocked(previousSession)
+			return State{}, WorkspaceMember{}, ErrWorkspacePreferredAgentNotFound
+		}
+		member.Preferences.PreferredAgentID = agentID
+	}
+	startRoute, err := normalizeWorkspaceRoute(defaultString(input.StartRoute, member.Preferences.StartRoute))
+	if err != nil {
+		s.endScopedAuthSessionLocked(previousSession)
+		return State{}, WorkspaceMember{}, err
+	}
+	member.Preferences.StartRoute = defaultString(startRoute, member.Preferences.StartRoute)
+	member.Preferences.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
+	if handle := strings.TrimSpace(input.GitHubHandle); handle != "" {
+		member.GitHubIdentity = AuthExternalIdentity{
+			Provider: "github",
+			Handle:   handle,
+			Status:   "bound",
+			BoundAt:  member.Preferences.UpdatedAt,
+		}
+		member.LinkedIdentities = upsertWorkspaceMemberIdentity(member.LinkedIdentities, member.GitHubIdentity)
+	}
+
+	syncWorkspaceMemberDefaults(&member)
+	s.state.Auth.Members[index] = member
+	s.refreshAuthSessionLocked()
+	requestSession := s.state.Auth.Session
+
+	s.endScopedAuthSessionLocked(previousSession)
+	if err := s.persistLocked(); err != nil {
+		return State{}, WorkspaceMember{}, err
+	}
+	nextState := cloneState(s.state)
+	nextState.Auth.Session = requestSession
+	return nextState, member, nil
 }
 
 func workspaceGitHubStatusFromSnapshot(workspace WorkspaceSnapshot) WorkspaceGitHubInstallSnapshot {

@@ -104,7 +104,7 @@ export function hrefTargetLabel(href?: string) {
     return "讨论间上下文";
   }
   if (trimmed.startsWith("/rooms/") && trimmed.includes("?tab=topic")) {
-    return "讨论间话题";
+    return "讨论间上下文";
   }
   if (trimmed.startsWith("/rooms/")) {
     return "进入讨论间";

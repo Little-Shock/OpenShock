@@ -48,7 +48,7 @@ func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, agent)
 	case http.MethodPatch:
-		if !s.requireSessionPermission(w, "workspace.manage") {
+		if !s.requireRequestSessionPermission(w, r, "workspace.manage") {
 			return
 		}
 
@@ -58,7 +58,6 @@ func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		snapshot := s.store.Snapshot()
 		var sandbox *store.SandboxPolicy
 		if req.Sandbox != nil {
 			sandbox = &store.SandboxPolicy{
@@ -81,7 +80,7 @@ func (s *Server) handleAgentRoutes(w http.ResponseWriter, r *http.Request) {
 			MemorySpaces:          req.MemorySpaces,
 			CredentialProfileIDs:  req.CredentialProfileIDs,
 			Sandbox:               sandbox,
-			UpdatedBy:             currentAuthActor(snapshot.Auth.Session),
+			UpdatedBy:             s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeAgentProfileError(w, err)

@@ -213,6 +213,15 @@ async function ensureDetailsOpen(page, testID, message) {
   });
 }
 
+async function ensureSettingsDisclosureOpen(page, testID) {
+  const toggle = page.getByTestId(`settings-advanced-${testID}-toggle`);
+  await waitFor(async () => (await toggle.count()) > 0, `settings ${testID} toggle did not render`);
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await waitFor(async () => (await page.getByTestId(`settings-advanced-${testID}-content`).count()) > 0, `settings ${testID} content did not render`);
+}
+
 async function readState(serverURL) {
   const response = await fetch(`${serverURL}/v1/state`, { cache: "no-store" });
   if (!response.ok) {
@@ -245,8 +254,8 @@ try {
   context = await browser.newContext({ viewport: { width: 1560, height: 1280 } });
   page = await context.newPage();
 
-  await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
-  await page.getByTestId("settings-advanced-governance-toggle").click();
+  await page.goto(`${webURL}/settings/advanced`, { waitUntil: "domcontentloaded" });
+  await ensureSettingsDisclosureOpen(page, "governance");
   await page.getByTestId("settings-governance-topology-count").waitFor({ state: "visible" });
   await waitFor(async () => (await readText(page, "settings-governance-topology-count")).includes("5"), "baseline topology should start with 5 configured lanes");
   await capture(page, "settings-governance-before");
@@ -274,7 +283,7 @@ try {
   assert(state.workspace.governance.teamTopology.some((lane) => lane.id === "developer" && lane.label === "Builder"), "developer lane should be renamed to Builder in derived topology");
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByTestId("settings-advanced-governance-toggle").click();
+  await ensureSettingsDisclosureOpen(page, "governance");
   await waitForInputValue(page, "settings-governance-lane-label-2", "Builder");
   await waitForInputValue(page, "settings-governance-lane-id-5", "ops");
   await waitForInputValue(page, "settings-governance-lane-label-5", "Ops");
@@ -307,8 +316,8 @@ try {
   serverChild = startServer(serverPort);
   await waitForHealth(serverURL);
 
-  await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
-  await page.getByTestId("settings-advanced-governance-toggle").click();
+  await page.goto(`${webURL}/settings/advanced`, { waitUntil: "domcontentloaded" });
+  await ensureSettingsDisclosureOpen(page, "governance");
   await waitForInputValue(page, "settings-governance-lane-label-2", "Builder");
   await waitForInputValue(page, "settings-governance-lane-id-5", "ops");
   await capture(page, "settings-governance-after-restart");
@@ -336,7 +345,7 @@ try {
     "",
     "## Results",
     "",
-    "- `/settings` 现在可以直接编辑 team topology，不再只有只读 governance preview；本轮将 `Developer` 改成 `Builder`，并新增了 `Ops` lane -> PASS",
+    "- `/settings/advanced` 现在可以直接编辑 team topology，不再把治理配置塞回主设置页；本轮将 `Developer` 改成 `Builder`，并新增了 `Ops` lane -> PASS",
     "- `/setup`、`/mailbox`、`/agents` 会消费同一份 topology truth；三处 preview 都已同步显示 `Builder` 和 `Ops` -> PASS",
     "- browser reload、server restart 和 second browser context 后，configured topology 与 derived governance snapshot 仍保持 6 lanes -> PASS",
     "",

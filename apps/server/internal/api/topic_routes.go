@@ -30,7 +30,7 @@ func (s *Server) handleTopicRoutes(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		snapshot := s.store.Snapshot()
+		snapshot := s.runtimeAwareStateSnapshotForRequest(r)
 		for _, room := range snapshot.Rooms {
 			if room.Topic.ID != topicID {
 				continue
@@ -44,7 +44,7 @@ func (s *Server) handleTopicRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "topic not found"})
 	case http.MethodPatch:
-		if !s.requireSessionPermission(w, "room.reply") {
+		if !s.requireRequestSessionPermission(w, r, "room.reply") {
 			return
 		}
 
@@ -54,10 +54,9 @@ func (s *Server) handleTopicRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		snapshot := s.store.Snapshot()
 		nextState, room, err := s.store.UpdateTopicGuidance(topicID, store.TopicGuidanceUpdateInput{
 			Summary:   req.Summary,
-			UpdatedBy: currentAuthActor(snapshot.Auth.Session),
+			UpdatedBy: s.currentRequestAuthActor(r),
 		})
 		if err != nil {
 			writeTopicGuidanceError(w, err)

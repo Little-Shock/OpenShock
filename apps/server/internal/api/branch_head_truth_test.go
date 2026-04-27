@@ -191,6 +191,64 @@ func TestBranchHeadTruthEndpointFlagsDriftAcrossBindingCheckoutAndLiveService(t 
 	assertDriftKindPresent(t, payload.Drifts, "linked_worktrees_visible")
 }
 
+func TestBranchHeadTruthEndpointKeepsPublicIngressAndRepoDriftWhenProbeFails(t *testing.T) {
+	root := initGitBindingRepo(t, "https://github.com/example/phase-zero.git")
+	ignoreRepoRuntimeArtifacts(t, root)
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := store.New(statePath, root)
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, err := s.UpdateRepoBinding(store.RepoBindingInput{
+		Repo:       "example/other",
+		RepoURL:    "https://github.com/example/other.git",
+		Branch:     "main",
+		Provider:   "github",
+		AuthMode:   "github-app",
+		DetectedAt: "2026-04-10T12:00:00Z",
+		SyncedAt:   "2026-04-10T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("UpdateRepoBinding() error = %v", err)
+	}
+
+	server := httptest.NewServer(New(s, http.DefaultClient, Config{
+		DaemonURL:     "http://127.0.0.1:65531",
+		ControlURL:    "https://public.openshock.dev/",
+		WorkspaceRoot: root,
+		GitHub: fakeGitHubProber{
+			status: githubsvc.Status{
+				Repo:             "example/phase-zero",
+				RepoURL:          "https://github.com/example/phase-zero.git",
+				Branch:           "main",
+				Provider:         "github",
+				RemoteConfigured: true,
+			},
+			err: os.ErrDeadlineExceeded,
+		},
+	}).Handler())
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/workspace/branch-head-truth")
+	if err != nil {
+		t.Fatalf("GET branch-head-truth error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	var payload branchHeadTruthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.GitHubConnection.CallbackURL != "https://public.openshock.dev/setup/github/callback" {
+		t.Fatalf("callback URL = %q, want public callback URL", payload.GitHubConnection.CallbackURL)
+	}
+	if payload.GitHubConnection.WebhookURL != "https://public.openshock.dev/v1/github/webhook" {
+		t.Fatalf("webhook URL = %q, want public webhook URL", payload.GitHubConnection.WebhookURL)
+	}
+	assertDriftKindPresent(t, payload.Drifts, "github_probe_error")
+	assertDriftKindPresent(t, payload.Drifts, "binding_vs_checkout_repo")
+}
+
 func assertDriftKindPresent(t *testing.T, drifts []branchHeadDrift, want string) {
 	t.Helper()
 	for _, drift := range drifts {

@@ -62,6 +62,8 @@ func (s *Server) handleStateStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.runtimeAwareStateSnapshotForRequest(r)
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming not supported"})
@@ -77,29 +79,33 @@ func (s *Server) handleStateStream(w http.ResponseWriter, r *http.Request) {
 	subscription := s.store.SubscribeState(requestedSequence)
 	defer s.store.UnsubscribeState(subscription.ID)
 
-	previous := subscription.Current.Snapshot
+	previous := s.requestScopedStateSnapshot(subscription.Current.Snapshot, r)
 	previousSet := false
 
 	sendSnapshot := func(update store.StateStreamUpdate) error {
-		previous = update.Snapshot
+		previous = s.requestScopedStateSnapshot(update.Snapshot, r)
 		previousSet = true
-		return writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(update.Snapshot, update.Sequence), update.Sequence)
+		return writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(previous, update.Sequence), update.Sequence)
 	}
 	sendDelta := func(update store.StateStreamUpdate) error {
+		next := s.requestScopedStateSnapshot(update.Snapshot, r)
 		if !previousSet {
-			return sendSnapshot(update)
+			previous = next
+			previousSet = true
+			return writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(next, update.Sequence), update.Sequence)
 		}
-		delta := buildStateStreamDeltaEvent(previous, update.Snapshot, update.Sequence)
-		previous = update.Snapshot
+		delta := buildStateStreamDeltaEvent(previous, next, update.Sequence)
+		previous = next
 		if len(delta.Delta) == 0 {
-			return writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(update.Snapshot, update.Sequence), update.Sequence)
+			return writeSSEEvent(w, flusher, "snapshot", buildStateStreamEvent(next, update.Sequence), update.Sequence)
 		}
 		return writeSSEEvent(w, flusher, "delta", delta, update.Sequence)
 	}
 
 	switch {
 	case subscription.Resync:
-		if err := writeSSEEvent(w, flusher, "resync", buildStateStreamResyncEvent(subscription.Current.Sequence, subscription.Current.Snapshot, "history_gap"), subscription.Current.Sequence); err != nil {
+		resyncSnapshot := s.requestScopedStateSnapshot(subscription.Current.Snapshot, r)
+		if err := writeSSEEvent(w, flusher, "resync", buildStateStreamResyncEvent(subscription.Current.Sequence, resyncSnapshot, "history_gap"), subscription.Current.Sequence); err != nil {
 			return
 		}
 	case len(subscription.Replay) > 0:
@@ -135,6 +141,7 @@ func (s *Server) handleStateStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-keepalive.C:
+			s.runtimeAwareStateSnapshotForRequest(r)
 			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
 				return
 			}

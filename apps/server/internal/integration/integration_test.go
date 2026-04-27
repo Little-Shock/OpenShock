@@ -53,6 +53,27 @@ func TestPhaseZeroLoopThroughDaemon(t *testing.T) {
 	)
 	waitForHealth(t, serverURL+"/healthz", server)
 
+	login := postJSON(t, serverURL+"/v1/auth/session", map[string]any{
+		"email":       "larkspur@openshock.dev",
+		"deviceLabel": "Owner Browser",
+	}, http.StatusOK)
+	session, ok := login["session"].(map[string]any)
+	if !ok {
+		t.Fatalf("login session payload malformed: %#v", login["session"])
+	}
+	if stringField(t, session, "emailVerificationStatus") != "verified" {
+		postJSON(t, serverURL+"/v1/auth/recovery", map[string]any{
+			"action": "verify_email",
+			"email":  "larkspur@openshock.dev",
+		}, http.StatusOK)
+	}
+	if stringField(t, session, "deviceAuthStatus") != "authorized" {
+		postJSON(t, serverURL+"/v1/auth/recovery", map[string]any{
+			"action":   "authorize_device",
+			"deviceId": stringField(t, session, "deviceId"),
+		}, http.StatusOK)
+	}
+
 	pairing := postJSON(t, serverURL+"/v1/runtime/pairing", map[string]any{
 		"daemonUrl": daemonURL,
 	}, http.StatusOK)
@@ -133,7 +154,7 @@ func TestPhaseZeroLoopThroughDaemon(t *testing.T) {
 	state := getJSON(t, serverURL+"/v1/state")
 	issue := findByField(t, state["issues"], "roomId", roomID)
 	run := findByField(t, state["runs"], "id", runID)
-	session := findByField(t, state["sessions"], "id", sessionID)
+	runSession := findByField(t, state["sessions"], "id", sessionID)
 	pullRequest := findByField(t, state["pullRequests"], "id", pullRequestID)
 
 	if stringField(t, issue, "state") != "done" {
@@ -146,7 +167,7 @@ func TestPhaseZeroLoopThroughDaemon(t *testing.T) {
 		t.Fatalf("pull request status = %q, want merged", stringField(t, pullRequest, "status"))
 	}
 
-	memoryPaths := stringSliceField(t, session, "memoryPaths")
+	memoryPaths := stringSliceField(t, runSession, "memoryPaths")
 	if len(memoryPaths) < 4 {
 		t.Fatalf("session memory paths = %#v, want >= 4 entries", memoryPaths)
 	}
@@ -218,6 +239,9 @@ func writeFakeClaudeCLI(t *testing.T) string {
 	script := `#!/bin/sh
 args="$*"
 case "$args" in
+  "auth status")
+    printf '{"loggedIn":true,"authMethod":"test","apiProvider":"firstParty"}\n'
+    ;;
   *stream-ready*)
     printf 'stream-ready\ndone\n'
     ;;

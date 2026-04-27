@@ -11,6 +11,7 @@
 - 不要求系统预装 Go；根脚本会优先使用系统里可用的 Go 1.24.x，否则通过 `scripts/go.sh` 下载并使用 repo-local toolchain
 - `git`
 - `curl`
+- 一套系统 Chromium/Chrome，或显式设置 `OPENSHOCK_CHROMIUM_PATH`
 - 至少安装一个本地 CLI provider：
   - `codex`
   - 或 `claude`
@@ -30,9 +31,15 @@
 - 如果你要接管 actual live `127.0.0.1:8080`，不要再只靠“哪个终端还开着”；统一改走 `pnpm ops:live-server:*`
 - round-end release gate 现在统一走根脚本：
   - `pnpm verify:release`
+    - repo gate 里的 `pnpm verify` 现在会通过 `pnpm verify:server` 收进 server core 包回归和一条 `server ↔ daemon` integration loop
   - `pnpm ops:smoke`
+  - `pnpm ops:smoke:strict`
   - `pnpm ops:experience-metrics`
   - `pnpm verify:release:full`
+    - 现在会自动写 full gate summary report，并把 repo / browser / live stack 日志落到 `docs/testing/artifacts/<date>/release-full/`
+  - `pnpm verify:release:rc`
+    - 现在额外内含一条 `server ↔ daemon` integration loop，不再只靠 repo/browser/smoke 三段
+    - 现在还要求 `OPENSHOCK_INTERNAL_WORKER_SECRET` 和 `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET` 都已配置
 - 跨平台最稳的方式是直接跑 Go 入口
 - server 默认状态文件是：
   - `<OPENSHOCK_WORKSPACE_ROOT>/data/phase0/state.json`
@@ -71,6 +78,10 @@ $env:OPENSHOCK_LIVE_OWNER = "@Max_开发"
 
 - Server:
   - `OPENSHOCK_STATE_FILE`
+  - `OPENSHOCK_INTERNAL_WORKER_SECRET`
+    - 如果设置，`/v1/notifications/fanout` 这类内部 worker 路由必须带同一个 shared secret；推荐和发布脚本/后台 worker 一起注入
+  - `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET`
+    - 如果设置，`/v1/runtime/heartbeats` 只接受带同一个 shared secret 的 daemon heartbeat；server 和 daemon 要保持一致
   - `OPENSHOCK_GITHUB_WEBHOOK_SECRET`
   - `OPENSHOCK_GITHUB_APP_ID`
   - `OPENSHOCK_GITHUB_APP_SLUG`
@@ -80,6 +91,7 @@ $env:OPENSHOCK_LIVE_OWNER = "@Max_开发"
     - Setup 会把这个 URL 暴露给 installation pending 的 onboarding / blocked contract
 - Daemon:
   - `OPENSHOCK_CONTROL_URL`
+  - `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET`
   - `OPENSHOCK_DAEMON_ADVERTISE_URL`
   - `OPENSHOCK_DAEMON_HEARTBEAT_INTERVAL`
   - `OPENSHOCK_DAEMON_HEARTBEAT_TIMEOUT`
@@ -88,7 +100,11 @@ $env:OPENSHOCK_LIVE_OWNER = "@Max_开发"
   - `OPENSHOCK_ACTUAL_LIVE_URL`
     - 如果你在隔离 dev server 上看 actual live parity，这格继续指向真正给客户试的 `:8080`
   - `OPENSHOCK_DAEMON_URL`
-  - `OPENSHOCK_REQUIRE_GITHUB_READY=1` 会把 GitHub readiness 也收进 smoke gate
+  - `OPENSHOCK_INTERNAL_WORKER_SECRET`
+    - release candidate gate 会直接要求它存在，用来卡 `/v1/notifications/fanout` 这类内部 worker 链路
+  - `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET`
+    - release candidate gate 会直接要求它存在，用来卡 `/v1/runtime/heartbeats` 的 shared-secret 基线
+  - `pnpm ops:smoke:strict` 现在会把 GitHub readiness 和 branch-head aligned 一起收进 smoke gate；如果你还要卡 actual live parity，额外加 `OPENSHOCK_REQUIRE_ACTUAL_LIVE_PARITY=1`
 
 ---
 
@@ -109,6 +125,7 @@ pnpm dev:fresh:stop
 - 自动找空闲端口拉起 `web / server / daemon`
 - 打印 `Entry / Access / Onboarding / Chat / Setup` 入口
 - 生成一份 fresh workspace state，方便首启和有头链路复核
+- 自动注入一组本地 `OPENSHOCK_INTERNAL_WORKER_SECRET` 和 `OPENSHOCK_RUNTIME_HEARTBEAT_SECRET`，让 fresh stack 默认更接近 release baseline
 
 如果你需要单独调试某一段，再退回下面的手动 3 进程方式。
 
@@ -415,7 +432,7 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
   -d '{
     "title": "Probe issue lane",
     "summary": "Verify issue -> room -> run -> session -> worktree.",
-    "owner": "Codex Dockmaster",
+    "owner": "启动智能体",
     "priority": "high"
   }'
 ```
@@ -452,7 +469,7 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
 
 ### Deploy / Observability / Release Gate
 
-当前推荐把 round-end 验证分成两层：
+当前推荐把 round-end 验证分成三条入口：
 
 - `pnpm verify:release`
   - repo 级 release gate
@@ -484,8 +501,17 @@ curl -X POST http://127.0.0.1:8080/v1/issues \
     - 对已经启动的 server 拉一份 derived metrics snapshot
     - 统一回答 onboarding completion、handoff ack、memory provenance、design visibility 是否前滚
     - historical rate 还缺 durable event rollup 的项会显式标成 `partial`
+- `pnpm ops:smoke:strict`
+  - 只对当前 live stack 做 strict GitHub-ready smoke
+  - `/v1/github/connection.ready` 不为 `true` 就直接失败
 - `pnpm verify:release:full`
-  - 先跑 repo gate，再跑 live stack smoke
+  - 先跑 repo gate，再跑 release browser suite，最后跑 live stack smoke
+- `pnpm verify:release:rc`
+  - 先跑 repo gate，再跑 `server ↔ daemon` integration loop，再顺序跑 `setup / onboarding / critical loop / rooms continue / config recovery` 五条浏览器链，最后跑 strict GitHub-ready + actual-live-parity live stack smoke
+- `pnpm verify:release:browser`
+  - 只跑 release gate 使用的五条浏览器主链，适合快速复核 Setup、首启、主继续路径和 durable config recovery 是否漂移
+  - 结束时会打印 5 份浏览器报告路径，方便直接贴到 reviewer 证据区
+  - 这 5 条主链的 canonical source 在 `scripts/release-browser-suite.sh`
 
 ### 当前观测面
 

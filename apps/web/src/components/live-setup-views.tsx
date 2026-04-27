@@ -161,6 +161,10 @@ function onboardingStudioStepLabel(stepId?: string) {
   return matched?.label ?? valueOrPlaceholder(stepId, "待开始");
 }
 
+function onboardingCompletedStepSet(completedSteps: string[] | undefined) {
+  return new Set((completedSteps ?? []).map((step) => step.trim()).filter(Boolean));
+}
+
 function governanceLaneStatusLabel(status?: string) {
   switch ((status ?? "").trim().toLowerCase()) {
     case "ready":
@@ -368,15 +372,20 @@ function onboardingTemplateDefinition(templateId: string | undefined) {
   );
 }
 
-function buildOnboardingStudioProgress(workspace: ReturnType<typeof usePhaseZeroState>["state"]["workspace"], templateId: string, finished = false) {
+function buildOnboardingStudioProgress(
+  workspace: ReturnType<typeof usePhaseZeroState>["state"]["workspace"],
+  options?: { finished?: boolean; templateConfirmed?: boolean }
+) {
+  const finished = options?.finished ?? false;
   const githubReady =
     workspace.repoBinding.authMode !== "github-app" ||
     workspace.repoAuthMode !== "github-app" ||
     workspace.githubInstallation.appInstalled ||
     workspace.githubInstallation.connectionReady;
-  const completed = new Set<string>();
+  const completed = onboardingCompletedStepSet(workspace.onboarding.completedSteps);
   completed.add("workspace-created");
-  if (templateId.trim()) {
+  const templateConfirmed = options?.templateConfirmed ?? completed.has("template-selected");
+  if (templateConfirmed) {
     completed.add("template-selected");
   }
   if ((workspace.repoBinding.bindingStatus || workspace.repoBindingStatus) === "bound") {
@@ -408,12 +417,70 @@ function buildOnboardingStudioProgress(workspace: ReturnType<typeof usePhaseZero
     status,
     currentStep: nextStep,
     completedSteps,
-    resumeUrl: finished ? "/chat/all" : `/onboarding?template=${templateId}`,
+    resumeUrl: finished ? "/chat/all" : "/setup",
     canFinish:
       completed.has("template-selected") &&
       completed.has("repo-bound") &&
       completed.has("github-ready") &&
       completed.has("runtime-paired"),
+    templateConfirmed,
+  };
+}
+
+function buildSetupPrimaryAction(
+  workspace: ReturnType<typeof usePhaseZeroState>["state"]["workspace"],
+  journey: ReturnType<typeof buildFirstStartJourney>
+) {
+  if (!journey.accessReady || journey.onboardingDone) {
+    return {
+      href: journey.nextHref,
+      label: journey.nextLabel,
+      summary: journey.nextSummary,
+      surfaceLabel: journey.nextSurfaceLabel,
+    };
+  }
+
+  const completed = onboardingCompletedStepSet(workspace.onboarding.completedSteps);
+  const repoReady = (workspace.repoBinding.bindingStatus || workspace.repoBindingStatus) === "bound";
+  const githubReady =
+    workspace.repoBinding.authMode !== "github-app" ||
+    workspace.repoAuthMode !== "github-app" ||
+    workspace.githubInstallation.appInstalled ||
+    workspace.githubInstallation.connectionReady;
+  const runtimeReady = workspace.pairingStatus === "paired";
+
+  if (!completed.has("template-selected")) {
+    return {
+      href: "#setup-template-section",
+      label: "确认模板",
+      summary: "先在当前页面确认起步模板，再继续仓库和运行环境。",
+      surfaceLabel: "模板",
+    };
+  }
+
+  if (!repoReady || !githubReady) {
+    return {
+      href: "#setup-repo-section",
+      label: repoReady ? "检查 GitHub" : "连接仓库",
+      summary: repoReady ? "仓库已就绪，再看一下 GitHub 连接。" : "先确认当前仓库和分支。",
+      surfaceLabel: repoReady ? "GitHub" : "仓库",
+    };
+  }
+
+  if (!runtimeReady) {
+    return {
+      href: "#setup-runtime-section",
+      label: "连接运行环境",
+      summary: "把当前浏览器接到运行环境后，聊天才能继续跑。",
+      surfaceLabel: "运行环境",
+    };
+  }
+
+  return {
+    href: "#setup-template-section",
+    label: "完成首次启动",
+    summary: "关键检查都已就绪，回到起步模板面板完成收口后再进入聊天。",
+    surfaceLabel: "完成",
   };
 }
 
@@ -445,7 +512,12 @@ export function SetupFirstStartJourneyPanel() {
   }
 
   const journey = buildFirstStartJourney(state.workspace, state.auth.session);
+  const setupPrimaryAction = buildSetupPrimaryAction(state.workspace, journey);
   const onboardingLabel = onboardingStatusLabel(state.workspace.onboarding.status);
+  const currentStep =
+    journey.steps.find((step) => step.status === "active")
+    ?? journey.steps.find((step) => step.status === "pending")
+    ?? journey.steps[journey.steps.length - 1];
 
   return (
     <Panel tone={journey.onboardingDone ? "lime" : journey.accessReady ? "yellow" : "paper"}>
@@ -457,52 +529,85 @@ export function SetupFirstStartJourneyPanel() {
         <span
           className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
         >
-          {journey.nextSurfaceLabel}
+          {setupPrimaryAction.surfaceLabel}
         </span>
-        <span data-testid="setup-first-start-next-route" className="sr-only">{journey.nextHref}</span>
+        <span data-testid="setup-first-start-next-route" className="sr-only">{setupPrimaryAction.href}</span>
       </div>
       <p
         data-testid="setup-first-start-summary"
         className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.78)]"
       >
-        {journey.nextSummary}
+        {setupPrimaryAction.summary}
       </p>
       <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <WorkspaceMetric label="现在做什么" value={journey.nextLabel} testID="setup-first-start-next-label" />
+        <WorkspaceMetric label="现在做什么" value={setupPrimaryAction.label} testID="setup-first-start-next-label" />
         <WorkspaceMetric label="准备好后进入" value={journey.launchSurfaceLabel} />
         <p className="sr-only" data-testid="setup-first-start-launch-route">{journey.launchHref}</p>
         <WorkspaceMetric label="当前进度" value={onboardingLabel} testID="setup-first-start-onboarding-status" />
       </div>
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        {journey.steps.map((step) => (
-          <Panel key={step.id} tone={journeyTone(step.status)} className="!p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-display text-[20px] font-bold leading-6">{step.label}</p>
-                <p
-                  data-testid={`setup-first-start-step-${step.id}-summary`}
-                  className="mt-1.5 text-[13px] leading-5 text-[color:rgba(24,20,14,0.74)]"
-                >
-                  {step.summary}
-                </p>
-              </div>
-              <span
-                data-testid={`setup-first-start-step-${step.id}-status`}
-                className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]"
+      {currentStep ? (
+        <Panel tone={journeyTone(currentStep.status)} className="mt-5 !p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">当前缺口</p>
+              <p className="mt-2 font-display text-[22px] font-bold leading-6">{currentStep.label}</p>
+              <p
+                data-testid={`setup-first-start-step-${currentStep.id}-summary`}
+                className="mt-2 text-[13px] leading-5 text-[color:rgba(24,20,14,0.74)]"
               >
-                {step.status}
-              </span>
+                {currentStep.summary}
+              </p>
             </div>
-          </Panel>
-        ))}
-      </div>
+            <span
+              data-testid={`setup-first-start-step-${currentStep.id}-status`}
+              className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]"
+            >
+              {currentStep.status}
+            </span>
+          </div>
+        </Panel>
+      ) : null}
+      <details data-testid="setup-first-start-steps-details" className="mt-5 rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+        <summary
+          data-testid="setup-first-start-steps-toggle"
+          className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.72)]"
+        >
+          查看全部三步说明
+        </summary>
+        <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+          需要时再展开三步说明，先按上面的下一步继续。
+        </p>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {journey.steps.map((step) => (
+            <Panel key={step.id} tone={journeyTone(step.status)} className="!p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-display text-[20px] font-bold leading-6">{step.label}</p>
+                  <p
+                    data-testid={`setup-first-start-step-${step.id}-summary`}
+                    className="mt-1.5 text-[13px] leading-5 text-[color:rgba(24,20,14,0.74)]"
+                  >
+                    {step.summary}
+                  </p>
+                </div>
+                <span
+                  data-testid={`setup-first-start-step-${step.id}-status`}
+                  className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]"
+                >
+                  {step.status}
+                </span>
+              </div>
+            </Panel>
+          ))}
+        </div>
+      </details>
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <Link
           data-testid="setup-first-start-next-link"
-          href={journey.nextHref}
+          href={setupPrimaryAction.href}
           className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] shadow-[4px_4px_0_0_var(--shock-ink)] transition-transform hover:-translate-y-0.5"
         >
-          {journey.nextLabel}
+          {setupPrimaryAction.label}
         </Link>
         <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">
           完成后直接进入聊天。
@@ -517,7 +622,9 @@ export function OnboardingStudioPanel() {
   const workspace = state.workspace;
   const currentTemplate = onboardingTemplateDefinition(workspace.onboarding.templateId);
   const materialization = workspace.onboarding.materialization;
-  const progress = buildOnboardingStudioProgress(workspace, currentTemplate.id, workspace.onboarding.status === "done");
+  const progress = buildOnboardingStudioProgress(workspace, {
+    finished: workspace.onboarding.status === "done",
+  });
   const sessionMember = state.auth.members.find((member) => member.id === state.auth.session.memberId);
 
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
@@ -538,11 +645,14 @@ export function OnboardingStudioPanel() {
     return <SetupStateNotice title="起步设置暂时不可用" message={stateError} tone="pink" />;
   }
 
-  async function persistTemplate(templateId: string, options?: { finished?: boolean; syncTemplateDefaults?: boolean }) {
+  async function persistTemplate(templateId: string, options?: { finished?: boolean; syncTemplateDefaults?: boolean; templateConfirmed?: boolean }) {
     const finished = options?.finished ?? false;
     const syncTemplateDefaults = options?.syncTemplateDefaults ?? false;
     const definition = onboardingTemplateDefinition(templateId);
-    const nextProgress = buildOnboardingStudioProgress(workspace, definition.id, finished);
+    const nextProgress = buildOnboardingStudioProgress(workspace, {
+      finished,
+      templateConfirmed: options?.templateConfirmed ?? (syncTemplateDefaults || progress.templateConfirmed),
+    });
     setPendingTemplateId(definition.id);
     setError(null);
     setSuccess(null);
@@ -552,11 +662,11 @@ export function OnboardingStudioPanel() {
         browserPush: syncTemplateDefaults ? definition.defaultBrowserPush : workspace.browserPush,
         memoryMode: syncTemplateDefaults ? definition.defaultMemoryMode : workspace.memoryMode,
         sandbox: workspace.sandbox,
-        onboarding: {
-          status: nextProgress.status,
-          templateId: definition.id,
-          currentStep: nextProgress.currentStep,
-          completedSteps: nextProgress.completedSteps,
+          onboarding: {
+            status: nextProgress.status,
+            templateId: definition.id,
+            currentStep: nextProgress.currentStep,
+            completedSteps: nextProgress.completedSteps,
           resumeUrl: nextProgress.resumeUrl,
         },
       });
@@ -583,153 +693,238 @@ export function OnboardingStudioPanel() {
     }
   }
 
+  const shouldCollapseTemplateManager = progress.templateConfirmed || workspace.onboarding.status === "done";
+  const currentStudioStep = onboardingStudioStepLabel(workspace.onboarding.currentStep || progress.currentStep);
+  const studioBody = (
+    <div className="mt-5 grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="space-y-3">
+        {ONBOARDING_TEMPLATE_DEFINITIONS.map((template) => {
+          const active = currentTemplate.id === template.id;
+          const busy = pendingTemplateId === template.id;
+          return (
+            <Panel key={template.id} tone={active ? "yellow" : "paper"} className="!p-3.5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">{template.eyebrow}</p>
+                  <h3 className="mt-1.5 font-display text-[24px] font-bold leading-7">{template.label}</h3>
+                </div>
+                <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]">
+                  {active ? (progress.templateConfirmed ? "当前使用" : "待确认") : "模板"}
+                </span>
+              </div>
+              <p className="mt-2.5 text-sm leading-6">{template.description}</p>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                <WorkspaceMetric label="频道" value={template.channels.join(" / ")} />
+                <WorkspaceMetric label="通知" value={template.notificationPolicy} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {template.roles.map((role) => (
+                  <span key={`${template.id}-${role}`} className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px]">
+                    {role}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{template.notes[0]}</p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  data-testid={`setup-template-select-${template.id}`}
+                  type="button"
+                  disabled={Boolean(pendingTemplateId)}
+                  onClick={() => void persistTemplate(template.id, { syncTemplateDefaults: true })}
+                  className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {busy ? "写回中..." : active ? (progress.templateConfirmed ? "重新同步模板" : "确认模板") : "选择模板"}
+                </button>
+              </div>
+            </Panel>
+          );
+        })}
+      </div>
+
+      <div className="space-y-3">
+        <Panel tone="white" className="!p-3.5">
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前启动包</p>
+          <div className="mt-3 grid gap-2">
+            <WorkspaceMetric label="模板" value={valueOrPlaceholder(materialization?.label || currentTemplate.label, currentTemplate.label)} testID="setup-onboarding-template-package" />
+            <WorkspaceMetric label="完成后进入" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "/setup")} />
+            <WorkspaceMetric label="通知策略" value={valueOrPlaceholder(materialization?.notificationPolicy, currentTemplate.notificationPolicy)} />
+          </div>
+          <div className="mt-3 space-y-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">已落地频道</p>
+            <p data-testid="setup-onboarding-materialized-channels" className="text-sm leading-6">
+              {(materialization?.channels ?? currentTemplate.channels).join(" / ")}
+            </p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">已落地分工</p>
+            <p data-testid="setup-onboarding-materialized-roles" className="text-sm leading-6">
+              {(materialization?.roles ?? currentTemplate.roles).join(" · ")}
+            </p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">默认智能体</p>
+            <p data-testid="setup-onboarding-materialized-agents" className="text-sm leading-6">
+              {(materialization?.agents ?? currentTemplate.agents).join(" / ")}
+            </p>
+          </div>
+          <div className="mt-3 space-y-2">
+            {(materialization?.notes ?? currentTemplate.notes).map((note: string, index: number) => (
+              <p key={`${currentTemplate.id}-note-${index}`} className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 text-sm leading-6">
+                {note}
+              </p>
+            ))}
+          </div>
+          <details data-testid="setup-governance-preview-details" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-4">
+            <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.68)]">
+              展开协作细节
+            </summary>
+            <div className="mt-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em]">协作预览</p>
+                  <p
+                    data-testid="setup-governance-summary"
+                    className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]"
+                  >
+                    {state.workspace.governance.summary}
+                  </p>
+                </div>
+                <span
+                  data-testid="setup-governance-template"
+                  className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
+                >
+                  {state.workspace.governance.label}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-2">
+                {state.workspace.governance.teamTopology.map((lane) => (
+                  <div
+                    key={lane.id}
+                    data-testid={`setup-governance-lane-${lane.id}`}
+                    className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-display text-lg font-semibold">{lane.label}</p>
+                        <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{lane.role}</p>
+                      </div>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{governanceLaneStatusLabel(lane.status)}</span>
+                    </div>
+                    <p
+                      data-testid={`setup-governance-lane-${lane.id}-agent`}
+                      className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]"
+                    >
+                      默认智能体：{valueOrPlaceholder(lane.defaultAgent, "未设置")}
+                    </p>
+                    <p className="mt-2 text-sm leading-6">{lane.summary}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+        </Panel>
+
+        <Panel tone="paper" className="!p-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前进度</p>
+              <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+                步骤会随模板确认、仓库、GitHub 和运行环境更新。
+              </p>
+            </div>
+            <button
+              data-testid="setup-onboarding-refresh-progress"
+              type="button"
+              disabled={Boolean(pendingTemplateId)}
+              onClick={() => void persistTemplate(currentTemplate.id)}
+              className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {pendingTemplateId === currentTemplate.id ? "更新中..." : "刷新进度"}
+            </button>
+          </div>
+          <div className="mt-4 space-y-2">
+            {ONBOARDING_STUDIO_STEPS.map((step) => {
+              const completed = progress.completedSteps.includes(step.id);
+              const active = progress.currentStep === step.id;
+              return (
+                <Panel key={step.id} tone={stepTone(completed, active)} className="!p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-display text-lg font-semibold">{step.label}</p>
+                      <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{step.description}</p>
+                    </div>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.18em]">
+                      {completed ? "已完成" : active ? "当前步骤" : "待开始"}
+                    </span>
+                  </div>
+                </Panel>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p data-testid="setup-onboarding-current-step" className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
+              {currentStudioStep}
+            </p>
+            <button
+              data-testid="setup-onboarding-finish"
+              type="button"
+              disabled={!progress.canFinish || Boolean(pendingTemplateId)}
+              onClick={() => void persistTemplate(currentTemplate.id, { finished: true })}
+              className="rounded-2xl border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              完成首次启动
+            </button>
+          </div>
+        </Panel>
+
+        {error ? (
+          <p data-testid="setup-onboarding-error" className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p data-testid="setup-onboarding-success" className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm">
+            {success}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+
   return (
     <Panel tone="lime">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">起步模板</p>
-          <h2 className="mt-2 font-display text-[28px] font-bold leading-[1.15]">先选一个起步方式</h2>
+          <h2 className="mt-2 font-display text-[28px] font-bold leading-[1.15]">
+            {shouldCollapseTemplateManager ? "当前启动包已就位" : "先选一个起步方式"}
+          </h2>
         </div>
         <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
           {onboardingStatusLabel(workspace.onboarding.status)}
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">
-        可从开发、研究或空白开始，再补仓库和运行环境。
+        {shouldCollapseTemplateManager
+          ? "默认先沿当前启动包继续。只有要改模板、分工或通知策略时再展开细节。"
+          : "系统会先给出推荐模板，确认后再继续仓库和运行环境。"}
       </p>
-
-      <div className="mt-5 grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-3">
-          {ONBOARDING_TEMPLATE_DEFINITIONS.map((template) => {
-            const active = currentTemplate.id === template.id;
-            const busy = pendingTemplateId === template.id;
-            return (
-              <Panel key={template.id} tone={active ? "yellow" : "paper"} className="!p-3.5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.6)]">{template.eyebrow}</p>
-                    <h3 className="mt-1.5 font-display text-[24px] font-bold leading-7">{template.label}</h3>
-                  </div>
-                  <span className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em]">
-                    {active ? "当前使用" : "模板"}
-                  </span>
-                </div>
-                <p className="mt-2.5 text-sm leading-6">{template.description}</p>
-                <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  <WorkspaceMetric label="频道" value={template.channels.join(" / ")} />
-                  <WorkspaceMetric label="通知" value={template.notificationPolicy} />
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {template.roles.map((role) => (
-                    <span key={`${template.id}-${role}`} className="rounded-full border border-[var(--shock-ink)] bg-white px-3 py-1.5 font-mono text-[10px]">
-                      {role}
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{template.notes[0]}</p>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    data-testid={`setup-template-select-${template.id}`}
-                    type="button"
-                    disabled={Boolean(pendingTemplateId)}
-                    onClick={() => void persistTemplate(template.id, { syncTemplateDefaults: true })}
-                    className="rounded-2xl border-2 border-[var(--shock-ink)] bg-white px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {busy ? "写回中..." : active ? "重新同步模板" : "选择模板"}
-                  </button>
-                </div>
-              </Panel>
-            );
-          })}
-        </div>
-
-        <div className="space-y-3">
-          <Panel tone="white" className="!p-3.5">
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前启动包</p>
-            <div className="mt-3 grid gap-2">
-              <WorkspaceMetric label="模板" value={valueOrPlaceholder(materialization?.label || currentTemplate.label, currentTemplate.label)} testID="setup-onboarding-template-package" />
-              <WorkspaceMetric label="回跳地址" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")} />
+      {shouldCollapseTemplateManager ? (
+        <>
+          <Panel tone="white" className="mt-5 !p-3.5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前启动包</p>
+                <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">
+                  先沿当前模板继续。只有需要改模板、频道、分工或通知策略时再展开下面的细节。
+                </p>
+              </div>
+              <span className="rounded-full border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+                {currentStudioStep}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <WorkspaceMetric label="模板" value={valueOrPlaceholder(materialization?.label || currentTemplate.label, currentTemplate.label)} />
+              <WorkspaceMetric label="完成后进入" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "/chat/all")} />
               <WorkspaceMetric label="通知策略" value={valueOrPlaceholder(materialization?.notificationPolicy, currentTemplate.notificationPolicy)} />
             </div>
-            <div className="mt-3 space-y-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">已落地频道</p>
-              <p data-testid="setup-onboarding-materialized-channels" className="text-sm leading-6">
-                {(materialization?.channels ?? currentTemplate.channels).join(" / ")}
-              </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">已落地分工</p>
-              <p data-testid="setup-onboarding-materialized-roles" className="text-sm leading-6">
-                {(materialization?.roles ?? currentTemplate.roles).join(" · ")}
-              </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">默认智能体</p>
-              <p data-testid="setup-onboarding-materialized-agents" className="text-sm leading-6">
-                {(materialization?.agents ?? currentTemplate.agents).join(" / ")}
-              </p>
-            </div>
-            <div className="mt-3 space-y-2">
-              {(materialization?.notes ?? currentTemplate.notes).map((note: string, index: number) => (
-                <p key={`${currentTemplate.id}-note-${index}`} className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 text-sm leading-6">
-                  {note}
-                </p>
-              ))}
-            </div>
-            <details data-testid="setup-governance-preview-details" className="mt-4 rounded-[18px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-4 py-4">
-              <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.68)]">
-                展开协作细节
-              </summary>
-              <div className="mt-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em]">协作预览</p>
-                    <p
-                      data-testid="setup-governance-summary"
-                      className="mt-2 max-w-2xl text-sm leading-6 text-[color:rgba(24,20,14,0.76)]"
-                    >
-                      {state.workspace.governance.summary}
-                    </p>
-                  </div>
-                  <span
-                    data-testid="setup-governance-template"
-                    className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
-                  >
-                    {state.workspace.governance.label}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-2 md:grid-cols-2">
-                  {state.workspace.governance.teamTopology.map((lane) => (
-                    <div
-                      key={lane.id}
-                      data-testid={`setup-governance-lane-${lane.id}`}
-                      className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-display text-lg font-semibold">{lane.label}</p>
-                          <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.72)]">{lane.role}</p>
-                        </div>
-                        <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{governanceLaneStatusLabel(lane.status)}</span>
-                      </div>
-                      <p
-                        data-testid={`setup-governance-lane-${lane.id}-agent`}
-                        className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]"
-                      >
-                        默认智能体：{valueOrPlaceholder(lane.defaultAgent, "未设置")}
-                      </p>
-                      <p className="mt-2 text-sm leading-6">{lane.summary}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </details>
-          </Panel>
-
-          <Panel tone="paper" className="!p-3.5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em]">当前进度</p>
-                <p className="mt-2 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
-                  步骤会随仓库、GitHub 和运行环境更新。
-                </p>
-              </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 data-testid="setup-onboarding-refresh-progress"
                 type="button"
@@ -739,30 +934,6 @@ export function OnboardingStudioPanel() {
               >
                 {pendingTemplateId === currentTemplate.id ? "更新中..." : "刷新进度"}
               </button>
-            </div>
-            <div className="mt-4 space-y-2">
-              {ONBOARDING_STUDIO_STEPS.map((step) => {
-                const completed = progress.completedSteps.includes(step.id);
-                const active = progress.currentStep === step.id;
-                return (
-                  <Panel key={step.id} tone={stepTone(completed, active)} className="!p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-display text-lg font-semibold">{step.label}</p>
-                        <p className="mt-1 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">{step.description}</p>
-                      </div>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em]">
-                        {completed ? "已完成" : active ? "当前步骤" : "待开始"}
-                      </span>
-                    </div>
-                  </Panel>
-                );
-              })}
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p data-testid="setup-onboarding-current-step" className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:rgba(24,20,14,0.62)]">
-                {onboardingStudioStepLabel(workspace.onboarding.currentStep || progress.currentStep)}
-              </p>
               <button
                 data-testid="setup-onboarding-finish"
                 type="button"
@@ -774,19 +945,17 @@ export function OnboardingStudioPanel() {
               </button>
             </div>
           </Panel>
-
-          {error ? (
-            <p data-testid="setup-onboarding-error" className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-pink)] px-4 py-3 text-sm text-white">
-              {error}
+          <details data-testid="setup-onboarding-manage-details" className="mt-5 rounded-[22px] border-2 border-[var(--shock-ink)] bg-white px-4 py-4">
+            <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.72)]">
+              展开模板、分工和协作细节
+            </summary>
+            <p className="mt-3 text-sm leading-6 text-[color:rgba(24,20,14,0.74)]">
+              只有在需要改启动包时再展开，默认继续当前工作。
             </p>
-          ) : null}
-          {success ? (
-            <p data-testid="setup-onboarding-success" className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3 text-sm">
-              {success}
-            </p>
-          ) : null}
-        </div>
-      </div>
+            {studioBody}
+          </details>
+        </>
+      ) : studioBody}
     </Panel>
   );
 }
@@ -920,7 +1089,7 @@ export function LiveSetupOverview() {
     },
     {
       title: "模板",
-      summary: `模板 ${templateSurfaceLabel(workspace.onboarding.templateId)} · ${onboardingStatusLabel(workspace.onboarding.status)} · 回跳地址 ${valueOrPlaceholder(workspace.onboarding.resumeUrl, "/onboarding")}。`,
+      summary: `模板 ${templateSurfaceLabel(workspace.onboarding.templateId)} · ${onboardingStatusLabel(workspace.onboarding.status)} · 完成后进入 ${valueOrPlaceholder(workspace.onboarding.resumeUrl, "/setup")}。`,
       active: workspace.onboarding.status !== "not_started",
     },
   ] as const;
@@ -995,7 +1164,7 @@ export function LiveSetupOverview() {
             </p>
             <dl className="mt-3 grid gap-2 sm:grid-cols-2">
               <WorkspaceMetric label="分支" value={valueOrPlaceholder(workspace.branch, "分支未返回")} />
-              <WorkspaceMetric label="恢复入口" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "未声明")} testID="setup-onboarding-resume-url" />
+              <WorkspaceMetric label="完成后进入" value={valueOrPlaceholder(workspace.onboarding.resumeUrl, "未声明")} testID="setup-onboarding-resume-url" />
               <WorkspaceMetric label="计划" value={valueOrPlaceholder(workspace.plan, "计划未返回")} />
               <WorkspaceMetric label="下一条执行线" value={assignedRuntimeLabel} />
               <WorkspaceMetric label="调度策略" value={runtimeSchedulerStrategyLabel(scheduler.strategy)} />

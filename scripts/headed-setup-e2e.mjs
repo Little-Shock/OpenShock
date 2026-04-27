@@ -359,15 +359,20 @@ async function main() {
 
   const page = await context.newPage();
   await page.goto(webURL, { waitUntil: "load" });
-  await page.waitForURL(/\/(access|onboarding|chat\/all|setup)(\?|$)/, { timeout: 30_000 });
+  await page.waitForURL(/\/($|(access|onboarding|chat\/all|setup)(\?|$))/, { timeout: 30_000 });
   const firstStartURL = page.url();
   await capture(page, "first-start-entry");
   assert(
-    /\/(access|onboarding|chat\/all|setup)(\?|$)/.test(firstStartURL),
+    /\/($|(access|onboarding|chat\/all|setup)(\?|$))/.test(firstStartURL),
     `expected / to redirect into a real first-start surface, got ${firstStartURL}`
   );
 
-  if (!/\/setup(\?|$)/.test(firstStartURL)) {
+  if (/\/$/.test(firstStartURL)) {
+    await page.getByTestId("home-primary-chat-cta").click();
+    await page.waitForURL(/\/(onboarding|setup|chat\/all)(\?|$)/, { timeout: 30_000 });
+  }
+
+  if (!/\/setup(\?|$)/.test(page.url())) {
     await page.goto(`${webURL}/setup`, { waitUntil: "load" });
   }
   await page.getByText("展开仓库与远端").click();

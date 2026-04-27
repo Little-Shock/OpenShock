@@ -382,7 +382,7 @@ try {
 
   const notificationGate = page.getByTestId("delivery-gate-notification-delivery");
   await Promise.all([
-    page.waitForURL((url) => url.pathname === "/settings"),
+    page.waitForURL((url) => url.pathname === "/settings/advanced"),
     notificationGate.getByRole("link", { name: notificationDeliveryGate.hrefLabel }).click(),
   ]);
   await page.getByTestId("settings-advanced-notifications-toggle").click();
@@ -421,7 +421,7 @@ try {
     `- \`/pull-requests/${PULL_REQUEST_ID}\` 已把 delivery status、release ready、${detail.delivery.gates.length} 个 gate、${detail.delivery.templates.length} 个 template 和 ${detail.delivery.evidence.length} 条 evidence 收到同一页，不再散在 room / settings / runbook。当前判断结果 = \`${detail.delivery.status}\` / releaseReady=\`${detail.delivery.releaseReady}\`。`,
     `- release gate 当前全部可复核：${detail.delivery.gates.map((gate) => `${gate.id}:${gate.status}`).join(" / ")}。`,
     `- operator handoff note 已有 ${detail.delivery.handoffNote.lines.length} 条可执行说明，并且 UI 与 API 都把当前状态显示为 \`${liveHandoffStatusLabel}\`。`,
-    "- browser walkthrough 已验证 notification delivery gate 使用明确 `通知设置` CTA 回到 `/settings`，room PR backlink 可回到同一条 PR workbench，run usage gate 也通过明确 `执行详情` CTA 回到对应 run context。",
+    "- browser walkthrough 已验证 notification delivery gate 使用明确 `通知设置` CTA 回到 `/settings/advanced`，room PR backlink 可回到同一条 PR workbench，run usage gate 也通过明确 `执行详情` CTA 回到对应 run context。",
     "",
     "## Evidence",
     "",

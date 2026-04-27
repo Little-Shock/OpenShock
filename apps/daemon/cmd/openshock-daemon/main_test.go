@@ -25,7 +25,7 @@ func TestReportHeartbeatPostsRuntimeSnapshot(t *testing.T) {
 	service := runtime.NewService("shock-main", t.TempDir(),
 		runtime.WithDaemonURL("http://127.0.0.1:8090"),
 	)
-	if err := reportHeartbeat(server.URL, http.DefaultClient, service); err != nil {
+	if err := reportHeartbeat(server.URL, "", http.DefaultClient, service); err != nil {
 		t.Fatalf("reportHeartbeat() error = %v", err)
 	}
 
@@ -34,5 +34,24 @@ func TestReportHeartbeatPostsRuntimeSnapshot(t *testing.T) {
 	}
 	if payload.DaemonURL != "http://127.0.0.1:8090" {
 		t.Fatalf("daemon url = %q, want http://127.0.0.1:8090", payload.DaemonURL)
+	}
+}
+
+func TestReportHeartbeatSendsSharedSecretHeaderWhenConfigured(t *testing.T) {
+	const secret = "runtime-heartbeat-secret"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-OpenShock-Runtime-Secret"); got != secret {
+			t.Fatalf("runtime heartbeat secret = %q, want %q", got, secret)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	service := runtime.NewService("shock-main", t.TempDir(),
+		runtime.WithDaemonURL("http://127.0.0.1:8090"),
+	)
+	if err := reportHeartbeat(server.URL, secret, http.DefaultClient, service); err != nil {
+		t.Fatalf("reportHeartbeat() error = %v", err)
 	}
 }

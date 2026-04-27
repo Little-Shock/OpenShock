@@ -1125,7 +1125,27 @@ func conversationProviderTool(value string) string {
 	}
 }
 
-func (s *Store) MarkRoomConversationPending(roomID, prompt, provider string) (State, error) {
+func optionalReplyTarget(value ...string) string {
+	if len(value) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(value[0])
+}
+
+func (s *Store) normalizeRoomReplyTargetLocked(roomID, messageID string) string {
+	target := strings.TrimSpace(messageID)
+	if target == "" {
+		return ""
+	}
+	for _, message := range s.state.RoomMessages[roomID] {
+		if message.ID == target {
+			return message.ID
+		}
+	}
+	return ""
+}
+
+func (s *Store) MarkRoomConversationPending(roomID, prompt, provider string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1137,6 +1157,7 @@ func (s *Store) MarkRoomConversationPending(roomID, prompt, provider string) (St
 	now := time.Now().UTC().Format(time.RFC3339)
 	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
 	nextAction := "等待当前流式执行结束；如果公开连接断开，则从同一条 room continuity 继续恢复。"
+	replyTarget := s.normalizeRoomReplyTargetLocked(roomID, optionalReplyTarget(replyToMessageID...))
 
 	s.state.Rooms[roomIndex].Topic.Status = "running"
 	s.state.Issues[issueIndex].State = "running"
@@ -1153,11 +1174,12 @@ func (s *Store) MarkRoomConversationPending(roomID, prompt, provider string) (St
 		item.Status = "running"
 		item.Provider = defaultString(strings.TrimSpace(providerLabel), item.Provider)
 		item.PendingTurn = &SessionPendingTurn{
-			Prompt:    strings.TrimSpace(prompt),
-			Provider:  normalizeConversationProvider(provider),
-			Status:    "streaming",
-			StartedAt: startedAt,
-			UpdatedAt: now,
+			Prompt:           strings.TrimSpace(prompt),
+			Provider:         normalizeConversationProvider(provider),
+			Status:           "streaming",
+			ReplyToMessageID: replyTarget,
+			StartedAt:        startedAt,
+			UpdatedAt:        now,
 		}
 		item.ControlNote = "当前流式执行已开始，等待公开结果收口。"
 		item.UpdatedAt = now
@@ -1172,7 +1194,7 @@ func (s *Store) MarkRoomConversationPending(roomID, prompt, provider string) (St
 	return cloneState(s.state), nil
 }
 
-func (s *Store) MarkRoomConversationInterrupted(roomID, prompt, provider, preview string) (State, error) {
+func (s *Store) MarkRoomConversationInterrupted(roomID, prompt, provider, preview string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1184,6 +1206,7 @@ func (s *Store) MarkRoomConversationInterrupted(roomID, prompt, provider, previe
 	now := time.Now().UTC().Format(time.RFC3339)
 	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
 	summary := "上一条公开流式执行在连接断开后中断，等待从同一条 continuity 继续恢复。"
+	replyTarget := s.normalizeRoomReplyTargetLocked(roomID, optionalReplyTarget(replyToMessageID...))
 	if trimmed := strings.TrimSpace(preview); trimmed != "" {
 		summary = trimmed
 	}
@@ -1206,13 +1229,14 @@ func (s *Store) MarkRoomConversationInterrupted(roomID, prompt, provider, previe
 		item.Provider = defaultString(strings.TrimSpace(providerLabel), item.Provider)
 		item.Summary = summary
 		item.PendingTurn = &SessionPendingTurn{
-			Prompt:         strings.TrimSpace(prompt),
-			Provider:       normalizeConversationProvider(provider),
-			Status:         "interrupted",
-			Preview:        strings.TrimSpace(preview),
-			StartedAt:      startedAt,
-			UpdatedAt:      now,
-			ResumeEligible: true,
+			Prompt:           strings.TrimSpace(prompt),
+			Provider:         normalizeConversationProvider(provider),
+			Status:           "interrupted",
+			Preview:          strings.TrimSpace(preview),
+			ReplyToMessageID: replyTarget,
+			StartedAt:        startedAt,
+			UpdatedAt:        now,
+			ResumeEligible:   true,
 		}
 		item.ControlNote = controlNote
 		item.UpdatedAt = now
@@ -1228,16 +1252,16 @@ func (s *Store) MarkRoomConversationInterrupted(roomID, prompt, provider, previe
 	return cloneState(s.state), nil
 }
 
-func (s *Store) AppendConversation(roomID, prompt, output, provider string) (State, error) {
-	return s.AppendConversationAsAgent(roomID, prompt, "", output, provider)
+func (s *Store) AppendConversation(roomID, prompt, output, provider string, replyToMessageID ...string) (State, error) {
+	return s.AppendConversationAsAgent(roomID, prompt, "", output, provider, replyToMessageID...)
 }
 
-func (s *Store) AppendConversationAsAgent(roomID, prompt, speaker, output, provider string) (State, error) {
-	return s.appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, "agent")
+func (s *Store) AppendConversationAsAgent(roomID, prompt, speaker, output, provider string, replyToMessageID ...string) (State, error) {
+	return s.appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, "agent", replyToMessageID...)
 }
 
-func (s *Store) AppendConversationSummary(roomID, prompt, speaker, output, provider string) (State, error) {
-	return s.appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, "paper")
+func (s *Store) AppendConversationSummary(roomID, prompt, speaker, output, provider string, replyToMessageID ...string) (State, error) {
+	return s.appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, "paper", replyToMessageID...)
 }
 
 func (s *Store) ClaimRoomOwnership(roomID, speaker, provider string) (State, error) {
@@ -1325,7 +1349,7 @@ func (s *Store) ClaimRoomOwnership(roomID, speaker, provider string) (State, err
 	return cloneState(s.state), nil
 }
 
-func (s *Store) appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, tone string) (State, error) {
+func (s *Store) appendConversationAsAgentWithTone(roomID, prompt, speaker, output, provider, tone string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1336,6 +1360,7 @@ func (s *Store) appendConversationAsAgentWithTone(roomID, prompt, speaker, outpu
 
 	now := shortClock()
 	humanSpeaker := sessionSpeakerLabel(s.state.Auth)
+	replyTarget := s.normalizeRoomReplyTargetLocked(roomID, optionalReplyTarget(replyToMessageID...))
 	agentSpeaker := defaultString(
 		strings.TrimSpace(speaker),
 		defaultString(
@@ -1345,10 +1370,10 @@ func (s *Store) appendConversationAsAgentWithTone(roomID, prompt, speaker, outpu
 	)
 	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
 	providerTool := conversationProviderTool(providerLabel)
-	humanMessage := Message{ID: fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()), Speaker: humanSpeaker, Role: "human", Tone: "human", Message: prompt, Time: now}
+	humanMessage := Message{ID: fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()), Speaker: humanSpeaker, Role: "human", Tone: "human", Message: prompt, Time: now, ReplyToMessageID: replyTarget}
 	agentText := defaultString(strings.TrimSpace(output), "已收到，但这次没有可展示的文本输出。")
 	messageTone := defaultString(strings.TrimSpace(tone), "agent")
-	agentMessage := Message{ID: fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()), Speaker: agentSpeaker, Role: "agent", Tone: messageTone, Message: agentText, Time: now}
+	agentMessage := Message{ID: fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()), Speaker: agentSpeaker, Role: "agent", Tone: messageTone, Message: agentText, Time: now, ReplyToMessageID: replyTarget}
 	toolSummary := fmt.Sprintf("讨论间对话已同步到 %s", defaultString(strings.TrimSpace(providerLabel), "本地 CLI"))
 	timelineLabel := "已收到新指令并返回结果"
 	controlNote := "已在讨论间同步当前回复。"
@@ -1413,7 +1438,7 @@ func (s *Store) appendConversationAsAgentWithTone(roomID, prompt, speaker, outpu
 	return cloneState(s.state), nil
 }
 
-func (s *Store) AppendConversationWithoutVisibleReply(roomID, prompt, provider string) (State, error) {
+func (s *Store) AppendConversationWithoutVisibleReply(roomID, prompt, provider string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1424,15 +1449,17 @@ func (s *Store) AppendConversationWithoutVisibleReply(roomID, prompt, provider s
 
 	now := shortClock()
 	humanSpeaker := sessionSpeakerLabel(s.state.Auth)
+	replyTarget := s.normalizeRoomReplyTargetLocked(roomID, optionalReplyTarget(replyToMessageID...))
 	providerLabel := conversationProviderLabel(provider, s.state.Runs[runIndex].Provider)
 	providerTool := conversationProviderTool(providerLabel)
 	humanMessage := Message{
-		ID:      fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
-		Speaker: humanSpeaker,
-		Role:    "human",
-		Tone:    "human",
-		Message: defaultString(strings.TrimSpace(prompt), "空消息已忽略。"),
-		Time:    now,
+		ID:               fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
+		Speaker:          humanSpeaker,
+		Role:             "human",
+		Tone:             "human",
+		Message:          defaultString(strings.TrimSpace(prompt), "空消息已忽略。"),
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 	summary := "已收到当前消息，这一轮不需要额外回复。"
 	s.resolveRoomAgentWaitFromPromptLocked(roomID, prompt)
@@ -1481,15 +1508,15 @@ func (s *Store) AppendConversationWithoutVisibleReply(roomID, prompt, provider s
 	return cloneState(s.state), nil
 }
 
-func (s *Store) AppendAgentRoomMessage(roomID, speaker, output, provider string) (State, error) {
-	return s.appendAgentRoomMessageWithTone(roomID, speaker, output, provider, "agent")
+func (s *Store) AppendAgentRoomMessage(roomID, speaker, output, provider string, replyToMessageID ...string) (State, error) {
+	return s.appendAgentRoomMessageWithTone(roomID, speaker, output, provider, "agent", replyToMessageID...)
 }
 
-func (s *Store) AppendAgentRoomSummary(roomID, speaker, output, provider string) (State, error) {
-	return s.appendAgentRoomMessageWithTone(roomID, speaker, output, provider, "paper")
+func (s *Store) AppendAgentRoomSummary(roomID, speaker, output, provider string, replyToMessageID ...string) (State, error) {
+	return s.appendAgentRoomMessageWithTone(roomID, speaker, output, provider, "paper", replyToMessageID...)
 }
 
-func (s *Store) appendAgentRoomMessageWithTone(roomID, speaker, output, provider, tone string) (State, error) {
+func (s *Store) appendAgentRoomMessageWithTone(roomID, speaker, output, provider, tone string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1499,6 +1526,7 @@ func (s *Store) appendAgentRoomMessageWithTone(roomID, speaker, output, provider
 	}
 
 	now := shortClock()
+	replyTarget := s.normalizeRoomReplyTargetLocked(roomID, optionalReplyTarget(replyToMessageID...))
 	agentSpeaker := defaultString(
 		strings.TrimSpace(speaker),
 		defaultString(
@@ -1511,12 +1539,13 @@ func (s *Store) appendAgentRoomMessageWithTone(roomID, speaker, output, provider
 	agentText := defaultString(strings.TrimSpace(output), "我已接手，继续沿当前房间推进。")
 	messageTone := defaultString(strings.TrimSpace(tone), "agent")
 	agentMessage := Message{
-		ID:      fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()),
-		Speaker: agentSpeaker,
-		Role:    "agent",
-		Tone:    messageTone,
-		Message: agentText,
-		Time:    now,
+		ID:               fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()),
+		Speaker:          agentSpeaker,
+		Role:             "agent",
+		Tone:             messageTone,
+		Message:          agentText,
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 	toolSummary := fmt.Sprintf("%s 已继续当前讨论间", agentSpeaker)
 	timelineLabel := fmt.Sprintf("%s 已继续当前讨论", agentSpeaker)
@@ -1581,21 +1610,21 @@ func (s *Store) appendAgentRoomMessageWithTone(roomID, speaker, output, provider
 	return cloneState(s.state), nil
 }
 
-func (s *Store) AppendClarificationRequest(roomID, prompt, speaker, question, provider string) (State, error) {
+func (s *Store) AppendClarificationRequest(roomID, prompt, speaker, question, provider string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.appendClarificationRequestLocked(roomID, prompt, speaker, question, provider, true)
+	return s.appendClarificationRequestLocked(roomID, prompt, speaker, question, provider, true, replyToMessageID...)
 }
 
-func (s *Store) AppendAgentClarificationRequest(roomID, speaker, question, provider string) (State, error) {
+func (s *Store) AppendAgentClarificationRequest(roomID, speaker, question, provider string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.appendClarificationRequestLocked(roomID, "", speaker, question, provider, false)
+	return s.appendClarificationRequestLocked(roomID, "", speaker, question, provider, false, replyToMessageID...)
 }
 
-func (s *Store) appendClarificationRequestLocked(roomID, prompt, speaker, question, provider string, includeHuman bool) (State, error) {
+func (s *Store) appendClarificationRequestLocked(roomID, prompt, speaker, question, provider string, includeHuman bool, replyToMessageID ...string) (State, error) {
 	roomIndex, runIndex, issueIndex, ok := s.findRoomRunIssueLocked(roomID)
 	if !ok {
 		return State{}, fmt.Errorf("room not found")
@@ -1603,6 +1632,7 @@ func (s *Store) appendClarificationRequestLocked(roomID, prompt, speaker, questi
 
 	now := shortClock()
 	humanSpeaker := sessionSpeakerLabel(s.state.Auth)
+	replyTarget := s.normalizeRoomReplyTargetLocked(roomID, optionalReplyTarget(replyToMessageID...))
 	agentSpeaker := defaultString(
 		strings.TrimSpace(speaker),
 		defaultString(
@@ -1615,23 +1645,25 @@ func (s *Store) appendClarificationRequestLocked(roomID, prompt, speaker, questi
 	questionText := defaultString(strings.TrimSpace(question), "我需要先确认一个关键信息。")
 	humanText := defaultString(strings.TrimSpace(prompt), "空消息已忽略。")
 	agentMessage := Message{
-		ID:      fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()),
-		Speaker: agentSpeaker,
-		Role:    "agent",
-		Tone:    "blocked",
-		Message: questionText,
-		Time:    now,
+		ID:               fmt.Sprintf("%s-agent-%d", roomID, time.Now().UnixNano()),
+		Speaker:          agentSpeaker,
+		Role:             "agent",
+		Tone:             "blocked",
+		Message:          questionText,
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 
 	if includeHuman {
 		s.resolveRoomAgentWaitFromPromptLocked(roomID, humanText)
 		humanMessage := Message{
-			ID:      fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
-			Speaker: humanSpeaker,
-			Role:    "human",
-			Tone:    "human",
-			Message: humanText,
-			Time:    now,
+			ID:               fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
+			Speaker:          humanSpeaker,
+			Role:             "human",
+			Tone:             "human",
+			Message:          humanText,
+			Time:             now,
+			ReplyToMessageID: replyTarget,
 		}
 		s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], humanMessage, agentMessage)
 		s.state.Rooms[roomIndex].MessageIDs = append(s.state.Rooms[roomIndex].MessageIDs, humanMessage.ID, agentMessage.ID)
@@ -1691,7 +1723,7 @@ func (s *Store) appendClarificationRequestLocked(roomID, prompt, speaker, questi
 	return cloneState(s.state), nil
 }
 
-func (s *Store) AppendConversationFailure(roomID, prompt, message string) (State, error) {
+func (s *Store) AppendConversationFailure(roomID, prompt, message string, replyToMessageID ...string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1701,22 +1733,25 @@ func (s *Store) AppendConversationFailure(roomID, prompt, message string) (State
 	}
 
 	now := shortClock()
+	replyTarget := s.normalizeRoomReplyTargetLocked(roomID, optionalReplyTarget(replyToMessageID...))
 	humanMessage := Message{
-		ID:      fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
-		Speaker: sessionSpeakerLabel(s.state.Auth),
-		Role:    "human",
-		Tone:    "human",
-		Message: defaultString(strings.TrimSpace(prompt), "空消息已忽略。"),
-		Time:    now,
+		ID:               fmt.Sprintf("%s-human-%d", roomID, time.Now().UnixNano()),
+		Speaker:          sessionSpeakerLabel(s.state.Auth),
+		Role:             "human",
+		Tone:             "human",
+		Message:          defaultString(strings.TrimSpace(prompt), "空消息已忽略。"),
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 	blockedMessage := defaultString(strings.TrimSpace(message), "讨论间消息暂时不可用，请检查本地模型连接后重试。")
 	replyMessage := Message{
-		ID:      fmt.Sprintf("%s-system-%d", roomID, time.Now().UnixNano()),
-		Speaker: "System",
-		Role:    "system",
-		Tone:    "blocked",
-		Message: blockedMessage,
-		Time:    now,
+		ID:               fmt.Sprintf("%s-system-%d", roomID, time.Now().UnixNano()),
+		Speaker:          "System",
+		Role:             "system",
+		Tone:             "blocked",
+		Message:          blockedMessage,
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 
 	s.state.RoomMessages[roomID] = append(s.state.RoomMessages[roomID], humanMessage, replyMessage)
@@ -1781,12 +1816,13 @@ func (s *Store) AppendConversationFailure(roomID, prompt, message string) (State
 }
 
 type ChannelConversationInput struct {
-	Prompt        string
-	ReplySpeaker  string
-	ReplyRole     string
-	ReplyTone     string
-	ReplyMessage  string
-	SuppressReply bool
+	Prompt           string
+	ReplySpeaker     string
+	ReplyRole        string
+	ReplyTone        string
+	ReplyMessage     string
+	ReplyToMessageID string
+	SuppressReply    bool
 }
 
 func (s *Store) AppendChannelConversation(channelID string, input ChannelConversationInput) (State, error) {
@@ -1805,21 +1841,24 @@ func (s *Store) AppendChannelConversation(channelID string, input ChannelConvers
 	}
 
 	now := shortClock()
+	replyTarget := s.normalizeMessageSurfaceReplyTargetLocked(channelID, input.ReplyToMessageID)
 	humanMessage := Message{
-		ID:      fmt.Sprintf("%s-human-%d", channelID, time.Now().UnixNano()),
-		Speaker: sessionSpeakerLabel(s.state.Auth),
-		Role:    "human",
-		Tone:    "human",
-		Message: defaultString(strings.TrimSpace(input.Prompt), "空消息已忽略。"),
-		Time:    now,
+		ID:               fmt.Sprintf("%s-human-%d", channelID, time.Now().UnixNano()),
+		Speaker:          sessionSpeakerLabel(s.state.Auth),
+		Role:             "human",
+		Tone:             "human",
+		Message:          defaultString(strings.TrimSpace(input.Prompt), "空消息已忽略。"),
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 	replyMessage := Message{
-		ID:      fmt.Sprintf("%s-reply-%d", channelID, time.Now().UnixNano()),
-		Speaker: defaultString(strings.TrimSpace(input.ReplySpeaker), "当前智能体"),
-		Role:    defaultString(strings.TrimSpace(input.ReplyRole), "agent"),
-		Tone:    defaultString(strings.TrimSpace(input.ReplyTone), "agent"),
-		Message: defaultString(strings.TrimSpace(input.ReplyMessage), "已收到，但这次没有拿到可展示的回复。"),
-		Time:    now,
+		ID:               fmt.Sprintf("%s-reply-%d", channelID, time.Now().UnixNano()),
+		Speaker:          defaultString(strings.TrimSpace(input.ReplySpeaker), "当前智能体"),
+		Role:             defaultString(strings.TrimSpace(input.ReplyRole), "agent"),
+		Tone:             defaultString(strings.TrimSpace(input.ReplyTone), "agent"),
+		Message:          defaultString(strings.TrimSpace(input.ReplyMessage), "已收到，但这次没有拿到可展示的回复。"),
+		Time:             now,
+		ReplyToMessageID: replyTarget,
 	}
 	s.appendChannelMessageLocked(channelID, humanMessage)
 	if !input.SuppressReply {

@@ -294,7 +294,17 @@ try {
   assert((await page.getByTestId("approval-center-room-link-inbox-review-copy").getAttribute("href")) === "/rooms/room-inbox?tab=pr", "review signal should link back to PR tab in room workbench");
   assert((await page.getByTestId("approval-center-run-link-inbox-review-copy").getAttribute("href")) === "/rooms/room-inbox?tab=run", "review signal should link back to run tab in room workbench");
   assert((await page.getByTestId("approval-center-pr-link-inbox-review-copy").getAttribute("href"))?.endsWith("/pull/22"), "review signal should link back to PR");
+  assert((await page.getByTestId("approval-center-room-link-inbox-review-copy").textContent())?.trim() === "讨论间", "review signal room link should use a customer-facing label");
+  assert((await page.getByTestId("approval-center-run-link-inbox-review-copy").textContent())?.trim() === "执行详情", "review signal run link should use a customer-facing label");
+  assert((await page.getByTestId("approval-center-pr-link-inbox-review-copy").textContent())?.trim() === "远端 PR", "review signal remote PR link should use a customer-facing label");
+  assert((await page.getByTestId("approval-center-pr-detail-link-inbox-review-copy").textContent())?.trim() === "交付详情", "review signal PR detail link should use a customer-facing label");
   assert((await page.getByTestId("approval-center-unread-inbox-review-copy").textContent())?.trim() === "未读", "review signal should surface unread hotspot");
+  for (const label of ["Room", "Run", "PR Detail"]) {
+    assert(
+      (await reviewSignal.getByText(label, { exact: true }).count()) === 0,
+      `approval center desktop signal should not expose internal English label ${label}`
+    );
+  }
   assert(
     (await reviewSignal.locator("a").evaluateAll((nodes) =>
       nodes.filter((node) => {
@@ -320,6 +330,10 @@ try {
   );
   await page.getByTestId("approval-center-mobile-details-inbox-review-copy").locator("summary").click();
   assert(
+    (await page.getByTestId("approval-center-mobile-details-inbox-review-copy").locator("summary").textContent())?.includes("详情"),
+    "approval center mobile details disclosure should use a short customer-facing label"
+  );
+  assert(
     (await page.getByTestId("mobile-approval-center-room-link-inbox-review-copy").getAttribute("href")) === "/rooms/room-inbox?tab=pr",
     "mobile review signal should keep a room detail link after the generic CTA is removed"
   );
@@ -331,6 +345,16 @@ try {
     (await page.getByTestId("mobile-approval-center-pr-link-inbox-review-copy").getAttribute("href"))?.endsWith("/pull/22"),
     "mobile review signal should keep a PR detail link after the generic CTA is removed"
   );
+  assert((await page.getByTestId("mobile-approval-center-room-link-inbox-review-copy").textContent())?.trim() === "讨论间", "mobile review signal room link should use a customer-facing label");
+  assert((await page.getByTestId("mobile-approval-center-run-link-inbox-review-copy").textContent())?.trim() === "执行详情", "mobile review signal run link should use a customer-facing label");
+  assert((await page.getByTestId("mobile-approval-center-pr-link-inbox-review-copy").textContent())?.trim() === "远端 PR", "mobile review signal remote PR link should use a customer-facing label");
+  assert((await page.getByTestId("mobile-approval-center-pr-detail-link-inbox-review-copy").textContent())?.trim() === "交付详情", "mobile review signal PR detail link should use a customer-facing label");
+  for (const label of ["Room", "Run", "PR Detail"]) {
+    assert(
+      (await reviewSignal.getByText(label, { exact: true }).count()) === 0,
+      `approval center mobile signal should not expose internal English label ${label}`
+    );
+  }
   await capture(page, screenshotsDir, "mobile-review-signal-backlinks");
 
   await page.setViewportSize({ width: 1440, height: 1280 });

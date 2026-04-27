@@ -14,7 +14,7 @@ func TestAppendDirectMessageConversationPersistsLiveTruth(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	nextState, err := s.AppendDirectMessageConversation("dm-mina", "这条 DM 先别升级成 room。", "Larkspur")
+	nextState, err := s.AppendDirectMessageConversation("dm-mina", "这条 DM 先别升级成 room。", "Larkspur", "msg-dm-mina-1")
 	if err != nil {
 		t.Fatalf("AppendDirectMessageConversation() error = %v", err)
 	}
@@ -26,6 +26,9 @@ func TestAppendDirectMessageConversationPersistsLiveTruth(t *testing.T) {
 	last := messages[len(messages)-1]
 	if last.Role != "agent" || last.Speaker != "Mina" {
 		t.Fatalf("last direct message = %#v, want Mina agent reply", last)
+	}
+	if messages[len(messages)-2].ReplyToMessageID != "msg-dm-mina-1" || last.ReplyToMessageID != "msg-dm-mina-1" {
+		t.Fatalf("direct message thread truth = %#v, want replyTo msg-dm-mina-1 on human + agent append", messages[len(messages)-2:])
 	}
 
 	dm := findDirectMessageByID(nextState, "dm-mina")

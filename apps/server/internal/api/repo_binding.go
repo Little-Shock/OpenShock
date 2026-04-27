@@ -44,7 +44,7 @@ func (s *Server) handleRepoBinding(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.currentRepoBinding())
 	case http.MethodPost:
-		if !s.requireSessionPermission(w, "repo.admin") {
+		if !s.requireRequestSessionPermission(w, r, "repo.admin") {
 			return
 		}
 		var req RepoBindingRequest
@@ -59,6 +59,15 @@ func (s *Server) handleRepoBinding(w http.ResponseWriter, r *http.Request) {
 		if err != nil && strings.TrimSpace(req.Repo) == "" && strings.TrimSpace(req.RepoURL) == "" {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
+		}
+		if err == nil {
+			if failure := validateRepoBindingRequestAgainstDetected(detected, req); failure != nil {
+				writeJSON(w, http.StatusConflict, map[string]any{
+					"error":    failure.Error(),
+					"detected": bindingResponseFromInput(detected, "detected", nil),
+				})
+				return
+			}
 		}
 		connection, probeErr := s.github.Probe(s.workspaceRoot)
 		connection = s.withGitHubPublicIngress(connection)
@@ -80,7 +89,7 @@ func (s *Server) handleRepoBinding(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"binding":    bindingResponseFromWorkspace(nextState.Workspace, binding.DetectedAt, &connection),
 			"connection": connection,
-			"state":      nextState,
+			"state":      s.sanitizedStateSnapshotForRequest(nextState, r),
 		})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -103,7 +112,7 @@ func bindingResponseFromWorkspace(workspace store.WorkspaceSnapshot, detectedAt 
 	if detectedAt == "" {
 		detectedAt = binding.DetectedAt
 	}
-	return enrichRepoBindingResponse(RepoBindingResponse{
+	response := RepoBindingResponse{
 		Repo:              binding.Repo,
 		RepoURL:           binding.RepoURL,
 		Branch:            binding.Branch,
@@ -119,7 +128,13 @@ func bindingResponseFromWorkspace(workspace store.WorkspaceSnapshot, detectedAt 
 		InstallationURL:   installation.InstallationURL,
 		Missing:           append([]string{}, installation.Missing...),
 		ConnectionMessage: installation.ConnectionMessage,
-	}, connection)
+	}
+	if connection != nil {
+		return enrichRepoBindingResponse(response, connection)
+	}
+
+	fallback := buildWorkspaceGitHubStatus(workspace, "")
+	return enrichRepoBindingResponse(response, &fallback)
 }
 
 func bindingResponseFromInput(binding store.RepoBindingInput, bindingStatus string, connection *githubsvc.Status) RepoBindingResponse {
@@ -178,6 +193,53 @@ func mergeRepoBindingInput(detected store.RepoBindingInput, req RepoBindingReque
 		merged.SyncedAt = merged.DetectedAt
 	}
 	return merged
+}
+
+func validateRepoBindingRequestAgainstDetected(detected store.RepoBindingInput, req RepoBindingRequest) error {
+	conflicts := make([]string, 0)
+	appendConflict := func(label, requested, observed string) {
+		requested = strings.TrimSpace(requested)
+		observed = strings.TrimSpace(observed)
+		if requested == "" || observed == "" || requested == observed {
+			return
+		}
+		conflicts = append(conflicts, fmt.Sprintf("%s requested %q, but current checkout is %q", label, requested, observed))
+	}
+
+	requestedRepo := strings.TrimSpace(req.Repo)
+	requestedProvider := strings.TrimSpace(req.Provider)
+	requestedRepoURL := strings.TrimSpace(req.RepoURL)
+	if requestedRepoURL != "" {
+		if repo, provider := parseRepoIdentity(requestedRepoURL); repo != "" {
+			if requestedRepo == "" {
+				requestedRepo = repo
+			}
+			if requestedProvider == "" {
+				requestedProvider = provider
+			}
+		}
+	}
+
+	appendConflict("repo", requestedRepo, detected.Repo)
+	appendConflict("branch", req.Branch, detected.Branch)
+	appendConflict("provider", strings.ToLower(requestedProvider), strings.ToLower(detected.Provider))
+
+	if requestedRepoURL != "" {
+		requestedRepoFromURL, requestedProviderFromURL := parseRepoIdentity(requestedRepoURL)
+		detectedRepoFromURL, detectedProviderFromURL := parseRepoIdentity(detected.RepoURL)
+		switch {
+		case requestedRepoFromURL != "" && detectedRepoFromURL != "":
+			appendConflict("repoUrl", requestedRepoFromURL, detectedRepoFromURL)
+			appendConflict("repoUrl provider", strings.ToLower(requestedProviderFromURL), strings.ToLower(detectedProviderFromURL))
+		default:
+			appendConflict("repoUrl", requestedRepoURL, detected.RepoURL)
+		}
+	}
+
+	if len(conflicts) == 0 {
+		return nil
+	}
+	return fmt.Errorf("repo binding request conflicts with current checkout: %s", strings.Join(conflicts, "; "))
 }
 
 func alignRepoBindingWithConnection(binding store.RepoBindingInput, req RepoBindingRequest, probeErr error, connection githubsvc.Status) store.RepoBindingInput {

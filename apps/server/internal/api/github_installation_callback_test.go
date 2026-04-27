@@ -55,6 +55,12 @@ func TestGitHubInstallationCallbackPersistsInstallTruthAndRefreshesRepoBinding(t
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
 	if _, err := s.SyncPullRequestFromRemote("pr-runtime-18", store.PullRequestRemoteSnapshot{
 		Number:         18,
 		Title:          "runtime: surface heartbeat and lane state in discussion room",
@@ -160,6 +166,12 @@ func TestGitHubInstallationCallbackRejectsMissingInstallationID(t *testing.T) {
 	s, err := store.New(statePath, root)
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(store.AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
 	}
 
 	client := &recordingGitHubCallbackClient{

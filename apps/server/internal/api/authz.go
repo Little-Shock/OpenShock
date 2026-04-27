@@ -9,25 +9,30 @@ import (
 )
 
 const authSessionStatusActive = "active"
+const (
+	authSessionEmailVerificationVerified = "verified"
+	authSessionDeviceStatusAuthorized    = "authorized"
+	authSessionMemberStatusActive        = "active"
+)
 
 func init() {
-	issueCreateGuard = func(s *Server, w http.ResponseWriter) bool {
-		return s.requireSessionPermission(w, "issue.create")
+	issueCreateGuard = func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		return s.requireRequestSessionPermission(w, r, "issue.create")
 	}
-	roomReplyGuard = func(s *Server, w http.ResponseWriter) bool {
-		return s.requireSessionPermission(w, "room.reply")
+	roomReplyGuard = func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		return s.requireRequestSessionPermission(w, r, "room.reply")
 	}
-	roomPullRequestGuard = func(s *Server, w http.ResponseWriter) bool {
-		return s.requireSessionPermission(w, "pull_request.review")
+	roomPullRequestGuard = func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		return s.requireRequestSessionPermission(w, r, "pull_request.review")
 	}
-	runtimeManageGuard = func(s *Server, w http.ResponseWriter) bool {
-		return s.requireSessionPermission(w, "runtime.manage")
+	runtimeManageGuard = func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		return s.requireRequestSessionPermission(w, r, "runtime.manage")
 	}
-	runExecuteGuard = func(s *Server, w http.ResponseWriter) bool {
-		return s.requireSessionPermission(w, "run.execute")
+	runExecuteGuard = func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		return s.requireRequestSessionPermission(w, r, "run.execute")
 	}
-	pullRequestRouteGuard = func(s *Server, w http.ResponseWriter, status string) bool {
-		return s.requireSessionPermission(w, permissionForPullRequestMutation(status))
+	pullRequestRouteGuard = func(s *Server, w http.ResponseWriter, r *http.Request, status string) bool {
+		return s.requireRequestSessionPermission(w, r, permissionForPullRequestMutation(status))
 	}
 }
 
@@ -37,12 +42,17 @@ func (s *Server) requireSessionPermission(w http.ResponseWriter, permission stri
 	payload := map[string]any{
 		"permission": permission,
 		"session":    session,
-		"state":      snapshot,
 	}
 
 	if strings.TrimSpace(session.Status) != authSessionStatusActive {
 		payload["error"] = store.ErrAuthSessionRequired.Error()
 		writeJSON(w, http.StatusUnauthorized, payload)
+		return false
+	}
+
+	if readinessError := authSessionPermissionReadinessError(session); readinessError != "" {
+		payload["error"] = readinessError
+		writeJSON(w, http.StatusForbidden, payload)
 		return false
 	}
 
@@ -56,6 +66,13 @@ func (s *Server) requireSessionPermission(w http.ResponseWriter, permission stri
 }
 
 func authSessionHasPermission(session store.AuthSession, permission string) bool {
+	if strings.TrimSpace(session.Status) != authSessionStatusActive || authSessionPermissionReadinessError(session) != "" {
+		return false
+	}
+	return authSessionHasRawPermission(session, permission)
+}
+
+func authSessionHasRawPermission(session store.AuthSession, permission string) bool {
 	if strings.TrimSpace(session.Status) != authSessionStatusActive {
 		return false
 	}
@@ -65,6 +82,19 @@ func authSessionHasPermission(session store.AuthSession, permission string) bool
 		}
 	}
 	return false
+}
+
+func authSessionPermissionReadinessError(session store.AuthSession) string {
+	if verificationStatus := strings.TrimSpace(session.EmailVerificationStatus); verificationStatus != "" && verificationStatus != authSessionEmailVerificationVerified {
+		return "email verification required"
+	}
+	if deviceStatus := strings.TrimSpace(session.DeviceAuthStatus); deviceStatus != "" && deviceStatus != authSessionDeviceStatusAuthorized {
+		return "device authorization required"
+	}
+	if memberStatus := strings.TrimSpace(session.MemberStatus); memberStatus != "" && memberStatus != authSessionMemberStatusActive {
+		return store.ErrWorkspaceMemberApprovalRequired.Error()
+	}
+	return ""
 }
 
 func permissionForPullRequestMutation(status string) string {

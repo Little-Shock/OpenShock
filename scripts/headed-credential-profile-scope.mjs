@@ -187,6 +187,15 @@ async function waitForVisible(locator, message) {
   await waitFor(async () => (await locator.count()) > 0 && (await locator.first().isVisible()), message);
 }
 
+async function ensureSettingsDisclosureOpen(page, testID) {
+  const toggle = page.getByTestId(`settings-advanced-${testID}-toggle`);
+  await waitForVisible(toggle, `settings ${testID} toggle did not render`);
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await waitForVisible(page.getByTestId(`settings-advanced-${testID}-content`), `settings ${testID} content did not render`);
+}
+
 async function waitForEnabled(locator, message) {
   await waitFor(async () => (await locator.count()) > 0 && (await locator.first().isEnabled()), message);
 }
@@ -330,8 +339,8 @@ try {
 
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
-  await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
-  await page.getByTestId("settings-advanced-credentials-toggle").click();
+  await page.goto(`${webURL}/settings/advanced`, { waitUntil: "domcontentloaded" });
+  await ensureSettingsDisclosureOpen(page, "credentials");
   await waitForVisible(page.getByTestId("settings-credential-create-save"), "settings credential create form did not render");
   await waitForEnabled(page.getByTestId("settings-credential-create-label"), "settings credential create form never became editable");
   await page.getByTestId("settings-credential-create-label").fill(credentialLabel);
@@ -368,9 +377,9 @@ try {
   assert(!vaultBody.includes(credentialSecret), "credentials.vault.json leaked credential plaintext");
   const keyBody = await readFile(path.join(dataDir, "credentials.vault.key"), "utf8");
   assert(keyBody.trim() !== "", "credentials.vault.key should not be empty");
-  const settingsHTML = await (await fetch(`${webURL}/settings`)).text();
-  assert(!settingsHTML.includes(credentialSecret), "settings SSR leaked credential plaintext");
-  results.push("- Settings create flow writes credential metadata into live truth, persists ciphertext + key under the vault files, and keeps plaintext out of `/v1/state`, `state.json`, and `/settings` SSR HTML.");
+  const settingsHTML = await (await fetch(`${webURL}/settings/advanced`)).text();
+  assert(!settingsHTML.includes(credentialSecret), "advanced settings SSR leaked credential plaintext");
+  results.push("- Advanced settings create flow writes credential metadata into live truth, persists ciphertext + key under the vault files, and keeps plaintext out of `/v1/state`, `state.json`, and `/settings/advanced` SSR HTML.");
 
   await page.goto(`${webURL}/profiles/agent/${agentID}`, { waitUntil: "domcontentloaded" });
   await waitForVisible(page.getByTestId("profile-surface-title"), "agent profile did not render");
@@ -429,8 +438,8 @@ try {
   await expectTextIncludes(page.getByTestId("profile-credential-run-count"), "1", "agent profile recent credential run count should be 1");
   await capture(page, "profile-credential-run-count");
 
-  await page.goto(`${webURL}/settings`, { waitUntil: "domcontentloaded" });
-  await page.getByTestId("settings-advanced-credentials-toggle").click();
+  await page.goto(`${webURL}/settings/advanced`, { waitUntil: "domcontentloaded" });
+  await ensureSettingsDisclosureOpen(page, "credentials");
   await waitForVisible(page.getByTestId(`settings-credential-usage-${createdCredential.id}`), "settings credential usage summary did not rerender");
   await expectTextIncludes(
     page.getByTestId(`settings-credential-usage-${createdCredential.id}`),
@@ -456,7 +465,7 @@ try {
     "",
     "### Adversarial Checks",
     "",
-    "- Plaintext secret does not appear in `/v1/state`, persisted `state.json`, `credentials.vault.json`, or `/settings` SSR HTML -> PASS",
+    "- Plaintext secret does not appear in `/v1/state`, persisted `state.json`, `credentials.vault.json`, or `/settings/advanced` SSR HTML -> PASS",
     "- `credentials.vault.json` stores ciphertext and `credentials.vault.key` is non-empty -> PASS",
     "- Headed replay intentionally stops at UI create/bind/guard truth; exec->audit stays covered by the Go contract tests for this ticket -> PASS",
     "",

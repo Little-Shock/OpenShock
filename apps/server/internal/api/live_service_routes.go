@@ -48,6 +48,7 @@ type liveServiceStatusResponse struct {
 	Managed       bool   `json:"managed"`
 	Status        string `json:"status"`
 	Message       string `json:"message"`
+	ResponderPID  int    `json:"responderPid,omitempty"`
 	Owner         string `json:"owner,omitempty"`
 	PID           int    `json:"pid,omitempty"`
 	WorkspaceRoot string `json:"workspaceRoot,omitempty"`
@@ -95,6 +96,7 @@ func buildLiveServiceStatus(workspaceRoot string) liveServiceStatusResponse {
 		Managed:       false,
 		Status:        "unmanaged_live_service",
 		Message:       "current live service has no managed owner metadata; use pnpm ops:live-server:* to establish a visible reload path",
+		ResponderPID:  os.Getpid(),
 		WorkspaceRoot: workspaceRoot,
 		Address:       address,
 		BaseURL:       baseURL,

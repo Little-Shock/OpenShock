@@ -8,6 +8,10 @@ import { CollaborationProtocolStrip } from "@/components/collaboration-protocol-
 import type { SidebarProfileEntry } from "@/components/stitch-shell-primitives";
 import { QuickSearchSurface, StitchSidebar, StitchTopBar, WorkspaceStatusStrip } from "@/components/stitch-shell-primitives";
 import { pickPrimaryHandoff } from "@/lib/collaboration-protocol";
+import { buildThreadReplyMap, selectInitialThreadMessageId } from "@/lib/message-thread-truth";
+import { buildRoomNextStep, type RoomNextStep } from "@/lib/room-next-step";
+import { buildRoomPendingOverview } from "@/lib/room-pending-overview";
+import { buildRoomRelatedSignals } from "@/lib/room-related-signals";
 import { buildRunHistoryEntries, rewriteCustomerFacingText } from "@/lib/phase-zero-helpers";
 import { useQuickSearchController } from "@/lib/quick-search";
 import { buildNamedProfileHref, buildProfileHref } from "@/lib/profile-surface";
@@ -28,6 +32,13 @@ import { type RoomStreamEvent, usePhaseZeroState } from "@/lib/live-phase0";
 import { buildPlanningMirrorHref } from "@/lib/planning-mirror";
 import { hasSessionPermission, permissionBoundaryCopy, permissionStatus } from "@/lib/session-authz";
 import { runtimeProviderBlockingReason } from "@/lib/runtime-provider-health";
+import {
+  buildChannelWorkbenchHref,
+  buildSidebarDirectMessages,
+  buildSidebarFollowedThreads,
+  buildSidebarSavedLaterItems,
+} from "@/lib/sidebar-desk";
+import { buildWorkspaceRuleHighlights, type WorkspaceRuleHighlight } from "@/lib/workspace-rule-highlights";
 import { Panel, RunDetailView } from "@/components/phase-zero-views";
 import { RunControlSurface } from "@/components/run-control-surface";
 
@@ -453,7 +464,6 @@ type ClarificationWaitState = {
   message?: Message;
 };
 
-type ThreadMap = Record<string, Message[]>;
 type ChannelWorkbenchTab = "chat" | "followed" | "saved";
 type SidebarDirectMessage = {
   id: string;
@@ -502,12 +512,11 @@ function parseChannelWorkbenchTab(value?: string | null): ChannelWorkbenchTab {
   }
 }
 
-type RoomWorkbenchTab = "chat" | "topic" | "run" | "pr" | "context";
+type RoomWorkbenchTab = "chat" | "run" | "pr" | "context";
 type RoomRailMode = "context" | "thread";
 
 const ROOM_WORKBENCH_TAB_LABEL: Record<RoomWorkbenchTab, string> = {
   chat: "聊天",
-  topic: "话题",
   run: "运行",
   pr: "PR",
   context: "上下文",
@@ -516,6 +525,7 @@ const ROOM_WORKBENCH_TAB_LABEL: Record<RoomWorkbenchTab, string> = {
 function parseRoomWorkbenchTab(value?: string | null): RoomWorkbenchTab {
   switch (value) {
     case "topic":
+      return "context";
     case "run":
     case "pr":
     case "context":
@@ -546,18 +556,6 @@ function railSummaryTabForWorkbench(tab: RoomWorkbenchTab): RoomRailSummaryTab {
 
 function parseRoomRailMode(value?: string | null): RoomRailMode {
   return value === "thread" ? "thread" : "context";
-}
-
-function buildChannelWorkbenchHref(channelId: string, tab: ChannelWorkbenchTab, threadId?: string) {
-  const params = new URLSearchParams();
-  if (tab !== "chat") {
-    params.set("tab", tab);
-  }
-  if (threadId) {
-    params.set("thread", threadId);
-  }
-  const query = params.toString();
-  return query ? `/chat/${channelId}?${query}` : `/chat/${channelId}`;
 }
 
 function buildThreadReopenHref(channelId: string, threadId: string) {
@@ -749,154 +747,6 @@ function writeRoomDraft(roomId: string, draft: string) {
   }
 }
 
-const CHANNEL_THREAD_REPLIES: Record<string, ThreadMap> = {
-  all: {
-    "msg-all-2": [
-      {
-        id: "thread-all-1",
-        speaker: "Mina",
-        role: "human",
-        tone: "human",
-        message: "那就别把机器状态塞进设置页了，直接留在主壳和讨论间里常驻。",
-        time: "09:18",
-      },
-      {
-        id: "thread-all-2",
-        speaker: "Codex Dockmaster",
-        role: "agent",
-        tone: "agent",
-        message: "收到。我会把在线状态和讨论间上下文一起留在左栏和右侧摘要，不再只给后台页。",
-        time: "09:19",
-      },
-    ],
-  },
-  roadmap: {
-    "msg-roadmap-1": [
-      {
-        id: "thread-roadmap-1",
-        speaker: "系统",
-        role: "system",
-        tone: "system",
-        message: "已记录：看板仅保留为规划镜像，不再作为首页主心智。",
-        time: "10:06",
-      },
-    ],
-  },
-  "dm-codex-dockmaster": {
-    "msg-dm-codex-1": [
-      {
-        id: "thread-dm-codex-1",
-        speaker: "Larkspur",
-        role: "human",
-        tone: "human",
-        message: "先把回访做顺，再谈是不是要升成新讨论间。",
-        time: "11:15",
-      },
-    ],
-  },
-  "dm-mina": {
-    "msg-dm-mina-1": [
-      {
-        id: "thread-dm-mina-1",
-        speaker: "系统",
-        role: "system",
-        tone: "system",
-        message: "已记录：稍后查看是当前消息工作流的正式入口。",
-        time: "11:25",
-      },
-    ],
-  },
-};
-
-const SANITIZED_CHANNEL_THREAD_REPLIES: Record<string, ThreadMap> = Object.fromEntries(
-  Object.entries(CHANNEL_THREAD_REPLIES).map(([channelId, threadMap]) => [
-    channelId,
-    Object.fromEntries(
-      Object.entries(threadMap).map(([messageId, replies]) => [
-        messageId,
-        replies.map((reply) => ({
-          ...reply,
-          speaker: rewriteCustomerFacingText(reply.speaker),
-          message: rewriteCustomerFacingText(reply.message),
-        })),
-      ])
-    ),
-  ])
-);
-
-const ROOM_THREAD_REPLIES: Record<string, ThreadMap> = {
-  "room-runtime": {
-    "msg-room-1": [
-      {
-        id: "thread-room-runtime-1",
-        speaker: "Larkspur",
-        role: "human",
-        tone: "human",
-        message: "房间里只保留当前讨论间的执行信息，不再额外铺一层总览。",
-        time: "09:24",
-      },
-      {
-        id: "thread-room-runtime-2",
-        speaker: "Codex Dockmaster",
-        role: "agent",
-        tone: "agent",
-        message: "明白。当前讨论间会只盯住分支、运行环境、PR 和当前话题，不再分散视线。",
-        time: "09:25",
-      },
-    ],
-    "msg-room-2": [
-      {
-        id: "thread-room-runtime-3",
-        speaker: "系统",
-        role: "system",
-        tone: "system",
-        message: "关注线程已经可以把后续恢复继续锁在同一条讨论上。",
-        time: "09:27",
-      },
-    ],
-  },
-  "room-inbox": {
-    "msg-room-4": [
-      {
-        id: "thread-room-inbox-1",
-        speaker: "Mina",
-        role: "human",
-        tone: "human",
-        message: "收件箱入口放左下角是对的，但卡片正文还得更克制。",
-        time: "10:03",
-      },
-    ],
-  },
-  "room-memory": {
-    "msg-room-6": [
-      {
-        id: "thread-room-memory-1",
-        speaker: "Larkspur",
-        role: "human",
-        tone: "human",
-        message: "先别写回，优先级策略没定之前必须卡住。",
-        time: "10:32",
-      },
-    ],
-  },
-};
-
-const SANITIZED_ROOM_THREAD_REPLIES: Record<string, ThreadMap> = Object.fromEntries(
-  Object.entries(ROOM_THREAD_REPLIES).map(([roomKey, threadMap]) => [
-    roomKey,
-    Object.fromEntries(
-      Object.entries(threadMap).map(([messageId, replies]) => [
-        messageId,
-        replies.map((reply) => ({
-          ...reply,
-          speaker: rewriteCustomerFacingText(reply.speaker),
-          message: rewriteCustomerFacingText(reply.message),
-        })),
-      ])
-    ),
-  ])
-);
-
 function messageExcerpt(text: string, maxLength = 72) {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
@@ -934,11 +784,6 @@ function buildClarificationWaitState(
     wait,
     message: messages.find((message) => message.id === wait.blockingMessageId),
   };
-}
-
-function initialThreadMessageId(messages: Message[], threadMap: ThreadMap) {
-  const seeded = messages.find((message) => (threadMap[message.id] ?? []).length > 0);
-  return seeded?.id ?? messages[messages.length - 1]?.id ?? null;
 }
 
 const MESSAGE_SENDING_PLACEHOLDER = "正在生成回复...";
@@ -1013,6 +858,16 @@ function signalTone(kind: ApprovalCenterItem["kind"]) {
   }
 }
 
+function firstNonEmpty(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
 function signalLabel(kind: ApprovalCenterItem["kind"]) {
   switch (kind) {
     case "approval":
@@ -1059,6 +914,17 @@ function RoomRelatedSignalsPanel({
   relatedSignals: ApprovalCenterItem[];
   recentSignals: ApprovalCenterItem[];
 }) {
+  const previewSignals = relatedSignals.length === 0 ? recentSignals.slice(0, 2) : relatedSignals.slice(0, 3);
+  const leadSignal = previewSignals.find((item) => item.kind !== "status") ?? previewSignals[0];
+  const title = relatedSignals.length > 0 ? "先看收件箱提醒" : recentSignals.length > 0 ? "最近有回流" : "当前没有新信号";
+  const summary = leadSignal
+    ? firstNonEmpty(leadSignal.summary, leadSignal.title, "回到房间继续推进。")
+    : relatedSignals.length > 0
+      ? "收件箱里还有和这间讨论相关的提醒。"
+      : recentSignals.length > 0
+        ? "最近有新的回流，但当前没有待处理事项。"
+        : "当前没有新信号。";
+
   return (
     <Panel tone="white">
       <div>
@@ -1066,13 +932,12 @@ function RoomRelatedSignalsPanel({
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">
             收件箱回链
           </p>
-          <p className="mt-2 font-display text-[20px] font-bold leading-6">
-            {relatedSignals.length} 条待处理 / {recentSignals.length} 条最近
-          </p>
+          <p className="mt-2 font-display text-[20px] font-bold leading-6">{title}</p>
+          <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">{summary}</p>
         </div>
       </div>
       <div className="mt-4 space-y-3">
-        {(relatedSignals.length === 0 ? recentSignals.slice(0, 2) : relatedSignals.slice(0, 3)).map((item) => (
+        {previewSignals.map((item) => (
           <div
             key={item.id}
             data-testid={`room-workbench-signal-${item.id}`}
@@ -1102,41 +967,59 @@ function RoomContextPanels({
   session,
   issueTitle,
   topicOwnerProfileHref,
+  messages,
   relatedSignals,
   recentSignals,
   relatedHandoffs,
   governance,
+  nextStep,
+  ruleHighlights,
 }: {
   room: Room;
   run: Run;
   session?: Session;
   issueTitle?: string;
   topicOwnerProfileHref?: string | null;
+  messages: Message[];
   relatedSignals: ApprovalCenterItem[];
   recentSignals: ApprovalCenterItem[];
   relatedHandoffs: AgentHandoff[];
   governance: PhaseZeroState["workspace"]["governance"];
+  nextStep: RoomNextStep;
+  ruleHighlights: WorkspaceRuleHighlight[];
 }) {
   const currentRunStatus = session?.status ?? run.status;
   const previewSignals = relatedSignals.length === 0 ? recentSignals.slice(0, 2) : relatedSignals.slice(0, 2);
-  const hasPendingItems = previewSignals.length > 0 || relatedHandoffs.length > 0;
   const focusHandoff = pickPrimaryHandoff(relatedHandoffs);
+  const highlights = messages.slice(-3).reverse();
+  const pendingOverview = buildRoomPendingOverview({
+    signals: previewSignals,
+    handoffs: relatedHandoffs,
+  });
 
   return (
     <div className="space-y-3">
       <Panel tone="white">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">当前话题</p>
-            <p className="mt-2 font-display text-[20px] font-bold leading-6">{room.topic.title}</p>
-            <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">{room.topic.summary}</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">现在先做什么</p>
+            <p className="mt-2 font-display text-[20px] font-bold leading-6">{nextStep.title}</p>
+            <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">{nextStep.summary}</p>
+            <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.56)]">{nextStep.reason}</p>
           </div>
+          <Link
+            href={nextStep.href}
+            data-testid="room-workbench-primary-next-link"
+            className="inline-flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          >
+            {nextStep.ctaLabel}
+          </Link>
         </div>
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <div className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-3">
-            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">事项</p>
-            <p className="mt-2 text-sm font-semibold">{room.issueKey}</p>
-            <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{issueTitle ?? "等待事项详情同步"}</p>
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">当前讨论</p>
+            <p className="mt-2 text-sm font-semibold">{room.topic.title}</p>
+            <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{room.issueKey} · {issueTitle ?? "等待事项详情同步"}</p>
           </div>
           <div className="border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
             <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.52)]">执行</p>
@@ -1195,16 +1078,20 @@ function RoomContextPanels({
         description="不用翻治理明细，先看这条协作线现在走到哪一步。"
       />
 
+      {ruleHighlights.length > 0 ? (
+        <RoomRuleHighlightsPanel
+          testId="room-workbench-rule-panel"
+          highlights={ruleHighlights}
+          summary="继续前会先对齐这间讨论对应的规则文件和协作路由。"
+        />
+      ) : null}
+
       <Panel tone="paper">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">待处理</p>
-            <p className="mt-2 font-display text-[20px] font-bold leading-6">
-              {hasPendingItems ? "先处理这批" : "当前已清空"}
-            </p>
-            <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">
-              收件箱 {relatedSignals.length} 条 · 交接 {relatedHandoffs.length} 条
-            </p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">收件箱与交接</p>
+            <p className="mt-2 font-display text-[20px] font-bold leading-6">{pendingOverview.title}</p>
+            <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.68)]">{pendingOverview.summary}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
@@ -1218,11 +1105,9 @@ function RoomContextPanels({
         </div>
         <div className="mt-4 grid gap-3 xl:grid-cols-2">
           <div className="space-y-3">
-            <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <div>
               <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">收件箱信号</p>
-              <p className="mt-1.5 text-sm font-semibold">
-                {previewSignals.length === 0 ? "暂无待处理信号" : `优先看 ${previewSignals.length} 条`}
-              </p>
+              <p className="mt-1 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">{pendingOverview.signalSummary}</p>
             </div>
             {previewSignals.map((item) => (
               <div
@@ -1243,11 +1128,9 @@ function RoomContextPanels({
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-[18px] border-2 border-[var(--shock-ink)] bg-white px-4 py-3">
+            <div>
               <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接跟进</p>
-              <p className="mt-1.5 text-sm font-semibold">
-                {relatedHandoffs.length === 0 ? "当前没有待跟进交接" : `当前挂着 ${relatedHandoffs.length} 条`}
-              </p>
+              <p className="mt-1 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">{pendingOverview.handoffSummary}</p>
             </div>
             {relatedHandoffs.slice(0, 3).map((handoff) => (
               <Link
@@ -1275,57 +1158,6 @@ function RoomContextPanels({
             ))}
           </div>
         </div>
-        {!hasPendingItems ? <p className="text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">暂无待处理信号或交接。</p> : null}
-      </Panel>
-    </div>
-  );
-}
-
-function RoomTopicWorkbenchPanel({
-  room,
-  issueTitle,
-  messages,
-  topicOwnerProfileHref,
-}: {
-  room: Room;
-  issueTitle?: string;
-  messages: Message[];
-  topicOwnerProfileHref?: string | null;
-}) {
-  const highlights = messages.slice(-3).reverse();
-
-  return (
-    <div data-testid="room-workbench-topic-panel" className="space-y-4">
-      <Panel tone="paper" className="shadow-[6px_6px_0_0_var(--shock-yellow)]">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[color:rgba(24,20,14,0.62)]">
-          {room.issueKey} / 当前话题
-        </p>
-        <h3 className="mt-2 font-display text-3xl font-bold">{room.topic.title}</h3>
-        <p className="mt-4 text-base leading-7">{room.topic.summary}</p>
-        <div className="mt-5 flex flex-wrap gap-2">
-          <div className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2">
-            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">当前处理人</p>
-            {topicOwnerProfileHref ? (
-              <Link
-                href={topicOwnerProfileHref}
-                data-testid="room-topic-owner-profile"
-                className="mt-1 block text-sm font-semibold underline decoration-[1.5px] underline-offset-4"
-              >
-                {room.topic.owner}
-              </Link>
-            ) : (
-              <p className="mt-1 text-sm font-semibold">{room.topic.owner}</p>
-            )}
-          </div>
-          <div className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2">
-            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">事项</p>
-            <p className="mt-1 text-sm font-semibold leading-5">{issueTitle ?? room.issueKey}</p>
-          </div>
-          <div className="rounded-full border-2 border-[var(--shock-ink)] bg-white px-3 py-2">
-            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">看板镜像</p>
-            <p className="mt-1 text-sm font-semibold">{room.boardCount} 张卡片</p>
-          </div>
-        </div>
       </Panel>
 
       <Panel tone="white">
@@ -1344,21 +1176,25 @@ function RoomTopicWorkbenchPanel({
             </Link>
           </div>
         </div>
-        <div className="mt-4 space-y-3">
-          {highlights.map((message) => (
-            <div key={message.id} className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={cn("border border-[var(--shock-ink)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em]", messageBadgeTone(message))}>
-                  {messageGlyph(message)} {roleLabel(message.role)}
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-                  {message.time}
-                </span>
+        {highlights.length === 0 ? (
+          <p className="mt-4 text-sm leading-6 text-[color:rgba(24,20,14,0.68)]">当前还没有同步到最近消息。</p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {highlights.map((message) => (
+              <div key={message.id} className="rounded-[20px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("border border-[var(--shock-ink)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em]", messageBadgeTone(message))}>
+                    {messageGlyph(message)} {roleLabel(message.role)}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
+                    {message.time}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-6">{renderMarkedMessage(message.message)}</p>
               </div>
-              <p className="mt-3 text-sm leading-6">{renderMarkedMessage(message.message)}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Panel>
     </div>
   );
@@ -1383,6 +1219,7 @@ function RoomPullRequestWorkbenchPanel({
   prError: string | null;
   relatedSignals: ApprovalCenterItem[];
 }) {
+  const conversationTotal = pullRequest?.conversation?.length ?? 0;
   const conversation = pullRequest?.conversation?.slice(0, 3) ?? [];
 
   return (
@@ -1419,14 +1256,14 @@ function RoomPullRequestWorkbenchPanel({
         {prError ? (
           <p className="mt-3 font-mono text-[11px] text-[var(--shock-pink)]">{prError}</p>
         ) : null}
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px] font-semibold text-[color:rgba(24,20,14,0.76)]">
           {pullRequest ? (
             <Link
               href={`/pull-requests/${pullRequest.id}`}
               data-testid="room-pr-detail-link"
-              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+              className="underline decoration-[1.5px] underline-offset-4 transition-opacity hover:opacity-70"
             >
-              PR 详情
+              查看 PR 详情
             </Link>
           ) : null}
           {pullRequest?.url ? (
@@ -1434,9 +1271,9 @@ function RoomPullRequestWorkbenchPanel({
               href={pullRequest.url}
               target="_blank"
               rel="noreferrer"
-              className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+              className="underline decoration-[1.5px] underline-offset-4 transition-opacity hover:opacity-70"
             >
-              远端 PR
+              查看远端 PR
             </Link>
           ) : null}
         </div>
@@ -1454,7 +1291,7 @@ function RoomPullRequestWorkbenchPanel({
             data-testid="room-pr-conversation-count"
             className="border border-[var(--shock-ink)] bg-white px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
           >
-            {conversation.length} 条记录
+            {conversationTotal > 0 ? "已同步最新评论" : "暂无回流"}
           </span>
         </div>
         <div className="mt-4 space-y-3">
@@ -1516,6 +1353,58 @@ function RoomPullRequestWorkbenchPanel({
   );
 }
 
+function RoomRuleHighlightsPanel({
+  highlights,
+  summary,
+  testId,
+  compact = false,
+}: {
+  highlights: WorkspaceRuleHighlight[];
+  summary: string;
+  testId: string;
+  compact?: boolean;
+}) {
+  return (
+    <section
+      data-testid={testId}
+      className={cn(
+        "rounded-[18px] border-2 border-[var(--shock-ink)] bg-white shadow-[var(--shock-shadow-sm)]",
+        compact ? "px-3 py-3" : "p-4"
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">协作规则</p>
+          <p className={cn("mt-2 font-display font-bold leading-6", compact ? "text-[18px]" : "text-[20px]")}>
+            继续前先按这组规则
+          </p>
+        </div>
+        <span className="rounded-full border border-[var(--shock-ink)] bg-[var(--shock-paper)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em]">
+          {highlights.length} 条
+        </span>
+      </div>
+      <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">{summary}</p>
+      <div className={cn("mt-4 grid gap-2", compact ? "" : "md:grid-cols-2")}>
+        {highlights.map((item) => (
+          <div
+            key={item.id}
+            data-testid={`${testId}-${item.id}`}
+            className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5"
+          >
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-[var(--shock-ink)] bg-white px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em]">
+                {item.badge}
+              </span>
+              <p className="text-sm font-semibold">{item.label}</p>
+            </div>
+            <p className="mt-1.5 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">{item.summary}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function RoomWorkbenchRailSummary({
   room,
   run,
@@ -1535,6 +1424,8 @@ function RoomWorkbenchRailSummary({
   pullRequestActionStatus,
   pullRequestBoundary,
   prError,
+  nextStep,
+  ruleHighlights,
 }: {
   room: Room;
   run: Run;
@@ -1554,6 +1445,8 @@ function RoomWorkbenchRailSummary({
   pullRequestActionStatus: string;
   pullRequestBoundary: string;
   prError: string | null;
+  nextStep: RoomNextStep;
+  ruleHighlights: WorkspaceRuleHighlight[];
 }) {
   const currentRunStatus = session?.status ?? run.status;
   const contextPanelTestId = activeTab === "context" ? "room-rail-context-panel" : "room-workbench-context-panel";
@@ -1561,6 +1454,10 @@ function RoomWorkbenchRailSummary({
   const prPanelTestId = activeTab === "pr" ? "room-rail-pr-panel" : "room-workbench-pr-panel";
   const previewAgents = activeAgents.slice(0, 3);
   const focusHandoff = pickPrimaryHandoff(relatedHandoffs);
+  const pendingOverview = buildRoomPendingOverview({
+    signals: relatedSignals,
+    handoffs: relatedHandoffs,
+  });
 
   return (
     <div data-testid={contextPanelTestId} className="space-y-3">
@@ -1568,28 +1465,32 @@ function RoomWorkbenchRailSummary({
         <Panel tone="paper">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">当前话题</p>
-              <p className="mt-2 font-display text-[22px] font-bold leading-6">{room.topic.title}</p>
-              <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.7)]">{room.topic.summary}</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.48)]">现在先做什么</p>
+              <p className="mt-2 font-display text-[22px] font-bold leading-6">{nextStep.title}</p>
+              <p className="mt-2 text-[13px] leading-6 text-[color:rgba(24,20,14,0.7)]">{nextStep.summary}</p>
+              <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.56)]">{nextStep.reason}</p>
             </div>
-            <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2.5">
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">主视图</p>
-              <p className="mt-1.5 text-sm font-semibold">{ROOM_WORKBENCH_TAB_LABEL[activeTab]}</p>
-            </div>
+            <Link
+              href={nextStep.href}
+              data-testid="room-rail-primary-next-link"
+              className="inline-flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            >
+              {nextStep.ctaLabel}
+            </Link>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">事项</p>
-              <p className="mt-1.5 text-sm font-semibold">{room.issueKey}</p>
-              <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{issueTitle ?? "等待事项详情同步"}</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">当前讨论</p>
+              <p className="mt-1.5 text-sm font-semibold">{room.topic.title}</p>
+              <p className="mt-1 text-[11px] leading-5 text-[color:rgba(24,20,14,0.62)]">{room.issueKey} · {issueTitle ?? "等待事项详情同步"}</p>
             </div>
             <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">信号</p>
-              <p className="mt-1.5 text-sm font-semibold">{relatedSignals.length} 条待处理</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">当前处理人</p>
+              <p className="mt-1.5 text-sm font-semibold">{room.topic.owner}</p>
             </div>
             <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5">
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接箱</p>
-              <p className="mt-1.5 text-sm font-semibold">{relatedHandoffs.length} 条跟进中</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">工作区</p>
+              <p className="mt-1.5 text-sm font-semibold">{session?.branch ?? run.branch}</p>
             </div>
           </div>
           {activeTab === "context" ? null : (
@@ -1607,6 +1508,16 @@ function RoomWorkbenchRailSummary({
               />
             </div>
           )}
+          {ruleHighlights.length > 0 ? (
+            <div className="mt-4">
+              <RoomRuleHighlightsPanel
+                testId="room-rail-rule-panel"
+                highlights={ruleHighlights}
+                compact
+                summary="继续前会先看这组规则和记忆，再回到当前动作。"
+              />
+            </div>
+          ) : null}
           {machineProfileHref || previewAgents.length > 0 ? (
             <div className="mt-4 rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-3">
               <div className="flex items-start justify-between gap-3">
@@ -1669,7 +1580,7 @@ function RoomWorkbenchRailSummary({
               </button>
             </div>
             <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">
-              {pullRequestActionStatus}
+              {roomPullRequestActionStatusLabel(pullRequestActionStatus)}
             </p>
             {(pullRequestActionStatus === "blocked" ||
               pullRequestActionStatus === "signed_out" ||
@@ -1687,30 +1598,30 @@ function RoomWorkbenchRailSummary({
             ) : null}
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5">
-                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">待处理信号</p>
-                <p className="mt-1.5 text-sm font-semibold">{relatedSignals.length} 条</p>
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">收件箱优先项</p>
+                <p className="mt-1.5 text-sm leading-5 text-[color:rgba(24,20,14,0.74)]">{pendingOverview.signalSummary}</p>
               </div>
               <div className="rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2.5">
-                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接箱</p>
-                <p className="mt-1.5 text-sm font-semibold">{relatedHandoffs.length} 条</p>
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:rgba(24,20,14,0.56)]">交接跟进</p>
+                <p className="mt-1.5 text-sm leading-5 text-[color:rgba(24,20,14,0.74)]">{pendingOverview.handoffSummary}</p>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px] font-semibold text-[color:rgba(24,20,14,0.76)]">
               {activeTab !== "pr" ? (
                 <Link
                   href={buildRoomWorkbenchHref(room.id, "pr")}
-                  className="border-2 border-[var(--shock-ink)] bg-white px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                  className="underline decoration-[1.5px] underline-offset-4 transition-opacity hover:opacity-70"
                 >
-                  房间 PR
+                  去房间 PR
                 </Link>
               ) : null}
               {pullRequest ? (
                 <Link
                   href={`/pull-requests/${pullRequest.id}`}
                   data-testid="room-workbench-pr-detail-link"
-                  className="border-2 border-[var(--shock-ink)] bg-[var(--shock-paper)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em]"
+                  className="underline decoration-[1.5px] underline-offset-4 transition-opacity hover:opacity-70"
                 >
-                  PR 详情
+                  查看 PR 详情
                 </Link>
               ) : null}
             </div>
@@ -2256,6 +2167,7 @@ function ClaudeCompactComposer({
     roomId: string,
     prompt: string,
     provider?: string,
+    replyToMessageId?: string,
     onEvent?: (event: RoomStreamEvent) => void
   ) => Promise<{ state?: PhaseZeroState; error?: string; output?: string } | null | undefined>;
   canSend: boolean;
@@ -2349,6 +2261,7 @@ function ClaudeCompactComposer({
     if (!draft.trim() || !canSend) return;
     const prompt = draft.trim();
     const sendPrompt = replyTarget ? `回复 ${replyTarget.speaker}：${prompt}` : prompt;
+    const replyToMessageId = replyTarget?.messageId;
     setDraft("");
     const now = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
     const requestId = `room-send-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2359,6 +2272,7 @@ function ClaudeCompactComposer({
       tone: "human",
       message: sendPrompt,
       time: now,
+      replyToMessageId,
     };
     const agentMessageId = `local-agent-${Date.now()}`;
     const agentMessage: Message = {
@@ -2368,6 +2282,7 @@ function ClaudeCompactComposer({
       tone: "agent",
       message: MESSAGE_SENDING_PLACEHOLDER,
       time: now,
+      replyToMessageId,
     };
     setPendingSends((current) => [
       ...current,
@@ -2381,7 +2296,7 @@ function ClaudeCompactComposer({
     streamBuffersRef.current[requestId] = "";
 
     try {
-      const payload = await onSend(room.id, sendPrompt, undefined, (event) => {
+      const payload = await onSend(room.id, sendPrompt, undefined, replyToMessageId, (event) => {
         if ((event.type === "stdout" || event.type === "stderr") && event.delta) {
           streamBuffersRef.current[requestId] = `${streamBuffersRef.current[requestId] ?? ""}${event.delta}`;
           const preview = sanitizeRoomStreamPreview(streamBuffersRef.current[requestId] ?? "");
@@ -2614,6 +2529,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
       ? { ...directMessage, kind: "dm" }
       : undefined;
   const isDirectMessage = channel?.kind === "dm";
+  const channelCollaborationHint = isDirectMessage ? "在私聊里和 AI 智能体协作。" : "在频道里和 AI 智能体协作。";
   const sidebarChannels = loading || error ? [] : state.channels;
   const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = loading || error ? [] : state.machines;
@@ -2653,20 +2569,14 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     () => (pendingMessages.length > 0 ? [...persistedMessages, ...pendingMessages] : persistedMessages),
     [pendingMessages, persistedMessages]
   );
-  const channelThreadReplies = useMemo(
-    () => (activeChannelId ? SANITIZED_CHANNEL_THREAD_REPLIES[activeChannelId] ?? {} : {}),
-    [activeChannelId]
-  );
+  const channelThreadReplies = useMemo(() => buildThreadReplyMap(messages), [messages]);
   const latestMessage = messages.length > 0 ? messages[messages.length - 1] : null;
   const messageScrollRef = useStickyMessageScroll(channelId, messages.length, latestMessage?.message.length ?? 0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
   const workspaceName = loading || error ? undefined : state.workspace.name;
   const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
-  const directMessagesForSidebar = (loading || error ? DIRECT_MESSAGES : state.directMessages).map((item) => ({
-    ...item,
-    href: buildChannelWorkbenchHref(item.id, "chat"),
-  }));
+  const directMessagesForSidebar = buildSidebarDirectMessages(loading || error ? DIRECT_MESSAGES : state.directMessages);
   const followedItemsForSurface = followedThreads.map((item) => ({
     ...item,
     queueLabel: "关注中",
@@ -2679,26 +2589,12 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     reopenHref: buildThreadReopenHref(item.channelId, item.messageId),
     reopenTestId: `saved-later-reopen-${item.id}`,
   }));
-  const followedThreadsForSidebar = followedThreads.map((item) => ({
-    id: item.id,
-    title: item.title,
-    summary: item.summary,
-    meta: `${item.channelLabel} · ${item.updatedAt}`,
-    unread: item.unread,
-    href: buildChannelWorkbenchHref(item.channelId, "followed", item.messageId),
-  }));
-  const savedLaterForSidebar = savedLaterItems.map((item) => ({
-    id: item.id,
-    title: item.title,
-    summary: item.summary,
-    meta: `${item.channelLabel} · ${item.updatedAt}`,
-    unread: item.unread,
-    href: buildChannelWorkbenchHref(item.channelId, "saved", item.messageId),
-  }));
+  const followedThreadsForSidebar = buildSidebarFollowedThreads(followedThreads);
+  const savedLaterForSidebar = buildSidebarSavedLaterItems(savedLaterItems);
   const selectedThreadMessage =
     messages.find((message) => message.id === selectedThreadId) ??
     messages.find((message) => message.id === queryThreadId) ??
-    messages.find((message) => message.id === initialThreadMessageId(messages, channelThreadReplies));
+    messages.find((message) => message.id === selectInitialThreadMessageId(messages, channelThreadReplies));
   const selectedThreadReplies = selectedThreadMessage ? channelThreadReplies[selectedThreadMessage.id] ?? [] : [];
   const selectedFollowedEntry =
     followedItemsForSurface.find((item) => item.channelId === channelId && item.messageId === queryThreadId) ??
@@ -2709,14 +2605,16 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     savedItemsForSurface.find((item) => item.channelId === channelId) ??
     savedItemsForSurface[0];
   const selectedCollectionEntry = activeWorkbenchTab === "followed" ? selectedFollowedEntry : selectedSavedEntry;
+  const selectedCollectionMessages = selectedCollectionEntry
+    ? selectedCollectionEntry.channelId === channelId
+      ? messages
+      : directMessageMessages[selectedCollectionEntry.channelId] ?? state.channelMessages[selectedCollectionEntry.channelId] ?? []
+    : [];
   const selectedCollectionMessage = selectedCollectionEntry
-    ? (selectedCollectionEntry.channelId === channelId
-        ? messages
-        : directMessageMessages[selectedCollectionEntry.channelId] ?? state.channelMessages[selectedCollectionEntry.channelId] ?? []
-      ).find((message) => message.id === selectedCollectionEntry.messageId)
+    ? selectedCollectionMessages.find((message) => message.id === selectedCollectionEntry.messageId)
     : undefined;
   const selectedCollectionReplies = selectedCollectionEntry
-    ? (CHANNEL_THREAD_REPLIES[selectedCollectionEntry.channelId] ?? {})[selectedCollectionEntry.messageId] ?? []
+    ? buildThreadReplyMap(selectedCollectionMessages)[selectedCollectionEntry.messageId] ?? []
     : [];
   const selectedFollowedThreadId = activeWorkbenchTab === "followed" ? selectedFollowedEntry?.id : undefined;
   const selectedSavedLaterId = activeWorkbenchTab === "saved" ? selectedSavedEntry?.id : undefined;
@@ -2741,7 +2639,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     const nextThreadId =
       queryThreadId && messages.some((message) => message.id === queryThreadId)
         ? queryThreadId
-        : initialThreadMessageId(messages, channelThreadReplies);
+        : selectInitialThreadMessageId(messages, channelThreadReplies);
     setSelectedThreadId((current) => {
       if (queryThreadId && messages.some((message) => message.id === queryThreadId)) {
         return queryThreadId;
@@ -2814,6 +2712,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     }
     const submittedDraft = draft.trim();
     const sendPrompt = replyTarget ? `回复 ${replyTarget.speaker}：${submittedDraft}` : submittedDraft;
+    const replyToMessageId = replyTarget?.messageId;
     const sentAt = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
     setPendingMessages([
       {
@@ -2823,6 +2722,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
         tone: "human",
         message: sendPrompt,
         time: sentAt,
+        replyToMessageId,
       },
       {
         id: `pending-agent-${Date.now()}`,
@@ -2831,6 +2731,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
         tone: "agent",
         message: MESSAGE_SENDING_PLACEHOLDER,
         time: sentAt,
+        replyToMessageId,
       },
     ]);
     setDraft("");
@@ -2838,9 +2739,9 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
     setSendError(null);
     try {
       if (isDirectMessage) {
-        await postDirectMessage(channel.id, sendPrompt);
+        await postDirectMessage(channel.id, sendPrompt, replyToMessageId);
       } else {
-        await postChannelMessage(channel.id, sendPrompt);
+        await postChannelMessage(channel.id, sendPrompt, replyToMessageId);
       }
       setPendingMessages([]);
       setReplyTarget(null);
@@ -2920,7 +2821,7 @@ export function StitchChannelsView({ channelId }: { channelId: string }) {
                 ? "等待消息面真实状态返回。"
                 : error
                   ? error
-                  : channel?.purpose ?? (isDirectMessage ? "私聊说明还没同步。" : "频道说明还没同步。")
+                  : `${channelCollaborationHint}${channel?.purpose ? ` ${channel.purpose}` : ""}`
             }
             onOpenQuickSearch={quickSearch.onOpenQuickSearch}
             searchPlaceholder={isDirectMessage ? "搜索私聊 / 线程 / 稍后查看" : "搜索频道 / 线程 / 稍后查看"}
@@ -3231,7 +3132,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
     [messages, room, state.roomAgentWaits]
   );
   const hasClarificationWait = Boolean(clarificationWait);
-  const roomThreadReplies = useMemo(() => (room ? SANITIZED_ROOM_THREAD_REPLIES[room.id] ?? {} : {}), [room]);
+  const roomThreadReplies = useMemo(() => buildThreadReplyMap(messages), [messages]);
   const pullRequest = room ? state.pullRequests.find((item) => item.roomId === room.id) : undefined;
   const [prLoading, setPrLoading] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
@@ -3287,10 +3188,14 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
   const sidebarRooms = loading || error ? [] : state.rooms;
   const sidebarMachines = loading || error ? [] : state.machines;
   const sidebarAgents = loading || error ? [] : state.agents;
+  const sidebarDirectMessages = loading || error ? [] : buildSidebarDirectMessages(state.directMessages);
+  const sidebarFollowedThreads = loading || error ? [] : buildSidebarFollowedThreads(state.followedThreads);
+  const sidebarSavedLaterItems = loading || error ? [] : buildSidebarSavedLaterItems(state.savedLaterItems);
   const inboxCount = loading || error ? 0 : approvalCenter.openCount;
   const workspaceName = loading || error ? undefined : state.workspace.name;
   const workspaceSubtitle = loading || error ? undefined : `${state.workspace.branch} · ${state.workspace.pairedRuntime}`;
-  const activeWorkbenchTab = parseRoomWorkbenchTab(searchParams.get("tab"));
+  const queryWorkbenchTab = searchParams.get("tab");
+  const activeWorkbenchTab = parseRoomWorkbenchTab(queryWorkbenchTab);
   const queryThreadId = searchParams.get("thread");
   const queryReplyId = searchParams.get("reply");
   const queryRailMode = parseRoomRailMode(searchParams.get("rail"));
@@ -3299,7 +3204,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
     replyId: queryReplyId,
     railMode: queryRailMode,
   };
-  const roomWorkbenchTabs = (["chat", "topic", "run", "pr", "context"] as RoomWorkbenchTab[]).map((tab) => ({
+  const roomWorkbenchTabs = (["chat", "run", "pr", "context"] as RoomWorkbenchTab[]).map((tab) => ({
     label: ROOM_WORKBENCH_TAB_LABEL[tab],
     href: buildRoomWorkbenchHref(roomId, tab, roomQueryState),
     testId: `room-workbench-tab-${tab}`,
@@ -3315,48 +3220,36 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
   const selectedThreadMessage =
     messages.find((message) => message.id === selectedThreadId) ??
     messages.find((message) => message.id === queryThreadId) ??
-    messages.find((message) => message.id === initialThreadMessageId(messages, roomThreadReplies));
+    messages.find(
+      (message) =>
+        message.id === selectInitialThreadMessageId(messages, roomThreadReplies, clarificationWait?.message?.id ?? null)
+    );
   const selectedThreadReplies = selectedThreadMessage ? roomThreadReplies[selectedThreadMessage.id] ?? [] : [];
   const threadReplyCounts = Object.fromEntries(
     messages.map((message) => [message.id, roomThreadReplies[message.id]?.length ?? 0])
   );
-  const relatedSignals =
+  const relatedSignalState =
     loading || error || !room || !run
-      ? []
-      : approvalCenter.signals.filter(
-          (item) =>
-            item.roomId === room.id ||
-            item.runId === run.id ||
-            item.href.includes(room.id) ||
-            item.href.includes(run.id)
-        );
+      ? { relatedSignals: [], recentSignals: [] }
+      : buildRoomRelatedSignals({
+          signals: approvalCenter.signals,
+          recent: approvalCenter.recent,
+          inbox: state.inbox,
+          room,
+          run,
+        });
+  const relatedSignals = relatedSignalState.relatedSignals;
   const relatedHandoffs =
     loading || error || !room
       ? []
       : state.mailbox.filter((handoff) => handoff.roomId === room.id);
-  const recentSignals =
-    loading || error || !room || !run
-      ? []
-      : approvalCenter.recent.filter(
-          (item) =>
-            item.roomId === room.id ||
-            item.runId === run.id ||
-            item.href.includes(room.id) ||
-            item.href.includes(run.id)
-        );
+  const recentSignals = relatedSignalState.recentSignals;
   const relatedGuards =
     loading || error || !room || !run
       ? []
       : state.guards.filter((guard) => guard.roomId === room.id || guard.runId === run.id);
   const roomRunHistory = loading || error || !room ? [] : buildRunHistoryEntries(state, room.id);
   const shellProfileEntries = buildShellProfileEntries(state, loading || Boolean(error));
-  const topBarDescription = loading
-    ? "正在获取讨论间和执行状态。"
-    : error
-      ? error
-      : room
-        ? `当前处理人 ${room.topic.owner}`
-        : "等待讨论间同步。";
   const roomTopicSummary = room?.topic.summary ?? room?.summary ?? "当前讨论还在同步。";
 
   function replaceRoomQueryState(next: {
@@ -3378,7 +3271,7 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
     const nextThreadId =
       queryThreadId && messages.some((message) => message.id === queryThreadId)
         ? queryThreadId
-        : initialThreadMessageId(messages, roomThreadReplies);
+        : selectInitialThreadMessageId(messages, roomThreadReplies, clarificationWait?.message?.id ?? null);
     setSelectedThreadId(nextThreadId);
     setReplyTarget(() => {
       if (!queryReplyId) {
@@ -3388,7 +3281,21 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
       return replyMessage ? buildReplyTarget(replyMessage) : null;
     });
     setRailMode(queryRailMode === "thread" ? "thread" : "context");
-  }, [messages, queryRailMode, queryReplyId, queryThreadId, roomId, roomThreadReplies]);
+  }, [clarificationWait?.message?.id, messages, queryRailMode, queryReplyId, queryThreadId, roomId, roomThreadReplies]);
+
+  useEffect(() => {
+    if (queryWorkbenchTab !== "topic") {
+      return;
+    }
+    router.replace(
+      buildRoomWorkbenchHref(roomId, "context", {
+        threadId: queryThreadId,
+        replyId: queryReplyId,
+        railMode: queryRailMode,
+      }),
+      { scroll: false }
+    );
+  }, [queryReplyId, queryRailMode, queryThreadId, queryWorkbenchTab, roomId, router]);
 
   useEffect(() => {
     setRailMode("context");
@@ -3487,18 +3394,45 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
     }
   }
 
+  const roomNextStep =
+    room && run
+      ? buildRoomNextStep({
+          room,
+          run,
+          session,
+          signals: relatedSignals,
+          handoffs: relatedHandoffs,
+          pullRequest,
+        })
+      : null;
+  const roomRuleHighlights = room && run
+    ? buildWorkspaceRuleHighlights(state.workspace.governance, session?.memoryPaths ?? [], 4)
+    : [];
+  const topBarDescription = loading
+    ? "正在获取讨论间和执行状态。"
+    : error
+      ? error
+      : roomNextStep
+        ? roomNextStep.reason
+        : room
+          ? "在讨论间里和 AI 智能体协作推进事项。"
+          : "等待讨论间同步。";
+
   const contextPanels =
-    room && run ? (
+    room && run && roomNextStep ? (
       <RoomContextPanels
         room={room}
         run={run}
         session={session}
         issueTitle={issue?.title}
         topicOwnerProfileHref={topicOwnerProfileHref}
+        messages={messages}
         relatedSignals={relatedSignals}
         recentSignals={recentSignals}
         relatedHandoffs={relatedHandoffs}
         governance={state.workspace.governance}
+        nextStep={roomNextStep}
+        ruleHighlights={roomRuleHighlights}
       />
     ) : null;
 
@@ -3517,6 +3451,9 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
         <StitchSidebar
           active="rooms"
           channels={sidebarChannels}
+          directMessages={sidebarDirectMessages}
+          followedThreads={sidebarFollowedThreads}
+          savedLaterItems={sidebarSavedLaterItems}
           rooms={sidebarRooms}
           machines={sidebarMachines}
           agents={sidebarAgents}
@@ -3567,12 +3504,15 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={room ? `/issues/${room.issueKey}` : "/issues"}
-                      className="flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-[var(--shock-paper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                    >
-                      事项详情
-                    </Link>
+                    {roomNextStep ? (
+                      <Link
+                        href={roomNextStep.href}
+                        data-testid="room-header-primary-next-link"
+                        className="flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)] transition-[background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--shock-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                      >
+                        {roomNextStep.ctaLabel}
+                      </Link>
+                    ) : null}
                     <Link
                       href={planningMirrorHref}
                       data-testid="room-open-planning-mirror"
@@ -3598,39 +3538,81 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
               ) : (
                 <div className="min-h-0 overflow-y-auto bg-[var(--shock-paper)] p-3">
                   {activeWorkbenchTab === "chat" ? (
-                    <ClaudeCompactComposer
-                      room={room}
-                      initialMessages={messages}
-                      onSend={streamRoomMessage}
-                      canSend={canReply}
-                      sendStatus={roomReplyStatus}
-                      sendBoundary={roomReplyBoundary}
-                      clarificationWait={clarificationWait}
-                      replyTarget={replyTarget}
-                      onClearReplyTarget={() => {
-                        setReplyTarget(null);
-                        replaceRoomQueryState({ replyId: null });
-                      }}
-                      onFocusClarificationWait={(message) => {
-                        handleOpenThread(message);
-                      }}
-                      threadReplyCounts={threadReplyCounts}
-                      activeThreadMessageId={selectedThreadMessage?.id}
-                      onOpenThread={handleOpenThread}
-                      humanSpeaker={
-                        state.auth.members.find((member) => member.id === state.auth.session.memberId)?.name ||
-                        state.auth.session.name ||
-                        "我"
-                      }
-                      agentSpeaker={run.owner || room.topic.owner || "当前智能体"}
-                    />
-                  ) : activeWorkbenchTab === "topic" ? (
-                    <RoomTopicWorkbenchPanel
-                      room={room}
-                      issueTitle={issue?.title}
-                      messages={messages}
-                      topicOwnerProfileHref={topicOwnerProfileHref}
-                    />
+                    <>
+                      <ClaudeCompactComposer
+                        room={room}
+                        initialMessages={messages}
+                        onSend={streamRoomMessage}
+                        canSend={canReply}
+                        sendStatus={roomReplyStatus}
+                        sendBoundary={roomReplyBoundary}
+                        clarificationWait={clarificationWait}
+                        replyTarget={replyTarget}
+                        onClearReplyTarget={() => {
+                          setReplyTarget(null);
+                          replaceRoomQueryState({ replyId: null });
+                        }}
+                        onFocusClarificationWait={(message) => {
+                          handleOpenThread(message);
+                        }}
+                        threadReplyCounts={threadReplyCounts}
+                        activeThreadMessageId={selectedThreadMessage?.id}
+                        onOpenThread={handleOpenThread}
+                        humanSpeaker={
+                          state.auth.members.find((member) => member.id === state.auth.session.memberId)?.name ||
+                          state.auth.session.name ||
+                          "我"
+                        }
+                        agentSpeaker={run.owner || room.topic.owner || "当前智能体"}
+                      />
+                      {railMode === "thread" ? (
+                        <section
+                          data-testid="room-thread-mobile-panel"
+                          className="mt-3 flex max-h-[34rem] flex-col overflow-hidden rounded-[20px] border-2 border-[var(--shock-ink)] bg-[#f6f1e3] shadow-[var(--shock-shadow-sm)] xl:hidden"
+                        >
+                          <ThreadRail
+                            scopeLabel={room.issueKey}
+                            selectedMessage={selectedThreadMessage}
+                            replies={selectedThreadReplies}
+                            replyTarget={replyTarget}
+                            onReply={() => {
+                              if (selectedThreadMessage) {
+                                setReplyTarget(buildReplyTarget(selectedThreadMessage));
+                                replaceRoomQueryState({
+                                  threadId: selectedThreadMessage.id,
+                                  replyId: selectedThreadMessage.id,
+                                  railMode: "thread",
+                                });
+                              }
+                            }}
+                            primaryAction={{
+                              label: session?.followThread ?? run.followThread ? "已锁定线程" : "锁定线程",
+                              onClick: () =>
+                                void handleRunControl(
+                                  "follow_thread",
+                                  selectedThreadMessage
+                                    ? `锁定线程: ${selectedThreadMessage.speaker} / ${messageExcerpt(selectedThreadMessage.message, 48)}`
+                                    : "锁定当前线程"
+                                ),
+                              disabled: !selectedThreadMessage || !canControlRun,
+                              tone: session?.followThread ?? run.followThread ? "ink" : "yellow",
+                              testId: "room-thread-follow-current-mobile",
+                            }}
+                            secondaryAction={{
+                              label: "回到摘要",
+                              onClick: () => {
+                                setRailMode("context");
+                                replaceRoomQueryState({ railMode: "context" });
+                              },
+                              tone: "white",
+                              testId: "room-thread-close-mobile",
+                            }}
+                            emptyTitle="先选一条讨论消息"
+                            emptyMessage="线程只作为当前讨论间的局部回复区，不会再生成新的一级页面。先在上方消息流里点一条消息。"
+                          />
+                        </section>
+                      ) : null}
+                    </>
                   ) : activeWorkbenchTab === "run" ? (
                     <div data-testid="room-workbench-run-panel" className="space-y-4">
                       <section className="border-2 border-[var(--shock-ink)] bg-white p-3 shadow-[var(--shock-shadow-sm)]">
@@ -3858,10 +3840,10 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                     emptyTitle="先选一条讨论消息"
                     emptyMessage="线程只作为当前讨论间的局部回复区，不会再生成新的一级页面。先在左侧消息流里点一条消息。"
                   />
-                ) : (
-                  <RoomWorkbenchRailSummary
-                    room={room}
-                    run={run}
+                    ) : roomNextStep ? (
+                      <RoomWorkbenchRailSummary
+                        room={room}
+                        run={run}
                     session={session}
                     pullRequest={pullRequest}
                     issueTitle={issue?.title}
@@ -3874,14 +3856,18 @@ export function StitchDiscussionView({ roomId }: { roomId: string }) {
                     governance={state.workspace.governance}
                     pullRequestActionLabel={pullRequestActionLabel}
                     pullRequestActionDisabled={pullRequestActionDisabled}
-                    onPullRequestAction={pullRequestActionHandler}
-                    pullRequestActionStatus={pullRequestActionStatus}
-                    pullRequestBoundary={pullRequestBoundary}
-                    prError={prError}
-                  />
-                )}
-              </div>
-            </aside>
+                        onPullRequestAction={pullRequestActionHandler}
+                        pullRequestActionStatus={pullRequestActionStatus}
+                        pullRequestBoundary={pullRequestBoundary}
+                        prError={prError}
+                        nextStep={roomNextStep}
+                        ruleHighlights={roomRuleHighlights}
+                      />
+                    ) : (
+                      <DiscussionStateMessage title="房间摘要暂不可用" message="正在同步下一步建议，请稍后再试。" />
+                    )}
+                  </div>
+                </aside>
           </div>
         </section>
       </div>

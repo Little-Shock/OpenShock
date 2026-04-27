@@ -20,6 +20,8 @@ func main() {
 	actualLiveURL := envOr("OPENSHOCK_ACTUAL_LIVE_URL", "http://127.0.0.1:8080")
 	workspaceRoot := envOr("OPENSHOCK_WORKSPACE_ROOT", `E:\00.Lark_Projects\00_OpenShock`)
 	statePath := envOr("OPENSHOCK_STATE_FILE", filepath.Join(workspaceRoot, "data", "phase0", "state.json"))
+	internalWorkerSecret := envOr("OPENSHOCK_INTERNAL_WORKER_SECRET", "")
+	runtimeHeartbeatSecret := envOr("OPENSHOCK_RUNTIME_HEARTBEAT_SECRET", "")
 	githubWebhookSecret := envOr("OPENSHOCK_GITHUB_WEBHOOK_SECRET", "")
 
 	httpClient := &http.Client{Timeout: 4 * time.Minute}
@@ -38,12 +40,14 @@ func main() {
 	}
 
 	server := api.New(stateStore, httpClient, api.Config{
-		ControlURL:          controlURL,
-		DaemonURL:           daemonURL,
-		ActualLiveURL:       actualLiveURL,
-		WorkspaceRoot:       workspaceRoot,
-		GitHub:              githubClient,
-		GitHubWebhookSecret: githubWebhookSecret,
+		ControlURL:             controlURL,
+		DaemonURL:              daemonURL,
+		ActualLiveURL:          actualLiveURL,
+		WorkspaceRoot:          workspaceRoot,
+		InternalWorkerSecret:   internalWorkerSecret,
+		RuntimeHeartbeatSecret: runtimeHeartbeatSecret,
+		GitHub:                 githubClient,
+		GitHubWebhookSecret:    githubWebhookSecret,
 	})
 	backgroundCtx, cancelBackground := context.WithCancel(context.Background())
 	defer cancelBackground()
@@ -65,7 +69,7 @@ func startBackgroundWorkers(ctx context.Context, server *api.Server) {
 }
 
 func sanitizePersistedStateOnStartup(stateStore *store.Store) (bool, error) {
-	return stateStore.RewriteState(api.SanitizeLiveState)
+	return stateStore.RewriteState(api.SanitizePersistedState)
 }
 
 func envOr(key, fallback string) string {

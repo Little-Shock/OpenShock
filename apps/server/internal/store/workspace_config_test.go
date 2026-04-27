@@ -13,6 +13,12 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
 
 	nextState, workspace, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
 		BrowserPush: "全部 live 事件",
@@ -71,16 +77,16 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 
 	updatedState, member, err := s.UpdateWorkspaceMemberPreferences("member-larkspur", WorkspaceMemberPreferencesInput{
 		PreferredAgentID: "agent-codex-dockmaster",
-		StartRoute:       "/settings",
+		StartRoute:       "/mailbox",
 		GitHubHandle:     "@durable-owner",
 	})
 	if err != nil {
 		t.Fatalf("UpdateWorkspaceMemberPreferences() error = %v", err)
 	}
-	if member.Preferences.StartRoute != "/settings" || member.GitHubIdentity.Handle != "@durable-owner" {
+	if member.Preferences.StartRoute != "/mailbox" || member.GitHubIdentity.Handle != "@durable-owner" {
 		t.Fatalf("member preferences = %#v, want persisted route + github handle", member)
 	}
-	if updatedState.Auth.Session.Preferences.StartRoute != "/settings" || updatedState.Auth.Session.GitHubIdentity.Handle != "@durable-owner" {
+	if updatedState.Auth.Session.Preferences.StartRoute != "/mailbox" || updatedState.Auth.Session.GitHubIdentity.Handle != "@durable-owner" {
 		t.Fatalf("session preferences = %#v, want refreshed session truth", updatedState.Auth.Session)
 	}
 
@@ -122,7 +128,7 @@ func TestWorkspaceConfigAndMemberPreferencesPersistAcrossReload(t *testing.T) {
 	if reloadedMember.Preferences.PreferredAgentID != "agent-codex-dockmaster" || reloadedMember.GitHubIdentity.Handle != "@durable-owner" {
 		t.Fatalf("reloaded member = %#v, want persisted preferences + github identity", reloadedMember)
 	}
-	if snapshot.Auth.Session.Preferences.StartRoute != "/settings" || snapshot.Auth.Session.GitHubIdentity.Handle != "@durable-owner" {
+	if snapshot.Auth.Session.Preferences.StartRoute != "/mailbox" || snapshot.Auth.Session.GitHubIdentity.Handle != "@durable-owner" {
 		t.Fatalf("reloaded session = %#v, want persisted session config", snapshot.Auth.Session)
 	}
 }
@@ -135,11 +141,39 @@ func TestWorkspaceMemberPreferencesRejectUnknownAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
 
 	if _, _, err := s.UpdateWorkspaceMemberPreferences("member-larkspur", WorkspaceMemberPreferencesInput{
 		PreferredAgentID: "agent-missing",
 	}); !errorsIs(err, ErrWorkspacePreferredAgentNotFound) {
 		t.Fatalf("UpdateWorkspaceMemberPreferences(unknown agent) error = %v, want %v", err, ErrWorkspacePreferredAgentNotFound)
+	}
+}
+
+func TestWorkspaceMemberPreferencesRejectInternalStartRoute(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+
+	if _, _, err := s.UpdateWorkspaceMemberPreferences("member-larkspur", WorkspaceMemberPreferencesInput{
+		StartRoute: "/settings",
+	}); !errorsIs(err, ErrWorkspaceStartRouteInvalid) {
+		t.Fatalf("UpdateWorkspaceMemberPreferences(internal route) error = %v, want %v", err, ErrWorkspaceStartRouteInvalid)
 	}
 }
 
@@ -204,7 +238,7 @@ func TestWorkspaceConfigNormalizesCompletedBootstrapToDone(t *testing.T) {
 			TemplateID:     "dev-team",
 			CurrentStep:    "bootstrap-finished",
 			CompletedSteps: []string{"workspace-created", "template-selected", "bootstrap-finished"},
-			ResumeURL:      "/onboarding?template=dev-team",
+			ResumeURL:      "/setup",
 		},
 	})
 	if err != nil {
@@ -235,6 +269,26 @@ func TestWorkspaceConfigNormalizesCompletedBootstrapToDone(t *testing.T) {
 	}
 }
 
+func TestFreshWorkspaceOnboardingDoesNotPrecompleteTemplateSelection(t *testing.T) {
+	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
+
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	snapshot := s.Snapshot()
+	if workspaceOnboardingHasCompletedStep(snapshot.Workspace.Onboarding, "template-selected") {
+		t.Fatalf("fresh onboarding = %#v, did not expect template-selected", snapshot.Workspace.Onboarding)
+	}
+	if snapshot.Workspace.Onboarding.ResumeURL != "/setup" {
+		t.Fatalf("fresh onboarding resume = %q, want /setup", snapshot.Workspace.Onboarding.ResumeURL)
+	}
+}
+
 func TestWorkspaceConfigAutoCompletesFreshSetupWhenWorkspaceIsOperational(t *testing.T) {
 	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
 
@@ -244,6 +298,18 @@ func TestWorkspaceConfigAutoCompletesFreshSetupWhenWorkspaceIsOperational(t *tes
 	s, err := New(statePath, root)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Onboarding: &WorkspaceOnboardingSnapshot{
+			Status:         workspaceOnboardingInProgress,
+			TemplateID:     "dev-team",
+			CurrentStep:    "repo",
+			CompletedSteps: []string{"workspace-created", "account-ready", "template-selected", "github-choice"},
+			ResumeURL:      "/setup",
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig(template confirm) error = %v", err)
 	}
 
 	if _, err := s.UpdateRepoBinding(RepoBindingInput{
@@ -273,5 +339,126 @@ func TestWorkspaceConfigAutoCompletesFreshSetupWhenWorkspaceIsOperational(t *tes
 	}
 	if !workspaceOnboardingHasCompletedStep(snapshot.Workspace.Onboarding, "bootstrap-finished") {
 		t.Fatalf("workspace onboarding completed steps = %#v, want bootstrap-finished recorded", snapshot.Workspace.Onboarding.CompletedSteps)
+	}
+}
+
+func TestWorkspaceConfigDoesNotAutoCompleteFreshSetupWhenGitHubAppIsOnlyConnected(t *testing.T) {
+	s := seedFreshWorkspaceAwaitingOperationalReady(t)
+
+	if _, err := s.UpdateRepoBinding(RepoBindingInput{
+		Repo:            "Larkspur-Wang/OpenShock",
+		RepoURL:         "https://github.com/Larkspur-Wang/OpenShock.git",
+		Branch:          "main",
+		AuthMode:        "github-app",
+		ConnectionReady: true,
+		AppInstalled:    false,
+	}); err != nil {
+		t.Fatalf("UpdateRepoBinding() error = %v", err)
+	}
+	if _, err := s.UpdateRuntimePairing(RuntimePairingInput{
+		RuntimeID: "shock-main",
+		DaemonURL: "http://127.0.0.1:8090",
+		Machine:   "shock-main",
+		State:     runtimeStateOnline,
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	assertFreshSetupStillInProgress(t, s.Snapshot())
+}
+
+func TestWorkspaceConfigDoesNotAutoCompleteFreshSetupWhenGitHubAppIsOnlyInstalled(t *testing.T) {
+	s := seedFreshWorkspaceAwaitingOperationalReady(t)
+
+	if _, err := s.UpdateRepoBinding(RepoBindingInput{
+		Repo:            "Larkspur-Wang/OpenShock",
+		RepoURL:         "https://github.com/Larkspur-Wang/OpenShock.git",
+		Branch:          "main",
+		AuthMode:        "github-app",
+		ConnectionReady: false,
+		AppInstalled:    true,
+	}); err != nil {
+		t.Fatalf("UpdateRepoBinding() error = %v", err)
+	}
+	if _, err := s.UpdateRuntimePairing(RuntimePairingInput{
+		RuntimeID: "shock-main",
+		DaemonURL: "http://127.0.0.1:8090",
+		Machine:   "shock-main",
+		State:     runtimeStateOnline,
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	assertFreshSetupStillInProgress(t, s.Snapshot())
+}
+
+func TestWorkspaceConfigAutoCompletesFreshSetupWhenGitHubAppIsInstalledAndConnected(t *testing.T) {
+	s := seedFreshWorkspaceAwaitingOperationalReady(t)
+
+	if _, err := s.UpdateRepoBinding(RepoBindingInput{
+		Repo:            "Larkspur-Wang/OpenShock",
+		RepoURL:         "https://github.com/Larkspur-Wang/OpenShock.git",
+		Branch:          "main",
+		AuthMode:        "github-app",
+		ConnectionReady: true,
+		AppInstalled:    true,
+	}); err != nil {
+		t.Fatalf("UpdateRepoBinding() error = %v", err)
+	}
+	if _, err := s.UpdateRuntimePairing(RuntimePairingInput{
+		RuntimeID: "shock-main",
+		DaemonURL: "http://127.0.0.1:8090",
+		Machine:   "shock-main",
+		State:     runtimeStateOnline,
+	}); err != nil {
+		t.Fatalf("UpdateRuntimePairing() error = %v", err)
+	}
+
+	snapshot := s.Snapshot()
+	if snapshot.Workspace.Onboarding.Status != workspaceOnboardingDone {
+		t.Fatalf("workspace onboarding = %#v, want done after github-app installation + connection", snapshot.Workspace.Onboarding)
+	}
+	if !workspaceOnboardingHasCompletedStep(snapshot.Workspace.Onboarding, "bootstrap-finished") {
+		t.Fatalf("workspace onboarding completed steps = %#v, want bootstrap-finished recorded", snapshot.Workspace.Onboarding.CompletedSteps)
+	}
+}
+
+func seedFreshWorkspaceAwaitingOperationalReady(t *testing.T) *Store {
+	t.Helper()
+	t.Setenv("OPENSHOCK_BOOTSTRAP_MODE", "fresh")
+
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, _, err := s.UpdateWorkspaceConfig(WorkspaceConfigUpdateInput{
+		Onboarding: &WorkspaceOnboardingSnapshot{
+			Status:         workspaceOnboardingInProgress,
+			TemplateID:     "dev-team",
+			CurrentStep:    "repo",
+			CompletedSteps: []string{"workspace-created", "account-ready", "template-selected", "github-choice"},
+			ResumeURL:      "/setup",
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkspaceConfig(template confirm) error = %v", err)
+	}
+
+	return s
+}
+
+func assertFreshSetupStillInProgress(t *testing.T, snapshot State) {
+	t.Helper()
+	if snapshot.Workspace.Onboarding.Status == workspaceOnboardingDone {
+		t.Fatalf("workspace onboarding = %#v, did not expect auto-complete", snapshot.Workspace.Onboarding)
+	}
+	if snapshot.Workspace.Onboarding.ResumeURL != "/setup" {
+		t.Fatalf("workspace onboarding resume = %q, want /setup while github-app setup is incomplete", snapshot.Workspace.Onboarding.ResumeURL)
+	}
+	if workspaceOnboardingHasCompletedStep(snapshot.Workspace.Onboarding, "bootstrap-finished") {
+		t.Fatalf("workspace onboarding completed steps = %#v, did not expect bootstrap-finished", snapshot.Workspace.Onboarding.CompletedSteps)
 	}
 }

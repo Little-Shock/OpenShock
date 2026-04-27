@@ -15,14 +15,25 @@ func TestAuthSessionContractTracksEmailLoginAndLogout(t *testing.T) {
 	}
 
 	initial := s.Snapshot()
-	if initial.Auth.Session.Status != authSessionStatusActive {
-		t.Fatalf("initial auth status = %q, want %q", initial.Auth.Session.Status, authSessionStatusActive)
+	if initial.Auth.Session.Status != authSessionStatusSignedOut {
+		t.Fatalf("initial auth status = %q, want %q", initial.Auth.Session.Status, authSessionStatusSignedOut)
 	}
-	if initial.Auth.Session.Email != "larkspur@openshock.dev" || initial.Auth.Session.Role != workspaceRoleOwner {
-		t.Fatalf("initial auth session = %#v, want owner session", initial.Auth.Session)
+	if initial.Auth.Session.Email != "" || initial.Auth.Session.Role != "" {
+		t.Fatalf("initial auth session = %#v, want signed-out session", initial.Auth.Session)
 	}
-	if !containsString(initial.Auth.Session.Permissions, "members.manage") {
-		t.Fatalf("owner permissions = %#v, want members.manage", initial.Auth.Session.Permissions)
+	if len(initial.Auth.Session.Permissions) != 0 {
+		t.Fatalf("signed-out permissions = %#v, want empty permissions", initial.Auth.Session.Permissions)
+	}
+
+	_, ownerSession, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+	if ownerSession.Role != workspaceRoleOwner || !containsString(ownerSession.Permissions, "members.manage") {
+		t.Fatalf("owner session = %#v, want owner permissions", ownerSession)
 	}
 
 	_, invited, err := s.InviteWorkspaceMember(WorkspaceMemberUpsertInput{
@@ -58,8 +69,8 @@ func TestAuthSessionContractTracksEmailLoginAndLogout(t *testing.T) {
 	if member == nil {
 		t.Fatalf("workspace member reviewer@openshock.dev missing from roster")
 	}
-	if member.Status != workspaceMemberStatusActive {
-		t.Fatalf("member status after login = %q, want %q", member.Status, workspaceMemberStatusActive)
+	if member.Status != workspaceMemberStatusInvited {
+		t.Fatalf("member status after login = %q, want %q until recovery gates clear", member.Status, workspaceMemberStatusInvited)
 	}
 	if member.LastSeenAt == "" {
 		t.Fatalf("member last seen missing after login: %#v", member)
@@ -135,11 +146,21 @@ func TestWorkspaceMemberContractEnforcesOwnerRoleAndRetainsLastOwner(t *testing.
 		t.Fatalf("New() error = %v", err)
 	}
 
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+
 	if _, _, err := s.UpdateWorkspaceMember("member-larkspur", WorkspaceMemberUpdateInput{Role: workspaceRoleMember}); !errorsIs(err, ErrWorkspaceMustRetainOwner) {
 		t.Fatalf("UpdateWorkspaceMember(last owner) error = %v, want %v", err, ErrWorkspaceMustRetainOwner)
 	}
 
-	if _, _, err := s.LoginWithEmail(AuthLoginInput{Email: "mina@openshock.dev"}); err != nil {
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "mina@openshock.dev",
+		DeviceLabel: "Mina Browser",
+	}); err != nil {
 		t.Fatalf("LoginWithEmail(member) error = %v", err)
 	}
 
@@ -165,6 +186,13 @@ func TestAuthRecoveryContractTracksVerifyDeviceResetAndIdentityBinding(t *testin
 		t.Fatalf("New() error = %v", err)
 	}
 
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+
 	_, invited, err := s.InviteWorkspaceMember(WorkspaceMemberUpsertInput{
 		Email: "reviewer@openshock.dev",
 		Name:  "Reviewer",
@@ -172,6 +200,9 @@ func TestAuthRecoveryContractTracksVerifyDeviceResetAndIdentityBinding(t *testin
 	})
 	if err != nil {
 		t.Fatalf("InviteWorkspaceMember() error = %v", err)
+	}
+	if _, _, err := s.UpdateWorkspaceMember(invited.ID, WorkspaceMemberUpdateInput{Status: workspaceMemberStatusActive}); !errorsIs(err, ErrWorkspaceMemberActivationBlocked) {
+		t.Fatalf("UpdateWorkspaceMember(activate before recovery) error = %v, want %v", err, ErrWorkspaceMemberActivationBlocked)
 	}
 
 	loginState, session, err := s.LoginWithEmail(AuthLoginInput{
@@ -188,8 +219,8 @@ func TestAuthRecoveryContractTracksVerifyDeviceResetAndIdentityBinding(t *testin
 		t.Fatalf("session device auth status = %q, want %q", session.DeviceAuthStatus, authDeviceStatusPending)
 	}
 	member := findWorkspaceMemberByEmail(loginState.Auth.Members, invited.Email)
-	if member == nil || member.Status != workspaceMemberStatusActive {
-		t.Fatalf("member after login = %#v, want active", member)
+	if member == nil || member.Status != workspaceMemberStatusInvited {
+		t.Fatalf("member after login = %#v, want invited until recovery gates clear", member)
 	}
 
 	verifyState, verifiedSession, verifiedMember, err := s.VerifyMemberEmail(AuthRecoveryInput{Email: invited.Email})
@@ -203,6 +234,9 @@ func TestAuthRecoveryContractTracksVerifyDeviceResetAndIdentityBinding(t *testin
 	if member == nil || member.EmailVerificationStatus != authEmailVerificationVerified {
 		t.Fatalf("verify state member = %#v, want verified", member)
 	}
+	if member.Status != workspaceMemberStatusInvited {
+		t.Fatalf("member status after verify = %q, want %q until device authorized", member.Status, workspaceMemberStatusInvited)
+	}
 
 	deviceState, deviceSession, deviceMember, device, err := s.AuthorizeAuthDevice(AuthRecoveryInput{DeviceID: verifiedSession.DeviceID})
 	if err != nil {
@@ -214,31 +248,84 @@ func TestAuthRecoveryContractTracksVerifyDeviceResetAndIdentityBinding(t *testin
 	if !containsString(deviceMember.TrustedDeviceIDs, device.ID) {
 		t.Fatalf("trusted devices = %#v, want %q", deviceMember.TrustedDeviceIDs, device.ID)
 	}
+	if deviceMember.Status != workspaceMemberStatusInvited {
+		t.Fatalf("device member status = %q, want %q until owner activation", deviceMember.Status, workspaceMemberStatusInvited)
+	}
 	if deviceState.Workspace.DeviceAuth != "browser-approved" {
 		t.Fatalf("workspace device auth = %q, want browser-approved", deviceState.Workspace.DeviceAuth)
 	}
 
-	resetState, resetMember, err := s.RequestPasswordReset(AuthRecoveryInput{Email: invited.Email})
+	if _, _, _, err := s.RequestPasswordReset(AuthRecoveryInput{Email: invited.Email}); !errorsIs(err, ErrWorkspaceMemberApprovalRequired) {
+		t.Fatalf("RequestPasswordReset(invited) error = %v, want %v", err, ErrWorkspaceMemberApprovalRequired)
+	}
+	if _, _, _, err := s.BindExternalIdentity(AuthRecoveryInput{
+		Email:    invited.Email,
+		Provider: "github",
+		Handle:   "@reviewer",
+	}); !errorsIs(err, ErrWorkspaceMemberApprovalRequired) {
+		t.Fatalf("BindExternalIdentity(invited) error = %v, want %v", err, ErrWorkspaceMemberApprovalRequired)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner reauth) error = %v", err)
+	}
+
+	activatedState, activatedMember, err := s.UpdateWorkspaceMember(invited.ID, WorkspaceMemberUpdateInput{Status: workspaceMemberStatusActive})
+	if err != nil {
+		t.Fatalf("UpdateWorkspaceMember(activate invited) error = %v", err)
+	}
+	if activatedMember.Status != workspaceMemberStatusActive {
+		t.Fatalf("activated member status = %q, want %q", activatedMember.Status, workspaceMemberStatusActive)
+	}
+	member = findWorkspaceMemberByEmail(activatedState.Auth.Members, invited.Email)
+	if member == nil || member.Status != workspaceMemberStatusActive {
+		t.Fatalf("activated state member = %#v, want active", member)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Phone",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(invited after activation) error = %v", err)
+	}
+
+	resetState, resetMember, resetChallenge, err := s.RequestPasswordReset(AuthRecoveryInput{Email: invited.Email})
 	if err != nil {
 		t.Fatalf("RequestPasswordReset() error = %v", err)
 	}
 	if resetMember.PasswordResetStatus != authPasswordResetPending || resetMember.PasswordResetRequestedAt == "" {
 		t.Fatalf("reset member = %#v, want pending reset", resetMember)
 	}
+	if resetState.Auth.Session.Status != authSessionStatusActive || resetState.Auth.Session.Email != invited.Email {
+		t.Fatalf("reset state session = %#v, want active scoped session during recovery start", resetState.Auth.Session)
+	}
+	if resetChallenge.Kind != authChallengeKindPasswordReset || resetChallenge.ID == "" || resetChallenge.Status != authChallengeStatusPending {
+		t.Fatalf("reset challenge = %#v, want pending password reset challenge", resetChallenge)
+	}
 	member = findWorkspaceMemberByEmail(resetState.Auth.Members, invited.Email)
 	if member == nil || member.PasswordResetStatus != authPasswordResetPending {
 		t.Fatalf("reset state member = %#v, want pending reset", member)
+	}
+	if _, _, err := s.LogoutAuthSession(); err != nil {
+		t.Fatalf("LogoutAuthSession(before complete reset) error = %v", err)
 	}
 
 	recoveredState, recoveredSession, recoveredMember, err := s.CompletePasswordReset(AuthRecoveryInput{
 		Email:       invited.Email,
 		DeviceLabel: "Reviewer Laptop",
+		ChallengeID: resetChallenge.ID,
 	})
 	if err != nil {
 		t.Fatalf("CompletePasswordReset() error = %v", err)
 	}
 	if recoveredSession.AuthMethod != "password-reset" || recoveredSession.DeviceLabel != "Reviewer Laptop" {
 		t.Fatalf("recovered session = %#v, want password-reset on Reviewer Laptop", recoveredSession)
+	}
+	if recoveredSession.MemberStatus != workspaceMemberStatusActive {
+		t.Fatalf("recovered session member status = %q, want %q", recoveredSession.MemberStatus, workspaceMemberStatusActive)
 	}
 	if recoveredSession.DeviceAuthStatus != authDeviceStatusAuthorized || recoveredSession.RecoveryStatus != authRecoveryStatusRecovered {
 		t.Fatalf("recovered session = %#v, want authorized recovered session", recoveredSession)
@@ -249,6 +336,16 @@ func TestAuthRecoveryContractTracksVerifyDeviceResetAndIdentityBinding(t *testin
 	member = findWorkspaceMemberByEmail(recoveredState.Auth.Members, invited.Email)
 	if member == nil || member.PasswordResetStatus != authPasswordResetCompleted {
 		t.Fatalf("recovered state member = %#v, want completed reset", member)
+	}
+	if challenge := findAuthChallengeByID(recoveredState.Auth.Challenges, resetChallenge.ID); challenge == nil || challenge.Status != authChallengeStatusConsumed || challenge.ConsumedAt == "" {
+		t.Fatalf("recovered state challenge = %#v, want consumed challenge", challenge)
+	}
+	if _, _, _, err := s.CompletePasswordReset(AuthRecoveryInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Laptop",
+		ChallengeID: resetChallenge.ID,
+	}); !errorsIs(err, ErrAuthChallengeConsumed) {
+		t.Fatalf("CompletePasswordReset(reused challenge) error = %v, want %v", err, ErrAuthChallengeConsumed)
 	}
 
 	boundState, boundSession, boundMember, err := s.BindExternalIdentity(AuthRecoveryInput{
@@ -275,6 +372,13 @@ func TestAuthRecoveryContractFailsClosedForSignedOutAndUnknownDevice(t *testing.
 	s, err := New(statePath, root)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
 	}
 
 	_, invited, err := s.InviteWorkspaceMember(WorkspaceMemberUpsertInput{
@@ -304,6 +408,157 @@ func TestAuthRecoveryContractFailsClosedForSignedOutAndUnknownDevice(t *testing.
 	if _, _, _, err := s.VerifyMemberEmail(AuthRecoveryInput{Email: invited.Email}); !errorsIs(err, ErrAuthSessionRequired) {
 		t.Fatalf("VerifyMemberEmail(signed out) error = %v, want %v", err, ErrAuthSessionRequired)
 	}
+
+	if _, _, _, err := s.CompletePasswordReset(AuthRecoveryInput{Email: invited.Email, DeviceLabel: "Reviewer Laptop"}); !errorsIs(err, ErrAuthChallengeRequired) {
+		t.Fatalf("CompletePasswordReset(missing challenge) error = %v, want %v", err, ErrAuthChallengeRequired)
+	}
+}
+
+func TestSignedOutActiveMemberCannotRequestPasswordReset(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+
+	_, invited, err := s.InviteWorkspaceMember(WorkspaceMemberUpsertInput{
+		Email: "reviewer@openshock.dev",
+		Name:  "Reviewer",
+		Role:  workspaceRoleMember,
+	})
+	if err != nil {
+		t.Fatalf("InviteWorkspaceMember() error = %v", err)
+	}
+
+	_, session, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Phone",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithEmail(reviewer phone) error = %v", err)
+	}
+	if _, _, _, err := s.VerifyMemberEmail(AuthRecoveryInput{Email: invited.Email}); err != nil {
+		t.Fatalf("VerifyMemberEmail() error = %v", err)
+	}
+	if _, _, _, _, err := s.AuthorizeAuthDevice(AuthRecoveryInput{DeviceID: session.DeviceID}); err != nil {
+		t.Fatalf("AuthorizeAuthDevice() error = %v", err)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner reauth) error = %v", err)
+	}
+	if _, _, err := s.UpdateWorkspaceMember(invited.ID, WorkspaceMemberUpdateInput{Status: workspaceMemberStatusActive}); err != nil {
+		t.Fatalf("UpdateWorkspaceMember(activate invited) error = %v", err)
+	}
+
+	if _, _, err := s.LogoutAuthSession(); err != nil {
+		t.Fatalf("LogoutAuthSession() error = %v", err)
+	}
+
+	if _, _, _, err := s.RequestPasswordReset(AuthRecoveryInput{Email: invited.Email}); !errorsIs(err, ErrAuthSessionRequired) {
+		t.Fatalf("RequestPasswordReset(signed out) error = %v, want %v", err, ErrAuthSessionRequired)
+	}
+}
+
+func TestActiveManagedMemberRequiresApprovedDeviceForDirectLogin(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "data", "state.json")
+
+	s, err := New(statePath, root)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner) error = %v", err)
+	}
+
+	_, invited, err := s.InviteWorkspaceMember(WorkspaceMemberUpsertInput{
+		Email: "reviewer@openshock.dev",
+		Name:  "Reviewer",
+		Role:  workspaceRoleMember,
+	})
+	if err != nil {
+		t.Fatalf("InviteWorkspaceMember() error = %v", err)
+	}
+
+	_, session, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Phone",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithEmail(reviewer phone) error = %v", err)
+	}
+	if _, _, _, err := s.VerifyMemberEmail(AuthRecoveryInput{Email: invited.Email}); err != nil {
+		t.Fatalf("VerifyMemberEmail() error = %v", err)
+	}
+	if _, _, _, _, err := s.AuthorizeAuthDevice(AuthRecoveryInput{DeviceID: session.DeviceID}); err != nil {
+		t.Fatalf("AuthorizeAuthDevice() error = %v", err)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner reauth) error = %v", err)
+	}
+	if _, _, err := s.UpdateWorkspaceMember(invited.ID, WorkspaceMemberUpdateInput{Status: workspaceMemberStatusActive}); err != nil {
+		t.Fatalf("UpdateWorkspaceMember(activate invited) error = %v", err)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Laptop",
+	}); !errorsIs(err, ErrAuthTrustedDeviceRequired) {
+		t.Fatalf("LoginWithEmail(reviewer laptop) error = %v, want %v", err, ErrAuthTrustedDeviceRequired)
+	}
+
+	snapshot := s.Snapshot()
+	pendingDevice := findAuthDeviceByMemberAndLabel(snapshot.Auth.Devices, invited.ID, "Reviewer Laptop")
+	if pendingDevice == nil || pendingDevice.Status != authDeviceStatusPending {
+		t.Fatalf("pending device after blocked direct login = %#v, want pending laptop device", pendingDevice)
+	}
+
+	if _, _, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       "larkspur@openshock.dev",
+		DeviceLabel: "Owner Browser",
+	}); err != nil {
+		t.Fatalf("LoginWithEmail(owner approve laptop) error = %v", err)
+	}
+	if _, _, _, approvedDevice, err := s.AuthorizeAuthDevice(AuthRecoveryInput{
+		MemberID:    invited.ID,
+		DeviceLabel: "Reviewer Laptop",
+	}); err != nil {
+		t.Fatalf("AuthorizeAuthDevice(owner laptop approval) error = %v", err)
+	} else if approvedDevice.Status != authDeviceStatusAuthorized {
+		t.Fatalf("approved laptop device = %#v, want authorized", approvedDevice)
+	}
+
+	_, directSession, err := s.LoginWithEmail(AuthLoginInput{
+		Email:       invited.Email,
+		DeviceLabel: "Reviewer Laptop",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithEmail(reviewer laptop after approval) error = %v", err)
+	}
+	if directSession.DeviceLabel != "Reviewer Laptop" || directSession.DeviceAuthStatus != authDeviceStatusAuthorized {
+		t.Fatalf("direct session after approval = %#v, want authorized laptop session", directSession)
+	}
 }
 
 func findWorkspaceMemberByEmail(items []WorkspaceMember, email string) *WorkspaceMember {
@@ -322,6 +577,24 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func findAuthChallengeByID(items []AuthChallenge, challengeID string) *AuthChallenge {
+	for index := range items {
+		if items[index].ID == challengeID {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func findAuthDeviceByMemberAndLabel(items []AuthDevice, memberID, label string) *AuthDevice {
+	for index := range items {
+		if items[index].MemberID == memberID && items[index].Label == label {
+			return &items[index]
+		}
+	}
+	return nil
 }
 
 func errorsIs(err, target error) bool {
