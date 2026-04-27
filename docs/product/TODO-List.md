@@ -13,7 +13,7 @@
 
 - request-scoped auth 已收成 token-enforced request scope；下一拍只补双用户并发证据和少量 `state.Auth.Session` 兼容尾项
 - 首启入口虽然已经减法，但产品前门和文档前门还要继续统一成同一条首次成功路径
-- 发布证据已经有正式入口，但 reviewer 的判断路径还要继续减少跳转和重复阅读
+- `Board / Rooms / Settings` 的 supporting flow 还要继续减法，避免重复 next-step 摘要回流
 - durable memory / provider / recovery 还缺多 session 重放、降级恢复和交接证据
 
 如果实时状态面板、测试报告和这里冲突：
@@ -251,6 +251,7 @@ Evidence:
 - 首页 continue target 已覆盖 inbox / DM / channel / room / journey
 - `setup/access` 入口壳已减成更轻的单列首屏
 - `setup` 模板管理区已去掉重复的“刷新进度 / 完成首次启动”动作，展开层只保留模板细节与进度说明
+- memory provider recover 现在已补“recover -> reload -> healthy truth 持续存在”的 API contract，search sidecar index 与 external relay config 都会被显式复核
 
 ## 每张执行票最少要写清什么
 
