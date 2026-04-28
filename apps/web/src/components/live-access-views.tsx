@@ -1270,6 +1270,7 @@ function AccessReadyPanel({
           <p className="mt-3 max-w-3xl text-sm leading-6 text-[color:rgba(24,20,14,0.78)]">{summary}</p>
         </div>
         <Link
+          data-testid="access-ready-next-link"
           href={href}
           className="inline-flex min-h-[44px] items-center rounded-[14px] border-2 border-[var(--shock-ink)] bg-white px-4 py-2 font-mono text-[11px] uppercase tracking-[0.16em] shadow-[var(--shock-shadow-sm)] transition-transform hover:-translate-y-0.5"
         >

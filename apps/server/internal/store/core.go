@@ -137,16 +137,20 @@ func (s *Store) hydrateMissingDefaults() {
 	if strings.TrimSpace(s.state.Workspace.RepoAuthMode) == "" {
 		s.state.Workspace.RepoAuthMode = defaults.Workspace.RepoAuthMode
 	}
-	if strings.TrimSpace(s.state.Workspace.PairedRuntimeURL) == "" {
+	if strings.TrimSpace(s.state.Workspace.PairedRuntimeURL) == "" && strings.TrimSpace(s.state.Workspace.PairedRuntime) != "" {
 		s.state.Workspace.PairedRuntimeURL = defaults.Workspace.PairedRuntimeURL
 	}
 	if strings.TrimSpace(s.state.Workspace.PairingStatus) == "" {
-		s.state.Workspace.PairingStatus = defaults.Workspace.PairingStatus
+		if strings.TrimSpace(s.state.Workspace.PairedRuntime) == "" {
+			s.state.Workspace.PairingStatus = workspacePairingUnpaired
+		} else {
+			s.state.Workspace.PairingStatus = defaults.Workspace.PairingStatus
+		}
 	}
 	if strings.TrimSpace(s.state.Workspace.DeviceAuth) == "" {
 		s.state.Workspace.DeviceAuth = defaults.Workspace.DeviceAuth
 	}
-	if strings.TrimSpace(s.state.Workspace.LastPairedAt) == "" {
+	if strings.TrimSpace(s.state.Workspace.LastPairedAt) == "" && strings.TrimSpace(s.state.Workspace.PairedRuntime) != "" {
 		s.state.Workspace.LastPairedAt = defaults.Workspace.LastPairedAt
 	}
 	if len(s.state.Machines) == 0 && !s.freshBootstrap() {

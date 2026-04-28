@@ -41,7 +41,9 @@ func SanitizeLiveState(snapshot store.State) store.State {
 // SanitizePersistedState removes dirty placeholder residue from persisted state
 // without applying viewer-specific redaction that would erase durable data.
 func SanitizePersistedState(snapshot store.State) store.State {
-	return sanitizeState(snapshot, false)
+	sanitized := sanitizeState(snapshot, false)
+	sanitized.Workspace = sanitizePersistedWorkspace(snapshot.Workspace, sanitized.Workspace)
+	return sanitized
 }
 
 func sanitizeLivePayload(payload any) any {
@@ -476,6 +478,28 @@ func sanitizeWorkspace(workspace store.WorkspaceSnapshot) store.WorkspaceSnapsho
 	workspace.Onboarding = sanitizeWorkspaceOnboarding(workspace.Onboarding)
 	workspace.Governance = sanitizeWorkspaceGovernance(workspace.Governance)
 	return workspace
+}
+
+func sanitizePersistedWorkspace(original, sanitized store.WorkspaceSnapshot) store.WorkspaceSnapshot {
+	if persistedWorkspaceRuntimeIsUnpaired(original.PairedRuntime) || persistedWorkspaceRuntimeIsUnpaired(sanitized.PairedRuntime) {
+		sanitized.PairedRuntime = ""
+		sanitized.PairedRuntimeURL = ""
+		sanitized.PairingStatus = "unpaired"
+	}
+	return sanitized
+}
+
+func persistedWorkspaceRuntimeIsUnpaired(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return true
+	}
+	switch trimmed {
+	case "当前运行环境还没同步。", "待整理运行环境":
+		return true
+	default:
+		return looksLikeLiveTruthLeak(trimmed)
+	}
 }
 
 func sanitizeWorkspaceGovernance(governance store.WorkspaceGovernanceSnapshot) store.WorkspaceGovernanceSnapshot {

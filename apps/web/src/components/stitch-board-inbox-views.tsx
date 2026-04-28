@@ -630,13 +630,21 @@ export function StitchBoardView() {
                             <p className="mt-3 truncate font-mono text-[10px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.54)]">
                               来自 {roomMap.get(card.roomId)?.title ?? "关联讨论间"}
                             </p>
-                            <h4 className="mt-3 text-sm font-semibold leading-6">{card.title}</h4>
-                            <p className="mt-2 text-[12px] leading-5 text-[color:rgba(24,20,14,0.68)]">
-                              {card.summary}
-                            </p>
-                            <div className="mt-4 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.62)]">
-                              <span className="rounded-full border border-[var(--shock-ink)] bg-[#f7f7f7] px-2 py-1">
-                                当前处理人 {card.owner}
+                            <h4 data-testid={`board-card-title-${card.key}`} className="mt-3 text-sm font-semibold leading-6">
+                              {card.title}
+                            </h4>
+                            <div className="mt-4 grid gap-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[color:rgba(24,20,14,0.62)] sm:grid-cols-2">
+                              <span
+                                data-testid={`board-card-planning-state-${card.key}`}
+                                className="rounded-[10px] border border-[var(--shock-ink)] bg-[#f7f7f7] px-2 py-2"
+                              >
+                                规划状态 {boardStateLabel(card.state)}
+                              </span>
+                              <span
+                                data-testid={`board-card-owner-${card.key}`}
+                                className="rounded-[10px] border border-[var(--shock-ink)] bg-[#f7f7f7] px-2 py-2"
+                              >
+                                负责人 {card.owner}
                               </span>
                             </div>
                             <div className="mt-4 flex flex-wrap gap-2">
@@ -645,7 +653,7 @@ export function StitchBoardView() {
                                 data-testid={`board-card-room-${card.key}`}
                                 className="rounded-[12px] border-2 border-[var(--shock-ink)] bg-[var(--shock-yellow)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] shadow-[var(--shock-shadow-sm)]"
                               >
-                                讨论间
+                                回讨论间
                               </Link>
                             </div>
                           </article>

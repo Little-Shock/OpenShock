@@ -175,6 +175,95 @@ async function waitForPage(page, url, expectedText) {
   }, `${url} did not render expected text: ${expectedText}`);
 }
 
+async function fetchBrowserControlState(page) {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/control/v1/state", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(`GET /api/control/v1/state -> ${response.status}: ${JSON.stringify(payload)}`);
+    }
+    return payload;
+  });
+}
+
+async function authenticateSeedOwner(page, webURL) {
+  await page.goto(`${webURL}/access`, { waitUntil: "domcontentloaded" });
+  await page.evaluate(async () => {
+    const challengeResponse = await fetch("/api/control/v1/auth/recovery", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        action: "request_login_challenge",
+        email: "larkspur@openshock.dev",
+      }),
+    });
+    const challengePayload = await challengeResponse.json();
+    if (!challengeResponse.ok) {
+      throw new Error(`request_login_challenge -> ${challengeResponse.status}: ${JSON.stringify(challengePayload)}`);
+    }
+
+    const loginResponse = await fetch("/api/control/v1/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        email: "larkspur@openshock.dev",
+        deviceLabel: "Owner Browser",
+        challengeId: challengePayload.challenge?.id,
+      }),
+    });
+    const loginPayload = await loginResponse.json();
+    if (!loginResponse.ok) {
+      throw new Error(`auth/session -> ${loginResponse.status}: ${JSON.stringify(loginPayload)}`);
+    }
+  });
+}
+
+async function assertBoardCardsStayCompact(page) {
+  await page.locator('[data-testid^="board-card-title-"]').first().waitFor();
+  await page.locator('[data-testid^="board-card-planning-state-"]').first().waitFor();
+  await page.locator('[data-testid^="board-card-owner-"]').first().waitFor();
+  await page.locator('[data-testid^="board-card-room-"]').first().waitFor();
+
+  const state = await fetchBrowserControlState(page);
+  for (const issue of state.issues ?? []) {
+    if (!issue?.key || !issue?.summary?.trim()) {
+      continue;
+    }
+    const card = page.getByTestId(`board-card-${issue.key}`);
+    if ((await card.count()) === 0) {
+      continue;
+    }
+    const text = (await card.first().textContent()) ?? "";
+    if (text.includes(issue.summary.trim())) {
+      throw new Error(`board card ${issue.key} repeated issue summary instead of staying compact`);
+    }
+  }
+}
+
+async function clickRoomPlanningMirror(page, roomID) {
+  const link = page.getByTestId("room-open-planning-mirror");
+  await link.waitFor();
+  await waitFor(async () => {
+    const href = (await link.getAttribute("href")) ?? "";
+    return href.includes(`roomId=${encodeURIComponent(roomID)}`);
+  }, `room planning mirror link did not include ${roomID}`);
+  await link.click();
+  await page.waitForURL(/\/board\?/);
+}
+
+function roomIDFromURL(value) {
+  const match = value.match(/\/rooms\/([^/?#]+)/);
+  if (!match) {
+    throw new Error(`could not read room id from URL: ${value}`);
+  }
+  return decodeURIComponent(match[1]);
+}
+
 async function startServices() {
   if (providedServiceTargets) {
     if (providedServiceTargets.serverURL) {
@@ -245,21 +334,24 @@ try {
 
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
-  await waitForPage(page, `${webURL}/rooms/room-runtime`, "Runtime 讨论间");
-  await page.getByTestId("room-open-planning-mirror").click();
-  await page.waitForURL(/\/board\?/);
+  await authenticateSeedOwner(page, webURL);
+  await page.goto(`${webURL}/rooms/room-runtime`, { waitUntil: "domcontentloaded" });
+  await page.getByTestId("room-open-planning-mirror").waitFor();
+  await clickRoomPlanningMirror(page, "room-runtime");
   await page.getByTestId("board-context-room-link").waitFor();
   await page.getByTestId("board-context-issue-link").waitFor();
+  await assertBoardCardsStayCompact(page);
   await capture(page, "board-from-room");
 
   const firstRoomLink = page.locator('[data-testid^="board-card-room-"]').first();
   await firstRoomLink.waitFor();
   await firstRoomLink.click();
+  await page.waitForURL(/\/rooms\/[^/?]+/);
+  const returnedRoomID = roomIDFromURL(page.url());
   await page.getByTestId("room-open-planning-mirror").waitFor();
   await capture(page, "room-from-board-card");
 
-  await page.getByTestId("room-open-planning-mirror").click();
-  await page.waitForURL(/\/board\?/);
+  await clickRoomPlanningMirror(page, returnedRoomID);
   await page.getByTestId("board-context-room-link").waitFor();
   await page.getByTestId("board-context-issue-link").waitFor();
 
@@ -271,6 +363,7 @@ try {
   await page.waitForURL(/\/board\?/);
   await page.getByTestId("board-context-room-link").waitFor();
   await page.getByTestId("board-context-issue-link").waitFor();
+  await assertBoardCardsStayCompact(page);
   await capture(page, "board-from-issue");
 
   await page.getByTestId("board-context-room-link").click();
@@ -288,7 +381,7 @@ try {
     "",
     "- 从 `/rooms/room-runtime` 进入 `/board` 时，任务板会带上讨论间和事项上下文，并提供 `回讨论间 / 看事项` 回跳按钮 -> PASS",
     "- 任务板顶栏与摘要条已经压成次级镜像面，不再保留伪 tabs、宽黄条和超宽主工作台 -> PASS",
-    "- 任务板卡片现在只保留一个主动作 `讨论间`；事项详情改走顶栏上下文回跳，不再在每张卡片上重复放第二个 CTA -> PASS",
+    "- 任务板卡片现在只保留规划状态、负责人和一个主动作 `回讨论间`，不再重复渲染 issue / room 摘要正文 -> PASS",
     "- 从任务板打开事项后，事项详情也能回到 `/board`，再返回同一条讨论间，不会把任务板变成默认首页 -> PASS",
     "",
     "## 截图",

@@ -2,11 +2,34 @@ package api
 
 import (
 	"net/http"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Larkspur-Wang/OpenShock/apps/server/internal/store"
 )
+
+func governanceContractTempRoot(t *testing.T) string {
+	t.Helper()
+
+	root, err := os.MkdirTemp("", t.Name())
+	if err != nil {
+		t.Fatalf("MkdirTemp(%s) error = %v", t.Name(), err)
+	}
+	t.Cleanup(func() {
+		var cleanupErr error
+		for attempt := 0; attempt < 20; attempt++ {
+			if cleanupErr = os.RemoveAll(root); cleanupErr == nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("RemoveAll(%s) error = %v", root, cleanupErr)
+	})
+
+	return root
+}
 
 func TestStateRouteExposesGovernanceSnapshot(t *testing.T) {
 	root := t.TempDir()
@@ -171,7 +194,7 @@ func TestMailboxLifecycleUpdatesGovernanceSnapshot(t *testing.T) {
 }
 
 func TestGovernanceAggregationPrefersCurrentOwnerOverStaleCompletedHandoff(t *testing.T) {
-	root := t.TempDir()
+	root := governanceContractTempRoot(t)
 	_, server := newContractTestServer(t, root, "http://127.0.0.1:65531")
 	defer server.Close()
 

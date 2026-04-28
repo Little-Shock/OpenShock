@@ -42,14 +42,14 @@ export default function HomePage() {
   const roomHref = recentRoom ? `/rooms/${recentRoom.id}` : "/rooms";
   const settingsHref = githubReady ? "/settings" : "/setup";
   const needsOnboarding = !journey.onboardingDone;
-  const continueTarget = loading || error ? null : workspaceContinue.target;
-  const primaryEntryHref = needsOnboarding ? "/setup" : chatHref;
-  const primaryEntryLabel = needsOnboarding ? (journey.onboardingStarted ? "继续设置" : "开始设置") : "进入聊天";
+  const continueTarget = loading || error || needsOnboarding ? null : workspaceContinue.target;
+  const primaryEntryHref = needsOnboarding ? journey.nextHref : chatHref;
+  const primaryEntryLabel = needsOnboarding ? journey.nextLabel : "进入聊天";
   const primaryContinueHref = continueTarget?.href ?? primaryEntryHref;
   const primaryContinueLabel = continueTarget?.ctaLabel ?? primaryEntryLabel;
   const productHeadline = "让人和智能体在同一条对话里继续工作";
   const productSummary = "先回到聊天、讨论或待处理；缺设置时只补当前缺的这一步。";
-  const primaryEntryReason = needsOnboarding ? "先把工作区接通，完成后聊天会成为默认入口。" : "先进入聊天，再决定回讨论、处理交接或检查设置。";
+  const primaryEntryReason = needsOnboarding ? journey.nextSummary : "先进入聊天，再决定回讨论、处理交接或检查设置。";
   const primaryContinueReason = needsOnboarding
     ? primaryEntryReason
     : continueTarget
@@ -236,6 +236,9 @@ export default function HomePage() {
         ) : (
           <section className="rounded-[30px] border-2 border-[var(--shock-ink)] bg-[linear-gradient(135deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.94)_100%)] p-5 shadow-[6px_6px_0_0_var(--shock-ink)] sm:p-7">
             <div className="max-w-3xl">
+              <span data-testid="home-first-start-next-route" className="sr-only">{journey.nextHref}</span>
+              <span data-testid="home-first-start-next-label" className="sr-only">{journey.nextLabel}</span>
+              <span data-testid="home-first-start-launch-route" className="sr-only">{journey.launchHref}</span>
               <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[rgba(24,20,14,0.58)]">OpenShock</p>
               <h1 className="mt-3 font-display text-[2rem] font-bold leading-none sm:text-[3rem]">{productHeadline}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[rgba(24,20,14,0.76)] sm:text-[15px]">

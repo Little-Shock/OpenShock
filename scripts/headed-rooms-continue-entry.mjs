@@ -248,6 +248,81 @@ async function waitForUrlIncludes(page, fragment) {
   await waitFor(() => page.url().includes(fragment), `expected URL to include ${fragment}, got ${page.url()}`);
 }
 
+async function fetchBrowserControlState(page) {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/control/v1/state", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(`GET /api/control/v1/state -> ${response.status}: ${JSON.stringify(payload)}`);
+    }
+    return payload;
+  });
+}
+
+async function authenticateSeedOwner(page, webURL) {
+  await page.goto(`${webURL}/access`, { waitUntil: "domcontentloaded" });
+  await page.evaluate(async () => {
+    const challengeResponse = await fetch("/api/control/v1/auth/recovery", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        action: "request_login_challenge",
+        email: "larkspur@openshock.dev",
+      }),
+    });
+    const challengePayload = await challengeResponse.json();
+    if (!challengeResponse.ok) {
+      throw new Error(`request_login_challenge -> ${challengeResponse.status}: ${JSON.stringify(challengePayload)}`);
+    }
+
+    const loginResponse = await fetch("/api/control/v1/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        email: "larkspur@openshock.dev",
+        deviceLabel: "Owner Browser",
+        challengeId: challengePayload.challenge?.id,
+      }),
+    });
+    const loginPayload = await loginResponse.json();
+    if (!loginResponse.ok) {
+      throw new Error(`auth/session -> ${loginResponse.status}: ${JSON.stringify(loginPayload)}`);
+    }
+  });
+}
+
+async function assertRoomSnapshotsStayCompact(page) {
+  await page.locator('[data-testid^="room-snapshot-card-"]').first().waitFor();
+
+  const state = await fetchBrowserControlState(page);
+  for (const room of state.rooms ?? []) {
+    if (!room?.id) {
+      continue;
+    }
+
+    const card = page.getByTestId(`room-snapshot-card-${room.id}`);
+    if ((await card.count()) === 0) {
+      continue;
+    }
+
+    const text = (await card.first().textContent()) ?? "";
+    const roomSummary = room.summary?.trim();
+    if (roomSummary && text.includes(roomSummary)) {
+      throw new Error(`room snapshot card ${room.id} repeated room summary instead of staying compact`);
+    }
+
+    const topicSummary = room.topic?.summary?.trim();
+    if (topicSummary && text.includes(topicSummary)) {
+      throw new Error(`room snapshot card ${room.id} repeated topic summary instead of staying compact`);
+    }
+  }
+}
+
 let browser;
 
 try {
@@ -257,6 +332,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
   const results = [];
 
+  await authenticateSeedOwner(page, webURL);
   await page.goto(`${webURL}/rooms`, { waitUntil: "domcontentloaded" });
   await waitForUrlIncludes(page, "/rooms");
   await waitForVisible(page.locator('[data-testid="quick-search-trigger-topbar"]'), "rooms shell did not render");
@@ -270,6 +346,7 @@ try {
   assert.match(continueCardText, /执行详情/);
   assert.match(continueCardText, /正式的优先级规则/);
   assert.equal((await page.getByTestId("rooms-continue-reason").textContent())?.trim(), "阻塞 / 暂停优先");
+  assert.equal(await visibleCount(page.getByTestId("rooms-continue-card").getByRole("link")), 1);
 
   const firstCard = page.locator('[data-testid^="room-snapshot-card-"]').first();
   const firstCardText = await firstCard.textContent();
@@ -279,8 +356,9 @@ try {
     1,
     "room snapshot card should keep exactly one always-visible primary action before expanding more"
   );
+  await assertRoomSnapshotsStayCompact(page);
   await capture(page, "rooms-index");
-  results.push("- `/rooms` 首屏现在会先点名该回哪一间讨论，并把 blocked room 排到列表第一位，不再要求用户自己扫完整页。");
+  results.push("- `/rooms` 首屏只保留一个继续卡片和一个主 CTA；讨论快照卡不再复述 room/topic 摘要。");
 
   await page.getByTestId("rooms-continue-cta").click();
   await waitForUrlIncludes(page, "/rooms/room-memory?tab=run");
@@ -295,7 +373,7 @@ try {
   results.push("- continue CTA 现在会直接把用户带到被阻塞讨论的执行面，不再先进房再找真正下一步。");
 
   const report = [
-    "# 2026-04-23 Rooms Continue Entry Report",
+    "# 2026-04-28 Rooms Continue Entry Report",
     "",
     `- Command: \`pnpm test:headed-rooms-continue-entry -- --report ${path.relative(projectRoot, reportPath)}\``,
     `- Artifacts Dir: \`${artifactsDir}\``,

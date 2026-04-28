@@ -385,8 +385,7 @@ function RoomSnapshotCard({
           {runStatusLabel(room.topic.status)}
         </span>
       </div>
-      <p className="mt-2.5 text-sm leading-6 text-[color:rgba(24,20,14,0.76)]">{room.summary}</p>
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div data-testid={`room-snapshot-compact-facts-${room.id}`} className="mt-4 flex flex-wrap gap-2">
         <SnapshotChip label="当前话题" value={room.topic.title} />
         <SnapshotChip label="当前处理人" value={room.topic.owner} />
         <SnapshotChip label="执行" value={run?.id ?? room.runId} />

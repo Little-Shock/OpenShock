@@ -275,7 +275,12 @@ func (s *Server) handleAuthRecovery(w http.ResponseWriter, r *http.Request) {
 			writeAuthError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"session": session, "member": member, "state": s.sanitizedStateSnapshotForSession(nextState, session)})
+		token, err := s.writeRequestAuthToken(w, r, session)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist request auth session"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"session": session, "member": member, "state": s.sanitizedStateSnapshotForSession(nextState, session), "token": token})
 	case "request_authorize_device_challenge":
 		nextState, challenge, err := s.store.RequestAuthorizeAuthDeviceChallengeAs(requestSession, input)
 		if err != nil {
@@ -289,7 +294,12 @@ func (s *Server) handleAuthRecovery(w http.ResponseWriter, r *http.Request) {
 			writeAuthError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"session": session, "member": member, "device": device, "state": s.sanitizedStateSnapshotForSession(nextState, session)})
+		token, err := s.writeRequestAuthToken(w, r, session)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist request auth session"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"session": session, "member": member, "device": device, "state": s.sanitizedStateSnapshotForSession(nextState, session), "token": token})
 	case "request_password_reset":
 		nextState, member, challenge, err := s.store.RequestPasswordResetAs(requestSession, input)
 		if err != nil {
@@ -315,7 +325,12 @@ func (s *Server) handleAuthRecovery(w http.ResponseWriter, r *http.Request) {
 			writeAuthError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"session": session, "member": member, "state": s.sanitizedStateSnapshotForSession(nextState, session)})
+		token, err := s.writeRequestAuthToken(w, r, session)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist request auth session"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"session": session, "member": member, "state": s.sanitizedStateSnapshotForSession(nextState, session), "token": token})
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported recovery action"})
 	}

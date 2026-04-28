@@ -179,6 +179,21 @@ func TestRecoveryChallengeRoutesConsumeVerifyAndAuthorizeOnce(t *testing.T) {
 	if verifyResp.StatusCode != http.StatusOK {
 		t.Fatalf("POST /v1/auth/recovery verify_email status = %d, want %d", verifyResp.StatusCode, http.StatusOK)
 	}
+	if authCookie := authCookieFromResponse(verifyResp); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatalf("POST /v1/auth/recovery verify_email missing refreshed auth cookie: %#v", authCookie)
+	}
+	verifySessionResp, err := http.Get(server.URL + "/v1/auth/session")
+	if err != nil {
+		t.Fatalf("GET /v1/auth/session after verify_email error = %v", err)
+	}
+	if verifySessionResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/auth/session after verify_email status = %d, want %d", verifySessionResp.StatusCode, http.StatusOK)
+	}
+	var verifiedSession store.AuthSession
+	decodeJSON(t, verifySessionResp, &verifiedSession)
+	if verifiedSession.EmailVerificationStatus != "verified" {
+		t.Fatalf("session after verify_email = %#v, want verified email", verifiedSession)
+	}
 
 	verifyReplayResp, err := http.Post(server.URL+"/v1/auth/recovery", "application/json", bytes.NewReader([]byte(`{"action":"verify_email","email":"reviewer@openshock.dev","challengeId":"`+verifyChallenge.ID+`"}`)))
 	if err != nil {
@@ -198,6 +213,21 @@ func TestRecoveryChallengeRoutesConsumeVerifyAndAuthorizeOnce(t *testing.T) {
 	}
 	if authorizeResp.StatusCode != http.StatusOK {
 		t.Fatalf("POST /v1/auth/recovery authorize_device status = %d, want %d", authorizeResp.StatusCode, http.StatusOK)
+	}
+	if authCookie := authCookieFromResponse(authorizeResp); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatalf("POST /v1/auth/recovery authorize_device missing refreshed auth cookie: %#v", authCookie)
+	}
+	authorizeSessionResp, err := http.Get(server.URL + "/v1/auth/session")
+	if err != nil {
+		t.Fatalf("GET /v1/auth/session after authorize_device error = %v", err)
+	}
+	if authorizeSessionResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/auth/session after authorize_device status = %d, want %d", authorizeSessionResp.StatusCode, http.StatusOK)
+	}
+	var authorizedSession store.AuthSession
+	decodeJSON(t, authorizeSessionResp, &authorizedSession)
+	if authorizedSession.DeviceAuthStatus != "authorized" {
+		t.Fatalf("session after authorize_device = %#v, want authorized device", authorizedSession)
 	}
 
 	authorizeReplayResp, err := http.Post(server.URL+"/v1/auth/recovery", "application/json", bytes.NewReader([]byte(`{"action":"authorize_device","deviceId":"`+loginPayload.Session.DeviceID+`","challengeId":"`+authorizeChallenge.ID+`"}`)))

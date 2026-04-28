@@ -120,7 +120,7 @@ async function startFreshStack({ openBrowser }) {
   const web = spawnLoggedProcess(
     "web",
     "pnpm",
-    ["--dir", "apps/web", "exec", "next", "dev", "--hostname", "127.0.0.1", "--port", String(ports.web)],
+    ["--dir", "apps/web", "exec", "next", "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(ports.web)],
     {
       cwd: repoRoot,
       env: {

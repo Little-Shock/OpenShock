@@ -9,6 +9,7 @@ const settingsSourcePath = resolve(__dirname, "../components/live-settings-views
 const settingsPagePath = resolve(__dirname, "../app/settings/page.tsx");
 const settingsAdvancedPagePath = resolve(__dirname, "../app/settings/advanced/page.tsx");
 const configRecoveryScriptPath = resolve(__dirname, "../../../../scripts/headed-config-persistence-recovery.mjs");
+const settingsReductionScriptPath = resolve(__dirname, "../../../../scripts/headed-settings-primary-reduction.mjs");
 
 function settingsSource() {
   return readFileSync(settingsSourcePath, "utf8");
@@ -24,6 +25,10 @@ function settingsAdvancedPageSource() {
 
 function configRecoveryScript() {
   return readFileSync(configRecoveryScriptPath, "utf8");
+}
+
+function settingsReductionScript() {
+  return readFileSync(settingsReductionScriptPath, "utf8");
 }
 
 function sectionBetween(source: string, startPattern: string, endPattern: string) {
@@ -60,11 +65,27 @@ test("settings first screen keeps member preferences behind a disclosure", () =>
 
 test("settings first screen pushes governance, credentials, and notifications into advanced settings", () => {
   const source = settingsSource();
+  const primaryAdvancedEntry = sectionBetween(
+    source,
+    "function SettingsAdvancedEntryPanel()",
+    "function SettingsAdvancedOverviewPanel"
+  );
+  const advancedOverview = sectionBetween(
+    source,
+    "function SettingsAdvancedOverviewPanel",
+    "function SettingsDisclosureSection"
+  );
 
   assert.match(source, /data-testid="settings-advanced-link"/);
   assert.match(source, /href="\/settings\/advanced"/);
   assert.match(source, /管理不常改的设置/);
   assert.match(source, /团队规则、凭据和通知都放到单独一页，需要时再进入。/);
+  assert.doesNotMatch(primaryAdvancedEntry, /settings-advanced-governance-summary/);
+  assert.doesNotMatch(primaryAdvancedEntry, /settings-advanced-credential-summary/);
+  assert.doesNotMatch(primaryAdvancedEntry, /settings-advanced-notification-summary/);
+  assert.match(advancedOverview, /settings-advanced-page-governance-summary/);
+  assert.match(advancedOverview, /settings-advanced-page-credential-summary/);
+  assert.match(advancedOverview, /settings-advanced-page-notification-summary/);
 });
 
 test("settings member preferences keep default entry on customer-facing routes with plain labels", () => {
@@ -126,6 +147,17 @@ test("settings config recovery flow opens workspace and member disclosures befor
 
   assert.match(script, /openSettingsDisclosure\(page, "workspace"/);
   assert.match(script, /openSettingsDisclosure\(page, "member"/);
+});
+
+test("settings primary reduction headed replay verifies advanced summaries stay off the main page", () => {
+  const script = settingsReductionScript();
+
+  assert.match(script, /\/settings/);
+  assert.match(script, /settings-advanced-link/);
+  assert.match(script, /settings-advanced-page-governance-summary/);
+  assert.match(script, /settings-advanced-governance-summary/);
+  assert.match(script, /main settings page repeated advanced summary cards/);
+  assert.match(script, /settings-primary-link/);
 });
 
 test("settings context rail keeps status facts instead of repeating the primary next step", () => {

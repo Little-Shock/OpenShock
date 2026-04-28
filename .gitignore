@@ -17,3 +17,10 @@ notes/
 decisions/
 MEMORY.md
 logs/
+output/testing/local-walkthrough/
+output/testing/**/run-attempt*/
+output/testing/**/*.png
+output/testing/**/credentials.vault.*
+output/testing/**/request-auth-tokens.json
+output/testing/**/notifications.json
+output/testing/**/state.json

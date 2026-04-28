@@ -12,6 +12,14 @@ function source(path: string) {
   return readFileSync(path, "utf8");
 }
 
+function extractFunctionBlock(sourceText: string, functionName: string) {
+  const start = sourceText.indexOf(`function ${functionName}`);
+  assert.notEqual(start, -1, `${functionName} should exist`);
+  const nextFunction = sourceText.indexOf("\nfunction ", start + 1);
+  assert.notEqual(nextFunction, -1, `${functionName} should be followed by another function`);
+  return sourceText.slice(start, nextFunction);
+}
+
 test("rooms first screen exposes stable continue-entry anchors", () => {
   const roomsSource = source(roomsSourcePath);
 
@@ -19,6 +27,19 @@ test("rooms first screen exposes stable continue-entry anchors", () => {
   assert.match(roomsSource, /data-testid="rooms-continue-cta"/);
   assert.match(roomsSource, /continueRoom\.title/);
   assert.match(roomsSource, /data-testid=\{`room-snapshot-card-\$\{room\.id\}`\}/);
+  assert.match(roomsSource, /data-testid=\{`room-snapshot-primary-cta-\$\{room\.id\}`\}/);
+  assert.match(roomsSource, /data-testid=\{`room-snapshot-compact-facts-\$\{room\.id\}`\}/);
+});
+
+test("rooms snapshot cards do not repeat continue summary fallback copy", () => {
+  const roomsSource = source(roomsSourcePath);
+  const snapshotCardSource = extractFunctionBlock(roomsSource, "RoomSnapshotCard");
+
+  assert.doesNotMatch(snapshotCardSource, /room\.summary/);
+  assert.doesNotMatch(snapshotCardSource, /room\.topic\.summary/);
+  assert.match(snapshotCardSource, /room\.topic\.title/);
+  assert.match(snapshotCardSource, /room\.topic\.owner/);
+  assert.match(snapshotCardSource, /room-snapshot-primary-cta/);
 });
 
 test("rooms continue headed replay covers the blocked-room priority path", () => {
@@ -27,6 +48,9 @@ test("rooms continue headed replay covers the blocked-room priority path", () =>
   assert.match(scriptSource, /\/rooms/);
   assert.match(scriptSource, /rooms-continue-card/);
   assert.match(scriptSource, /rooms-continue-cta/);
+  assert.match(scriptSource, /assertRoomSnapshotsStayCompact/);
+  assert.match(scriptSource, /repeated room summary/);
+  assert.match(scriptSource, /repeated topic summary/);
   assert.match(scriptSource, /room-snapshot-card-room-memory/);
   assert.match(scriptSource, /记忆写回讨论间/);
   assert.match(scriptSource, /阻塞 \/ 暂停优先/);

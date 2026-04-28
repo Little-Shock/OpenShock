@@ -1,0 +1,250 @@
+{
+  "project": "OpenShock",
+  "branchName": "ralph/openshock-agent-os-roadmap",
+  "description": "OpenShock Agent OS Roadmap - connect existing agent, handoff, governance, runtime, memory, and release evidence primitives with a scheduling kernel, long-running agent execution, human-agent collaboration surfaces, and auditable delivery policy.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add orchestrator ticket lifecycle model",
+      "description": "As a local operator, I want Board tickets to have a scheduler lifecycle separate from business status so that agents can claim and release work reliably.",
+      "acceptanceCriteria": [
+        "Add an orchestrator lifecycle model with Unclaimed, Claimed, Running, RetryQueued, Released, and terminal mapping",
+        "Persist lifecycle fields without removing existing Board issue fields",
+        "Add store tests for lifecycle transitions and invalid transition rejection",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add per-ticket workspace manager",
+      "description": "As a runtime operator, I want every ticket to run in a safe durable workspace so that retries and continuations preserve work without escaping the workspace root.",
+      "acceptanceCriteria": [
+        "Create a workspace manager that maps ticket ids to sanitized directory names under the configured workspace root",
+        "Reject paths outside the workspace root and reject names outside [A-Za-z0-9._-]",
+        "Persist workspace path metadata on the ticket scheduler state",
+        "Add Go tests for sanitization, reuse, and path escape rejection",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add poll and reconcile loop skeleton",
+      "description": "As a product owner, I want the scheduler to reconcile running work before dispatching new work so that stale state does not accumulate.",
+      "acceptanceCriteria": [
+        "Add an orchestrator tick that first reconciles active tickets and then selects eligible tickets",
+        "Expose tick configuration with a default polling interval",
+        "Record last reconcile time and last dispatch decision in state",
+        "Add tests proving terminal tickets are not dispatched again",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add retry backoff and stall detection",
+      "description": "As a local operator, I want stalled agent work to retry with bounded backoff so that long-running automation can recover without spinning.",
+      "acceptanceCriteria": [
+        "Track attempt count, nextRetryAt, lastAgentEventAt, and stall reason on scheduler state",
+        "Apply bounded exponential backoff for retry scheduling",
+        "Move stalled running tickets into RetryQueued with a visible reason",
+        "Add tests for normal retry, max backoff, and stall timeout behavior",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Expose orchestrator snapshot API",
+      "description": "As a reviewer, I want a snapshot of running, retrying, stalled, and recently reconciled work so that autonomous execution is inspectable.",
+      "acceptanceCriteria": [
+        "Add a read-only orchestrator snapshot API endpoint",
+        "Snapshot includes running count, retrying count, stalled count, ticket ids, assigned agent, workspace path, and last event time",
+        "Signed-out requests are rejected or redacted consistently with existing auth policy",
+        "Add API contract tests for authenticated and signed-out snapshot access",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Add AgentRunner interface",
+      "description": "As an integrator, I want Codex, Claude Code, and Gemini execution behind one interface so that the scheduler can assign work without engine-specific branching.",
+      "acceptanceCriteria": [
+        "Define AgentRunner methods for start_thread, start_turn, stream_events, and stop_thread",
+        "Add a fake runner used by tests",
+        "Wire scheduler dispatch to the fake runner without invoking real CLI processes",
+        "Add tests proving first turn creates a thread and records turn metadata",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add turn continuation lifecycle",
+      "description": "As an agent teammate, I want follow-up turns to continue in the same thread so that long tasks do not restart context every time.",
+      "acceptanceCriteria": [
+        "Distinguish first-turn prompt from continuation-turn prompt",
+        "Respect a configurable maxTurns limit per ticket",
+        "Persist thread id, current turn id, and completed turn count",
+        "Add tests for continuation after non-terminal work and stop at maxTurns",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Add hibernate and wake semantics",
+      "description": "As a collaborator, I want idle agents to hibernate and wake on mentions or ticket events so that they behave like teammates without wasting runtime.",
+      "acceptanceCriteria": [
+        "Represent agent online states as Online, Thinking, Working, and Hibernating",
+        "Idle scheduler state can move an agent to Hibernating without losing thread metadata",
+        "@mention or eligible ticket event can wake the agent for a new turn",
+        "Add tests for hibernate, wake, and metadata preservation",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Unify Room and DM timeline blocks",
+      "description": "As a workspace member, I want Rooms and DMs to render human messages, agent messages, system events, and tool calls consistently so that collaboration feels coherent.",
+      "acceptanceCriteria": [
+        "Introduce a shared timeline block model for human, agent, system, and tool-call blocks",
+        "Rooms render the shared block model without losing existing message anchors",
+        "DMs render the shared block model or a compatible subset",
+        "Add web contract tests for timeline block anchors",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Show agent presence and handoff ownership",
+      "description": "As a collaborator, I want to see which agent owns the next step and whether it is working, thinking, online, or hibernating so that Rooms feel like a team space.",
+      "acceptanceCriteria": [
+        "Room and sidebar surfaces show agent presence from existing agent profile or scheduler state",
+        "Handoff ownership appears once in the primary next-step area without duplicating summaries",
+        "Presence labels use Online, Thinking, Working, and Hibernating",
+        "Add web contract coverage for presence and ownership anchors",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Load WORKFLOW.md runtime policy",
+      "description": "As a team lead, I want project policy to be declared in WORKFLOW.md so that polling, concurrency, DoD, hooks, and agent prompt policy can change without rebuilding OpenShock.",
+      "acceptanceCriteria": [
+        "Load WORKFLOW.md from the active workspace repo when present",
+        "Parse YAML front matter for polling, concurrency, definitionOfDone, hooks, and agent runtime policy",
+        "Expose parsed policy in orchestrator state with validation errors",
+        "Add tests for missing file, valid policy, invalid policy, and hot reload after file change",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Add workflow hook runner",
+      "description": "As an operator, I want workflow hooks around workspace creation and agent turns so that project-specific preparation and verification can be externalized safely.",
+      "acceptanceCriteria": [
+        "Support after_create, before_run, after_run, and before_remove hook definitions from workflow policy",
+        "Apply a default hook timeout and record hook exit code, duration, and log path",
+        "after_create failure blocks workspace creation and after_run failure records evidence without deleting work",
+        "Add tests for successful hook, timeout, and failure handling",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Connect release gate to Definition of Done",
+      "description": "As a release reviewer, I want scheduler completion to require release gate evidence so that Agent Done is auditable.",
+      "acceptanceCriteria": [
+        "Workflow definitionOfDone can require an existing release gate command",
+        "Scheduler moves completed agent work to review until the gate result is recorded",
+        "Gate report path is attached to the ticket and Room evidence",
+        "Add tests for passing gate, failing gate, and missing evidence path",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Attach proof-of-work headed evidence",
+      "description": "As a product owner, I want completed agent work to include a headed replay, screenshot, or comparable artifact so that completion can be inspected without trusting text alone.",
+      "acceptanceCriteria": [
+        "After-run evidence can attach headed replay, screenshot, or report paths to a ticket",
+        "Rooms show a single evidence link or card for the latest completed turn",
+        "Missing evidence keeps the ticket out of Done when workflow policy requires it",
+        "Add web and server tests for evidence attachment and missing evidence handling",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Add orchestrator command center view",
+      "description": "As a local operator, I want a simple command center view of agents, tickets, runtime readiness, retry state, and evidence so that autonomous work is understandable.",
+      "acceptanceCriteria": [
+        "Add a command center surface backed by orchestrator snapshot API",
+        "The first screen shows active tickets, assigned agents, runtime readiness, last event time, retry status, and evidence status",
+        "The UI uses a simplified hierarchy with one primary action per active ticket",
+        "Add web contract tests for command center anchors",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

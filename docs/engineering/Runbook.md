@@ -19,6 +19,16 @@
   - Linux/macOS: `/home/lark/OpenShock`
   - Windows: `E:\00.Lark_Projects\00_OpenShock`
 
+macOS / Codex app 环境说明：
+
+- 如果 Codex app 的 bundled Node 排在 PATH 最前面，并在加载原生 `.node` 模块时触发 macOS library validation 错误，把本机 Node 20 放到命令前面再跑 `pnpm` 即可，例如：
+
+```bash
+PATH=/Users/lark/.nvm/versions/node/v20.20.2/bin:$PATH pnpm verify
+```
+
+这只是本机环境绕法，不是 OpenShock 的产品依赖；正常 Node.js 20+ 环境仍按上面的前置条件读取。
+
 ---
 
 ## 2. 先知道这几个事实

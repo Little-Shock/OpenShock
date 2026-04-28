@@ -56,6 +56,9 @@ func TestNewFreshBootstrapStartsWithGuidedWorkspace(t *testing.T) {
 	if len(snapshot.Runtimes) != 1 || snapshot.Runtimes[0].ID != "shock-main" {
 		t.Fatalf("fresh bootstrap runtimes = %#v, want one starter runtime", snapshot.Runtimes)
 	}
+	if snapshot.Workspace.PairedRuntime != "" || snapshot.Workspace.PairedRuntimeURL != "" || snapshot.Workspace.PairingStatus != workspacePairingUnpaired {
+		t.Fatalf("fresh bootstrap pairing = %q/%q/%q, want unpaired without seed daemon", snapshot.Workspace.PairedRuntime, snapshot.Workspace.PairedRuntimeURL, snapshot.Workspace.PairingStatus)
+	}
 	if snapshot.Workspace.Onboarding.TemplateID != "dev-team" || snapshot.Workspace.Onboarding.Status != workspaceOnboardingInProgress {
 		t.Fatalf("fresh bootstrap onboarding = %#v, want dev-team/in_progress", snapshot.Workspace.Onboarding)
 	}

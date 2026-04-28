@@ -33,6 +33,18 @@ test("account submit advances to the next ready step instead of stopping on temp
   assert.doesNotMatch(section, /template-selected/);
 });
 
+test("onboarding resumes past account when access is already ready", () => {
+  const source = onboardingSource();
+
+  assert.match(source, /function furthestStep\(left: WizardStepID, right: WizardStepID\)/);
+  assert.match(
+    source,
+    /furthestStep\(surfaceStepFromWorkspace\(state\.workspace\.onboarding\.currentStep, naturalStep\), naturalStep\)/
+  );
+  assert.match(source, /const persistedTarget = surfaceStepFromWorkspace\(state\.workspace\.onboarding\.currentStep, naturalStep\);/);
+  assert.match(source, /const resumeTarget = furthestStep\(persistedTarget, naturalStep\);/);
+});
+
 test("runtime pairing can advance straight to finish when the default agent already exists", () => {
   const section = sectionBetween(
     onboardingSource(),
@@ -41,7 +53,11 @@ test("runtime pairing can advance straight to finish when the default agent alre
   );
 
   assert.match(section, /const nextStep: WizardStepID = starterAgent \? "finish" : "agent"/);
+  assert.doesNotMatch(section, /selectRuntime\(/);
   assert.match(section, /addCompleted: starterAgent \? \["runtime-paired", "agent-configured"\] : \["runtime-paired"\]/);
+  assert.match(section, /const progress = await persistOnboardingProgress\(/);
+  assert.match(section, /const completedHref = completedOnboardingHref\(progress\);/);
+  assert.match(section, /router\.push\(completedHref\);/);
   assert.match(section, /setCurrentStep\(nextStep\)/);
   assert.match(section, /运行环境已连接，默认智能体已就绪。/);
 });

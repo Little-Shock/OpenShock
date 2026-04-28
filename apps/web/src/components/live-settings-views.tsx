@@ -1973,15 +1973,7 @@ function CredentialProfilesPanel() {
   );
 }
 
-function SettingsAdvancedEntryPanel({
-  governanceSummary,
-  credentialSummary,
-  notificationSummary,
-}: {
-  governanceSummary: string;
-  credentialSummary: string;
-  notificationSummary: string;
-}) {
+function SettingsAdvancedEntryPanel() {
   return (
     <Panel tone="ink" className="shadow-[6px_6px_0_0_var(--shock-yellow)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1999,12 +1991,6 @@ function SettingsAdvancedEntryPanel({
         >
           打开高级设置
         </Link>
-      </div>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <FactTile label="治理编排" value={governanceSummary} testID="settings-advanced-governance-summary" />
-        <FactTile label="凭据配置" value={credentialSummary} testID="settings-advanced-credential-summary" />
-        <FactTile label="通知送达" value={notificationSummary} testID="settings-advanced-notification-summary" />
       </div>
     </Panel>
   );
@@ -2326,11 +2312,7 @@ function LiveSettingsView({
             <MemberPreferencePanel />
           </SettingsDisclosureSection>
 
-          <SettingsAdvancedEntryPanel
-            governanceSummary={governanceSummary}
-            credentialSummary={credentialSummary}
-            notificationSummary={notificationSummary}
-          />
+          <SettingsAdvancedEntryPanel />
         </>
       )}
 

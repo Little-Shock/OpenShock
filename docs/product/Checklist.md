@@ -11,7 +11,7 @@
 如果你只想快速判断当前产品状态，先看这 3 句话：
 
 - 今天用户已经能在同一套工作台里完成 `进入工作区 -> 创建工作 -> 回到讨论 -> 看执行/交付` 的主链。
-- 今天还不够稳的，主要是更重的认证硬化、外部 provider 编排，以及离 `app.slock.ai` 更近的壳层完成度。
+- 今天还不够稳的，主要是 request-scoped auth 尾项、外部 provider 编排，以及离 `app.slock.ai` 更近的壳层完成度。
 - 今天该看哪份最新验证证据，不要信这里写死的日期；直接回到 [Testing Index](../testing/README.md) 找最新生成物。
 
 - `PRD` 定义完整产品应该是什么
@@ -53,9 +53,9 @@
 - delegated closeout handoff 已能自动起链，且 delivery delegation 已支持 `formal-handoff / signal-only / auto-complete` policy；更深的自动协作策略与 cross-agent closeout 仍待继续前滚
   - 更重的长期记忆整理与外部 provider 编排仍未完成
 - 本轮优先收口方向:
-  - auth challenge hardening
-  - 首启入口继续减法
-  - 发布证据入口继续单源化
+  - request-scoped auth 尾项和 recovery token/cookie 证据
+  - 首启入口与 supporting flow 继续减法
+  - durable memory / provider / recovery 的后台整理与降级恢复
 
 ---
 
@@ -279,8 +279,9 @@
   - [x] Board / Room / Inbox / Setup 关键动作已和 `issue.create` / `room.reply` / `run.execute` / `inbox.review` / `inbox.decide` / `repo.admin` / `runtime.manage` / `pull_request.*` 真值对齐
   - [x] `/access` 现在已把 device authorization、email verification、password reset、session recovery 与 external identity binding 收进同一条 live identity chain
   - [x] `auth/session`、workspace member、member preference、recovery 关键入口已开始支持 token-bound request actor，并有双 token contract 覆盖
+  - [x] 无 token 的 detail/read/mutation 路径默认 fail-closed，不再隐式回退最后一次全局 `Auth.Session`
 - 当前 GAP:
-  - [ ] request-scoped auth 已覆盖 `state stream` / `mailbox` / `pull request` / `room detail` / `run detail` 这批读链，但无 token 请求仍会回退全局 `Auth.Session`，尚未做到 token-enforced fail-closed
+  - [ ] request-scoped auth 已覆盖 `state stream` / `mailbox` / `pull request` / `room detail` / `run detail` 这批读链；下一拍只剩少量非主链 `state.Auth.Session` 兼容点和 supporting mutation response 证据要继续收尾
   - [ ] Onboarding 还没把 invite / verify / device auth / template bootstrap 收成同一条首次启动旅程
   - [ ] GitHub 仍主要是 readiness probe，不是完整授权模型
 - 对应 Test Cases: `TC-014` `TC-016` `TC-024` `TC-035` `TC-038`

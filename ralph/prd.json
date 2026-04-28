@@ -1,0 +1,287 @@
+{
+  "project": "OpenShock",
+  "branchName": "ralph/openshock-product-grade-iteration",
+  "description": "OpenShock Product-Grade Iteration - stabilize the local Phase 0 baseline, align product truth, reduce first-run friction, harden request-scoped auth, and add verifiable memory/runtime/release evidence.",
+  "nextRoadmap": {
+    "title": "OpenShock Agent OS Roadmap",
+    "markdown": "ralph/agent-os-roadmap-prd.md",
+    "ralphJson": "ralph/agent-os-roadmap.prd.json",
+    "status": "draft-next-prd",
+    "priorityOrder": [
+      "M1 Scheduling Kernel MVP",
+      "M2 Agent Runner And Long Sessions",
+      "M3 Collaboration Surface Upgrade",
+      "M4 Governance And Evidence Closure"
+    ],
+    "calibration": [
+      "OpenShock already has agent profiles, mailbox/handoff, governance, runtime registry, memory center, release gate, headed evidence, and fresh workspace agents.",
+      "The next gap is connecting existing primitives through a continuous scheduling kernel, not rebuilding them from scratch.",
+      "Existing agents are identities and handoff participants, but not yet always-on, wakeable, long-running teammates.",
+      "WORKFLOW.md should be runtime-readable hot-reload policy for polling, concurrency, Definition of Done, hooks, and agent prompt policy.",
+      "Agent Done should require evidence and release gate truth, not only model text."
+    ]
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Stabilize fresh stack and local verification baseline",
+      "description": "As a local OpenShock operator, I want the fresh stack and verification commands to run reliably on macOS so that every later product iteration starts from a green baseline.",
+      "acceptanceCriteria": [
+        "apps/web dev startup uses the same stable Next.js dev mode as the fresh-stack script",
+        "scripts/dev-fresh-stack-contract.test.mjs asserts the selected Next.js dev mode",
+        "pnpm test:web-contracts runs TypeScript contract tests without unsupported Node flags",
+        "Auth recovery actions that establish an active session return a token and set the request auth cookie",
+        "pnpm verify passes with the nvm Node 20 path documented in progress notes when needed",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed on 2026-04-28. Verified web and fresh-stack dev paths both use next dev --webpack; fresh-stack contract covers the dev mode; test:web-contracts runs through node --import tsx; recovery actions refresh request auth token/cookie. Evidence: node --test scripts/dev-fresh-stack-contract.test.mjs, pnpm test:web-contracts, cd apps/server && ../../scripts/go.sh test ./internal/api -run TestRecoveryChallengeRoutesConsumeVerifyAndAuthorizeOnce -count=1, and PATH=/Users/lark/.nvm/versions/node/v20.20.2/bin:$PATH pnpm verify all passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Align product TODO and checklist truth",
+      "description": "As a reviewer, I want TODO, Checklist, and Runbook wording to agree on current auth, release evidence, and fresh-stack status so that I do not have to reconcile contradictory project truth.",
+      "acceptanceCriteria": [
+        "docs/product/TODO-List.md lists only active product gaps and removes completed P0 sections from current priority",
+        "docs/product/Checklist.md no longer claims no-token requests fall back to global Auth.Session when request auth is fail-closed",
+        "docs/engineering/Runbook.md documents the macOS Node 20 path workaround only as an environment note, not as a product dependency",
+        "docs/testing/README.md points reviewers to generated evidence commands instead of stale dates",
+        "git diff --check passes",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed on 2026-04-28. TODO current priority now lists only active gaps, completed auth challenge/release evidence/headed suite sections were removed from current priority, Checklist no longer claims no-token fallback to global Auth.Session, Runbook documents the macOS Node 20 PATH workaround as an environment note, and Testing Index tells reviewers to regenerate missing evidence rather than trust stale dates. Evidence: rg stale auth/evidence phrases returned no matches, git diff --check passed, and PATH=/Users/lark/.nvm/versions/node/v20.20.2/bin:$PATH pnpm typecheck:web passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Add local walkthrough evidence locator",
+      "description": "As a reviewer, I want local route and interaction smoke evidence to be discoverable from one command so that local walkthroughs do not become invisible untracked artifacts.",
+      "acceptanceCriteria": [
+        "Add a script that prints the latest output/testing/local-walkthrough route smoke, interaction smoke, and screenshot paths",
+        "The script exits non-zero when route-smoke.json or interaction-smoke.json is missing",
+        "Add a node --test contract for the evidence locator script",
+        "package.json exposes the evidence locator command",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed on 2026-04-28. Added scripts/local-walkthrough-evidence-latest.mjs to print output/testing/local-walkthrough route smoke, interaction smoke, screenshot paths, and fail when required smoke JSON is missing. Added scripts/local-walkthrough-evidence-latest.test.mjs and package script local-walkthrough:evidence. Evidence: node --test scripts/local-walkthrough-evidence-latest.test.mjs, pnpm local-walkthrough:evidence, git diff --check, and PATH=/Users/lark/.nvm/versions/node/v20.20.2/bin:$PATH pnpm typecheck:web all passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Unify home access and setup first-start targets",
+      "description": "As a first-time user, I want home, access, and setup to point to the same next step so that the product has one obvious first successful path.",
+      "acceptanceCriteria": [
+        "home-first-screen, access-first-screen, setup-first-screen, and critical-loop contracts all assert the same first-start next route for a fresh workspace",
+        "The visible home primary action and access recovery next action resolve through the shared first-start journey helper",
+        "/onboarding remains a compatibility route and is not presented as a competing primary path",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Passed on 2026-04-28: pnpm test:web-contracts (116 tests), headed fresh critical loop with real owner/runtime/agent state at output/testing/us-004-first-start/critical-loop.md, Go sanitize/bootstrap targeted tests, pnpm typecheck:web, and git diff --check. The headed harness now verifies created issue/room recovery through the authenticated browser control-state API, matching request-scoped auth."
+    },
+    {
+      "id": "US-005",
+      "title": "Reduce Board planning mirror duplication",
+      "description": "As a user creating work from Board, I want the Board page to show only planning status and the shortest route back to discussion so that it stays a supporting flow.",
+      "acceptanceCriteria": [
+        "Board first screen keeps one primary create action and one discussion return action",
+        "Board cards do not repeat the same room next-step summary already shown in Rooms or Room detail",
+        "apps/web/src/lib/board-inbox-first-screen.test.ts covers the reduced Board copy contract",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Passed on 2026-04-28: Board cards no longer render card.summary; they keep title, planning state, owner, source, and one 回讨论间 action. board-inbox-first-screen.test.ts covers the compact Board card contract, pnpm test:web-contracts passed with 117 tests, headed browser evidence passed at output/testing/us-005-board-planning/report.md, pnpm typecheck:web passed after regenerating .next/dev/types, and git diff --check passed."
+    },
+    {
+      "id": "US-006",
+      "title": "Reduce Rooms supporting summary duplication",
+      "description": "As a user returning to work, I want Rooms to show the single best continue target without repeating the same next-step summary in multiple cards.",
+      "acceptanceCriteria": [
+        "/rooms first screen renders one continue card with one primary CTA when a continue target exists",
+        "The Rooms snapshot area does not duplicate the continue card summary text",
+        "apps/web/src/lib/rooms-first-screen.test.ts asserts stable continue anchors and no duplicate summary fallback",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Passed on 2026-04-28: /rooms keeps one continue card with one primary CTA, RoomSnapshotCard no longer renders room.summary or room.topic.summary, and snapshot cards keep compact topic/owner/run/unread facts plus one always-visible 进入讨论间 action. rooms-first-screen.test.ts covers stable continue/snapshot anchors and no duplicate summary fallback. Headed browser evidence passed after logging in with request-scoped seed owner auth at output/testing/us-006-rooms-summary/report.md; screenshots are under output/testing/us-006-rooms-summary/run-attempt-2/screenshots/. Verification passed with PATH=/Users/lark/.nvm/versions/node/v20.20.2/bin:$PATH node --import tsx --test apps/web/src/lib/rooms-first-screen.test.ts, pnpm test:web-contracts (118 tests), OPENSHOCK_E2E_ARTIFACTS_DIR=output/testing/us-006-rooms-summary/run-attempt-2 pnpm test:headed-rooms-continue-entry -- --report output/testing/us-006-rooms-summary/report.md, pnpm typecheck:web, and git diff --check."
+    },
+    {
+      "id": "US-007",
+      "title": "Reduce Settings supporting flow duplication",
+      "description": "As a workspace owner, I want Settings to surface default entry, member truth, and machine status before advanced panels so that routine setup does not feel like an admin maze.",
+      "acceptanceCriteria": [
+        "Settings first screen keeps workspace/member/machine defaults above advanced governance, credentials, and notification panels",
+        "Advanced settings link is present but does not duplicate the same summary cards on the main Settings page",
+        "apps/web/src/lib/settings-first-screen.test.ts covers the reduced main Settings hierarchy",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Passed on 2026-04-28: Settings primary now keeps workspace, member, and machine/memory defaults before advanced settings, while the advanced entry remains a single link card and no longer duplicates governance, credential, or notification summary FactTiles from /settings/advanced. Added settings-first-screen.test.ts coverage for the reduced hierarchy and a headed browser harness at scripts/headed-settings-primary-reduction.mjs, exposed through pnpm test:headed-settings-primary-reduction. Evidence: output/testing/us-007-settings-reduction/report.md and screenshots under output/testing/us-007-settings-reduction/run-attempt/screenshots/. Verification passed with PATH=/Users/lark/.nvm/versions/node/v20.20.2/bin:$PATH node --import tsx --test apps/web/src/lib/settings-first-screen.test.ts, pnpm test:web-contracts (119 tests), OPENSHOCK_E2E_ARTIFACTS_DIR=output/testing/us-007-settings-reduction/run-attempt pnpm test:headed-settings-primary-reduction -- --report output/testing/us-007-settings-reduction/report.md, pnpm typecheck:web, and git diff --check."
+    },
+    {
+      "id": "US-008",
+      "title": "Close request-scoped auth mutation response tail items",
+      "description": "As a multi-user workspace member, I want permission-gated mutation responses to return my request-scoped session so that another user's last login never leaks into my response state.",
+      "acceptanceCriteria": [
+        "Add or extend API contract coverage for at least two remaining permission-gated mutation responses that return state",
+        "The covered responses set state.Auth.Session from the request token or cookie caller",
+        "Signed-out requests for the covered mutations return 401 or 403 without a full state side channel",
+        "cd apps/server && ../../scripts/go.sh test ./internal/api -run RequestScoped -count=1 passes",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Add auth recovery browser evidence for token refresh",
+      "description": "As a reviewer, I want headed or browser-level evidence that verify email, authorize device, and bind external identity refresh request auth so that recovery does not silently leave stale cookies.",
+      "acceptanceCriteria": [
+        "Add a browser smoke or headed script that logs in, consumes verify_email, consumes authorize_device, and confirms subsequent /v1/auth/session reflects the recovered caller",
+        "The script writes a JSON report under output/testing or docs/testing/artifacts",
+        "The report records failed responses, console problems, and final session email/device status",
+        "package.json exposes the script command",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Add memory cleanup dry-run contract",
+      "description": "As a workspace operator, I want memory cleanup to expose a dry-run result before destructive cleanup so that retention automation is reviewable and safe.",
+      "acceptanceCriteria": [
+        "Memory cleanup API supports a dry-run or preview mode that returns due items without mutating durable memory state",
+        "The dry-run response includes due count, nextRunAt, and item identifiers or summaries sufficient for review",
+        "Add store and API tests proving dry-run does not change memory-center durable state",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Add memory compaction queue truth",
+      "description": "As a memory reviewer, I want compaction candidates to be visible as a queue so that long-running memory cleanup can be governed before it writes back.",
+      "acceptanceCriteria": [
+        "Memory center state includes a compaction queue with candidate id, source artifact id, reason, status, and updatedAt",
+        "Add store helpers to enqueue, list, approve, and dismiss compaction candidates",
+        "Add tests proving queue entries persist across store reload",
+        "No UI changes are required in this story",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Expose memory compaction queue in Memory UI",
+      "description": "As a memory reviewer, I want the Memory page to show compaction candidates and their approve or dismiss actions so that cleanup is visible before automation runs.",
+      "acceptanceCriteria": [
+        "/memory renders compaction candidates from memory-center state in a collapsed supporting section",
+        "Each candidate shows reason, source artifact, status, and approve or dismiss actions",
+        "The Memory UI does not place compaction above the default file stack on first screen",
+        "Add web contract coverage for the compaction queue anchors",
+        "pnpm test:web-contracts passes",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Add fake external memory provider contract",
+      "description": "As a platform integrator, I want a deterministic fake external memory provider contract so that OpenShock can test external durable fallback without claiming a real provider integration.",
+      "acceptanceCriteria": [
+        "Add an internal fake external provider adapter used only by tests or local harnesses",
+        "The fake adapter can simulate healthy, degraded, and recovery states",
+        "Memory provider check and recover tests cover fake external provider degraded fallback and recovery",
+        "The UI-visible provider status continues to label real external persistent mode as not configured unless real config exists",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Add runtime readiness hook contract",
+      "description": "As a runtime operator, I want scheduler decisions to include readiness reasons so that failover is based on explicit runtime health rather than hidden heuristics.",
+      "acceptanceCriteria": [
+        "Runtime registry exposes a readiness status and readiness reason for each runtime",
+        "Scheduler decisions include the selected runtime readiness reason",
+        "Add server tests for offline, stale, busy, and ready runtime selection cases",
+        "Setup or Agents surfaces display the readiness reason without adding a new primary action",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Fail release evidence lookup when latest artifacts are missing",
+      "description": "As a release reviewer, I want evidence lookup to fail clearly when the latest report points to missing artifacts so that stale release evidence cannot look green.",
+      "acceptanceCriteria": [
+        "release:evidence:latest exits non-zero when the latest RC or full report points to a missing artifacts directory",
+        "The command prints the exact rerun command for the missing evidence type",
+        "Add node --test coverage for missing RC artifacts and missing full evidence",
+        "docs/testing/README.md mentions that missing artifacts are release-blocking for reviewer evidence",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Run product-grade release verification sweep",
+      "description": "As a product owner, I want one final verification story that regenerates current evidence after the iteration so that the product-grade loop closes with auditable proof.",
+      "acceptanceCriteria": [
+        "pnpm verify passes",
+        "Local walkthrough route smoke and interaction smoke pass and produce JSON evidence",
+        "pnpm verify:release:full passes or progress notes record the exact blocker and failing command",
+        "pnpm release:evidence:latest full resolves to an existing report and artifacts directory when full gate passes",
+        "ralph/progress.txt summarizes completed stories and remaining blockers",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

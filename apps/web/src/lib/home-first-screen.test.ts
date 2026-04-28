@@ -4,6 +4,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { FRESH_FIRST_START_NEXT_ROUTE } from "./first-start-contract-fixtures.test-helper";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const homeSourcePath = resolve(__dirname, "../app/page.tsx");
 
@@ -14,13 +16,19 @@ function homeSource() {
 test("home first screen switches from first-start mode to shell-ready mode once the workspace is live", () => {
   const source = homeSource();
 
+  assert.equal(FRESH_FIRST_START_NEXT_ROUTE, "/access");
   assert.match(source, /data-testid="home-primary-chat-cta"/);
+  assert.match(source, /data-testid="home-first-start-next-route"/);
+  assert.match(source, /data-testid="home-first-start-next-label"/);
+  assert.match(source, /data-testid="home-first-start-launch-route"/);
   assert.match(source, /const needsOnboarding = !journey\.onboardingDone;/);
   assert.match(source, /const shellReady = !loading && !error && !needsOnboarding;/);
-  assert.match(source, /const primaryEntryHref = needsOnboarding \? "\/setup" : chatHref;/);
-  assert.match(source, /const primaryEntryLabel = needsOnboarding \? \(journey\.onboardingStarted \? "继续设置" : "开始设置"\) : "进入聊天";/);
+  assert.match(source, /const continueTarget = loading \|\| error \|\| needsOnboarding \? null : workspaceContinue\.target;/);
+  assert.match(source, /const primaryEntryHref = needsOnboarding \? journey\.nextHref : chatHref;/);
+  assert.match(source, /const primaryEntryLabel = needsOnboarding \? journey\.nextLabel : "进入聊天";/);
   assert.match(source, /const primaryContinueHref = continueTarget\?\.href \?\? primaryEntryHref;/);
   assert.match(source, /const primaryContinueLabel = continueTarget\?\.ctaLabel \?\? primaryEntryLabel;/);
+  assert.match(source, /const primaryEntryReason = needsOnboarding \? journey\.nextSummary :/);
   assert.match(source, /data-testid="home-shell-surface"/);
   assert.match(source, /data-testid="home-shell-chat-link"/);
   assert.match(source, /data-testid="home-shell-dm-link"/);

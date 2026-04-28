@@ -17,7 +17,8 @@
     "check:live-truth-hygiene": "node ./scripts/check-live-truth-hygiene.mjs",
     "lint": "pnpm lint:web",
     "lint:web": "pnpm --dir apps/web lint",
-    "test:web-contracts": "pnpm --dir apps/web exec node --test src/lib/*.test.ts",
+    "test:web-contracts": "bash -lc 'cd apps/web && node --import tsx --test src/lib/*.test.ts'",
+    "test:web-first-start-runtime-selection": "bash -lc 'cd apps/web && node --import tsx --test src/lib/onboarding-runtime-selection.test.ts'",
     "typecheck": "pnpm typecheck:web",
     "typecheck:web": "pnpm --dir apps/web typecheck",
     "verify": "pnpm verify:web && pnpm verify:go",
@@ -28,6 +29,7 @@
     "verify:release:rc": "bash ./scripts/release-gate.sh rc",
     "verify:release:browser": "bash ./scripts/release-gate.sh browser",
     "release:evidence:latest": "node ./scripts/release-evidence-latest.mjs",
+    "local-walkthrough:evidence": "node ./scripts/local-walkthrough-evidence-latest.mjs",
     "ops:live-server:status": "node ./scripts/live-server-control.mjs status",
     "ops:live-server:start": "node ./scripts/live-server-control.mjs start",
     "ops:live-server:stop": "node ./scripts/live-server-control.mjs stop",
@@ -39,6 +41,7 @@
     "test:headed-session-foundation": "node ./scripts/headed-session-foundation.mjs",
     "test:headed-workspace-member-role": "node ./scripts/headed-workspace-member-role.mjs",
     "test:headed-critical-loop": "node ./scripts/headed-critical-loop.mjs",
+    "test:headed-critical-loop:fresh": "OPENSHOCK_E2E_VIEWPORT_WIDTH=1280 OPENSHOCK_E2E_VIEWPORT_HEIGHT=860 OPENSHOCK_E2E_ARTIFACTS_DIR=output/testing/us-004-first-start/run-attempt node ./scripts/headed-critical-loop.mjs --report output/testing/us-004-first-start/critical-loop.md",
     "test:headed-action-authz-matrix": "node ./scripts/headed-action-authz-matrix.mjs",
     "test:headed-approval-center-lifecycle": "node ./scripts/headed-approval-center-lifecycle.mjs",
     "test:headed-agent-mailbox-handoff": "node ./scripts/headed-agent-mailbox-handoff.mjs",
@@ -87,6 +90,7 @@
     "test:headed-dm-followed-thread-saved-later": "node ./scripts/headed-dm-followed-thread-saved-later.mjs",
     "test:headed-device-auth-email-recovery": "node ./scripts/headed-device-auth-email-recovery.mjs",
     "test:headed-config-persistence-recovery": "node ./scripts/headed-config-persistence-recovery.mjs",
+    "test:headed-settings-primary-reduction": "node ./scripts/headed-settings-primary-reduction.mjs",
     "test:headed-configurable-team-topology": "node ./scripts/headed-configurable-team-topology.mjs",
     "test:headed-onboarding-studio": "node ./scripts/headed-onboarding-studio.mjs",
     "test:headed-first-start-journey": "node ./scripts/headed-onboarding-studio.mjs",
@@ -127,6 +131,7 @@
     "ops:experience-metrics": "node ./scripts/experience-metrics-probe.mjs"
   },
   "devDependencies": {
-    "playwright-core": "^1.59.1"
+    "playwright-core": "^1.59.1",
+    "tsx": "^4.21.0"
   }
 }

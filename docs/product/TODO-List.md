@@ -36,40 +36,7 @@
 
 ## 当前优先级
 
-### P0 Auth challenge hardening
-
-状态：已完成。保留本段只为了给 reviewer 一个单点真值；下一轮从当前优先级移除。
-
-目标：把“知道邮箱就能登录 / claim owner / reset recovery”收成真正的 challenge-based auth。
-
-当前真值：
-
-- `POST /v1/auth/session` 现只接受 challenge-based login，不再接受裸邮箱登录
-- fresh bootstrap owner claim 已收成 `request_login_challenge -> /v1/auth/session`，不能再直接 claim placeholder owner
-- `verify_email` 与 `authorize_device` 已收成 `request_*_challenge -> consume challenge` 两段式一次性 contract
-- `request_password_reset` 会签发一次性 reset challenge；signed-out 只允许在持有有效 challenge 时执行 `complete_password_reset`
-- store / api / integration / release gate 都已补到 replay、cross-account、expired 或 signed-out fail-closed 证据
-
-Done when:
-
-- 裸邮箱登录和 fresh bootstrap claim owner 被移除，所有进入工作区的路径都必须消费可验证 challenge
-- `verify_email / authorize_device / request_password_reset / complete_password_reset` 都有一次性 challenge contract
-- 同一份 auth contract 同时覆盖 signed-out、cross-account、replay、expired challenge
-
-Evidence:
-
-- `apps/server/internal/api/auth_contract_test.go`
-- `apps/server/internal/store/auth_test.go`
-- 对应 browser recovery 报告写入 `docs/testing/`
-
-本轮验收结果应满足：
-
-- 已满足：`POST /v1/auth/session` 不再接受 email-only login，并有对应 contract 覆盖
-- 已满足：fresh bootstrap 下首个未知邮箱不能直接 claim owner，并有 store contract 覆盖
-- 已满足：`verify_email / authorize_device / request_password_reset / complete_password_reset` 全部改成一次性 challenge contract，并覆盖 replay / expired / cross-account
-- 已满足：auth contract、store contract、integration / release gate 都能给出可追溯证据
-
-### P0 Request-scoped auth session
+### P0 Request-scoped auth tail
 
 目标：把当前全局单例 `Auth.Session` 收成真正的 request-scoped auth，避免多用户登录和跨请求操作互相踩状态。
 
@@ -81,13 +48,11 @@ Evidence:
 - “无 token 时回退全局 `Auth.Session`”的兼容路径已经移除；当前默认 fail closed，并由 browser / integration / release gate 走显式 token 或 cookie
 - `memory / topic / credential / agent profile / direct message / message surface` 这批 permission-gated supporting flow mutation response 已开始统一回 request-scoped state，不再把最后一次登录者塞回响应体
 
-建议拆分顺序：
+当前只剩尾项：
 
-1. 增加 request actor resolver：先支持每个请求稳定解析 caller，而不是继续默认吃最后一次登录者
-2. 给 store mutation 增加显式 actor 输入，逐步替代内部对 `s.state.Auth.Session` 的直接读取
-3. 去掉“无 token 回退全局 session”的兼容逻辑，默认改成 signed-out，再把 browser / integration / contract 正向读链全部切到显式 token 或 cookie
-4. 保留 `state.Auth.Session` 作为当前前台兼容真相，直到 `/access` 和 live shell 完成新凭据接线
-5. 增加双用户并发 contract：A/B 两条会话并行时，permission、recovery、member mutation 不能互相污染
+1. 继续清掉少量仍直接读取 `state.Auth.Session` 的非主链兼容点
+2. 继续补 permission-gated supporting mutation response 的 request-scoped state 证据
+3. 把 browser recovery evidence 补到 verify email / authorize device / external identity binding 的 token/cookie refresh
 
 Done when:
 
@@ -135,59 +100,6 @@ Evidence:
 - 首页 continue 与首启路由指向同一条路径
 - `headed-critical-loop` 与 `critical-loop-contract` 都验证同一条主路径
 - `Setup` 首屏只保留“现在做什么”和“下一步去哪”
-
-### P0 Release evidence 单源化
-
-状态：已完成。reviewer 现在可以用同一份 gate 产物和同一个 evidence locator 重新定位最新 RC / full 证据。
-
-目标：发布 reviewer 不再翻三份文档和终端日志拼结论。
-
-Done when:
-
-- `verify:release:rc` 和 `verify:release:full` 都产出同级 summary report + durable logs
-- `docs/testing/README.md` 只指向固定生成入口，不手写“最新日期 / commit”
-- RC 报告明确写出内部 worker secret 与 runtime heartbeat secret 是否已配置
-
-Evidence:
-
-- `scripts/release-gate.sh`
-- `scripts/release-evidence-latest.mjs`
-- `scripts/release-gate-contract.test.mjs`
-- `scripts/release-evidence-latest.test.mjs`
-- `docs/testing/README.md`
-- 对应 `docs/testing/Test-Report-*release*`
-
-本轮验收结果应满足：
-
-- 已满足：`pnpm verify:release:rc` 每次运行都生成 RC summary report 与原始日志
-- 已满足：`pnpm verify:release:full` 每次运行都生成 full summary report 与原始日志
-- 已满足：Testing Index、Release Gate、Runbook 都只给“如何定位最新证据”的方法，不手写“最新日期 / commit”
-
-### P1 Headed suite 清单化
-
-目标：让 release reviewer 不需要在 80+ 条 headed 命令里人工猜哪几条是 release-critical。
-
-状态：已完成。release-critical manifest 已落到 `scripts/release-browser-suite.sh`，并由 release gate、contract test、Testing Index 共用。
-
-Done when:
-
-- release-critical headed suite 有单一 manifest，`package.json`、release gate 和 Testing Index 都从同一份清单读取
-- release-critical 脚本和 supporting exploratory 脚本有明确分层
-- 新增 headed 场景时，必须同步落到 manifest 或明确标注为非 release gate
-- 至少一层脚本 contract 能覆盖命令入口、报告路径和关键参数，不再只靠人工扫脚本文件名
-
-Evidence:
-
-- `scripts/release-gate.sh`
-- `scripts/release-gate-contract.test.mjs`
-- `docs/testing/README.md`
-- `package.json`
-
-本轮验收结果应满足：
-
-- reviewer 只看一个 manifest 就能知道 release gate 当前到底包含哪些 browser 主链
-- `verify:release:*` 和 Testing Index 不会出现命令名漂移
-- headed suite 的 release-critical / exploratory 边界可读、可测试、可审计
 
 ### P1 Frontend subtractive sweep
 

@@ -19,6 +19,7 @@
 - 想重新定位最新证据时，统一用 `pnpm release:evidence:latest`，不要再手动猜日期。
 - 更完整的发布 contract 看 [../engineering/Release-Gate.md](../engineering/Release-Gate.md)。
 - 这两条命令会生成报告，但仓库中的 `docs/testing/Test-Report-*` 属于归档，可能不是你这次运行生成的最新结果。
+- 如果 evidence locator 指向的 artifacts 目录缺失，当前 reviewer 证据视为缺失；重新跑对应的 `pnpm verify:release:rc` 或 `pnpm verify:release:full` 生成新证据。
 
 ## 最新证据怎么看
 
@@ -48,6 +49,7 @@ pnpm release:evidence:latest full
 - `pnpm verify:release:rc` 是生成最新 RC 证据的入口
 - `pnpm verify:release:full` 是生成最新非 RC 全跑证据的入口
 - 仓库里已有报告用于归档和回放，不应默认视为当前最新一次运行结果
+- reviewer 只认上述命令刚生成或 locator 能定位到的 report + artifacts，不再引用手写日期当“最新证据”
 
 ## 当前 browser 主链
 

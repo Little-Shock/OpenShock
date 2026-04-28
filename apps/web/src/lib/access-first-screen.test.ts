@@ -4,6 +4,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { FRESH_FIRST_START_NEXT_ROUTE } from "./first-start-contract-fixtures.test-helper";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const accessPagePath = resolve(__dirname, "../app/access/page.tsx");
 const accessSourcePath = resolve(__dirname, "../components/live-access-views.tsx");
@@ -39,6 +41,11 @@ test("access overview leads with the next step before recovery controls", () => 
     "<details data-testid=\"access-advanced-details\""
   );
 
+  assert.equal(FRESH_FIRST_START_NEXT_ROUTE, "/access");
+  assert.match(section, /const workspaceContinue = buildWorkspaceContinueTarget\(state\);/);
+  assert.match(section, /const journey = workspaceContinue\.journey;/);
+  assert.match(section, /: journey\.nextHref;/);
+  assert.match(accessSource(), /data-testid="access-ready-next-link"/);
   assert.match(section, /const primaryGatePanel = !accessReady/);
   assert.match(section, /\{!accessReady \? primaryGatePanel : null\}/);
   assert.match(section, /const showSessionAction = !accessReady && !sessionIsActive\(session\);/);
@@ -70,8 +77,11 @@ test("access first-start panel keeps step details behind a disclosure while pres
     "export function LiveAccessContextRail() {"
   );
 
+  assert.equal(FRESH_FIRST_START_NEXT_ROUTE, "/access");
+  assert.match(section, /const journey = buildFirstStartJourney\(state\.workspace, state\.auth\.session\);/);
   assert.match(section, /data-testid="access-first-start-next-route"/);
   assert.match(section, /data-testid="access-first-start-next-link"/);
+  assert.match(section, /href=\{journey\.nextHref\}/);
   assert.match(section, /data-testid="access-first-start-steps-details"/);
   assert.match(section, /data-testid="access-first-start-steps-toggle"/);
   assert.match(section, /data-testid={`access-first-start-step-\$\{step\.id\}-summary`}/);

@@ -4,9 +4,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { FRESH_FIRST_START_NEXT_ROUTE } from "./first-start-contract-fixtures.test-helper";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const setupPagePath = resolve(__dirname, "../app/setup/page.tsx");
 const setupViewsPath = resolve(__dirname, "../components/live-setup-views.tsx");
+const onboardingPagePath = resolve(__dirname, "../app/onboarding/page.tsx");
 
 function source(path: string) {
   return readFileSync(path, "utf8");
@@ -14,7 +17,11 @@ function source(path: string) {
 
 test("setup first screen keeps repo, GitHub, runtime, and live bridge behind clear support sections", () => {
   const pageSource = source(setupPagePath);
+  const onboardingSource = source(onboardingPagePath);
 
+  assert.equal(FRESH_FIRST_START_NEXT_ROUTE, "/access");
+  assert.match(onboardingSource, /redirect\("\/setup"\)/);
+  assert.doesNotMatch(pageSource, /href="\/onboarding"/);
   assert.match(pageSource, /title="接通后就回到同一条工作对话"/);
   assert.match(pageSource, /description="跟着下一步接通模板、仓库、GitHub 和运行环境；接好后直接回聊天继续工作。"/);
   assert.match(pageSource, /contextTitle="现在还差哪一步"/);
@@ -62,6 +69,12 @@ test("setup overview tells users to finish four explicit setup checkpoints befor
   const refreshActionMentions = viewsSource.match(/setup-onboarding-refresh-progress/g) ?? [];
   const finishActionMentions = viewsSource.match(/setup-onboarding-finish/g) ?? [];
 
+  assert.equal(FRESH_FIRST_START_NEXT_ROUTE, "/access");
+  assert.doesNotMatch(viewsSource, /href="\/onboarding"/);
+  assert.match(viewsSource, /if \(!journey\.accessReady \|\| journey\.onboardingDone\)/);
+  assert.match(viewsSource, /href: journey\.nextHref/);
+  assert.match(viewsSource, /data-testid="setup-first-start-next-route"/);
+  assert.match(viewsSource, /data-testid="setup-first-start-next-link"/);
   assert.match(viewsSource, /const setupPrimaryAction = buildSetupPrimaryAction/);
   assert.match(viewsSource, /const shouldCollapseTemplateManager = progress\.templateConfirmed \|\| workspace\.onboarding\.status === "done"/);
   assert.match(viewsSource, /function renderStudioActionButtons\(includeTestIds: boolean\)/);

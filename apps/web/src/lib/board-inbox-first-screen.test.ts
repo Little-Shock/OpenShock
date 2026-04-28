@@ -23,6 +23,19 @@ test("board first screen keeps board as a supporting flow", () => {
   assert.match(content, /xl:hidden/);
 });
 
+test("board cards keep planning compact and route back to discussion", () => {
+  const content = source();
+
+  assert.match(content, /data-testid=\{`board-card-title-\$\{card\.key\}`\}/);
+  assert.match(content, /data-testid=\{`board-card-planning-state-\$\{card\.key\}`\}/);
+  assert.match(content, /规划状态 \{boardStateLabel\(card\.state\)\}/);
+  assert.match(content, /data-testid=\{`board-card-owner-\$\{card\.key\}`\}/);
+  assert.match(content, /data-testid=\{`board-card-room-\$\{card\.key\}`\}/);
+  assert.match(content, /href=\{`\/rooms\/\$\{card\.roomId\}\?tab=context`\}/);
+  assert.match(content, /回讨论间/);
+  assert.doesNotMatch(content, /\{card\.summary\}/);
+});
+
 test("inbox first screen keeps inbox as a supporting flow", () => {
   const content = source();
 

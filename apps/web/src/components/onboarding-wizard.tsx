@@ -8,6 +8,13 @@ import { StitchChannelsView } from "@/components/stitch-chat-room-views";
 import { buildWorkspaceContinueTarget } from "@/lib/continue-target";
 import { usePhaseZeroState } from "@/lib/live-phase0";
 import { useLiveRuntimeTruth } from "@/lib/live-runtime";
+import {
+  buildOnboardingRuntimeOptions,
+  onboardingRuntimeMatchesChoice,
+  onboardingRuntimeOptionValue,
+  resolveOnboardingDaemonUrl,
+  resolveOnboardingRuntimeChoice,
+} from "@/lib/onboarding-runtime-selection";
 import type { AgentStatus, RuntimeRegistryRecord, RuntimeProviderStatus } from "@/lib/phase-zero-types";
 import { runtimeProviderBlockingReason, runtimeProviderHealthLabel, runtimeProviderHealthStatus, runtimeProviderHealthSummary, runtimeProviderHealthTone } from "@/lib/runtime-provider-health";
 
@@ -274,6 +281,10 @@ function surfaceStepFromWorkspace(currentStep: string | undefined, fallback: Wiz
   return mapLegacyOnboardingStep(currentStep) ?? fallback;
 }
 
+function furthestStep(left: WizardStepID, right: WizardStepID) {
+  return stepIndex(left) >= stepIndex(right) ? left : right;
+}
+
 function isFreshPlaceholderMember(source: string | undefined, onboardingStatus: string | undefined, sessionStatus: string | undefined) {
   return source === "fresh-bootstrap" && onboardingStatus === "not_started" && sessionStatus !== "active";
 }
@@ -339,7 +350,6 @@ function OnboardingWizard() {
     selectedRuntimeRecord,
     pairing,
     pairRuntime,
-    selectRuntime,
     runtimeActionLoading,
     refreshing: runtimeRefreshing,
   } = useLiveRuntimeTruth();
@@ -384,7 +394,7 @@ function OnboardingWizard() {
   );
 
   const [currentStep, setCurrentStep] = useState<WizardStepID>(() =>
-    surfaceStepFromWorkspace(state.workspace.onboarding.currentStep, naturalStep)
+    furthestStep(surfaceStepFromWorkspace(state.workspace.onboarding.currentStep, naturalStep), naturalStep)
   );
   const [busy, setBusy] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
@@ -416,12 +426,13 @@ function OnboardingWizard() {
   const [modelPreference, setModelPreference] = useState(starterAgent?.modelPreference ?? "");
 
   const runtimeOptions = useMemo(() => {
-    return (runtimes.length > 0 ? runtimes : state.runtimes).filter((runtime) => runtime.daemonUrl || runtime.machine || runtime.id);
+    return buildOnboardingRuntimeOptions(runtimes.length > 0 ? runtimes : state.runtimes);
   }, [runtimes, state.runtimes]);
 
   const chosenRuntime =
-    runtimeOptions.find((runtime) => runtime.id === runtimeChoice || runtime.machine === runtimeChoice) ??
-    selectedRuntimeRecord ??
+    runtimeOptions.find((runtime) => onboardingRuntimeMatchesChoice(runtime, runtimeChoice)) ??
+    runtimeOptions.find((runtime) => onboardingRuntimeMatchesChoice(runtime, selectedRuntimeRecord?.id)) ??
+    runtimeOptions.find((runtime) => onboardingRuntimeMatchesChoice(runtime, selectedRuntimeRecord?.machine)) ??
     runtimeOptions[0] ??
     null;
   const providerOptions = useMemo(
@@ -466,17 +477,23 @@ function OnboardingWizard() {
 
   useEffect(() => {
     setRuntimeChoice((current) => {
-      if (current && runtimeOptions.some((runtime) => runtime.id === current || runtime.machine === current)) {
-        return current;
-      }
-      return valueOrFallback(selectedRuntimeName, runtimeOptions[0]?.id ?? "");
+      return resolveOnboardingRuntimeChoice({
+        currentChoice: current,
+        selectedRuntimeName,
+        runtimeOptions,
+      });
     });
   }, [runtimeOptions, selectedRuntimeName]);
 
   useEffect(() => {
-    const nextURL = pairing?.daemonUrl || chosenRuntime?.daemonUrl || "http://127.0.0.1:8090";
-    setDaemonUrl(nextURL);
-  }, [chosenRuntime?.daemonUrl, pairing?.daemonUrl]);
+    setDaemonUrl(
+      resolveOnboardingDaemonUrl({
+        chosenRuntime,
+        pairingDaemonUrl: pairing?.daemonUrl,
+        selectedRuntimeName,
+      })
+    );
+  }, [chosenRuntime, pairing?.daemonUrl, selectedRuntimeName]);
 
   useEffect(() => {
     if (!starterAgent) {
@@ -510,7 +527,8 @@ function OnboardingWizard() {
   }, [modelPreference, selectedProviderModels, starterAgent?.modelPreference]);
 
   useEffect(() => {
-    const resumeTarget = surfaceStepFromWorkspace(state.workspace.onboarding.currentStep, naturalStep);
+    const persistedTarget = surfaceStepFromWorkspace(state.workspace.onboarding.currentStep, naturalStep);
+    const resumeTarget = furthestStep(persistedTarget, naturalStep);
     setCurrentStep((current) => {
       return stepIndex(current) < stepIndex(resumeTarget) ? resumeTarget : current;
     });
@@ -538,7 +556,7 @@ function OnboardingWizard() {
       ...(addCompleted ?? []),
     ]);
 
-    await updateWorkspaceConfig({
+    return updateWorkspaceConfig({
       plan: state.workspace.plan,
       browserPush: state.workspace.browserPush,
       memoryMode: state.workspace.memoryMode,
@@ -551,6 +569,13 @@ function OnboardingWizard() {
         resumeUrl: done ? finishDestination : "/setup",
       },
     });
+  }
+
+  function completedOnboardingHref(progress: Awaited<ReturnType<typeof updateWorkspaceConfig>>) {
+    if (progress.state?.workspace.onboarding.status !== "done") {
+      return "";
+    }
+    return progress.state.workspace.onboarding.resumeUrl || finishDestination;
   }
 
   async function withMutation(task: () => Promise<void>, successMessage?: string) {
@@ -701,15 +726,17 @@ function OnboardingWizard() {
 
   async function handlePairRuntime() {
     await withMutation(async () => {
-      if (chosenRuntime?.machine && chosenRuntime.machine !== selectedRuntimeName && chosenRuntime.id !== selectedRuntimeName) {
-        await selectRuntime(chosenRuntime.machine);
-      }
       await pairRuntime(daemonUrl.trim() || chosenRuntime?.daemonUrl || "http://127.0.0.1:8090", chosenRuntime?.id);
       const nextStep: WizardStepID = starterAgent ? "finish" : "agent";
-      await persistOnboardingProgress({
+      const progress = await persistOnboardingProgress({
         nextStep,
         addCompleted: starterAgent ? ["runtime-paired", "agent-configured"] : ["runtime-paired"],
       });
+      const completedHref = completedOnboardingHref(progress);
+      if (completedHref) {
+        router.push(completedHref);
+        return;
+      }
       setCurrentStep(nextStep);
     }, starterAgent ? "运行环境已连接，默认智能体已就绪。" : "运行环境已连接。");
   }
@@ -729,7 +756,7 @@ function OnboardingWizard() {
         providerPreference,
         modelPreference,
         recallPolicy: starterAgent.recallPolicy,
-        runtimePreference: chosenRuntime?.machine || chosenRuntime?.id || starterAgent.runtimePreference,
+        runtimePreference: onboardingRuntimeOptionValue(chosenRuntime) || starterAgent.runtimePreference,
         memorySpaces: starterAgent.memorySpaces,
         credentialProfileIds: starterAgent.credentialProfileIds ?? [],
         sandbox: starterAgent.sandbox,
@@ -1071,7 +1098,7 @@ function OnboardingWizard() {
                   className="min-h-[48px] rounded-[16px] border border-[rgba(24,20,14,0.16)] bg-white/90 px-4 text-[15px] outline-none"
                 >
                   {runtimeOptions.map((runtime) => (
-                    <option key={runtime.id} value={runtime.machine || runtime.id}>
+                    <option key={`${runtime.id}-${runtime.daemonUrl}`} value={onboardingRuntimeOptionValue(runtime)}>
                       {preferredRuntimeLabel(runtime)} · {runtimeStateLabel(runtime.state)}
                     </option>
                   ))}
